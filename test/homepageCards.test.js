@@ -7,6 +7,7 @@ const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 const hearthPrototype=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 
@@ -296,6 +297,45 @@ test('Board of Observers opens before live packet hydration finishes',()=>{
   assert.doesNotMatch(boardSource,/const chief = observerBoardState\.chiefOfStaff;\s*await loadLiveObserverBoardContext\(\);/);
 });
 
+test('Witnessing First Look treats delivered and deliberately excluded candidates as resolved',()=>{
+  assert.match(hearthPrototype,/function valFirstLookCandidateIsResolved/);
+  assert.match(hearthPrototype,/\['delivered', 'excluded'\]\.includes/);
+  assert.match(hearthPrototype,/function valFirstLookCandidateReviewIsComplete/);
+  assert.match(hearthPrototype,/valFirstLookCandidateReviewIsComplete\(\)\?'<button type="button"[^>]+>Continue Witnessing<\/button>'/);
+  assert.match(hearthPrototype,/if\(!valFirstLookCandidateReviewIsComplete\(\)\)/);
+});
+
+test('Function close control is an always-visible icon rather than a text button',()=>{
+  assert.match(hearthHtml,/class="return-button"[^>]+aria-label="Close this function">×<\/button>/);
+  assert.match(hearthCss,/\.return-button\{\s*position:fixed;/);
+  assert.match(hearthCss,/z-index:5200;/);
+  const returnControlSource=hearthPrototype.slice(
+    hearthPrototype.indexOf('function updateWorkspaceReturnButton'),
+    hearthPrototype.indexOf('function showRelationshipReceipt')
+  );
+  assert.match(returnControlSource,/returnButton\.textContent = '×'/);
+  assert.doesNotMatch(returnControlSource,/returnButton\.textContent = label/);
+  assert.doesNotMatch(returnControlSource,/returnButton\.textContent = 'Close/);
+});
+
+test('Co-Work copy controls work from the rendered chat surface',()=>{
+  assert.match(hearthPrototype,/async function copyTextToClipboard/);
+  assert.match(hearthPrototype,/navigator\.clipboard\?\.writeText/);
+  assert.match(hearthPrototype,/document\.execCommand\('copy'\)/);
+  assert.match(hearthPrototype,/deskWorkspace\.addEventListener\('click', async \(event\) => \{\s*const copyOutputButton = event\.target\.closest\('\[data-cowork-copy-output\]'\)/);
+  assert.match(hearthPrototype,/await copyCoworkOutput\(copyOutputButton\)/);
+});
+
+test('Home LinkedIn visibility uses live receipts and never the retired demo people array',()=>{
+  assert.match(server,/app\.get\('\/api\/val\/linkedin\/visibility'/);
+  assert.match(server,/source:'live_relationship_and_draft_receipts'/);
+  assert.match(hearthPrototype,/hydrateLinkedInVisibility/);
+  assert.match(hearthPrototype,/\/api\/val\/linkedin\/visibility/);
+  assert.match(hearthPrototype,/No demo posts are being substituted/);
+  assert.doesNotMatch(hearthPrototype,/const linkedinVisibilityItems = \[/);
+  assert.doesNotMatch(hearthPrototype,/Shared a reflection on sustaining creative momentum without overextending/);
+});
+
 test('Board Observer card interactions survive hydration and close only on outside clicks',()=>{
   assert.match(hearthPrototype,/const existingSelectedObserverId = deskWorkspace\?\.classList\.contains\('observer-board-mode'\)/);
   assert.match(hearthPrototype,/const selectedObserverId = requestedSelectedObserverId \|\| \(selectedObserverName \? observerConversationId\(selectedObserverName\) : ''\)/);
@@ -322,7 +362,8 @@ test('Observer Co-Work UI opens with loaded evidence instead of backend disclaim
   assert.match(hearthPrototype,/function normalizedObserverProofReviews/);
   assert.match(hearthPrototype,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews/);
   assert.match(hearthPrototype,/hasInspectableReviews && \(asksEvidence \|\| asksRelationshipRepair \|\| asksContext\)/);
-  assert.match(hearthPrototype,/I would start with/);
+  assert.match(hearthPrototype,/is answering from packet reviews, not from a generic guess/);
+  assert.match(hearthPrototype,/I do not have source-backed evidence that a specific relationship needs repair right now/);
   assert.match(hearthPrototype,/Evidence I can point to:/);
   assert.match(hearthPrototype,/This Observer is loaded with the evidence behind the card/);
   assert.match(hearthPrototype,/context\.openingAnswer/);

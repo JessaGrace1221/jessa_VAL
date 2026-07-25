@@ -14,6 +14,8 @@ const BOARD_OBSERVERS = [
   'Environment',
   'Witnessing'
 ];
+const OBSERVER_REVIEW_VERSION = 2;
+const MODEL_OBSERVER_REVIEW_VERSION = 3;
 
 const PRIMARY_ROUTES = Object.freeze({
   email_attention_packet:['Courage','Relationship','Commitment','Opportunity','Executive Inbox'],
@@ -291,6 +293,8 @@ function packetSearchText(packet={}){
 const STOP_NAME_WORDS = new Set([
   'VAL','CRM','GHL','HTML','CSS','SMS','API','MCP','URL','PDF','CEO','COO',
   'Jessa','Grace','Please','Thanks','Thank','Sorry','Good','Morning','Afternoon','Evening',
+  'Your','Receipt','Document','Invoice','Fwd','Today','Update','Question','Response',
+  'Master','Edits','Voice','User','Try','Send','Check','Hot','The','Meeting',
   'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday',
   'Action','Items','Key','Points','Source','Transcript','Meeting','Calendar',
   'Project','Relationship','Capacity','Courage','Delight','Meaning','Momentum',
@@ -347,11 +351,15 @@ function packetPeople(packet={}){
   const payload=packet.payloadJson||{};
   const structured=collectNamedValues(payload,[
     'name','contactName','contact_name','personName','person_name',
+    'senderName','sender_name','fromName','from_name','attendeeName','attendee_name',
     'relationshipName','relationship_name','counterpartyName','counterparty_name',
     'ownerName','owner_name','assignedToName','assigned_to_name'
   ]);
-  const text=packetTextForExtraction(packet);
-  const capitalized=Array.from(text.matchAll(/\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/g)).map(match=>match[1]);
+  const source=registrySourceKey(packet.sourceType||packet.source_type);
+  const allowsTitleNames=['email','transcript','calendar_event','cowork','ghl_voice','ghl_text','sms','relationship_profile'].includes(source);
+  const capitalized=allowsTitleNames
+    ? Array.from(String(packet.title||'').matchAll(/\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/g)).map(match=>match[1])
+    : [];
   return uniqueClean([...structured,...capitalized],8);
 }
 
@@ -384,7 +392,28 @@ function observerMeaningfulSignal(observerName='',packet={}){
   const text=packetSearchText(packet);
   const terms=OBSERVER_SIGNAL_TERMS[observerName]||[];
   const matched=terms.filter(term=>text.includes(term)).slice(0,4);
-  return {meaningful:Boolean(primary||matched.length),matched,primary};
+  const source=registrySourceKey(packet.sourceType||packet.source_type);
+  const packetType=String(packet.packetType||packet.packet_type||'');
+  const people=packetPeople(packet);
+  const projects=packetProjects(packet);
+  const interactionSource=['email','transcript','calendar_event','cowork','ghl_voice','ghl_text','sms','relationship_profile'].includes(source);
+  const sourceSignal={
+    'Executive Inbox':['email','ghl_voice','ghl_text','sms'].includes(source),
+    Relationship:interactionSource&&people.length>0,
+    Project:projects.length>0||source==='project_profile',
+    Capacity:source==='calendar_event'||/\b(capacity|deadline|overdue|due|load|bandwidth|timing|energy|tradeoff)\b/i.test(text),
+    Courage:/\b(avoid|avoided|hesitat|frustrat|tension|pushback|hard|risk|direct|truth)\b/i.test(text),
+    Delight:/\b(joy|delight|curiosity|relief|restore|ground|play|alive|connection)\b/i.test(text),
+    Opportunity:/\b(opportun|revenue|proposal|pricing|sale|lead|opening|introduction)\b/i.test(text),
+    Momentum:/\b(move|progress|stuck|blocked|finish|done|handoff|next step|forward)\b/i.test(text),
+    Meaning:/\b(value|purpose|meaning|why|story|matters|vision|mission)\b/i.test(text),
+    Synchronicity:/\b(repeat|again|echo|pattern|convergen|cluster|coincidence)\b/i.test(text),
+    Commitment:source==='task'||/\b(commitment|promise|follow[- ]?up|action item|owed|due|owner|open loop)\b/i.test(text),
+    Calendar:source==='calendar_event'||/\b(calendar|meeting|appointment|schedule|today|tomorrow|monday|friday|time|prep)\b/i.test(text),
+    Environment:/\b(environment|room|travel|location|weather|body|interrupt|external condition)\b/i.test(text),
+    Witnessing:source==='witnessing'||/\b(witnessing|onboarding|revealed|preference|remember|protect)\b/i.test(text)
+  };
+  return {meaningful:Boolean(matched.length||sourceSignal[observerName]),matched,primary};
 }
 
 function observerEvidence(packet={}){
@@ -411,13 +440,14 @@ function observerLensFinding(observerName='',packet={},signal={}){
   const objectLine=nouns.length ? nouns.join(', ') : compactText(packet.title||packet.summary||'this packet',120);
   const quote=compactText(evidence.quoteOrSummary,260);
   if(!signal.meaningful){
-    return `No meaningful ${observerName} signal. I checked ${source} "${compactText(packet.title||packet.packetType,120)}" and did not find enough from this lens to make a claim.`;
+    return `No meaningful ${observerName} signal in ${source} "${compactText(packet.title||packet.packetType,120)}".`;
   }
+  const friction=/\b(frustrat|tension|conflict|repair|distance|cold|upset|concern|pushback)\b/i.test(quote);
   const templates={
-    'Executive Inbox':`This may need response judgment. ${personLine ? 'People named: '+personLine+'. ' : ''}Source says: ${quote}`,
-    Relationship:`${personLine ? personLine+' may need relational attention. ' : 'A relationship may need attention. '}I am using ${source} evidence, not guessing: ${quote}`,
-    Project:`${projectLine || 'A project'} is carrying work that needs clearer structure. The concrete object is ${objectLine}. Evidence: ${quote}`,
-    Capacity:`This creates a capacity or timing tradeoff around ${objectLine}. Evidence: ${quote}`,
+    'Executive Inbox':`${personLine ? personLine+' is named in ' : 'This '}communication may need reply judgment. Source: ${quote}`,
+    Relationship:`${personLine || 'This relationship'} ${friction ? 'shows a possible trust or repair signal' : 'has a relationship signal worth inspecting'}. Source: ${quote}`,
+    Project:`${projectLine || 'This project'} contains work around ${objectLine}. Source: ${quote}`,
+    Capacity:`This may change timing or decision load around ${objectLine}. Source: ${quote}`,
     Courage:`There may be a decision to name plainly instead of letting ${objectLine} stay vague. Evidence: ${quote}`,
     Delight:`I am checking whether energy, warmth, or curiosity is being protected around ${objectLine}. Evidence: ${quote}`,
     Opportunity:`There may be an opening around ${objectLine}${personLine ? ' with '+personLine : ''}. Evidence: ${quote}`,
@@ -446,6 +476,7 @@ function observerReviewsForPacket(packet={}){
     const projects=packetProjects(packet);
     const decisionObjects=packetDecisionNouns(packet);
     return {
+      reviewVersion:OBSERVER_REVIEW_VERSION,
       observerName,
       status:signal.meaningful?'observed':'no_signal',
       primary:signal.primary,
@@ -463,9 +494,14 @@ function observerReviewsForPacket(packet={}){
 
 function withObserverReviews(packet={}){
   const existing=safeArray(packet.payloadJson?.observerReviews);
-  if(existing.length===BOARD_OBSERVERS.length)return packet;
+  const currentVersion=Number(packet.payloadJson?.observerReviewVersion||0);
+  if(existing.length===BOARD_OBSERVERS.length&&currentVersion>=OBSERVER_REVIEW_VERSION)return packet;
   const reviewed={...packet};
-  reviewed.payloadJson={...(packet.payloadJson||{}),observerReviews:observerReviewsForPacket(packet)};
+  reviewed.payloadJson={
+    ...(packet.payloadJson||{}),
+    observerReviewVersion:OBSERVER_REVIEW_VERSION,
+    observerReviews:observerReviewsForPacket(packet)
+  };
   return reviewed;
 }
 function createValBoardPacketsService({
@@ -476,6 +512,7 @@ function createValBoardPacketsService({
   uuid=(prefix)=>`${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`,
   tenantId=()=>'default',
   userId=()=>'default',
+  getWitnessingCompletion=async()=>({complete:false,sessionId:''}),
   envelopeService=null,
   logger=console
 }={}){
@@ -519,6 +556,73 @@ function createValBoardPacketsService({
     else s.valBoardPackets.unshift(packet);
     saveStore(s);
     return packet;
+  }
+  async function loadPacket(packetId=''){
+    const id=String(packetId||'').trim();
+    if(!id)return null;
+    if(hasPg()){
+      const r=await dbQuery('select * from val_board_packets where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[id,tenantId(),userId()]);
+      return r.rows?.[0] ? toCamelRow(r.rows[0]) : null;
+    }
+    return safeArray(store().valBoardPackets).find(row=>row.id===id&&row.tenantId===tenantId()&&row.userId===userId())||null;
+  }
+  function packetModelEntityAllowed(value='',packet={}){
+    const clean=compactText(value,120);
+    if(!clean)return false;
+    const hay=[
+      packet.title,
+      packet.summary,
+      safeArray(packet.sourceRefsJson).map(ref=>ref.quoteOrSummary||ref.quote_or_summary).join(' '),
+      JSON.stringify(packet.payloadJson||{})
+    ].join(' ').toLowerCase();
+    return hay.includes(clean.toLowerCase());
+  }
+  function normalizedModelObserverReview(observerName='',raw={},packet={}){
+    const fallback=observerReviewsForPacket(packet).find(review=>review.observerName===observerName);
+    if(!raw||String(raw.observerName||raw.observer||'').trim()!==observerName)return fallback;
+    const requestedStatus=String(raw.status||'').toLowerCase()==='observed'?'observed':'no_signal';
+    const finding=compactText(raw.lensFinding||raw.lens_finding||raw.observation||'',900);
+    const evidence=observerEvidence(packet);
+    const observed=requestedStatus==='observed'&&finding.length>=12;
+    const people=safeArray(raw.people).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,120)).slice(0,8);
+    const projects=safeArray(raw.projects).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,120)).slice(0,6);
+    const decisionObjects=safeArray(raw.decisionObjects||raw.decision_objects).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,160)).slice(0,6);
+    const noSignal=`No meaningful ${observerName} signal in ${String(packet.sourceType||'source').replace(/_/g,' ')} "${compactText(packet.title||packet.packetType,120)}".`;
+    return {
+      reviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
+      reviewMode:'model_backed_observer_suite_v1',
+      observerName,
+      status:observed?'observed':'no_signal',
+      primary:!!fallback?.primary,
+      matchedTerms:safeArray(fallback?.matchedTerms),
+      people:observed?people:[],
+      projects:observed?projects:[],
+      decisionObjects:observed?decisionObjects:[],
+      lensFinding:observed?finding:noSignal,
+      observation:observed?compactText(raw.observation||finding,1200):noSignal,
+      evidence,
+      confidence:observed?Math.max(0,Math.min(1,Number(raw.confidence)||0.58)):Math.max(0,Math.min(0.49,Number(raw.confidence)||0.2)),
+      reviewedAt:new Date().toISOString()
+    };
+  }
+  async function applyModelObserverReviews(packetId='',reviews=[]){
+    const packet=await loadPacket(packetId);
+    if(!packet)throw new Error('Board packet was not found for Observer review.');
+    const byObserver=new Map(safeArray(reviews).map(review=>[String(review?.observerName||review?.observer||'').trim(),review]));
+    const missing=BOARD_OBSERVERS.filter(observerName=>!byObserver.has(observerName));
+    if(missing.length)throw new Error('Observer suite was incomplete: '+missing.join(', '));
+    const normalized=BOARD_OBSERVERS.map(observerName=>normalizedModelObserverReview(observerName,byObserver.get(observerName),packet));
+    const reviewed={
+      ...packet,
+      payloadJson:{
+        ...(packet.payloadJson||{}),
+        observerReviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
+        observerReviewMode:'model_backed_observer_suite_v1',
+        observerReviews:normalized
+      },
+      updatedAt:new Date().toISOString()
+    };
+    return savePacket(reviewed);
   }
   async function createPacket(input={}){
     const sc=scope();
@@ -574,13 +678,13 @@ function createValBoardPacketsService({
     const body=message.bodyPreview||message.snippet||message.bodyText||'';
     const refs=[normalizeSourceRef({sourceType:'email',sourceId:id,quoteOrSummary:[subject,body].filter(Boolean).join(': '),confidence:0.8,createdAt:message.receivedAt||message.sentAt||message.createdAt})];
     const packets=[
-      {sourceType:'email',sourceId:id,packetType:'email_attention_packet',title:subject,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction}},
+      {sourceType:'email',sourceId:id,packetType:'email_attention_packet',title:subject,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction,senderName:message.senderName||message.fromName||'',senderEmail:message.senderEmail||message.fromEmail||message.from||'',to:message.to||message.recipients||[],cc:message.cc||[],bodyPreview:body}},
     ];
     if(direction==='inbound' || /\b(can you|please|need|review|confirm|send|available|thoughts)\b/i.test(body)){
-      packets.push({sourceType:'email',sourceId:id,packetType:'reply_pressure_packet',title:`Reply pressure: ${subject}`,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction}});
+      packets.push({sourceType:'email',sourceId:id,packetType:'reply_pressure_packet',title:`Reply pressure: ${subject}`,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction,senderName:message.senderName||message.fromName||'',senderEmail:message.senderEmail||message.fromEmail||message.from||'',to:message.to||message.recipients||[],cc:message.cc||[],bodyPreview:body}});
     }
     if(/\bdraft|reply|send|proposal|intro|introduction\b/i.test([subject,body].join(' '))){
-      packets.push({sourceType:'email',sourceId:id,packetType:'draft_review_packet',title:`Draft review signal: ${subject}`,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction}});
+      packets.push({sourceType:'email',sourceId:id,packetType:'draft_review_packet',title:`Draft review signal: ${subject}`,summary:body,sourceRefs:refs,payload:{provider:message.provider,threadId:message.threadId,direction,senderName:message.senderName||message.fromName||'',senderEmail:message.senderEmail||message.fromEmail||message.from||'',to:message.to||message.recipients||[],cc:message.cc||[],bodyPreview:body}});
     }
     return packets;
   }
@@ -591,7 +695,7 @@ function createValBoardPacketsService({
   async function recordTranscriptProcessed({sourceId,title='',summary='',analysis={},counts={},createdDrafts=[],stagedTasks=[],createdTasks=[]}={}){
     const refs=[normalizeSourceRef({sourceType:'transcript',sourceId,quoteOrSummary:summary?.executiveSummary||summary?.summary||summary||title,confidence:0.82})];
     const packets=[
-      {sourceType:'transcript',sourceId,packetType:'meeting_evidence_packet',title:title||'Transcript processed',summary:summary?.executiveSummary||summary?.summary||summary||'',sourceRefs:refs,payload:{counts,analysisSummary:analysis?.executiveSummary||''}},
+      {sourceType:'transcript',sourceId,packetType:'meeting_evidence_packet',title:title||'Transcript processed',summary:summary?.executiveSummary||summary?.summary||summary||'',sourceRefs:refs,payload:{counts,analysisSummary:analysis?.executiveSummary||'',participants:analysis?.participants||analysis?.attendees||[],relationshipUpdates:analysis?.relationshipUpdates||[],openQuestions:analysis?.openQuestions||[]}},
       {sourceType:'transcript',sourceId,packetType:'decision_trace_packet',title:`Decision trace: ${title||sourceId}`,summary:safeArray(analysis?.keyDecisions).map(item=>typeof item==='string'?item:item?.summary||item?.decision).filter(Boolean).slice(0,5).join(' | '),sourceRefs:refs,payload:{keyDecisions:analysis?.keyDecisions||[]}},
       {sourceType:'transcript',sourceId,packetType:'task_extraction_packet',title:`Transcript tasks: ${title||sourceId}`,summary:`${safeArray(stagedTasks).length+safeArray(createdTasks).length} task signal(s), ${safeArray(createdDrafts).length} draft signal(s).`,sourceRefs:refs,payload:{stagedTasks,createdTasks,createdDrafts}}
     ];
@@ -769,10 +873,20 @@ function createValBoardPacketsService({
     return rows;
   }
   async function boardContext({limit=80,observerName=''}={}){
-    const packets=await listPackets({limit,observerName});
+    const [packets,witnessing]=await Promise.all([
+      listPackets({limit,observerName}),
+      Promise.resolve(getWitnessingCompletion()).catch(error=>({
+        complete:false,
+        sessionId:'',
+        error:error.message
+      }))
+    ]);
     const sourceReadiness=sourceReadinessFromPackets(packets);
     return {
       observers:BOARD_OBSERVERS,
+      witnessingComplete:!!witnessing?.complete,
+      witnessingSessionId:String(witnessing?.sessionId||''),
+      witnessingStatus:witnessing?.complete?'complete':'not_complete',
       sources:sourceReadiness.sources,
       sourceSummary:sourceReadiness.summary,
       livePacketCount:packets.length,
@@ -846,6 +960,7 @@ function createValBoardPacketsService({
     recordSourceEvent,
     recordCoworkEvent,
     recordWitnessingAnswer,
+    applyModelObserverReviews,
     listPackets,
     boardContext,
     sourceReadiness:async({limit=300}={})=>sourceReadinessFromPackets(await listPackets({limit}))

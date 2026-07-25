@@ -153,8 +153,11 @@ function buildPacketReview(observerName,packet={},context={}){
     question:'What does this change?'
   };
   const payload=packet.payloadJson||packet.payload_json||packet.payload||{};
-  const packetObserverReview=safeArray(payload.observerReviews||payload.observer_reviews)
+  const rawPacketObserverReview=safeArray(payload.observerReviews||payload.observer_reviews)
     .find(review=>review&&review.observerName===observerName);
+  const packetObserverReview=Number(rawPacketObserverReview?.reviewVersion||payload.observerReviewVersion||0)>=2
+    ? rawPacketObserverReview
+    : null;
   const packetId=String(packet.id||packet.packetId||'');
   const sourceType=String(packet.sourceType||packet.source_type||'unknown');
   const packetType=String(packet.packetType||packet.packet_type||'learning_packet');
@@ -163,7 +166,7 @@ function buildPacketReview(observerName,packet={},context={}){
   const route=packetRouteForObserver(packet,observerName);
   const primary=packetPrimaryForObserver(packet,observerName);
   const triggered=safeArray(context.event?.packetIds).includes(packetId);
-  const observed=packetObserverReview ? packetObserverReview.status !== 'no_signal' : true;
+  const observed=packetObserverReview ? packetObserverReview.status !== 'no_signal' : false;
   const reviewEvidence=packetObserverReview?.evidence||{};
   const reviewEvidenceRef=reviewEvidence.quoteOrSummary||reviewEvidence.quote_or_summary
     ? [normalizeSourceRef({
@@ -204,7 +207,7 @@ function buildPacketReview(observerName,packet={},context={}){
     question:lens.question,
     confidence:Math.max(0.18,Math.min(0.92,baseConfidence+(observed?evidenceBoost:0)+triggerBoost)),
     reviewedAt:context.generatedAt||new Date().toISOString(),
-    reflectionMode:'deterministic_lens_v1'
+    reflectionMode:'evidence_qualified_lens_v2'
   };
 }
 function buildPacketReviews(observerName,context={}){

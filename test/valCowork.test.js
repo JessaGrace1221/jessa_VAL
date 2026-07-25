@@ -337,7 +337,8 @@ test('Observer chat prioritizes live packet evidence over static card fallback',
   assert.match(hearth,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews\(observer\.name, 6\)/);
   assert.match(hearth,/tone\|changed\?\|shifts\?\|friction/);
   assert.match(hearth,/what changed\|how\.\*changed/);
-  assert.match(hearth,/I would start with/);
+  assert.match(hearth,/is answering from packet reviews, not from a generic guess/);
+  assert.match(hearth,/I found a repair signal, but the packet does not attach a reliable person name yet/);
   assert.match(hearth,/observerReviewNamedLine/);
   assert.match(hearth,/I would rather say “not enough signal yet” than make up a relationship, risk, or pattern/);
   assert.match(server,/Answer the user like a specific Board member, not like a generic assistant/);
@@ -1327,7 +1328,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/const knownItems = Object\.values\(projectIndexProfiles\)\.filter\(projectIsDrawerAdmitted\);/);
   assert.doesNotMatch(hearth,/if\(canUseApi && !projectIndexLoaded\)\{[\s\S]{0,240}const knownItems = projectIndexItems\(\);/);
   assert.match(hearth,/void hydrateProjectIndex\(\);/);
-  assert.match(hearth,/const selectedProject = selectedProjectId && knownItems\.find/);
+  assert.match(hearth,/const selectedProject = selectedProjectId && projectIndexItems\(\)\.find/);
 });
 
 test('Transcript canonical Co-Work bypasses the legacy freeform chat route',()=>{

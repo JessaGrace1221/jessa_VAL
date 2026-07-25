@@ -172,6 +172,15 @@ test('intelligence spine reads high-signal classifications and draft candidates'
   assert.match(spine,/email_draft_readiness/);
 });
 
+test('opening Executive Inbox reads the saved index instead of rerunning classification',()=>{
+  const queueStart=server.indexOf('async function localExecutiveInboxQueue');
+  const queueEnd=server.indexOf('\n}',queueStart);
+  const queueSource=server.slice(queueStart,queueEnd);
+  assert.match(queueSource,/listHighSignalClassifications/);
+  assert.doesNotMatch(queueSource,/classifyBatch/);
+  assert.match(queueSource,/Promise\.race/);
+});
+
 function fakeConversationService(){
   const context={
     ok:true,

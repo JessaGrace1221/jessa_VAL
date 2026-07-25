@@ -23,6 +23,13 @@ test('Board packet schema and routes are mounted',()=>{
   assert.match(routes,/afterSourceEvent/);
   assert.match(server,/afterSourceEvent:async/);
   assert.match(server,/triggerBoardIntelligenceForPackets\(\[packet\],\{type:'source_event'/);
+  const triggerStart=server.indexOf('async function triggerBoardIntelligenceForPackets');
+  const triggerEnd=server.indexOf('function conversationTurnSourceRefs',triggerStart);
+  const triggerSource=server.slice(triggerStart,triggerEnd);
+  assert.ok(
+    triggerSource.indexOf('enrichBoardPacketsWithModel') < triggerSource.indexOf('return valIntelligenceSpine.runIntelligencePass'),
+    'Observer digestion must finish before the Chief of Staff intelligence spine runs.'
+  );
 });
 
 test('Board packet service routes and digests each packet through every observer',async()=>{
@@ -57,9 +64,108 @@ test('Board packet service routes and digests each packet through every observer
   assert.ok(packet.payloadJson.observerReviews.some(review=>review.status==='no_signal'));
   assert.ok(packet.payloadJson.observerReviews.every(review=>review.evidence.sourceType==='email'));
   const relationshipReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
-  assert.match(relationshipReview.lensFinding,/Michelle may need relational attention|relationship may need attention/i);
+  assert.match(relationshipReview.lensFinding,/Michelle has a relationship signal worth inspecting/i);
   assert.ok(Array.isArray(relationshipReview.people));
   assert.ok(Array.isArray(relationshipReview.projects));
+});
+
+test('model-backed Observer reviews replace fallback reviews only with packet-grounded entities',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant-a',
+    userId:()=>'user-a',
+    logger:{log(){},warn(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'transcript',
+    sourceId:'meeting-1',
+    packetType:'relationship_packet',
+    title:'GOALL dashboard handoff',
+    summary:'Mike sounded frustrated when the GOALL dashboard handoff stayed vague.',
+    sourceRefs:[{sourceType:'transcript',sourceId:'meeting-1',quoteOrSummary:'Mike sounded frustrated when the GOALL dashboard handoff stayed vague.',confidence:0.91}]
+  });
+  const reviews=BOARD_OBSERVERS.map(observerName=>({
+    observerName,
+    status:observerName==='Relationship'?'observed':'no_signal',
+    lensFinding:observerName==='Relationship'?'Mike shows a possible repair signal after frustration in the GOALL handoff.':'',
+    observation:observerName==='Relationship'?'Mike sounded frustrated when the GOALL dashboard handoff stayed vague.':'',
+    people:observerName==='Relationship'?['Mike','Invented Person']:[],
+    projects:observerName==='Relationship'?['GOALL','Invented Project']:[],
+    decisionObjects:['dashboard handoff'],
+    confidence:0.86
+  }));
+  const saved=await service.applyModelObserverReviews(packet.id,reviews);
+  assert.equal(saved.payloadJson.observerReviewVersion,3);
+  assert.equal(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v1');
+  assert.equal(saved.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
+  const relationship=saved.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
+  assert.equal(relationship.status,'observed');
+  assert.deepEqual(relationship.people,['Mike']);
+  assert.deepEqual(relationship.projects,['GOALL']);
+  assert.deepEqual(relationship.decisionObjects,['dashboard handoff']);
+  assert.equal(saved.payloadJson.observerReviews.find(review=>review.observerName==='Capacity').status,'no_signal');
+});
+
+test('an incomplete model review suite cannot masquerade as a full Board review',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant-a',
+    userId:()=>'user-a',
+    logger:{log(){},warn(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'email',
+    sourceId:'email-incomplete',
+    title:'A real email packet',
+    summary:'A real sender asked for a decision.'
+  });
+  await assert.rejects(
+    service.applyModelObserverReviews(packet.id,[{
+      observerName:'Relationship',
+      status:'observed',
+      lensFinding:'A relationship needs attention.',
+      observation:'A real sender asked for a decision.'
+    }]),
+    /Observer suite was incomplete/
+  );
+  const saved=(await service.listPackets({limit:20})).find(item=>item.id===packet.id);
+  assert.equal(saved.payloadJson.observerReviewVersion,2);
+  assert.notEqual(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v1');
+  assert.equal(saved.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
+});
+
+test('Board context exposes durable Witnessing completion instead of relying on browser state',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_witnessed`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    getWitnessingCompletion:async()=>({complete:true,sessionId:'witnessing_complete_1'}),
+    logger:{log(){}}
+  });
+
+  await service.createPacket({
+    sourceType:'witnessing',
+    sourceId:'witnessing_complete_1',
+    packetType:'identity_context_packet',
+    title:'Witnessing truth',
+    summary:'The user completed the Witnessing Session.'
+  });
+
+  const context=await service.boardContext();
+  assert.equal(context.witnessingComplete,true);
+  assert.equal(context.witnessingSessionId,'witnessing_complete_1');
+  assert.equal(context.witnessingStatus,'complete');
+  assert.equal(context.livePacketCount,1);
 });
 
 test('Observer reviews preserve concrete named evidence for project-first executive context',async()=>{
@@ -96,7 +202,7 @@ test('Observer reviews preserve concrete named evidence for project-first execut
   assert.ok(relationshipReview.people.includes('Mike'));
   assert.ok(projectReview.projects.includes('GOALL'));
   assert.ok(projectReview.decisionObjects.includes('dashboard handoff'));
-  assert.match(relationshipReview.lensFinding,/Mike.*relational attention/i);
+  assert.match(relationshipReview.lensFinding,/Mike has a relationship signal worth inspecting/i);
   assert.match(projectReview.lensFinding,/GOALL.*dashboard handoff/i);
   assert.match(projectReview.observation,/Why this lens received it/i);
 });
@@ -298,7 +404,7 @@ test('relationship and project profile saves create first-class Board packets',a
   assert.equal(projectPacket.packetType,'project_packet');
   assert.equal(relationshipPacket.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
   assert.equal(projectPacket.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
-  assert.match(relationshipPacket.payloadJson.observerReviews.find(review=>review.observerName==='Relationship').lensFinding,/Mike.*relational attention/i);
+  assert.match(relationshipPacket.payloadJson.observerReviews.find(review=>review.observerName==='Relationship').lensFinding,/Mike has a relationship signal worth inspecting/i);
   assert.match(projectPacket.payloadJson.observerReviews.find(review=>review.observerName==='Project').lensFinding,/GOALL/i);
 });
 
@@ -363,6 +469,31 @@ test('Board packet people extraction ignores user and politeness filler words',a
   assert.equal(relationshipReview.people.includes('Jessa'),false);
 });
 
+test('Board reviews do not turn document labels or routing into fabricated people and findings',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_document`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){}}
+  });
+  const packet=await service.recordSourceEvent('document',{
+    id:'anthropic_receipt',
+    title:'Your receipt from Anthropic, PBC',
+    summary:'Invoice 2774-9749-4594'
+  });
+  const relationshipReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
+  const capacityReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Capacity');
+  assert.deepEqual(relationshipReview.people,[]);
+  assert.equal(relationshipReview.status,'no_signal');
+  assert.equal(capacityReview.status,'no_signal');
+  assert.match(relationshipReview.lensFinding,/No meaningful Relationship signal/);
+  assert.equal(packet.payloadJson.observerReviewVersion,2);
+});
+
 test('profile persistence paths emit Board packets when relationship/project truth changes',()=>{
   assert.match(server,/async function recordRelationshipProfileBoardPacket/);
   assert.match(server,/recordProfileEvent\(\{eventType,profile\}\)/);
@@ -389,13 +520,14 @@ test('Home chat, GHL text, and GHL voice routes record conversation turns for th
 test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/loadLiveObserverBoardContext/);
   assert.match(frontend,/fetch\('\/api\/val\/board\/context\?limit=80'/);
-  assert.match(server,/app\.get\('\/api\/val\/board\/context'/);
-  assert.match(server,/valBoardPackets\.boardContext\(\{limit,observerName\}\)/);
-  assert.match(server,/reviewsByObserver:\{\}/);
+  assert.match(routes,/app\.get\('\/api\/val\/board\/context'/);
+  assert.match(routes,/service\.boardContext\(\{limit:/);
   assert.match(frontend,/observerBoardConnectionsFromPackets/);
   assert.match(frontend,/observerBoardState\.livePackets/);
   assert.match(frontend,/observerBoardState\.sourceSummary/);
   assert.match(frontend,/observerBoardState\.reviewsByObserver/);
+  assert.match(frontend,/observerBoardState\.witnessingComplete/);
+  assert.match(frontend,/typeof observerBoardState\.witnessingComplete === 'boolean'/);
   assert.match(frontend,/function observerLiveReviews/);
   assert.match(frontend,/function observerMeaningfulLiveReviews/);
   assert.match(frontend,/function observerReviewEvidenceLine/);

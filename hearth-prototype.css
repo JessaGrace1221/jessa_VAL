@@ -1496,19 +1496,23 @@ button,a{font:inherit}
   box-shadow:0 28px 80px rgba(9,5,4,.42),inset 0 1px 0 rgba(255,249,239,.3);
 }
 .return-button{
-  position:sticky;
-  top:10px;
-  float:right;
-  z-index:3;
+  position:fixed;
+  top:clamp(18px,3vh,30px);
+  right:clamp(18px,3vw,38px);
+  z-index:5200;
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  min-height:34px;
   border:1px solid rgba(58,33,27,.13);
   border-radius:8px;
-  background:rgba(255,249,239,.42);
+  background:rgba(255,255,252,.68);
   color:rgba(58,33,27,.82);
-  padding:8px 13px;
-  margin:-8px 0 8px 14px;
-  font-size:.72rem;
-  font-weight:560;
-  letter-spacing:.02em;
+  padding:0;
+  margin:0;
+  font:400 1.35rem/1 var(--body);
+  letter-spacing:0;
   box-shadow:0 8px 20px rgba(58,33,27,.07);
 }
 .return-button:hover{background:rgba(255,249,239,.36);color:var(--mahogany-deep)}
@@ -9598,6 +9602,33 @@ button.timeline-overview-receipt:focus-visible{
   padding:6px 10px;
   font:850 .68rem/1.1 var(--body);
 }
+
+.project-manager-primary-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:14px;
+}
+.project-manager-primary-actions button{
+  min-height:32px;
+  border:1px solid rgba(64,86,61,.18);
+  border-radius:8px;
+  background:rgba(255,255,252,.74);
+  color:rgba(28,36,27,.88);
+  padding:0 12px;
+  font:560 .68rem/1 var(--body);
+  box-shadow:none;
+}
+.project-manager-primary-actions button:first-child{
+  border-color:rgba(64,86,61,.24);
+  background:rgba(69,86,61,.9);
+  color:rgba(255,255,252,.96);
+}
+.project-manager-primary-actions button:hover,
+.project-manager-primary-actions button:focus-visible{
+  border-color:rgba(64,86,61,.32);
+  outline:none;
+}
 .project-manager-hero-actions button:hover,
 .project-manager-hero-actions button:focus-visible,
 .project-pin-form button:hover,
@@ -9745,6 +9776,57 @@ button.timeline-overview-receipt:focus-visible{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
+}
+.project-manager-exec-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+.project-manager-exec-grid article{
+  display:grid;
+  align-content:start;
+  gap:8px;
+  min-height:142px;
+  padding:18px;
+  border:1px solid rgba(79,48,38,.1);
+  border-radius:8px;
+  background:rgba(255,255,252,.72);
+}
+.project-manager-exec-grid article > span{
+  color:rgba(73,87,63,.72);
+  font:560 .62rem/1 var(--body);
+  text-transform:uppercase;
+}
+.project-manager-exec-grid article > strong{
+  color:rgba(34,31,29,.92);
+  font:560 1rem/1.3 var(--body);
+}
+.project-manager-exec-grid article > p{
+  margin:0;
+  color:rgba(45,42,39,.72);
+  font-size:.76rem;
+  line-height:1.45;
+}
+.project-manager-exec-grid ul{
+  display:grid;
+  gap:7px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+.project-manager-exec-grid li{
+  border:1px solid rgba(79,48,38,.08);
+  border-radius:7px;
+  background:rgba(255,255,252,.58);
+  color:rgba(45,27,22,.72);
+  padding:8px 9px;
+  font-size:.73rem;
+  line-height:1.34;
+}
+@media (max-width:980px){
+  .project-manager-exec-grid{
+    grid-template-columns:1fr;
+  }
 }
 .project-manager-operating-system{
   display:grid;
@@ -10171,6 +10253,17 @@ button.timeline-overview-receipt:focus-visible{
 }
 .project-graph-grid p{
   overflow-wrap:anywhere;
+}
+.project-graph-grid article>button{
+  justify-self:start;
+  min-height:30px;
+  margin-top:3px;
+  padding:5px 9px;
+  border:1px solid rgba(76,98,70,.18);
+  border-radius:6px;
+  background:rgba(255,255,255,.5);
+  color:rgba(52,72,49,.88);
+  font:500 .72rem/1.2 var(--body);
 }
 .project-review-panel{
   display:grid;
@@ -12145,9 +12238,11 @@ button.timeline-overview-receipt:focus-visible{
   overflow-y:auto;
 }
 .close-calendar-button{
-  position:absolute;
+  position:sticky;
   top:16px;
-  right:16px;
+  right:0;
+  justify-self:end;
+  z-index:6;
   display:grid;
   place-items:center;
   width:30px;
@@ -16152,6 +16247,22 @@ button.timeline-overview-receipt:focus-visible{
   gap:18px;
   padding:0 50px 52px;
 }
+.drawer-tray.project-open .project-detail.project-index-open .project-manager-dossier,
+.drawer-tray.project-open .project-detail:not(.project-profile-open) .project-manager-dossier{
+  display:none!important;
+}
+.drawer-tray.project-open .project-detail.project-profile-open :is(
+  .project-index-source,
+  .project-suggestions,
+  .project-create-toggle,
+  .project-create-form,
+  .project-rolodex
+){
+  display:none!important;
+}
+.drawer-tray.project-open .project-detail.project-profile-open .project-manager-dossier{
+  display:block!important;
+}
 .drawer-tray.project-open .project-index-source,
 .drawer-tray.project-open .project-create-toggle{
   justify-self:start;
@@ -16195,6 +16306,11 @@ button.timeline-overview-receipt:focus-visible{
 .drawer-tray.project-open .project-manager-grid article,
 .drawer-tray.project-open .project-manager-columns article{
   padding:22px;
+}
+.drawer-tray.project-open .project-show-index{
+  border-color:rgba(24,24,27,.08)!important;
+  background:rgba(255,255,255,.7)!important;
+  color:rgba(18,24,19,.78)!important;
 }
 
 /* Stewardship: quiet relationship index and memo cards. */

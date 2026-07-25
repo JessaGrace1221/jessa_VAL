@@ -118,7 +118,7 @@
 
   <section class="desk-workspace" id="desk-workspace" aria-label="Home workspace" aria-hidden="true">
     <div class="workspace-panel">
-      <button class="return-button" type="button" aria-label="Close card and return to the desk">Close card</button>
+      <button class="return-button" type="button" aria-label="Close this function">×</button>
       <p class="workspace-kicker">Home</p>
       <h2>No Home card is open.</h2>
       <p class="workspace-meaning">
@@ -697,7 +697,7 @@
                 <h4 id="correspondence-rules-title">Saved Executive Inbox Rules</h4>
                 <p>Active behavior VAL can apply when a future conversation matches the rule scope.</p>
               </div>
-              <button type="button" data-correspondence-rules-close aria-label="Close saved rules">Close</button>
+              <button type="button" data-correspondence-rules-close aria-label="Close saved rules">×</button>
             </div>
             <div class="correspondence-rules-list" data-correspondence-rules-list></div>
           </div>
@@ -710,7 +710,7 @@
                 <h4 id="correspondence-rule-composer-title">Create a Rule</h4>
                 <p>Tell VAL what should happen when future email matches this kind of situation. Nothing runs without the existing review boundaries.</p>
               </div>
-              <button type="button" data-correspondence-rule-composer-close aria-label="Close rule creator">Close</button>
+              <button type="button" data-correspondence-rule-composer-close aria-label="Close rule creator">×</button>
             </div>
             <div class="correspondence-rule-composer-grid">
               <label>
@@ -742,7 +742,7 @@
                 <h4 id="correspondence-attachment-title" data-correspondence-attachment-title>Email attachment</h4>
                 <p data-correspondence-attachment-meta>Read-only source view. Nothing is sent, downloaded, moved, or changed.</p>
               </div>
-              <button type="button" data-correspondence-attachment-close aria-label="Close attachment viewer">Close</button>
+              <button type="button" data-correspondence-attachment-close aria-label="Close attachment viewer">×</button>
             </div>
             <div class="correspondence-attachment-view" data-correspondence-attachment-view>
               <p>Select an attachment from the thread.</p>
@@ -895,7 +895,7 @@
             <p class="correspondence-writing-rule-note">VAL applies these rules only when preparing private Executive Inbox reply drafts or discussing the selected email thread. They are saved rules, so you can view them again here or under View rules.</p>
             <div class="correspondence-writing-rule-actions">
               <button type="button" data-correspondence-action="save_draft_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Save Tone Rules</button>
-              <button type="button" data-correspondence-writing-rules-close>Close</button>
+              <button type="button" data-correspondence-writing-rules-close aria-label="Close writing rules">×</button>
             </div>
           </div>
         </section>

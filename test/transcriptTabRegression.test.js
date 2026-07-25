@@ -201,7 +201,7 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.match(hearthJs,/function timelineSourceReceipt/);
   assert.match(hearthJs,/function renderTimelineTranscriptSourceSections/);
   assert.match(hearthJs,/function renderTimelineActionIndex/);
-  assert.match(hearthJs,/data-transcript-task-create/);
+  assert.doesNotMatch(hearthJs,/data-transcript-task-create/);
   assert.match(hearthJs,/async function openTranscriptActionItemCowork/);
   assert.match(hearthJs,/entrypointId:'transcript\.action_item'/);
   assert.doesNotMatch(hearthJs,/timelineTranscriptAction/);

@@ -93,6 +93,7 @@ function initCoworkChatbarFocus(){
 const relationshipDrawerLink = document.querySelector('.relationship-drawer-link');
 const closeRelationshipDetail = document.querySelector('.close-relationship-detail');
 const projectDrawerLink = document.querySelector('.project-drawer-link');
+const projectDetail = document.querySelector('#project-detail');
 const closeProjectDetail = document.querySelector('.close-project-detail');
 const timelineDrawerLink = document.querySelector('.timeline-drawer-link');
 const closeTimelineDetail = document.querySelector('.close-timeline-detail');
@@ -251,8 +252,9 @@ const teachPen = document.querySelector('.teach-pen');
 const linkedinWidget = document.querySelector('.linkedin-widget');
 const linkedinReadyCount = document.querySelector('[data-linkedin-ready-count]');
 const prototypeParams = new URLSearchParams(location.search);
+const isLocalPrototypeHost = /^(?:localhost|127\.0\.0\.1)$/.test(location.hostname || '');
 const mockScrapers = prototypeParams.has('mockScrapers');
-const mockBriefing = prototypeParams.has('mockBriefing');
+const mockBriefing = isLocalPrototypeHost && prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
 const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
 const VAL_GHL_WIDGET_LOADER_SRC = 'https://widgets.leadconnectorhq.com/loader.js';
@@ -687,80 +689,25 @@ function observeHearthClickContracts(){
   observer.observe(document.body, {childList:true, subtree:true});
 }
 
-const linkedinVisibilityItems = [
-  {
-    contact: 'Michele',
-    postPreview: 'Shared a reflection on sustaining creative momentum without overextending.',
-    whyItMatters: 'This is a natural support moment tied to the chapter feedback relationship.',
-    draftComment: 'This is such a clear framing of momentum as something protected, not forced. I especially appreciate the part about staying close to the work without letting it consume the whole day.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Aric',
-    postPreview: 'Posted about turning early ideas into visible traction before the strategy is perfect.',
-    whyItMatters: 'A thoughtful comment reinforces the partnership lane without creating a new ask.',
-    draftComment: 'This is exactly the kind of early visible momentum that helps people believe in a direction before every detail is settled. Strong signal here.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Allen',
-    postPreview: 'Shared assessment notes about founder clarity and operational follow-through.',
-    whyItMatters: 'This connects to the assessment notes already waiting in Velocity.',
-    draftComment: 'The distinction between clarity and follow-through is so useful. The best systems make the next right action easier to see and easier to take.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Lindsey',
-    postPreview: 'Posted a client success story that fits the current relationship-support circle.',
-    whyItMatters: 'Supporting wins keeps the relationship warm without asking for anything.',
-    draftComment: 'Love seeing this result. The care in the work really comes through here, and it is so good to see that effort becoming visible.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Greg',
-    postPreview: 'Shared a short note about proposal clarity and decision timing.',
-    whyItMatters: 'A light public comment can support the relationship while the proposal stays private.',
-    draftComment: 'This is a helpful reminder that clear timing often matters as much as clear language. The decision gets easier when the next step is explicit.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Priya',
-    postPreview: 'Posted about community health partnerships and practical implementation.',
-    whyItMatters: 'This supports the HealthBridge context without opening a direct follow-up thread.',
-    draftComment: 'This is such a grounded view of partnership. The practical implementation lens is what makes the idea feel real.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'D3Day',
-    postPreview: 'Announced a programming update that could use a warm visibility lift.',
-    whyItMatters: 'This supports current project visibility while keeping publishing manual.',
-    draftComment: 'This is exciting to see coming together. The programming update makes the event feel even more concrete and useful.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  }
-];
+let linkedinVisibilityItems = [];
+let linkedinVisibilityLoaded = false;
+let linkedinVisibilityRequest = null;
 
 const meetingPrep = {
   lens: 'Meeting Prep',
-  title: 'Acme proposal review is already prepared.',
-  meaning: 'This conversation is the one moment today where preparation can protect your judgment.',
-  understanding: [
-    'VAL reviewed the Acme relationship history and current proposal context.',
-    'Outscraper signals are queued for company and web context.',
-    'Apollo research is queued for people and role context.'
-  ],
-  recommendation: 'I would scan the decision points, review the open concern, and then walk into the meeting with the proposal language already in front of you.',
-  actions: ['Open meeting prep', 'Open Acme in CRM', 'Run Apollo refresh', 'Run Outscraper refresh'],
+  title: 'Choose a live calendar event.',
+  meaning: 'Meeting Prep uses the selected event, its attendees, and attached VAL context.',
+  understanding: [],
+  recommendation: 'Open a calendar event before asking VAL to prepare it.',
+  actions: ['Open calendar'],
   event: {
-    id: 'hearth-acme-proposal-review',
-    title: 'Acme proposal review',
-    startTime: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-    source: 'hearth_prototype',
-    attendees: [
-      {name: 'Greg', email: 'greg@example.com'},
-      {name: 'Jessa', email: 'jessa@example.com'}
-    ],
-    description: 'Review proposal language, CRM context, Apollo research, and Outscraper signals before the Acme conversation.'
+    id: '',
+    title: 'Choose a calendar event',
+    startTime: '',
+    endTime: '',
+    source: '',
+    attendees: [],
+    description: ''
   }
 };
 
@@ -771,24 +718,26 @@ const observerBoardState = {
     next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
-    {name: 'Executive Inbox', truth: 'No important human should be accidentally neglected.', evidence: 'Communication attention, inbox trust risk, neglected humans.', stance: 'What communication deserves executive attention?', currentlySeeing:'A few threads may require judgment before speed.', watching:'Replies, drafts, silence, and anything that could make a person feel dropped.', evidenceItems:['8 conversations','4 waiting replies','2 prepared drafts'], concern:'A meaningful person may be waiting while lower-value noise feels louder.', explore:'Who needs judgment before another message is sent?', packetFrom:'Relationship', incomingObservation:'Trust risk is rising in two quiet threads.'},
-    {name: 'Relationship', truth: 'Trust compounds over time.', evidence: 'Relationship movement, trust, warmth, repair, presence.', stance: 'Which relationships are quietly changing?', currentlySeeing:'Trust and warmth are moving in small ways.', watching:'Changes in tone, repair opportunities, mutual value, and signs of distance.', evidenceItems:['6 conversations','3 relationship shifts','2 open loops'], concern:'A relationship may be changing before it becomes obvious.', explore:'Which relationship needs presence before strategy?', packetFrom:'Executive Inbox', incomingObservation:'One conversation has been quiet long enough to matter.'},
-    {name: 'Project', truth: 'Work that creates long-term value should continue moving.', evidence: 'Project momentum, blockers, dependencies, long-term value.', stance: 'Which projects are gaining, slowing, or blocked?', currentlySeeing:'Several workstreams are present, but only some are moving.', watching:'Dependencies, approvals, unclear ownership, and project packets that need structure.', evidenceItems:['4 project packets','3 dependencies','1 blocker'], concern:'Visible activity may be hiding stalled value.', explore:'Which project needs a cleaner next move?', packetFrom:'Momentum', incomingObservation:'Movement increased where ownership was explicit.'},
-    {name: 'Capacity', truth: 'The user’s decision quality matters more than today’s output.', evidence: 'Decision quality, energy, cognitive load, recovery constraints.', stance: 'Can the user make wise decisions right now?', currentlySeeing:'Decision load is part of the work.', watching:'Tradeoffs, recovery needs, timing, and whether judgment is being forced too early.', evidenceItems:['5 context signals','2 calendar pressures','3 open decisions'], concern:'A correct answer may still be poorly timed.', explore:'What decision should wait until capacity returns?', packetFrom:'Calendar', incomingObservation:'The schedule is narrowing the available judgment window.'},
-    {name: 'Courage', truth: 'Anxiety can disguise itself as productivity.', evidence: 'Avoidance, difficult decisions, safe productivity hiding important work.', stance: 'What important thing appears to be avoided?', currentlySeeing:'One uncomfortable move may be disguised as optional.', watching:'Avoidance, over-preparation, softened language, and work that feels safe but secondary.', evidenceItems:['3 delayed decisions','2 softened drafts','1 avoided ask'], concern:'Comfort may be protecting the wrong thing.', explore:'What needs to be said plainly?', packetFrom:'Meaning', incomingObservation:'The same avoidance pattern appeared across three projects.'},
-    {name: 'Delight', truth: 'Joy and connection are not distractions from effectiveness.', evidence: 'Joy, play, relief, family, grounding, connection.', stance: 'What could restore energy or deepen connection?', currentlySeeing:'Joy and grounding are active.', watching:'Small moments that restore energy, curiosity, and connection.', evidenceItems:['5 conversations','2 calendar events','3 recent interactions'], concern:'Joy and connection are beginning to disappear from your workday.', explore:'What could restore energy without reducing effectiveness?', packetFrom:'Meaning', incomingObservation:'This pattern has appeared across three projects.'},
-    {name: 'Opportunity', truth: 'Possibility can emerge quietly before it becomes obvious.', evidence: 'Emerging opportunity, revenue, partnership, timing windows.', stance: 'What opportunity is emerging?', currentlySeeing:'A few small openings may be becoming real.', watching:'Timing windows, partner interest, repeated signals, and dormant paths gaining energy.', evidenceItems:['4 external signals','2 partner mentions','1 timing window'], concern:'An opportunity may pass if it waits until it feels obvious.', explore:'Which opening deserves a lightweight test?', packetFrom:'Executive Inbox', incomingObservation:'Two replies point toward the same possible opening.'},
-    {name: 'Momentum', truth: 'Motion is not the same as momentum.', evidence: 'Meaningful movement versus activity.', stance: 'Where is real momentum increasing or slowing?', currentlySeeing:'Movement is uneven across the field.', watching:'Where work compounds, where it churns, and where perfect is delaying useful.', evidenceItems:['6 movement signals','3 stalled loops','2 approvals ready'], concern:'Activity may be mistaken for progress.', explore:'What would create real movement now?', packetFrom:'Project', incomingObservation:'One project moved when the next action became smaller.'},
-    {name: 'Meaning', truth: 'Memory stores. Meaning connects.', evidence: 'Themes, values, remembered lessons, emerging story.', stance: 'What does today’s situation remind us about becoming?', currentlySeeing:'A theme is repeating beneath the tasks.', watching:'Patterns, values, old lessons, and the larger story beneath operational details.', evidenceItems:['7 remembered themes','3 project echoes','2 relationship patterns'], concern:'The useful meaning may be missed if everything is treated as logistics.', explore:'What is this really about?', packetFrom:'Witnessing', incomingObservation:'The user has named this pattern before.'},
-    {name: 'Synchronicity', truth: 'Repeated arrivals deserve attention before they become certainty.', evidence: 'Repeated names, timing clusters, phrase echoes, unexpected overlaps, emotional convergence.', stance: 'What keeps arriving together?', currentlySeeing:'A pattern is appearing across separate contexts.', watching:'Repeated names, timing clusters, phrase echoes, emotional signals, and unrelated events that point toward the same theme.', evidenceItems:['3 repeated themes','2 unrelated sources','1 timing cluster'], concern:'A meaningful pattern may disappear if treated as coincidence too early.', explore:'What is repeating enough to deserve attention?', packetFrom:'Meaning', incomingObservation:'Separate signals are beginning to point toward the same relationship theme.', perspective:'Tracks convergence without overclaiming. Protects mystery, requires evidence, and never calls something fate.'},
-    {name: 'Commitment', truth: 'Tasks are software. Commitments are promises.', evidence: 'Promises, follow-ups, overdue commitments, trust obligations.', stance: 'What promises has this person made?', currentlySeeing:'Several promises are active in the system.', watching:'Follow-through, overdue loops, trust obligations, and promises hidden inside casual language.', evidenceItems:['5 commitments','3 follow-ups','2 aging loops'], concern:'A promise may be treated like an optional task.', explore:'Which promise protects trust if honored now?', packetFrom:'Executive Inbox', incomingObservation:'A waiting reply contains an implied promise.'},
-    {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?', currentlySeeing:'Time is shaping what is wise.', watching:'Preparation windows, recovery space, meeting load, and whether the day can hold the work.', evidenceItems:['4 calendar events','2 prep windows','1 capacity constraint'], concern:'The schedule may be asking for more judgment than the day can hold.', explore:'What should be moved, protected, or prepared?', packetFrom:'Capacity', incomingObservation:'Decision quality drops if this stays compressed.'},
-    {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?', currentlySeeing:'External context may affect judgment.', watching:'Location, physical conditions, travel, interruptions, and environmental friction.', evidenceItems:['3 context signals','2 location factors','1 external constraint'], concern:'The body may be absorbing context the plan has ignored.', explore:'What environmental friction should VAL account for?', packetFrom:'Capacity', incomingObservation:'Recovery context matters before the next hard call.'},
-    {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?', currentlySeeing:'The user’s own words are present as grounding context.', watching:'Stated values, operating preferences, boundaries, fears, desires, and self-knowledge.', evidenceItems:['9 witnessing notes','5 stated values','4 operating preferences'], concern:'A recommendation may drift if it forgets what the user already revealed.', explore:'What should VAL remember before advising?', packetFrom:'Meaning', incomingObservation:'A current pattern matches onboarding context.'}
+    {name: 'Executive Inbox', truth: 'No important human should be accidentally neglected.', evidence: 'Communication attention, inbox trust risk, neglected humans.', stance: 'What communication deserves executive attention?'},
+    {name: 'Relationship', truth: 'Trust compounds over time.', evidence: 'Relationship movement, trust, warmth, repair, presence.', stance: 'Which relationships are quietly changing?'},
+    {name: 'Project', truth: 'Work that creates long-term value should continue moving.', evidence: 'Project momentum, blockers, dependencies, long-term value.', stance: 'Which projects are gaining, slowing, or blocked?'},
+    {name: 'Capacity', truth: 'The user’s decision quality matters more than today’s output.', evidence: 'Decision quality, energy, cognitive load, recovery constraints.', stance: 'Can the user make wise decisions right now?'},
+    {name: 'Courage', truth: 'Anxiety can disguise itself as productivity.', evidence: 'Avoidance, difficult decisions, safe productivity hiding important work.', stance: 'What important thing appears to be avoided?'},
+    {name: 'Delight', truth: 'Joy and connection are not distractions from effectiveness.', evidence: 'Joy, play, relief, family, grounding, connection.', stance: 'What could restore energy or deepen connection?'},
+    {name: 'Opportunity', truth: 'Possibility can emerge quietly before it becomes obvious.', evidence: 'Emerging opportunity, revenue, partnership, timing windows.', stance: 'What opportunity is emerging?'},
+    {name: 'Momentum', truth: 'Motion is not the same as momentum.', evidence: 'Meaningful movement versus activity.', stance: 'Where is real momentum increasing or slowing?'},
+    {name: 'Meaning', truth: 'Memory stores. Meaning connects.', evidence: 'Themes, values, remembered lessons, emerging story.', stance: 'What does today’s situation remind us about becoming?'},
+    {name: 'Synchronicity', truth: 'Repeated arrivals deserve attention before they become certainty.', evidence: 'Repeated names, timing clusters, phrase echoes, unexpected overlaps, emotional convergence.', stance: 'What keeps arriving together?', perspective:'Tracks convergence without overclaiming. Protects mystery, requires evidence, and never calls something fate.'},
+    {name: 'Commitment', truth: 'Tasks are software. Commitments are promises.', evidence: 'Promises, follow-ups, overdue commitments, trust obligations.', stance: 'What promises has this person made?'},
+    {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?'},
+    {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?'},
+    {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?'}
   ],
   reviewsByObserver: {},
   livePackets: [],
   livePacketCount: 0,
+  witnessingComplete: null,
+  witnessingSessionId: '',
   sourceSummary: null,
   sources: []
 };
@@ -1018,6 +967,10 @@ async function loadLiveObserverBoardContext(){
     if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
     observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
     observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
+    observerBoardState.witnessingComplete = typeof result?.witnessingComplete === 'boolean'
+      ? result.witnessingComplete
+      : observerBoardState.witnessingComplete;
+    observerBoardState.witnessingSessionId = String(result?.witnessingSessionId || observerBoardState.witnessingSessionId || '');
     observerBoardState.sourceSummary = result?.sourceSummary || null;
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
     observerBoardState.reviewsByObserver = result?.reviewsByObserver && typeof result.reviewsByObserver === 'object' ? result.reviewsByObserver : {};
@@ -1551,7 +1504,7 @@ let relationshipIndexProfiles = {};
 let relationshipIndexNetworkCount = 0;
 let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
-let relationshipIndexSourceLabel = 'Local preview';
+let relationshipIndexSourceLabel = 'Checking live relationship context';
 let relationshipPersonPacketIndex = {};
 let relationshipPeopleToWatchExpanded = false;
 let stewardshipActiveView = 'suggested';
@@ -2973,7 +2926,7 @@ async function hydrateRelationshipIndex({force=false}={}){
       }
     })
     .catch((error) => {
-      relationshipIndexSourceLabel = 'Local preview';
+      relationshipIndexSourceLabel = 'Relationship index unavailable';
       updateRelationshipIndexSourceLabel();
       console.warn('[hearth] relationship index unavailable', error.message);
     })
@@ -3981,7 +3934,7 @@ function openRelationshipIndex(){
 
 function projectIndexItems(){
   const canonicalItems = Object.values(projectIndexProfiles);
-  return (projectIndexLoaded ? canonicalItems : Object.values(projectProfiles)).filter(projectIsDrawerAdmitted);
+  return (canUseApi ? canonicalItems : (projectIndexLoaded ? canonicalItems : Object.values(projectProfiles))).filter(projectIsDrawerAdmitted);
 }
 
 function updateProjectIndexSourceLabel(){
@@ -5286,25 +5239,35 @@ function renderProjectManagerProfile(project = {}){
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
   const details = normalizedProjectSourceDetails(project);
   const documents = projectListFromValue(project.documents || details.documents);
-  const prepared = packet.project_prepared_work_packets.map((item) => item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review');
+  const prepared = packet.project_prepared_work_packets
+    .map((item) => typeof item === 'string' ? item : (item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review'))
+    .filter(Boolean);
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks.map(projectGraphLinkText) : [];
   const projectSummary = needsOnboarding
     ? projectCleanText(project.desiredOutcome || project.outcome, 'Project details are blank until onboarding is complete.')
     : projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
   const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
-  const seasonLabel = needsOnboarding ? 'Blank until shaped' : (relationships.length ? 'Relationship attached' : 'Ready to shape');
   const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
-  const detailCards = [
-    projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
-    projectManagerDetailCard('prepared_work', 'Prepared work', prepared.length ? '<ul>' + projectManagerList(prepared.map((item)=>item.title || item.kindName || item.kind || item.what_val_prepared || item.summary || 'Prepared work waiting for review')) + '</ul>' : '<p>No prepared work is proposed yet. Choose the next reviewable artifact VAL should prepare.</p>'),
-    projectManagerDetailCard('documents_sources', 'Documents / sources', documents.concat(graph).length ? '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>' : '<p>No document evidence is linked yet. Link an existing receipt from Documents.</p>'),
-    projectManagerDetailCard('risk_blocker', 'Risk / blocker', projectManagerRiskCard(packet.project_risk_packet))
+  const peopleHtml = relationships.length
+    ? '<ul>' + projectManagerList(relationships) + '</ul>'
+    : '<p>No people are linked yet. VAL should not pretend a project has stakeholders until they are attached.</p>';
+  const evidenceItems = [
+    documents.length ? documents.length + ' document/source receipt' + (documents.length === 1 ? '' : 's') : '',
+    graph.length ? graph.length + ' evidence link' + (graph.length === 1 ? '' : 's') : '',
+    details.rawContext ? 'Raw project context attached' : '',
+    details.relationships ? 'Relationship context attached' : ''
   ].filter(Boolean);
+  const evidenceHtml = documents.concat(graph).length
+    ? '<ul>' + projectManagerList(documents.concat(graph), 'No source evidence linked yet.') + '</ul>'
+    : '<p>No inspectable source evidence is attached to this project yet.</p>';
+  const preparedHtml = prepared.length
+    ? '<ul>' + projectManagerList(prepared, 'No prepared work yet.') + '</ul>'
+    : '<p>No prepared work is waiting here. If VAL can draft from this packet, it should appear in Leverage.</p>';
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
-    ? 'Project manager view with ' + relationshipSubtitle + ' attached.'
-    : 'Project manager view. Add the people, outcome, and first next move VAL should coordinate.';
+    ? 'Project attached to ' + relationshipSubtitle + '.'
+    : 'Project dossier with source-backed next move, people, evidence, and prepared work.';
   projectManagerProfile.innerHTML = [
     '<section class="project-manager-hero" data-project-manager-family="' + escapeHtml(assignedProjectManager.family || 'white') + '" style="' + escapeHtml(projectManagerColorStyle(assignedProjectManager)) + '">',
       '<div class="project-mark" aria-hidden="true">' + escapeHtml(project.initials || initialsFromName(identity.canonical_name)) + '</div>',
@@ -5317,53 +5280,43 @@ function renderProjectManagerProfile(project = {}){
         '<p>' + escapeHtml(projectSummary) + '</p>',
         '<div class="project-manager-tags">',
           '<span>' + escapeHtml(statusLabel) + '</span>',
-          '<span>' + escapeHtml(seasonLabel) + '</span>',
+          '<span>' + escapeHtml(relationships.length ? relationships.length + ' people linked' : 'No people linked') + '</span>',
+          '<span>' + escapeHtml(evidenceItems.length ? evidenceItems[0] : 'Evidence needed') + '</span>',
           '<span>' + escapeHtml(sop.sop_name) + '</span>',
-          relationships.slice(0, 2).map((name) => '<span>' + escapeHtml(name) + '</span>').join(''),
         '</div>',
-        renderProjectPinControl(project),
+        '<div class="project-manager-primary-actions">',
+          '<button type="button" class="project-show-index" data-project-show-index aria-label="Return to all projects">← Projects</button>',
+          '<button type="button" data-project-cowork-field="project_overview">Chat w/ VAL about this project</button>',
+          '<button type="button" data-project-edit-open>Edit project</button>',
+          '<button type="button" data-project-pin-open>Put a pin in it</button>',
+          prepared.length ? '<button type="button" data-project-cowork-field="prepared_work">Review prepared work</button>' : '',
+          onboardingIncomplete ? '<button type="button" data-project-cowork-field="project_interview">Answer what is missing</button>' : '',
+        '</div>',
+        renderProjectEditForm(project),
+        projectPinComposerOpen ? [
+          '<form class="project-pin-form" data-project-pin-form>',
+            '<label><span>When should this return?</span><input type="datetime-local" name="pinUntil" value="' + escapeHtml(projectPinDefaultDatetime()) + '" required></label>',
+            '<label><span>What should come back?</span><input type="text" name="title" value="' + escapeHtml(projectPinPrompt(project)) + '" autocomplete="off" required></label>',
+            '<div><button type="submit">Pin it</button><button type="button" data-project-pin-cancel>Cancel</button></div>',
+          '</form>'
+        ].join('') : '',
+        projectEditStatus(project) ? '<p class="project-edit-status">' + escapeHtml(projectEditStatus(project)) + '</p>' : '',
+        projectPinStatus(project) ? '<p class="project-pin-status">' + escapeHtml(projectPinStatus(project)) + '</p>' : '',
       '</div>',
     '</section>',
-    renderProjectRoundTableFocus(overviewFocus),
-    onboardingIncomplete ? renderProjectOnboardingPanel(project, interview) : '',
-    renderProjectRoundTableOverview(packet, needsOnboarding),
-    '<section class="project-manager-operating-system" aria-label="Project operating system">',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
-        '<span>Operating System</span>',
-        '<strong>' + escapeHtml(sop.sop_name) + '</strong>',
-        '<p>' + escapeHtml(sop.fit_reason || sop.when_to_use) + '</p>',
-        sop.known_deviations?.length ? '<small>Deviations: ' + escapeHtml(sop.known_deviations.join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
-        '<span>Current Phase</span>',
-        '<strong>' + escapeHtml(sop.current_phase) + '</strong>',
-        '<p>' + escapeHtml(sop.phase_evidence || (sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
-        sop.phase_exit_condition || sop.next_phase_trigger ? '<small>' + escapeHtml([sop.phase_exit_condition ? 'Exit: ' + sop.phase_exit_condition : '', sop.next_phase_trigger ? 'Next: ' + sop.next_phase_trigger : ''].filter(Boolean).join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_interview">',
-        '<span>Project Interview</span>',
-        '<strong>' + escapeHtml(interview.missing_fields.length ? 'Needs ' + interview.missing_fields.join(', ').replace(/_/g, ' ') : 'Ready to manage') + '</strong>',
-        '<p>' + escapeHtml(interview.current_question) + '</p>',
-        projectCoworkChip(),
-      '</article>',
+    '<section class="project-manager-exec-grid" aria-label="Project executive brief">',
+      '<article><span>Next move</span><strong>' + escapeHtml(nextMove) + '</strong><p>' + escapeHtml(whyNext) + '</p></article>',
+      '<article><span>Why it matters</span><strong>' + escapeHtml(needsOnboarding ? 'Needs executive outcome' : (importance.strategic_importance || 'Strategic reason')) + '</strong><p>' + escapeHtml(needsOnboarding ? 'VAL needs the outcome before it can manage this cleanly.' : (importance.why_it_matters || judgment.why_it_matters || 'The project needs an explicit business reason before VAL raises it.')) + '</p></article>',
+      '<article><span>Risk / blocker</span>' + projectManagerRiskCard(packet.project_risk_packet) + '</article>',
     '</section>',
-    '<section class="project-manager-judgment" aria-label="Project Manager judgment">',
-      projectManagerCard('What this is', identity.canonical_name, projectSummary),
-      projectManagerCard('Why it matters', needsOnboarding ? 'Needs executive outcome' : (importance.strategic_importance || 'Needs strategic judgment'), needsOnboarding ? 'Blank until onboarding answers define the stakes.' : (importance.why_it_matters || 'Name the concrete consequence or opportunity before VAL treats this as strategic.'), [importance.why_now ? 'Why now: ' + importance.why_now : '', importance.evidence_summary ? 'Basis: ' + importance.evidence_summary : '', importance.confidence ? 'Confidence: ' + importance.confidence : ''].filter(Boolean).join(' | ')),
-      projectManagerCard('Next move', nextMove, whyNext, next.due_at ? 'Due: ' + next.due_at : ''),
+    '<section class="project-manager-exec-grid project-manager-exec-grid-wide" aria-label="Project source packets">',
+      '<article><span>People</span>' + peopleHtml + '</article>',
+      '<article><span>Evidence</span>' + evidenceHtml + '</article>',
+      '<article><span>Prepared work</span>' + preparedHtml + '</article>',
     '</section>',
-    '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
-      projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
-      projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerMilestoneList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
-      projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerMonitoringRuleList(packet.project_monitoring_packet) + '</ul>'),
-      projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerRelationshipNurtureList(packet.project_relationship_nurture_packet) + '</ul>'),
-    '</section>',
-    detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p>' + projectCoworkChip() + '</div>',
+      '<div><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p></div>',
+      '<div><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p></div>',
     '</section>'
   ].join('');
 }
@@ -7256,6 +7209,63 @@ function projectGraphLinkText(link = {}){
   return link.summary || link.sourceLabel || link.source_label || link.sourceId || link.source_id || 'Linked context';
 }
 
+function projectGraphLinkSourceType(link = {}){
+  return String(link.sourceType || link.source_type || link.type || '').trim().toLowerCase();
+}
+
+function projectGraphLinkSourceId(link = {}){
+  return String(link.sourceId || link.source_id || link.targetId || link.target_id || '').trim();
+}
+
+function projectGraphLinkCanOpen(link = {}){
+  const type = projectGraphLinkSourceType(link);
+  return Boolean(
+    link.href ||
+    link.url ||
+    link.sourceUrl ||
+    link.source_url ||
+    /relationship|person|contact|calendar|meeting|transcript|email|gmail|outlook/.test(type + ' ' + String(link.relationship || ''))
+  );
+}
+
+async function openProjectGraphLink(link = {}){
+  const href = String(link.href || link.url || link.sourceUrl || link.source_url || '').trim();
+  if(href){
+    window.open(href, '_blank', 'noopener');
+    return;
+  }
+  const type = projectGraphLinkSourceType(link);
+  const id = projectGraphLinkSourceId(link);
+  const relationship = String(link.relationship || '').toLowerCase();
+  if(/transcript/.test(type)){
+    restoreTimelineWindow();
+    await openTimelineTranscript(id);
+    return;
+  }
+  if(/relationship|person|contact/.test(type) || relationship === 'linked_to_project'){
+    restoreRelationshipWindow();
+    await hydrateRelationshipIndex();
+    const profile = relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id];
+    if(profile) renderRelationshipProfile(id, profile);
+    return;
+  }
+  if(/calendar|meeting/.test(type) || relationship === 'meeting_context_for_project'){
+    openCalendarPanel();
+    return;
+  }
+  if(/email|gmail|outlook/.test(type)){
+    restoreCorrespondenceWindow();
+    await hydrateCorrespondenceDrawer();
+    selectCorrespondenceForHomeSource({
+      id,
+      sourceId:id,
+      sourceType:type,
+      title:link.sourceLabel || link.source_label || projectGraphLinkText(link),
+      summary:link.summary || ''
+    });
+  }
+}
+
 function renderProjectGraphPanel(project = {}, links = null){
   if(!projectGraphPanel || !projectGraphCount) return;
   const items = Array.isArray(links) ? links : (Array.isArray(project.graphLinks) ? project.graphLinks : []);
@@ -7277,6 +7287,13 @@ function renderProjectGraphPanel(project = {}, links = null){
     const detail = document.createElement('small');
     detail.textContent = [link.sourceLabel || link.source_label || link.sourceId || link.source_id, link.relationship].filter(Boolean).join(' · ');
     article.append(label, body, detail);
+    if(projectGraphLinkCanOpen(link)){
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.dataset.projectGraphLink = String(items.indexOf(link));
+      action.textContent = 'Open source';
+      article.appendChild(action);
+    }
     projectGraphPanel.appendChild(article);
   });
 }
@@ -8473,13 +8490,12 @@ async function hydrateProjectIndex(){
         renderProjectSuggestions();
         const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
         const selectedProject = selectedProjectId && projectIndexItems().find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
-        const firstProject = selectedProject || projectIndexItems()[0];
-        if(firstProject) renderProjectProfile(firstProject.id);
-        else renderProjectManagerEmptyState();
+        if(projectDetail?.classList.contains('project-profile-open') && selectedProject) renderProjectProfile(selectedProject.id);
+        else if(!projectIndexItems().length) renderProjectManagerEmptyState();
       }
     })
     .catch((error) => {
-      projectIndexSourceLabel = 'Local project preview';
+      projectIndexSourceLabel = 'Project index unavailable';
       updateProjectIndexSourceLabel();
       renderProjectManagerUnavailableState(error.message || 'Project index could not load.');
       console.warn('[hearth] project index unavailable', error.message);
@@ -8495,6 +8511,13 @@ function projectRolodexEmptyText(){
     return 'Canonical project index is connected. No project profiles have enough evidence to appear here yet.';
   }
   return 'No project dossiers are available in this view yet.';
+}
+
+function setProjectDetailMode(mode = 'index'){
+  if(!projectDetail) return;
+  const profileOpen = mode === 'profile';
+  projectDetail.classList.toggle('project-profile-open', profileOpen);
+  projectDetail.classList.toggle('project-index-open', !profileOpen);
 }
 
 function appendProjectRolodexRow(project){
@@ -8538,11 +8561,13 @@ function renderProjectRolodex(){
 }
 
 function renderProjectProfile(projectId = 'frisson'){
-  const project = projectIndexProfiles[projectId] || projectProfiles[projectId] || (!projectIndexLoaded ? projectProfiles.frisson : null);
+  const localFallback = canUseApi ? null : (projectProfiles[projectId] || (!projectIndexLoaded ? projectProfiles.frisson : null));
+  const project = projectIndexProfiles[projectId] || localFallback;
   if(!project){
     renderProjectManagerEmptyState();
     return;
   }
+  setProjectDetailMode('profile');
   activeProjectProfile = project;
   if(projectTitle) projectTitle.textContent = project.name || 'Projects';
   document.querySelectorAll('[data-project-field]').forEach((node) => {
@@ -8562,7 +8587,15 @@ function renderProjectProfile(projectId = 'frisson'){
 }
 
 function projectSource(project = activeProjectProfile, action = ''){
-  const item = project || activeProjectProfile || projectProfiles.frisson;
+  const item = project || activeProjectProfile || (canUseApi ? null : projectProfiles.frisson);
+  if(!item) return {
+    sourceId:'',
+    sourceType:'project_profile',
+    sourceLabel:'Project',
+    projectId:'',
+    projectName:'Project',
+    sourceItem:null
+  };
   const packet = projectManagerPacket(item);
   return {
     sourceId: item.projectId || item.id || item.profileKey || item.name || 'project',
@@ -8663,7 +8696,8 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
 }
 
 async function loadProjectDossier(projectId = 'frisson'){
-  const fallback = projectIndexProfiles[projectId] || projectProfiles[projectId] || projectProfiles.frisson;
+  const fallback = projectIndexProfiles[projectId] || (canUseApi ? null : (projectProfiles[projectId] || projectProfiles.frisson));
+  if(!fallback) return;
   renderProjectProfile(projectId);
   if(!canUseApi) return;
   const params = new URLSearchParams();
@@ -8682,7 +8716,9 @@ async function loadProjectDossier(projectId = 'frisson'){
 }
 
 async function openProjectProfileFromDrawer(projectId = '', node = null){
-  const project = projectIndexProfiles[projectId] || projectProfiles[projectId] || projectProfiles.frisson;
+  const project = projectIndexProfiles[projectId] || (canUseApi ? null : (projectProfiles[projectId] || projectProfiles.frisson));
+  if(!project) return;
+  setProjectDetailMode('profile');
   renderProjectProfile(projectId || project.id || 'frisson');
   const selectedSource = projectSource(project, 'project:open_profile');
   const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'project:open_profile', allowBlockedForInspection:true, source:selectedSource});
@@ -8733,15 +8769,13 @@ async function createProjectFromDrawer(event){
 
 function openProjectIndex(){
   if(projectDrawerLink?.disabled) return;
+  setProjectDetailMode('index');
   hydrateRelationshipIndex();
   hydrateProjectSuggestions();
   if(canUseApi && !projectIndexLoaded){
     const knownItems = Object.values(projectIndexProfiles).filter(projectIsDrawerAdmitted);
     if(knownItems.length){
       renderProjectRolodex();
-      const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
-      const selectedProject = selectedProjectId && knownItems.find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
-      renderProjectProfile((selectedProject || knownItems[0]).id);
     }else{
       renderProjectManagerLoadingState();
     }
@@ -8749,9 +8783,7 @@ function openProjectIndex(){
     return;
   }
   renderProjectRolodex();
-  const firstProject = projectIndexItems()[0];
-  if(firstProject) renderProjectProfile(activeProjectProfile?.id || firstProject.id);
-  else renderProjectManagerEmptyState();
+  if(!projectIndexItems().length) renderProjectManagerEmptyState();
   hydrateProjectIndex();
 }
 
@@ -9380,7 +9412,7 @@ function scrollLeadIntelligenceActionsIntoView(){
 }
 
 async function hydrateDocumentDrawer(){
-  currentDocumentItems = documentItemsWithProjectAssignments(localDocumentItems.concat(localStoredDocuments()));
+  currentDocumentItems = documentItemsWithProjectAssignments((canUseApi ? [] : localDocumentItems).concat(localStoredDocuments()));
   activeDocumentItem = currentDocumentItems[0] || null;
   renderDocumentFilters();
   renderDocumentBrief(activeDocumentItem);
@@ -9392,7 +9424,7 @@ async function hydrateDocumentDrawer(){
       getJson('/api/teach-val/onboarding').catch(() => ({}))
     ]);
     const byId = new Map();
-    (documents.documents || []).map(normalizeCanonicalDocumentItem).concat(documentItemsFromReady(ready)).concat(documentItemsFromOnboarding(onboarding)).concat(currentDocumentItems).forEach((item) => {
+    (documents.documents || []).map(normalizeCanonicalDocumentItem).concat(documentItemsFromReady(ready)).concat(documentItemsFromOnboarding(onboarding)).concat(localStoredDocuments()).forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentDocumentItems = documentItemsWithProjectAssignments(Array.from(byId.values()));
@@ -9401,7 +9433,11 @@ async function hydrateDocumentDrawer(){
     renderDocumentBrief(activeDocumentItem);
     renderProjectSuggestions();
   }catch(error){
-    if(documentStatus) documentStatus.textContent = 'Document services unavailable; showing local document previews only.';
+    currentDocumentItems = documentItemsWithProjectAssignments(localStoredDocuments());
+    activeDocumentItem = currentDocumentItems[0] || null;
+    renderDocumentFilters();
+    renderDocumentBrief(activeDocumentItem);
+    if(documentStatus) documentStatus.textContent = 'Document services are unavailable. No demo documents are being shown.';
   }
 }
 
@@ -11553,7 +11589,7 @@ function scrollCommitmentActionsIntoView(){
 }
 
 async function hydrateCommitmentDrawer(){
-  currentCommitmentItems = localCommitmentItems.slice();
+  currentCommitmentItems = canUseApi ? [] : localCommitmentItems.slice();
   activeCommitmentItem = currentCommitmentItems[0] || null;
   updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
   renderCommitmentBrief(activeCommitmentItem);
@@ -11565,11 +11601,13 @@ async function hydrateCommitmentDrawer(){
       activeCommitmentItem = currentCommitmentItems[0] || null;
       updateCommitmentSummary(result.summary || {});
       renderCommitmentBrief(activeCommitmentItem);
-    }else{
-      updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
-    }
+    }else updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
   }catch(error){
-    if(commitmentStatus) commitmentStatus.textContent = 'Commitments API unavailable; showing local preview only.';
+    currentCommitmentItems = [];
+    activeCommitmentItem = null;
+    updateCommitmentSummary(commitmentSummaryFromItems([]));
+    renderCommitmentBrief(null);
+    if(commitmentStatus) commitmentStatus.textContent = 'Commitments could not load. No demo commitments are being shown.';
   }
 }
 
@@ -12577,35 +12615,30 @@ function relationshipContextActions(actions = [], profile = activeRelationshipPr
 }
 
 function updateWorkspaceReturnButton(){
+  returnButton.textContent = '×';
   if(workspaceReturnTarget === 'relationship'){
     const label = relationshipBackLabel();
-    returnButton.textContent = label;
     returnButton.setAttribute('aria-label', label + ' relationship brief');
     return;
   }
   if(workspaceReturnTarget === 'project'){
     const label = 'Back to ' + (activeProjectCoworkTarget?.projectName || activeProjectProfile?.name || 'project');
-    returnButton.textContent = label;
     returnButton.setAttribute('aria-label', label + ' project brief');
     return;
   }
   if(workspaceReturnTarget === 'timeline'){
-    returnButton.textContent = 'Back to Transcripts';
     returnButton.setAttribute('aria-label', 'Back to Transcripts drawer');
     return;
   }
   if(workspaceReturnTarget === 'correspondence'){
-    returnButton.textContent = 'Back to Executive Inbox';
     returnButton.setAttribute('aria-label', 'Back to Executive Inbox drawer');
     return;
   }
   if(workspaceReturnTarget === 'val'){
-    returnButton.textContent = 'Back to VAL';
     returnButton.setAttribute('aria-label', 'Back to VAL onboarding drawer');
     return;
   }
-  returnButton.textContent = 'Close card';
-  returnButton.setAttribute('aria-label', 'Close card and return to the desk');
+  returnButton.setAttribute('aria-label', 'Close this function');
 }
 
 function showRelationshipReceipt({title, meaning, understanding = [], recommendation, actions = []}){
@@ -14121,10 +14154,9 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
       return [
         '<section class="timeline-transcript-section timeline-source-receipt" data-transcript-section="' + sectionName + '">',
         '<h4>' + escapeHtml(section.heading || (actionSection ? 'Action Items' : 'Key Points')) + '</h4>',
-        lines.length ? '<div class="timeline-source-lines">' + lines.map((line, index) => [
+        lines.length ? '<div class="timeline-source-lines">' + lines.map((line) => [
           '<div>',
           '<p>' + escapeHtml(line) + '</p>',
-          actionSection ? '<button type="button" class="timeline-task-create" data-transcript-task-create="' + escapeHtml(transcript.id || '') + '" data-transcript-task-index="' + index + '">Create task</button>' : '',
           '</div>'
         ].join('')).join('') : '<pre>' + escapeHtml(section.raw || '') + '</pre>',
         '</section>'
@@ -18279,7 +18311,36 @@ function preparedArtifactHomeCopy(item){
 }
 
 function updateLinkedInWidget(){
-  if(linkedinReadyCount) linkedinReadyCount.textContent = String(linkedinVisibilityItems.length);
+  if(linkedinReadyCount) linkedinReadyCount.textContent = linkedinVisibilityLoaded ? String(linkedinVisibilityItems.length) : '—';
+}
+
+async function hydrateLinkedInVisibility({force = false} = {}){
+  if(!canUseApi){
+    linkedinVisibilityItems = [];
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    return linkedinVisibilityItems;
+  }
+  if(linkedinVisibilityRequest && !force) return linkedinVisibilityRequest;
+  linkedinVisibilityRequest = getJson('/api/val/linkedin/visibility', {
+    cache:'no-store',
+    timeoutMs:5000,
+    timeoutMessage:'Live LinkedIn relationship context is still loading.'
+  }).then((data) => {
+    linkedinVisibilityItems = Array.isArray(data?.items) ? data.items : [];
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    return linkedinVisibilityItems;
+  }).catch((error) => {
+    linkedinVisibilityItems = [];
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    console.warn('[hearth] LinkedIn visibility context unavailable', error.message);
+    return linkedinVisibilityItems;
+  }).finally(() => {
+    linkedinVisibilityRequest = null;
+  });
+  return linkedinVisibilityRequest;
 }
 
 function setLinkedInVisibilityPage(page = 'posts'){
@@ -18311,20 +18372,22 @@ function renderLinkedInEngagementList(){
           '<p>VAL prepared support, not publishing. Copy only what still feels true.</p>',
         '</div>',
         '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
-        linkedinVisibilityItems.map((item, index) => (
+        linkedinVisibilityItems.length ? linkedinVisibilityItems.map((item, index) => (
           '<article class="linkedin-engagement-item">' +
             '<div class="linkedin-engagement-head">' +
               '<span class="linkedin-logo small" aria-hidden="true">in</span>' +
               '<div><span>Support signal</span><strong>' + escapeHtml(item.contact) + '</strong><small>' + escapeHtml(item.whyItMatters) + '</small></div>' +
             '</div>' +
             '<div class="linkedin-post-preview"><span>Recent post</span><p>' + escapeHtml(item.postPreview) + '</p></div>' +
-            '<blockquote><span>Draft comment</span>' + escapeHtml(item.draftComment) + '</blockquote>' +
+            (item.draftComment
+              ? '<blockquote><span>Draft comment</span>' + escapeHtml(item.draftComment) + '</blockquote>'
+              : '<p class="linkedin-live-receipt">No comment has been prepared from this source yet.</p>') +
             '<div class="linkedin-engagement-actions">' +
-              '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' +
-              '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' +
+              (item.draftComment ? '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' : '') +
+              (item.postUrl ? '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' : '') +
             '</div>' +
           '</article>'
-        )).join(''),
+        )).join('') : '<article class="linkedin-engagement-empty"><strong>No live LinkedIn receipts are attached yet.</strong><p>VAL will show a post or prepared comment only when it comes from a connected relationship source. No demo posts are being substituted.</p></article>',
         '</div>',
       '</section>',
       '<section class="linkedin-page linkedin-instructions-page" data-linkedin-panel="instructions" aria-label="LinkedIn instructions" hidden>',
@@ -18349,14 +18412,15 @@ function renderLinkedInEngagementList(){
   setLinkedInVisibilityPage('posts');
 }
 
-function openLinkedInEngagementWorkspace(){
+async function openLinkedInEngagementWorkspace(){
+  const loading = !linkedinVisibilityLoaded;
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
-    title: linkedinVisibilityItems.length + ' visibility drafts are ready.',
-    meaning: 'VAL prepared comments and visibility opportunities, but LinkedIn publishing remains manual to protect the account and the relationship.',
+    title: loading ? 'Checking live LinkedIn context.' : linkedinVisibilityItems.length + ' live visibility item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' ready.',
+    meaning: loading ? 'VAL is reading saved relationship post receipts and prepared LinkedIn drafts.' : 'Every item shown here comes from live relationship or draft context. Publishing remains manual.',
     understanding: [
-      linkedinVisibilityItems.length + ' support opportunities are prepared.',
-      'Each draft includes the relationship signal, post context, and a comment to copy manually.',
+      loading ? 'No placeholder posts are being shown while live context loads.' : linkedinVisibilityItems.length + ' source-backed LinkedIn item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' available.',
+      'A draft appears only when VAL has actually prepared one from that source.',
       'VAL never auto-publishes posts, comments, reactions, or DMs.'
     ],
     recommendation: 'Review for voice, copy only what feels true, then open LinkedIn manually.',
@@ -18370,6 +18434,10 @@ function openLinkedInEngagementWorkspace(){
   deskWorkspace.classList.add('linkedin-visibility-mode');
   renderLinkedInEngagementList();
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
+  if(loading){
+    await hydrateLinkedInVisibility();
+    return openLinkedInEngagementWorkspace();
+  }
 }
 
 function primaryPortalPhrase(item){
@@ -21448,6 +21516,14 @@ let valFirstLookDelivery = null;
 function valFirstLookComplete(run = valFirstLookRun){
   return String(run?.status || '').toLowerCase() === 'complete';
 }
+
+function valFirstLookCandidateIsResolved(candidate = {}){
+  return ['delivered', 'excluded'].includes(String(candidate.decision || '').toLowerCase());
+}
+
+function valFirstLookCandidateReviewIsComplete(candidates = valFirstLookCandidates){
+  return !candidates.length || candidates.every(valFirstLookCandidateIsResolved);
+}
 function valFirstLookDate(value){
   const date = new Date(value || '');
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
@@ -21655,7 +21731,7 @@ function renderValFirstLookConversation({state = 'ready', error = '', run = valF
       '<div class="val-conversation-actions">',
         complete
           ? (valFirstLookCandidates.length
-            ? (valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue Witnessing</button>':'')
+            ? (valFirstLookCandidateReviewIsComplete()?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue Witnessing</button>':'')
             : '<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookBuildMap">Build the proposed map</button>')
           : state === 'preparing'
             ? ''
@@ -21903,8 +21979,8 @@ function openValFirstLookDestination(destination=''){
   if(destination==='projects')projectDrawerLink?.click();
 }
 async function continueValWitnessingAfterFirstLook(){
-  if(valFirstLookCandidates.length&&!valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')){
-    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Review and deliver the proposed relationship and project packets before moving past the First Look.'});
+  if(!valFirstLookCandidateReviewIsComplete()){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Review every proposed item and deliver the ones you kept before moving past the First Look.'});
     return;
   }
   await openValWitnessingQuestion('key_relationships');
@@ -23840,7 +23916,7 @@ async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
     }
   });
   if(!preflight.ok) return;
-  openLinkedInEngagementWorkspace();
+  await openLinkedInEngagementWorkspace();
 }
 
 function homeWorkspacePayload(action){
@@ -25801,6 +25877,57 @@ function renderHomeCoworkMessage(role = 'val', text = '', options = {}){
   return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + copyButton + '</article>';
 }
 
+async function copyTextToClipboard(value = ''){
+  const text = String(value || '');
+  if(!text) return false;
+  if(navigator.clipboard?.writeText){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(error){
+      // Fall through to the selection-based browser fallback.
+    }
+  }
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  helper.style.pointerEvents = 'none';
+  document.body.appendChild(helper);
+  helper.select();
+  helper.setSelectionRange(0, helper.value.length);
+  let copied = false;
+  try{
+    copied = document.execCommand('copy');
+  }catch(error){
+    copied = false;
+  }
+  helper.remove();
+  return copied;
+}
+
+async function copyCoworkOutput(copyOutputButton){
+  if(!copyOutputButton) return false;
+  const value = copyOutputButton.dataset.coworkCopyOutput || '';
+  const copied = await copyTextToClipboard(value);
+  copyOutputButton.classList.toggle('is-copied', copied);
+  copyOutputButton.setAttribute('aria-label', copied ? 'Copied' : 'Copy unavailable');
+  if(!copied){
+    const textarea = homeCoworkTextareaNode() || deskWorkspace.querySelector('[data-workspace-input="cowork"]');
+    if(textarea){
+      textarea.value = value;
+      textarea.focus();
+      textarea.select();
+    }
+  }
+  window.setTimeout(() => {
+    copyOutputButton.classList.remove('is-copied');
+    copyOutputButton.setAttribute('aria-label', 'Copy VAL response');
+  }, 1200);
+  return copied;
+}
+
 function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
   const response = homeCoworkResponseNode();
   if(!response) return null;
@@ -26679,17 +26806,32 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
       ].join('\n');
     }
     if(asksRelationshipRepair && observer.name === 'Relationship'){
-      const named = effectiveMeaningfulReviews
+      const repairReviews = effectiveMeaningfulReviews.filter((review) => /\b(frustrat|tension|repair|distance|cold|upset|conflict|strained|trust risk|tone (?:shift|change)|relationship strain)\b/i.test([
+        review.lensFinding,
+        review.observation,
+        review.evidence?.quoteOrSummary
+      ].filter(Boolean).join(' ')));
+      const repairNamed = repairReviews
         .flatMap((review) => safeArray(review.people).map((person) => ({person,review})))
         .filter((item) => item.person)
         .slice(0, 5);
+      if(!repairReviews.length){
+        return [
+          'I do not have source-backed evidence that a specific relationship needs repair right now.',
+          '',
+          'I do have relationship signals, but a reply, mention, or open loop is not automatically a repair issue:',
+          ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+          '',
+          'I will name a repair only when the source shows tension, distance, frustration, a trust change, or another concrete relational shift.'
+        ].join('\n');
+      }
       return [
-        named.length
-          ? 'I would start with ' + named.map((item) => item.person).join(', ') + '.'
-          : 'I do not have a named relationship attached yet, so I will stay at the source level.',
+        repairNamed.length
+          ? 'I would look first at ' + repairNamed.map((item) => item.person).join(', ') + '.'
+          : 'I found a repair signal, but the packet does not attach a reliable person name yet.',
         '',
-        'What I actually observed:',
-        ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+        'Why I am saying that:',
+        ...repairReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
         safeArray(context.sourceTrail).length ? '\nEvidence I can point to:\n' + safeArray(context.sourceTrail).slice(0, 4).map((item) => '- ' + (item.line || item.title || item.summary || 'Supporting source')).join('\n') : '',
         '',
         observer.explore ? 'What I would explore next: ' + observer.explore : 'What I would explore next: what changed, who is affected, and what protects trust without adding noise.'
@@ -26762,7 +26904,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
   const currentlySeeing = isChief
     ? 'The full Board is active.'
-    : meaningfulReviews[0]?.observation || (hasLiveReviews ? observer.currentlySeeing : 'No source-backed signal is loaded for this lens yet.');
+    : meaningfulReviews[0]?.lensFinding || meaningfulReviews[0]?.observation || (hasLiveReviews ? 'This Observer checked the live packets and has no meaningful signal to claim yet.' : 'No source-backed signal is loaded for this lens yet.');
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
     : meaningfulReviews.length ? 'Live packets through this lens, with no claim made unless evidence is attached.' : hasLiveReviews ? observer.watching || observer.evidence : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
@@ -26775,7 +26917,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
         : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
-    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : hasLiveReviews ? observer.concern || observer.truth : 'No concern should be claimed until a source-backed review exists.';
+    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].lensFinding || meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : hasLiveReviews ? 'No concern rose from the packets this Observer checked.' : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
     : hasLiveReviews ? observer.explore || observer.stance : 'Open or ingest a source packet, then ask this Observer what it noticed.';
@@ -27005,6 +27147,7 @@ function observerBoardHasWitnessingContext(options = {}){
   const query = window.location.search || '';
   if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=false\b|board-before-witnessing)/i.test(query)) return false;
   if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=true\b|board-after-witnessing|stress=orbs|stress-orbs|hundreds-of-orbs)/i.test(query)) return true;
+  if(typeof observerBoardState.witnessingComplete === 'boolean') return observerBoardState.witnessingComplete;
   try{
     return localStorage.getItem('valWitnessingComplete') === 'true';
   }catch(error){
@@ -28150,13 +28293,6 @@ drawerTray.addEventListener('click', async (event) => {
     if(transcriptAction.dataset.transcriptAction === 'create_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'), 'create');
     return;
   }
-  const transcriptTaskCreate = event.target.closest('[data-transcript-task-create]');
-  if(transcriptTaskCreate){
-    event.preventDefault();
-    event.stopPropagation();
-    await openTranscriptActionItemCowork(transcriptTaskCreate.dataset.transcriptTaskCreate, Number(transcriptTaskCreate.dataset.transcriptTaskIndex));
-    return;
-  }
   const transcriptFocus = event.target.closest('[data-transcript-focus]');
   if(transcriptFocus){
     event.preventDefault();
@@ -28230,6 +28366,15 @@ drawerTray.addEventListener('click', async (event) => {
     if(!preflight.ok) return;
     const update = findProjectSourceReviewUpdate(projectReviewButton.dataset.projectReviewUpdate);
     await openProjectSourceReview(update);
+    return;
+  }
+  const projectGraphLinkButton = event.target.closest('[data-project-graph-link]');
+  if(projectGraphLinkButton){
+    event.preventDefault();
+    event.stopPropagation();
+    const links = Array.isArray(activeProjectProfile?.graphLinks) ? activeProjectProfile.graphLinks : [];
+    const link = links[Number(projectGraphLinkButton.dataset.projectGraphLink)] || null;
+    if(link) await openProjectGraphLink(link);
     return;
   }
   const correspondenceFilter = event.target.closest('[data-correspondence-filter]');
@@ -28564,6 +28709,15 @@ drawerTray.addEventListener('click', async (event) => {
     await openProjectProfileFromDrawer(projectProfileButton.dataset.projectOpenProfile, projectProfileButton);
     return;
   }
+  const projectShowIndexButton = event.target.closest('[data-project-show-index]');
+  if(projectShowIndexButton){
+    event.preventDefault();
+    event.stopPropagation();
+    setProjectDetailMode('index');
+    renderProjectRolodex();
+    projectRolodex?.querySelector('[data-project-open-profile]')?.focus({preventScroll:true});
+    return;
+  }
   const projectRelationshipChoice = event.target.closest('[data-project-relationship-choice]');
   if(projectRelationshipChoice){
     event.preventDefault();
@@ -28746,26 +28900,7 @@ workspaceInputPanel.addEventListener('click', (event) => {
   if(copyOutputButton){
     event.preventDefault();
     event.stopPropagation();
-    const value = copyOutputButton.dataset.coworkCopyOutput || '';
-    const done = () => {
-      copyOutputButton.classList.add('is-copied');
-      copyOutputButton.setAttribute('aria-label', 'Copied');
-      window.setTimeout(() => {
-        copyOutputButton.classList.remove('is-copied');
-        copyOutputButton.setAttribute('aria-label', 'Copy VAL response');
-      }, 1200);
-    };
-    if(navigator.clipboard?.writeText){
-      navigator.clipboard.writeText(value).then(done).catch(() => {
-        const textarea = homeCoworkTextareaNode() || workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-        if(textarea) textarea.value = value;
-        done();
-      });
-    }else{
-      const textarea = homeCoworkTextareaNode() || workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-      if(textarea) textarea.value = value;
-      done();
-    }
+    void copyCoworkOutput(copyOutputButton);
     return;
   }
   const observerDismissButton = event.target.closest('[data-observer-card-dismiss]');
@@ -29066,6 +29201,13 @@ scraperPreviewList?.addEventListener('click', (event) => {
 });
 
 deskWorkspace.addEventListener('click', async (event) => {
+  const copyOutputButton = event.target.closest('[data-cowork-copy-output]');
+  if(copyOutputButton){
+    event.preventDefault();
+    event.stopPropagation();
+    await copyCoworkOutput(copyOutputButton);
+    return;
+  }
   const linkedinPageButton = event.target.closest('[data-linkedin-page]');
   if(linkedinPageButton){
     event.preventDefault();

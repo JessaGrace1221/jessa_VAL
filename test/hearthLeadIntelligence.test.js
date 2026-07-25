@@ -326,7 +326,7 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthJs, /project_manager_judgment_packet/);
   assert.match(hearthJs, /project_next_action_packet/);
   assert.match(hearthJs, /project_prepared_work_packets/);
-  assert.match(hearthJs, /projectIndexItems\(\)\{[\s\S]{0,160}\.filter\(projectIsDrawerAdmitted\)/);
+  assert.match(hearthJs, /function projectIndexItems\(\)\{[\s\S]{0,260}canUseApi[\s\S]{0,160}\.filter\(projectIsDrawerAdmitted\)/);
   assert.match(hearthJs, /function projectSource/);
   assert.match(hearthJs, /function projectProfileReceiptPacket/);
   assert.match(hearthJs, /function ensureProjectProfileReceipt/);
@@ -447,6 +447,33 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthCss, /\.project-actions/);
 });
 
+test('Project Managers opens as an executive brief with one primary Co-Work action', () => {
+  const renderStart = hearthJs.indexOf('function renderProjectManagerProfile');
+  const renderEnd = hearthJs.indexOf('function renderProjectManagerEmptyState', renderStart);
+  const renderProfile = hearthJs.slice(renderStart, renderEnd);
+  assert.match(renderProfile, /Chat w\/ VAL about this project/);
+  assert.match(renderProfile, /project-manager-exec-grid/);
+  assert.match(renderProfile, />Next move</);
+  assert.match(renderProfile, />Why it matters</);
+  assert.match(renderProfile, />Risk \/ blocker</);
+  assert.match(renderProfile, />People</);
+  assert.match(renderProfile, />Evidence</);
+  assert.match(renderProfile, />Prepared work</);
+  assert.match(renderProfile, /data-project-edit-open/);
+  assert.match(renderProfile, /data-project-pin-open/);
+  assert.doesNotMatch(renderProfile, /projectCoworkChip\(\)/);
+  assert.doesNotMatch(renderProfile, /project-manager-operating-system/);
+});
+
+test('Project Managers opens as a list and shows only the selected project after a click', () => {
+  assert.match(hearthJs, /function setProjectDetailMode/);
+  assert.match(hearthJs, /projectDetail\.classList\.toggle\('project-profile-open', profileOpen\)/);
+  assert.match(hearthJs, /function openProjectIndex\(\)\{\s*if\(projectDrawerLink\?\.disabled\) return;\s*setProjectDetailMode\('index'\)/);
+  assert.match(hearthJs, /async function openProjectProfileFromDrawer[\s\S]{0,260}setProjectDetailMode\('profile'\)/);
+  assert.match(hearthJs, /data-project-show-index/);
+  assert.match(hearthCss, /\.project-detail\.project-profile-open :is\([\s\S]{0,220}\.project-rolodex/);
+});
+
 test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /app\.get\('\/api\/projects\/index'/);
   assert.match(server, /app\.get\('\/api\/projects\/dossier'/);
@@ -510,6 +537,16 @@ test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /queued project source for review/);
   assert.match(server, /No scraping, CRM update, contract parsing, task, relationship update, project judgment, message, or external action happened/);
   assert.match(server, /Calendar event linked to project locally and queued for project-source review/);
+});
+
+test('Transcript Action Items flow directly into Tasks without a duplicate create-task control', () => {
+  const sourceSection = hearthJs.slice(
+    hearthJs.indexOf('function renderTimelineTranscriptSourceSections'),
+    hearthJs.indexOf('function renderTimelineMeetingOverviewDraft')
+  );
+  assert.match(sourceSection, /data-transcript-section/);
+  assert.doesNotMatch(sourceSection, /Create task/);
+  assert.doesNotMatch(sourceSection, /data-transcript-task-create/);
 });
 
 test('Drawer buttons use distinct rose and green tones so retrieval choices stay legible', () => {
@@ -664,7 +701,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /function openTranscriptWorkingBriefCowork/);
   assert.match(hearthJs, /entrypointId:'transcript\.working_brief'/);
   assert.match(hearthJs, /data-transcript-action/);
-  assert.match(hearthJs, /data-transcript-task-create/);
+  assert.doesNotMatch(hearthJs, /data-transcript-task-create/);
   assert.match(hearthJs, /data-transcript-action-index/);
   assert.doesNotMatch(hearthJs, /data-transcript-chat/);
   assert.doesNotMatch(hearthJs, /timelineTranscriptAsk/);
@@ -1634,13 +1671,15 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.home-cowork-chatbar textarea/);
   assert.match(hearthCss, /\.home-cowork-context-gathering/);
   assert.match(hearthCss, /context-gathering-pulse/);
-  assert.match(hearthJs, /const linkedinVisibilityItems/);
+  assert.match(hearthJs, /let linkedinVisibilityItems = \[\]/);
+  assert.match(hearthJs, /\/api\/val\/linkedin\/visibility/);
+  assert.match(hearthJs, /No placeholder posts are being shown while live context loads/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
   assert.match(hearthJs, /openWorkspaceShell\('LinkedIn visibility workspace', \{returnTarget:'home'\}\)/);
   assert.match(hearthJs, /data-linkedin-copy/);
   assert.match(hearthJs, /data-linkedin-link/);
-  assert.match(hearthJs, /LinkedIn publishing remains manual to protect the account and the relationship/);
+  assert.match(hearthJs, /Every item shown here comes from live relationship or draft context\. Publishing remains manual\./);
   assert.match(hearthCss, /\.linkedin-widget/);
   assert.match(hearthCss, /\.linkedin-engagement-list/);
   assert.match(hearthCss, /\.linkedin-engagement-actions button,\n\.linkedin-engagement-actions a/);
@@ -2826,7 +2865,8 @@ test('Retired relationship dossier helpers remain available behind the V1 introd
   assert.match(hearthJs, /function relationshipBackLabel/);
   assert.match(hearthJs, /relationshipAllPeople/);
   assert.match(hearthJs, /updateWorkspaceReturnButton/);
-  assert.match(hearthJs, /returnButton\.textContent = label/);
+  assert.match(hearthJs, /returnButton\.textContent = '×'/);
+  assert.match(hearthJs, /returnButton\.setAttribute\('aria-label', label \+ ' relationship brief'\)/);
   assert.match(hearthJs, /openWorkspaceShell\('Stewardship move review', \{returnTarget:'relationship'\}\)/);
   assert.match(hearthJs, /Who needs this person/);
   assert.match(hearthJs, /Who this person needs/);
@@ -2860,7 +2900,7 @@ test('Retired relationship dossier helpers remain available behind the V1 introd
   assert.match(hearthJs, /Review what I taught VAL/);
   assert.match(hearthJs, /relationshipTeachCandidate/);
   assert.match(hearthJs, /Teaching is ready for review/);
-  assert.match(hearthCss, /\.return-button\{[\s\S]{0,80}position:sticky/);
+  assert.match(hearthCss, /\.return-button\{[\s\S]{0,80}position:fixed/);
   assert.match(hearthJs, /workflow:'relationship:teach_wisdom'/);
   assert.match(hearthJs, /relationshipFolderButtons\.forEach/);
   assert.match(hearthJs, /async function openRelationshipProfileFromFolder/);
