@@ -60,8 +60,19 @@ function qualityGate(record={}){
   };
 }
 function commitmentSentences(text=''){
-  const markers=/\b(i will|i'll|we will|we'll|you will|you'll|need to|needs to|going to|follow up|send|share|review|schedule|introduce|connect|prepare|draft|update|circle back|by monday|by tomorrow|next week|today|before)\b/i;
-  return sentences(text).filter(s=>markers.test(s)&&!/\b(maybe|might|could possibly|for example|nothing needs to happen|nothing need happen|no action needed|doesn't need follow up|does not need follow up)\b/i.test(s)).slice(0,12);
+  return sentences(text).filter(transcriptSentenceIsActionReady).slice(0,12);
+}
+function transcriptSentenceIsSmallTalk(text=''){
+  return /\b(laughter|haha|vacuum|litter box|screwdriver|marriage counselor|mother'?s day|shop vac|robot cat|pretty|good morning everybody|how is everyone doing|anything else anyone wants to bring up|bye\b)\b/i.test(String(text||''));
+}
+function transcriptSentenceIsActionReady(sentence=''){
+  const s=String(sentence||'');
+  if(!s||transcriptSentenceIsSmallTalk(s))return false;
+  if(/\b(maybe|might|could possibly|for example|nothing needs to happen|nothing need happen|no action needed|doesn't need follow up|does not need follow up|already did|already sent|completed|finished)\b/i.test(s))return false;
+  const hasCommitment=/\b(i will|i'll|we will|we'll|i can|we can|i need to|we need to|let me|i'm going to|we're going to|i'll send|i will send|please send|send me|can you|could you|make sure|i'll put|i will put|get with|let's)\b/i.test(s);
+  const hasAssignedAction=/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+to\s+(?:research|send|share|review|schedule|build|create|add|update|confirm|check|use|connect|set up|prepare|draft|finish|complete|deliver|forward|introduce|provide|resend|nudge|choose|hold off|onboard|test|fix|map|write|call|email|text|route|change|compare|report|compile|find)\b/.test(s);
+  const hasConcreteAction=/\b(research|send|share|review|schedule|build|create|add|update|confirm|check|use|connect|set up|prepare|draft|finish|complete|deliver|forward|introduce|provide|resend|nudge|choose|hold off|onboard|test|fix|map|write|call|email|text|route|change|compare|report)\b/i.test(s);
+  return (hasCommitment||hasAssignedAction)&&hasConcreteAction;
 }
 function evidenceExtractor(record={}){
   const text=transcriptText(record),id=record.id||record.transcriptId||record.transcript_id||'';
@@ -72,15 +83,23 @@ function commitmentExtractor(record={},evidenceRefs=[]){
   const id=record.id||record.transcriptId||record.transcript_id||'',text=transcriptText(record);
   return commitmentSentences(text).map((s,i)=>({
     id:`commitment_${i+1}`,
-    title:compactText(s,120),
+    title:commitmentTitleFromSentence(s),
     summary:compactText(s,360),
     source_quote:findQuote(text,s),
-    owner:/\byou will|you'll\b/i.test(s)?'other':(/\bi will|i'll|we will|we'll\b/i.test(s)?'user_or_team':'unknown'),
+    owner:/\byou will|you'll|can you|could you|please\b/i.test(s)?'other':(/\bi will|i'll|we will|we'll|i can|we can|let me|i'm going to|we're going to\b/i.test(s)?'user_or_team':'unknown'),
     due_hint:(s.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|before [^.]+)\b/i)||[])[0]||'',
     approval_policy:'approval_required',
-    confidence:0.72,
+    confidence:0.78,
     source_refs:[evidenceRefs.find(r=>r.quote_or_summary===s)||normalizeSourceRef({sourceType:'transcript',sourceId:id,quoteOrSummary:s,confidence:0.72})]
   }));
+}
+function commitmentTitleFromSentence(sentence=''){
+  const s=compactText(sentence,180)
+    .replace(/^(so|okay|all right|yeah|yes|then|and|but)[,.\s]+/i,'')
+    .replace(/\b(i will|i'll|we will|we'll|i can|we can|let me|i'm going to|we're going to)\b/i,'')
+    .replace(/\s+/g,' ')
+    .trim();
+  return compactText(s||sentence,120);
 }
 function taskContextBuilder(record={},commitments=[]){
   return commitments.map((c,i)=>({

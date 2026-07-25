@@ -886,11 +886,19 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceChooseRelationship/);
   assert.match(hearthJs, /const correspondenceProjectSelect/);
   assert.match(hearthJs, /function hydrateCorrespondenceDrawer/);
-  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?days=90&limit=150/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?limit=60/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?refresh=1&days=/);
   assert.doesNotMatch(hearthJs, /\/api\/val\/email\/review-drafts\?limit=20/);
   assert.doesNotMatch(hearthJs, /\/api\/email\/intelligence\?days=30&limit=75/);
   assert.match(hearthJs, /correspondenceItemsFromEmailIntelligence\(inbox\)/);
-  assert.match(hearthJs, /Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox/);
+  assert.match(hearthJs, /Opening saved Executive Inbox context\. Use Scan only when you want a fresh Gmail or Outlook pass/);
+  const hydrateCorrespondenceDrawer = hearthJs.slice(
+    hearthJs.indexOf('async function hydrateCorrespondenceDrawer'),
+    hearthJs.indexOf('async function scanCorrespondenceWindow')
+  );
+  assert.match(hydrateCorrespondenceDrawer, /void Promise\.all\(\[/);
+  assert.doesNotMatch(hydrateCorrespondenceDrawer, /await Promise\.all\(\[\s*hydrateRelationshipIndex/);
+  assert.match(hydrateCorrespondenceDrawer, /getJson\('\/api\/val\/executive-inbox\/queue\?limit=60'/);
   assert.match(hearthJs, /const actionable = \['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'\]/);
   assert.match(hearthJs, /\.concat\(result\.waitingOnResponse \|\| \[\]\)/);
   assert.match(hearthHtml, /data-correspondence-action="resolve_thread"/);
@@ -913,7 +921,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /data-correspondence-loading-veil/);
   assert.match(hearthJs, /function setCorrespondenceLoadingState/);
   assert.match(hearthJs, /correspondence-is-loading/);
-  assert.match(hearthJs, /Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox/);
+  assert.match(hearthJs, /No saved conversations currently cross the Executive Inbox judgment gate\. Use Scan to refresh Gmail or Outlook/);
   assert.match(hearthJs, /Scanned the last ' \+ scanDays \+ ' days\. No unresolved Gmail threads crossed the Executive Inbox judgment gate\./);
   assert.match(hearthJs, /const isDraftSend = action === 'send' && button\.closest\('\.correspondence-actions'\)/);
   assert.match(hearthJs, /No private draft is waiting for review/);
@@ -1614,7 +1622,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.workspace-input-tools/);
   assert.match(hearthCss, /\.observer-board-button/);
   assert.match(hearthCss, /\.observer-board-button img/);
-  assert.match(hearthCss, /observer-board-pulse/);
+  assert.match(hearthCss, /observer-board-glow/);
+  assert.match(hearthCss, /observer-board-flicker/);
   assert.match(hearthCss, /\.observer-board-mode \.workspace-panel/);
   assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode/);
   assert.match(hearthCss, /\.home-cowork-workspace/);
@@ -1790,7 +1799,7 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
 
   assert.match(listRoute, /Cache-Control','no-store, max-age=0/);
   assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
-  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'\} = \{\}\)/);
+  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default', timeoutMs = 0, timeoutMessage = ''\} = \{\}\)/);
   assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
   assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=50', \{cache: 'no-store'\}\)/);
   assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);

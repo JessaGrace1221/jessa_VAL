@@ -340,6 +340,29 @@ test('GHL voice and text turns enter the Board as their own packet sources inste
   assert.ok(textPacket.payloadJson.observerReviews.every(review=>review.evidence.sourceType==='ghl_text'));
 });
 
+test('Board packet people extraction ignores user and politeness filler words',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_people`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){}}
+  });
+  const packet=await service.recordSourceEvent('sms',{
+    id:'sms_michelle_intro',
+    title:'Michelle introduction',
+    summary:'Jessa asked: Please introduce VAL to Michelle after the GOALL dashboard discussion.',
+    sourceRefs:[{sourceType:'sms',sourceId:'sms_michelle_intro',quoteOrSummary:'Please introduce VAL to Michelle after the GOALL dashboard discussion.',confidence:0.9}]
+  });
+  const relationshipReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
+  assert.ok(relationshipReview.people.includes('Michelle'));
+  assert.equal(relationshipReview.people.includes('Please'),false);
+  assert.equal(relationshipReview.people.includes('Jessa'),false);
+});
+
 test('profile persistence paths emit Board packets when relationship/project truth changes',()=>{
   assert.match(server,/async function recordRelationshipProfileBoardPacket/);
   assert.match(server,/recordProfileEvent\(\{eventType,profile\}\)/);
@@ -365,6 +388,10 @@ test('Home chat, GHL text, and GHL voice routes record conversation turns for th
 
 test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/loadLiveObserverBoardContext/);
+  assert.match(frontend,/fetch\('\/api\/val\/board\/context\?limit=80'/);
+  assert.match(server,/app\.get\('\/api\/val\/board\/context'/);
+  assert.match(server,/valBoardPackets\.boardContext\(\{limit,observerName\}\)/);
+  assert.match(server,/reviewsByObserver:\{\}/);
   assert.match(frontend,/observerBoardConnectionsFromPackets/);
   assert.match(frontend,/observerBoardState\.livePackets/);
   assert.match(frontend,/observerBoardState\.sourceSummary/);

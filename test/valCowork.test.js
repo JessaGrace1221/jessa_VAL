@@ -313,7 +313,7 @@ test('Hearth exposes unresolved commitments with source and prepared-work contin
   assert.match(hearth,/getJson\('\/api\/val\/commitments\?limit=120&ownerType=user'/);
   assert.match(hearth,/Open your commitments/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
-  assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=5&includeSnoozed=true'/);
+  assert.match(hearth,/postJson\('\/api\/val\/ready-for-you\/build',\{limit:25\}/);
   assert.match(hearth,/function openTaskSourceTranscript/);
   assert.match(hearth,/function openTaskPreparedWork/);
   assert.match(hearth,/taskCompanionButton\?\.addEventListener\('click', openTaskWorkspace\)/);
@@ -326,7 +326,9 @@ test('Hearth opens Observer and Chief cards as resumable scoped Co-Work conversa
   assert.match(hearth,/data-observer-cowork="chief-of-staff"/);
   assert.match(hearth,/const preserveInitialContext = Boolean\(options\.initialMessage \|\| options\.contextPatch\?\.openingAnswer \|\| options\.contextPatch\?\.homeFullContext\)/);
   assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:!userAlreadyStarted && !preserveInitialContext,suppressMessage:true\}\)/);
-  assert.match(hearth,/observerButton\.dataset\.observerCowork/);
+  assert.match(hearth,/function handleObserverBoardNodeActivation/);
+  assert.match(hearth,/if\(node\.classList\.contains\('observer-node'\)\)\{\s*updateObserverSelectedCard\(observerId\);/);
+  assert.match(hearth,/void openObserverCowork\(observerId,node\.dataset\?\.observerRole \|\| 'observer'\)/);
 });
 
 test('Observer chat prioritizes live packet evidence over static card fallback',()=>{
@@ -1321,7 +1323,11 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
-  assert.match(hearth,/const selectedProject = selectedProjectId && projectIndexItems\(\)\.find/);
+  assert.match(hearth,/timeoutMessage:'Project Managers took too long to open the live index\.'/);
+  assert.match(hearth,/const knownItems = Object\.values\(projectIndexProfiles\)\.filter\(projectIsDrawerAdmitted\);/);
+  assert.doesNotMatch(hearth,/if\(canUseApi && !projectIndexLoaded\)\{[\s\S]{0,240}const knownItems = projectIndexItems\(\);/);
+  assert.match(hearth,/void hydrateProjectIndex\(\);/);
+  assert.match(hearth,/const selectedProject = selectedProjectId && knownItems\.find/);
 });
 
 test('Transcript canonical Co-Work bypasses the legacy freeform chat route',()=>{

@@ -8,6 +8,7 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const hearthPrototype=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 
 test('homepage cards expose a strict six-card intelligence contract',()=>{
   assert.match(server,/function dashboardNormalizeCardItem/);
@@ -143,14 +144,20 @@ test('Leverage prepared-work buttons persist edits and use approval gates',()=>{
 test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.match(server,/function buildDashboardIntelligence\(\{moves=\[\],profiles=\[\],onboarding,evidenceItems=\[\],drafts=\[\],readyForYouItems=\[\],freshTranscriptPacket=null\}=\{\}\)/);
   assert.match(server,/const readyQueueItems=dashboardNormalizeCardCollection\('ready_for_you',safeArray\(readyForYouItems\)\)/);
-  assert.match(server,/valReadyForYou\?\.buildQueue\?valReadyForYou\.buildQueue\(\{limit:5\}\)/);
+  assert.match(server,/valReadyForYou\?\.buildQueue\?valReadyForYou\.buildQueue\(\{limit:20\}\)/);
   assert.match(server,/readyForYouItems=safeArray\(readyForYouQueue\?\.preparedItems\)\.length/);
   assert.match(server,/safeArray\(readyForYouQueue\.prepared_items\)/);
   assert.match(server,/buildDashboardIntelligence\(\{moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket\}\)/);
+  assert.match(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\);/);
+  assert.doesNotMatch(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\)\.concat\(briefingItems\(briefing\.watching\)\);/);
 });
 
 test('Commitments drawer only labels concrete artifacts as prepared work',()=>{
   assert.match(hearthPrototype,/function taskWorkspaceAttachments/);
+  assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/build/);
+  assert.match(hearthPrototype,/preparedItems/);
+  assert.match(hearthPrototype,/prepared_items/);
+  assert.match(hearthPrototype,/allBuilt/);
   assert.match(hearthPrototype,/filter\(\(item\) => hasPreparedWorkPacketAndActionStatus\(item\) && Boolean\(leverageDraftFromWorkspace\(\{sourceItem:item\}\)\)\)/);
   assert.match(hearthPrototype,/kind:preparedArtifactKind\(item\) \|\| 'prepared_work'/);
   const renderSource = hearthPrototype.slice(
@@ -180,6 +187,18 @@ test('Home commitments only shows work that needs the user',()=>{
   assert.doesNotMatch(hearthPrototype,/\/api\/val\/commitments\?limit=200/);
 });
 
+test('Home commitment drafts attach only to the exact commitment, not the whole transcript',()=>{
+  const source = hearthPrototype.slice(
+    hearthPrototype.indexOf('function taskWorkspaceAttachments'),
+    hearthPrototype.indexOf('function taskWorkspaceDueLabel')
+  );
+  assert.match(source,/const directTaskIds = new Set/);
+  assert.match(source,/metadata\.commitmentId/);
+  assert.match(source,/sourceContext\.commitmentId/);
+  assert.doesNotMatch(source,/taskTranscriptId && ids\.includes/);
+  assert.doesNotMatch(source,/taskSourceId && ids\.includes/);
+});
+
 test('Alignment Done persists source commitments when available',()=>{
   assert.match(hearthPrototype,/function alignmentCompletionCommitmentId/);
   assert.match(hearthPrototype,/function alignmentCompletionChiefRecommendationId/);
@@ -197,8 +216,10 @@ test('Alignment Done persists source commitments when available',()=>{
 test('Home full context opens selected Observer Co-Work with Chief of Staff evidence',()=>{
   assert.match(hearthPrototype,/function homeBriefingEvidenceSources/);
   assert.match(hearthPrototype,/function homeChiefOfStaffSubject/);
-  assert.match(hearthPrototype,/I would keep ' \+ subject \+ ' in view today/);
-  assert.match(hearthPrototype,/selectedName \+ ' is watching '/);
+  assert.doesNotMatch(hearthPrototype,/I would keep ' \+ subject \+ ' in view today/);
+  assert.doesNotMatch(hearthPrototype,/selectedName \+ ' is watching '/);
+  assert.match(hearthPrototype,/selectedName \+ ' can show the source trail behind this read\.'/);
+  assert.match(hearthPrototype,/No single source-backed move has earned the room yet\./);
   assert.doesNotMatch(hearthPrototype,/has the source context behind/);
   assert.match(hearthPrototype,/function homeObserverProofReviews/);
   assert.match(hearthPrototype,/function homeObserverContextPatch/);
@@ -206,7 +227,8 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
   assert.match(hearthPrototype,/sourceTrail:evidenceSources\.map/);
   assert.match(hearthPrototype,/observerProofReviews:homeObserverProofReviews\(observer, 8\)\.map/);
   assert.match(hearthPrototype,/What ' \+ observerName \+ ' actually observed/);
-  assert.match(hearthPrototype,/function openHomeObserverFullContext/);
+  assert.match(hearthPrototype,/async function openHomeObserverFullContext/);
+  assert.match(hearthPrototype,/await Promise\.race\(\[\s*loadLiveObserverBoardContext\(\)/);
   assert.match(hearthPrototype,/openObserverCowork\(observerConversationId\(observer\.name\), 'observer'/);
   assert.match(hearthPrototype,/const preserveInitialContext = Boolean\(options\.initialMessage \|\| options\.contextPatch\?\.openingAnswer \|\| options\.contextPatch\?\.homeFullContext\)/);
   assert.match(hearthPrototype,/hydrateConversation:!userAlreadyStarted && !preserveInitialContext/);
@@ -256,7 +278,44 @@ test('Observer chats stay in scoped Co-Work instead of falling through to generi
   );
   assert.match(submitSource,/const observerScopedLane = entry\.entrypointId === 'observer\.discussion' \|\| entry\.entrypointId === 'board\.chief_of_staff'/);
   assert.match(submitSource,/observerCoworkCardAnswer\(input, entry\.context \|\| \{\}\)/);
+  assert.match(submitSource,/if\(observerScopedLane\)\{\s*const localAnswer = observerCoworkCardAnswer\(input, entry\.context \|\| \{\}\);/);
+  assert.match(submitSource,/if\(localAnswer\)\{\s*appendHomeCoworkMessage\('val', localAnswer\);/);
   assert.doesNotMatch(submitSource,/entry\.entrypointId === 'observer\.discussion' \|\| entry\.entrypointId === 'board\.chief_of_staff'\)\{\s*return false/);
+});
+
+test('Board of Observers opens before live packet hydration finishes',()=>{
+  const boardSource = hearthPrototype.slice(
+    hearthPrototype.indexOf('async function openObserverBoard'),
+    hearthPrototype.indexOf('function orientHomeCoworkFromInput')
+  );
+  assert.match(boardSource,/Promise\.race\(\[\s*liveContextPromise/);
+  assert.match(boardSource,/skipLiveLoad/);
+  assert.match(boardSource,/existingSelectedObserverId/);
+  assert.match(boardSource,/selectedObserverId:openCardObserverId \|\| selectedObserverId/);
+  assert.match(boardSource,/openObserverBoard\(\{\.\.\.options, selectedObserverId:openCardObserverId \|\| selectedObserverId, skipLiveLoad:true\}\)/);
+  assert.doesNotMatch(boardSource,/const chief = observerBoardState\.chiefOfStaff;\s*await loadLiveObserverBoardContext\(\);/);
+});
+
+test('Board Observer card interactions survive hydration and close only on outside clicks',()=>{
+  assert.match(hearthPrototype,/const existingSelectedObserverId = deskWorkspace\?\.classList\.contains\('observer-board-mode'\)/);
+  assert.match(hearthPrototype,/const selectedObserverId = requestedSelectedObserverId \|\| \(selectedObserverName \? observerConversationId\(selectedObserverName\) : ''\)/);
+  assert.match(hearthPrototype,/function handleObserverBoardNodeActivation/);
+  assert.match(hearthPrototype,/workspaceInputPanel\.querySelectorAll\('\.observer-node\[data-observer-cowork\],\.observer-chief-card\[data-observer-cowork\]'\)\.forEach/);
+  assert.match(hearthPrototype,/if\(selectedObserverId\)\{\s*requestAnimationFrame\(\(\) => updateObserverSelectedCard\(selectedObserverId\)\);/);
+  assert.match(hearthPrototype,/const openCardObserverId = workspaceInputPanel\?\.querySelector\?\.\('\.observer-node\.is-selected'\)\?\.dataset\?\.observerCowork \|\| ''/);
+  assert.match(hearthCss,/\.observer-graph-field\.observer-card-open \.observer-card-dismiss-surface\{\s*pointer-events:auto;/);
+  assert.match(hearthCss,/\.observer-signal-paths\{[\s\S]{0,220}pointer-events:none;/);
+  assert.match(hearthCss,/\.observer-live-packet\{[\s\S]{0,120}pointer-events:none;/);
+  const positionedNodeCss = hearthCss.slice(
+    hearthCss.indexOf('.observer-val-node,\n.observer-node'),
+    hearthCss.indexOf('.observer-val-node{')
+  );
+  const dismissSurfaceCss = hearthCss.slice(
+    hearthCss.indexOf('.observer-card-dismiss-surface{'),
+    hearthCss.indexOf('.observer-live-board.awaiting-witnessing')
+  );
+  assert.match(positionedNodeCss,/z-index:12;/);
+  assert.match(dismissSurfaceCss,/z-index:7;/);
 });
 
 test('Observer Co-Work UI opens with loaded evidence instead of backend disclaimers',()=>{

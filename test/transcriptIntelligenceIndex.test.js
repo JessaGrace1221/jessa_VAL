@@ -45,6 +45,23 @@ test('saves raw transcripts before legacy storage and stages tasks before promot
   assert.ok(stage>processStart&&promote>stage,'task must be staged before promotion');
 });
 
+test('transcript action item generation uses layered gates instead of snippet extraction',()=>{
+  assert.match(server,/Use this layered transcript process internally before producing JSON/);
+  assert.match(server,/function transcriptActionItemPassesGate/);
+  assert.match(server,/function normalizeTranscriptActionItems/);
+  assert.match(server,/function normalizeTranscriptDecisions/);
+  assert.match(server,/A transcript snippet is not an action item|Do not create tasks from jokes/);
+  const fallbackStart=server.indexOf('function fallbackTranscriptSummary');
+  const fallbackEnd=server.indexOf('async function processTranscriptPayload',fallbackStart);
+  const fallbackBody=server.slice(fallbackStart,fallbackEnd);
+  assert.match(fallbackBody,/extractFallbackTranscriptActionItems/);
+  assert.doesNotMatch(fallbackBody,/\\b\\(I\\|we\\)\\s\\+\\(will\\|need to\\|can\\|should\\)/);
+  const processStart=server.indexOf('async function processTranscriptPayload(payload)');
+  const processEnd=server.indexOf('function transcriptUiRecord',processStart);
+  const processBody=server.slice(processStart,processEnd);
+  assert.match(processBody,/parsed=normalizeTranscriptAnalysis\(parsed,transcript\)/);
+});
+
 test('requires evidence, confidence, review state, and action traceability',()=>{
   assert.match(server,/source_quote text not null/);
   assert.match(server,/match_confidence numeric not null/);

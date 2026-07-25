@@ -40,6 +40,54 @@ test('commitments come before contextual tasks',()=>{
   assert.ok(tasks[0].source_quote);
 });
 
+test('commitment extraction keeps real transcript commitments and rejects snippets',()=>{
+  const record={
+    id:'tr_layers',
+    rawText:[
+      'Mike: I will send Jessa the pared-down nurturing email list after the meeting.',
+      'Jessa: Let me research whether Apollo changed the API tier and I will let everybody know.',
+      'Mike: Maybe the top 50 sectors could expand later.',
+      'Jessa: [Laughter] I cannot believe the vacuum cleaner story.',
+      'Mike: I will try Chrome going forward and check the microphone permissions.'
+    ].join(' ')
+  };
+  const commitments=commitmentExtractor(record,[]);
+  const titles=commitments.map(c=>c.title).join(' | ');
+  assert.equal(commitments.length,3);
+  assert.match(titles,/nurturing email list/);
+  assert.match(titles,/Apollo/);
+  assert.match(titles,/Chrome/);
+  assert.doesNotMatch(titles,/top 50 sectors/);
+  assert.doesNotMatch(titles,/vacuum/);
+  assert.ok(commitments.every(c=>c.source_quote&&c.confidence>=0.78));
+});
+
+test('assigned transcript action items become commitments',()=>{
+  const record={
+    id:'tr_assigned_actions',
+    rawText:[
+      'Action Items',
+      'Jessa to finish the GOALL dashboard handoff with Mike.',
+      'Mike to send the final pipeline projection numbers.',
+      '',
+      'Key Points',
+      'The dashboard needs to be iframe-ready.'
+    ].join('\n')
+  };
+  const commitments=commitmentExtractor(record,[]);
+  const titles=commitments.map(c=>c.title).join(' | ');
+  assert.equal(commitments.length,2);
+  assert.match(titles,/GOALL dashboard handoff/);
+  assert.match(titles,/pipeline projection numbers/);
+  assert.ok(commitments.every(c=>c.source_quote&&c.confidence>=0.78));
+});
+
+test('server transcript fallback gate accepts assigned Action Item lines',()=>{
+  assert.match(server,/const hasAssignedActor=/);
+  assert.match(server,/\\s\+to\\s\+\(\?:send\|share\|schedule\|review\|prepare/);
+  assert.match(server,/return \(hasActor\|\|hasAssignedActor\)&&hasAction;/);
+});
+
 test('capacity and tone context is non-clinical',()=>{
   const context=capacityAndTone({rawText:'I am exhausted and it is hard to focus, but I am excited about the breakthrough.'});
   assert.equal(context.label,'capacity_and_tone_context');
@@ -163,9 +211,14 @@ test('transcript follow-up candidates feed Ready For You only as review work',as
   });
   const built=await ready.buildQueue();
   assert.equal(built.state,'has_items');
-  assert.equal(built.items[0].metadataJson.source,'transcript_intelligence');
-  assert.equal(built.items[0].metadataJson.noTaskCreated,true);
-  assert.equal(built.items[0].metadataJson.noMemoryCommitted,true);
+  const followUp=built.allBuilt.find(item=>item.metadataJson.source==='transcript_intelligence'&&item.category==='transcript_follow_up');
+  assert.ok(followUp);
+  assert.equal(followUp.metadataJson.noTaskCreated,true);
+  assert.equal(followUp.metadataJson.noMemoryCommitted,true);
+  const prepared=built.allBuilt.find(item=>item.metadataJson.source==='transcript_intelligence'&&item.category==='prepared_work');
+  assert.ok(prepared);
+  assert.equal(prepared.metadataJson.noExternalAction,true);
+  assert.ok(prepared.metadataJson.preparedArtifactKind);
 });
 
 test('transcript intake extracts authenticated executive instructions but not attendee approval',async()=>{

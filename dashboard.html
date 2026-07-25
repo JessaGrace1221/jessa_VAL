@@ -4092,7 +4092,7 @@ var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_SIDEBAR_CALENDAR = '/api/calendar/sidebar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
-var keyProviderLabels={openai:'OpenAI',anthropic:'Anthropic / Claude',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',apollo:'Apollo',rocketreach:'RocketReach'};
+var keyProviderLabels={openai:'OpenAI',anthropic:'Anthropic / Claude',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',apollo:'Apollo',rocketreach:'RocketReach',krisp:'Krisp MCP'};
 var keyProviderFields={
   openai:[['apiKey','API key','password'],['preferredModel','Preferred model','text']],
   anthropic:[['apiKey','API key','password']],
@@ -4101,13 +4101,14 @@ var keyProviderFields={
   google_oauth:[],
   outscraper:[['apiKey','API key','password']],
   apollo:[['apiKey','API key','password']],
-  rocketreach:[['apiKey','API key','password']]
+  rocketreach:[['apiKey','API key','password']],
+  krisp:[['accessToken','Krisp MCP access token','password']]
 };
 var integrationCredentials=[];
 var integrationOauth={google:false,microsoft:false};
 var tenantApiKeyProviders=[];
 var tenantApiKeyStatus={encryptionConfigured:false,platformFallbackAllowed:false,demoMode:false};
-function credType(name){return name.replace('apiKey','api_key').replace('preferredModel','preferred_model').replace('locationId','location_id').replace('mcpUrl','mcp_url');}
+function credType(name){return name.replace('apiKey','api_key').replace('preferredModel','preferred_model').replace('locationId','location_id').replace('mcpUrl','mcp_url').replace('accessToken','access_token');}
 function credFor(provider,type){return (integrationCredentials||[]).find(function(c){return c.provider===provider&&c.credentialType===type;});}
 function providerStatus(provider){
   if(provider==='google_oauth') return integrationOauth.google?'Connected':'Missing';
@@ -10105,7 +10106,7 @@ function gchatSend(){
   apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:gchatHistory,dashboard:dashData||{},conversationId:gchatConversationId,channel:'general_chat'})})
   .then(function(d){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
-    var text=((d.message&&d.message.content)||d.content||d.text||'').trim();
+    var text=valEndpointSpeak(d,'');
     if(d.conversationId)gchatConversationId=d.conversationId;
     gchatHistory.push({role:'assistant',content:text});
     gchatBubble(text,false);
@@ -10222,7 +10223,7 @@ function generateSocialPost(){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({messages:[{role:'user',content:sys+'\n\n'+prompt}],dashboard:dashData||{}})
   }).then(function(d){
-    var text=((d.message&&d.message.content)||d.content||'').trim();
+    var text=valEndpointSpeak(d,'');
     var wrap=document.getElementById('socialDraftWrap');
     var draftEl=document.getElementById('socialDraft');
     if(wrap)wrap.style.display='block';

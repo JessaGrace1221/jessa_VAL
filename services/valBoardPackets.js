@@ -290,6 +290,7 @@ function packetSearchText(packet={}){
 
 const STOP_NAME_WORDS = new Set([
   'VAL','CRM','GHL','HTML','CSS','SMS','API','MCP','URL','PDF','CEO','COO',
+  'Jessa','Grace','Please','Thanks','Thank','Sorry','Good','Morning','Afternoon','Evening',
   'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday',
   'Action','Items','Key','Points','Source','Transcript','Meeting','Calendar',
   'Project','Relationship','Capacity','Courage','Delight','Meaning','Momentum',

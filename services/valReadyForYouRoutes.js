@@ -1,7 +1,7 @@
 const {createValReadyForYouService} = require('./valReadyForYou');
 const {createValExecutionReceiptService} = require('./valExecutionReceipts');
 
-function parseLimit(value,defaultValue=3,max=5){
+function parseLimit(value,defaultValue=3,max=25){
   return Math.max(1,Math.min(Number(value)||defaultValue,max));
 }
 
@@ -14,7 +14,7 @@ function registerValReadyForYouRoutes(app,deps={}){
   app.get('/api/val/ready-for-you',async(req,res)=>{
     try{
       await waitForDb();
-      const result=await service.listItems({limit:parseLimit(req.query.limit,3,5),status:req.query.status||'',includeSnoozed:req.query.includeSnoozed==='true'});
+      const result=await service.listItems({limit:parseLimit(req.query.limit,20,25),status:req.query.status||'',includeSnoozed:req.query.includeSnoozed==='true'});
       res.json(result);
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
@@ -22,7 +22,7 @@ function registerValReadyForYouRoutes(app,deps={}){
   app.get('/api/val/ready-for-you/with-receipts',async(req,res)=>{
     try{
       await waitForDb();
-      const result=await service.listItemsWithReceipts({limit:parseLimit(req.query.limit,3,5),status:req.query.status||'',includeSnoozed:req.query.includeSnoozed==='true',receiptService});
+      const result=await service.listItemsWithReceipts({limit:parseLimit(req.query.limit,20,25),status:req.query.status||'',includeSnoozed:req.query.includeSnoozed==='true',receiptService});
       res.json(result);
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
@@ -30,7 +30,7 @@ function registerValReadyForYouRoutes(app,deps={}){
   app.post('/api/val/ready-for-you/build',async(req,res)=>{
     try{
       await waitForDb();
-      const result=await service.buildQueue({limit:parseLimit(req.body?.limit,5,5)});
+      const result=await service.buildQueue({limit:parseLimit(req.body?.limit,20,25)});
       await auditLog({req,action:'ready_for_you_queue_built',resourceType:'ready_for_you_items',metadata:{count:result.allBuilt?.length||0,state:result.state,unknowns:result.unknowns||[]},success:true}).catch(()=>{});
       res.json(result);
     }catch(e){

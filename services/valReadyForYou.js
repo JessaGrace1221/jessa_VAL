@@ -1,5 +1,6 @@
 function safeArray(value){ return Array.isArray(value)?value:[]; }
 const {receiptForReadyItem}=require('./valExecutionVisibility');
+const {preparedArtifactForInstruction}=require('./valTranscriptIntelligence');
 
 function compactText(value,limit=700){
   return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
@@ -270,6 +271,125 @@ function meetingPrepCandidate(candidate,uuid,scope){
   item.actionsJson=approvalActions(item);
   return item;
 }
+function preparedActionForCommitment(commitment={}){
+  const text=[
+    commitment.title,
+    commitment.description,
+    commitment.evidence_quote,
+    commitment.evidence_summary,
+    commitment.next_action,
+    ...(safeArray(commitment.workingBrief?.contextLines))
+  ].filter(Boolean).join(' ').toLowerCase();
+  if(!text)return null;
+  if(/\b(dashboard|html|iframe|landing page|web page|site|component|app|code|css|javascript|build|implement|scaffold)\b/.test(text))return 'build_artifact';
+  if(/\b(proposal|scope of work|sow)\b/.test(text))return 'prepare_proposal';
+  if(/\b(invoice|payment request)\b/.test(text))return 'prepare_invoice';
+  if(/\b(agreement|contract)\b/.test(text))return 'create_draft';
+  if(/\b(intro|introduction|introduce|connect)\b/.test(text))return 'draft_introduction';
+  if(/\b(email|reply|message|nudge|follow up|follow-up|send)\b/.test(text)&&/\b(draft|write|send|prepare|nudge|follow up|follow-up|reply|email)\b/.test(text))return 'send_email';
+  if(/\b(document|brief|overview|summary|handoff|agenda|plan|one[- ]pager|deck|copy)\b/.test(text)&&/\b(create|prepare|draft|write|finish|build|shape|handoff)\b/.test(text))return 'create_draft';
+  return null;
+}
+function commitmentLinkage(commitment={}){
+  const brief=commitment.workingBrief||commitment.working_brief||{};
+  const envelope=brief.envelope||{};
+  const projectName=brief.projectName||commitment.projectName||envelope.projectName||'';
+  const relationshipName=brief.relationshipName||commitment.counterparty_name||commitment.owner_name||envelope.relationshipName||'';
+  return {
+    linked_projects:projectName?[{id:String(projectName).toLowerCase().replace(/[^a-z0-9]+/g,'_'),name:projectName,source:'commitment_packet'}]:[],
+    linked_people:relationshipName?[{name:relationshipName,email:commitment.counterparty_email||commitment.owner_email||'',contactId:commitment.counterparty_contact_id||commitment.owner_contact_id||commitment.crm_contact_id||''}]:[]
+  };
+}
+function commitmentPreparedWorkCandidate(commitment={},uuid,scope){
+  if(!commitment||['complete','dismissed','drafted'].includes(String(commitment.status||'').toLowerCase()))return null;
+  if(commitment.draft_id||commitment.draftId||commitment.prepared_artifact_id||commitment.preparedArtifactId)return null;
+  const action=preparedActionForCommitment(commitment);
+  if(!action)return null;
+  const brief=commitment.workingBrief||commitment.working_brief||{};
+  const sourceRefs=safeArray(commitment.sourceRefs||commitment.source_refs||brief.sourceRefs).map(normalizeSourceRef).slice(0,8);
+  const contextLines=safeArray(brief.contextLines||brief.context_lines).filter(Boolean);
+  const rawText=[
+    commitment.evidence_quote,
+    commitment.evidence_summary,
+    commitment.description,
+    ...contextLines
+  ].filter(Boolean).join('\n');
+  const record={
+    id:commitment.source_id||commitment.id,
+    transcriptId:commitment.source_type==='transcript'?commitment.source_id:'',
+    title:commitment.source_title||commitment.title||'Commitment source',
+    rawText,
+    source:commitment.source_type||'commitment',
+    createdAt:commitment.created_at||commitment.createdAt
+  };
+  const linkage=commitmentLinkage(commitment);
+  const target=brief.projectName||brief.relationshipName||commitment.counterparty_name||commitment.owner_name||commitment.title||'this work';
+  const instruction={
+    instruction:compactText(rawText||commitment.title,900),
+    instruction_type:'inferred_from_commitment_packet',
+    requested_action:action,
+    target_system:action==='build_artifact'?'val_workspace':(action==='send_email'||action==='draft_introduction'?'email':'val_workspace'),
+    target_person_or_record:target,
+    project_hint:brief.projectName||'',
+    external_action:action==='send_email',
+    authorization:'approval_required',
+    authenticated_user_spoke:false,
+    speaker_confidence:0.62,
+    ambiguity:[],
+    conflicts:[],
+    blocking_safety_rules:[],
+    recommended_next_step:'prepare_only',
+    source_refs:sourceRefs.length?sourceRefs:[normalizeSourceRef({sourceType:commitment.source_type||'commitment',sourceId:commitment.source_id||commitment.id,quoteOrSummary:commitment.evidence_quote||commitment.title,confidence:commitment.confidence_score||0.68})],
+    confidence:Math.min(0.84,Number(commitment.confidence_score||commitment.confidence||0.68)),
+    authorization_source:'commitment_packet',
+    authorization_event_id:commitment.id,
+    authorization_quote:commitment.evidence_quote||commitment.title,
+    authenticated_user_confirmed:false,
+    authorization_created_at:commitment.created_at||commitment.createdAt||new Date().toISOString()
+  };
+  const artifact=preparedArtifactForInstruction(instruction,record,linkage,sourceRefs);
+  if(!artifact)return null;
+  artifact.source='commitment_packet';
+  artifact.source_packet={commitment_id:commitment.id,source_type:commitment.source_type,source_id:commitment.source_id,source_quote:commitment.evidence_quote,working_brief:brief};
+  artifact.linked_context={...(artifact.linked_context||{}),task:{id:commitment.id,title:commitment.title,source:'commitment_ledger'},source_packet:artifact.source_packet};
+  const id=stableItemId(uuid,scope.tenantId,scope.userId,'commitment_prepared',`${commitment.id}_${artifact.kind}`);
+  const item={
+    id,
+    tenantId:scope.tenantId,
+    userId:scope.userId,
+    eventRunId:'',
+    category:'prepared_work',
+    type:artifact.kind,
+    itemType:artifact.kind,
+    title:artifact.title||commitment.title||'Prepared work ready for review',
+    status:'ready_for_review',
+    summary:compactText(`VAL prepared ${artifact.kind.replace(/_/g,' ')} from the commitment packet instead of making you restate the source.`,500),
+    whyUserIsSeeingThis:'The task already contained enough source context for VAL to prepare something reviewable.',
+    whyNow:'The work is already on the executive desk, so the draft should arrive with the decision.',
+    readinessJson:{status:artifact.remaining_context_needed?.length?'needs_context':'ready_for_review',prepared_artifact_kind:artifact.kind,remaining_context_needed:artifact.remaining_context_needed||[],commitment_id:commitment.id},
+    whatValPrepared:compactText(artifact.html||artifact.body||artifact.instruction||commitment.evidence_quote||commitment.title,1200),
+    whatUserNeedsToDo:artifact.remaining_context_needed?.length
+      ? `Review what VAL prepared and fill the missing pieces: ${artifact.remaining_context_needed.join('; ')}`
+      : 'Review the prepared work, edit if needed, and approve any external step separately.',
+    whatValDid:`Turned the commitment packet into a reviewable ${artifact.kind.replace(/_/g,' ')}. Nothing was sent, scheduled, published, or written externally.`,
+    whatOnlyUserCanDo:'Decide whether this represents you and whether it should move forward.',
+    estimatedReviewMinutes:artifact.kind==='html_page_draft'?6:3,
+    sourceRefsJson:sourceRefs.length?sourceRefs:[normalizeSourceRef({sourceType:'commitment',sourceId:commitment.id,quoteOrSummary:commitment.evidence_quote||commitment.title,confidence:commitment.confidence_score||0.68})],
+    confidence:Math.max(0,Math.min(1,Number(commitment.confidence_score||commitment.confidence||0.68))),
+    requiresApproval:true,
+    approvalPolicy:'approval_required',
+    representationRisk:/proposal|email|introduction/.test(artifact.kind)?'high':'medium',
+    actionsJson:[],
+    metadataJson:{source:'commitment_packet',commitmentId:commitment.id,sourceType:commitment.source_type,sourceId:commitment.source_id,noExternalAction:true,preparedArtifactKind:artifact.kind,preparedArtifact:artifact,workingBrief:brief,projectName:brief.projectName||'',relationshipName:brief.relationshipName||''},
+    decisionJson:{},
+    createdAt:commitment.updated_at||commitment.updatedAt||commitment.created_at||commitment.createdAt||new Date().toISOString(),
+    updatedAt:new Date().toISOString(),
+    reviewedAt:null,
+    snoozedUntil:null
+  };
+  item.actionsJson=approvalActions(item);
+  return item;
+}
 function transcriptCandidate(candidate,uuid,scope){
   const handoff=candidate.handoff||{};
   const run=candidate.run||{};
@@ -351,6 +471,7 @@ function createValReadyForYouService({
   executiveInboxService=null,
   meetingPrepService=null,
   transcriptIntelligenceService=null,
+  commitmentsService=null,
   listDrafts=null,
   loadTasks=null,
   logger=console
@@ -380,7 +501,7 @@ function createValReadyForYouService({
     return idx>=0?s.readyForYouItems[idx]:item;
   }
   async function listItems({limit=3,status='',includeSnoozed=false}={}){
-    const lim=Math.max(1,Math.min(Number(limit)||3,5));
+    const lim=Math.max(1,Math.min(Number(limit)||3,25));
     const activeStatuses=status?[status]:['ready','ready_for_review','needs_context'];
     let rows=[];
     if(hasPg()){
@@ -454,6 +575,15 @@ function createValReadyForYouService({
       }else unknowns.push({source:'transcript_follow_up_candidates',reason:'Transcript intelligence candidate builder is unavailable.'});
     }catch(e){unknowns.push({source:'transcript_follow_up_candidates',reason:e.message});}
     try{
+      if(commitmentsService?.list){
+        const result=await commitmentsService.list({limit:60,ownerType:'user'});
+        for(const commitment of safeArray(result.commitments)){
+          const item=commitmentPreparedWorkCandidate(commitment,uuid,sc);
+          if(item)candidates.push(item);
+        }
+      }else unknowns.push({source:'commitment_prepared_work_candidates',reason:'Commitments service is unavailable.'});
+    }catch(e){unknowns.push({source:'commitment_prepared_work_candidates',reason:e.message});}
+    try{
       const drafts=typeof listDrafts==='function'?await listDrafts(''):safeArray(getStore().drafts);
       for(const draft of safeArray(drafts)){
         const src=String(draft.sourceContext?.source||draft.draftType||'');
@@ -489,12 +619,13 @@ function createValReadyForYouService({
     }
     return {candidates:[...byId.values()],unknowns};
   }
-  async function buildQueue({limit=5}={}){
+  async function buildQueue({limit=20}={}){
     const {candidates,unknowns}=await collectCandidates();
+    const cappedLimit=Math.max(1,Math.min(Number(limit)||20,25));
     const actionable=candidates
       .filter(item=>item.requiresApproval||['ready_for_review','needs_context','ready'].includes(item.status))
       .sort((a,b)=>(Number(b.requiresApproval)-Number(a.requiresApproval))||(Number(b.confidence||0)-Number(a.confidence||0))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
-      .slice(0,Math.max(1,Math.min(Number(limit)||5,5)));
+      .slice(0,cappedLimit);
     const saved=[];
     for(const item of actionable) saved.push(await saveItem(item));
     const preparedItems=saved.filter(readyItemHasConcretePreparedWork);

@@ -170,6 +170,8 @@ const ROCKETREACH_ENRICH_CONCURRENCY = Math.min(Math.max(Number(process.env.ROCK
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/api/v1';
 const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
+const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
+const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),50);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -9689,7 +9691,89 @@ function executiveInboxHumanReason({email={},kind='',known=false,hasSent=false,a
   if(known)return 'This is here because this sender is already part of your relationship context.';
   return email.reason||'This thread appears to need your judgment.';
 }
-async function canonicalExecutiveInboxQueue(req,{force=false}={}){
+function executiveInboxPriorityScore(level=''){
+  return {critical:5,high:4,medium:3,low:2,suppressed:1,unknown:0}[String(level||'unknown').toLowerCase()]||0;
+}
+function executiveInboxMessageFromContext(context={}){
+  return context.current_message || context.currentMessage || context.latest_inbound || context.latestInbound || context.latest_outbound || context.latestOutbound || {};
+}
+function executiveInboxCachedEmailFromClassification(result={},index=0){
+  const context=result.context||{};
+  const classification=result.classification||{};
+  const message=executiveInboxMessageFromContext(context);
+  const inbound=context.latest_inbound || context.latestInbound || message || {};
+  const sender=message.from || inbound.from || inbound.sender || {};
+  const waitingOnOther=!!(context.waiting_on_other || context.waitingOnOther || classification.conversation_state==='waiting_on_them');
+  const waitingOnUser=!!(context.waiting_on_user || context.waitingOnUser || classification.conversation_state==='waiting_on_user');
+  const priority=String(classification.priority_level || classification.priorityLevel || 'medium').toLowerCase();
+  const queueKind=waitingOnOther?'waiting_for_response':'needs_judgment';
+  return {
+    id:'executive-inbox-cached-' + (context.conversationId || message.messageId || context.threadId || classification.id || index),
+    provider:message.provider || context.provider || 'email',
+    messageId:message.messageId || message.id || context.currentMessageId || classification.currentMessageId || '',
+    conversationId:context.conversationId || classification.conversationId || '',
+    threadId:message.threadId || context.threadId || classification.threadId || '',
+    subject:message.subject || context.thread_summary || 'Saved conversation',
+    from:{name:sender.name || sender.displayName || sender.email || 'Saved contact',email:sender.email || ''},
+    date:message.receivedAt || message.date || message.sentAt || context.latestMessageAt || classification.createdAt || '',
+    receivedAt:message.receivedAt || message.date || context.latestMessageAt || classification.createdAt || '',
+    snippet:message.snippet || message.bodyPreview || context.thread_summary || classification.why_now || '',
+    bodyPreview:message.bodyPreview || message.snippet || classification.why_now || context.thread_summary || '',
+    bodyText:message.bodyText || message.body_text || message.bodyPreview || message.snippet || '',
+    queueKind,
+    status:waitingOnOther?'waiting_for_response':(waitingOnUser?'ready_for_review':'needs_context'),
+    classification:waitingOnOther?'waiting_on_response':'needs_reply',
+    reason:classification.why_now || classification.whyNow || 'Saved conversation context is waiting for review.',
+    recommendedAction:waitingOnOther?'Waiting for response':'Review and respond if needed',
+    confidence:classification.confidence || 0,
+    executiveInboxAdmission:classification.executive_inbox_admission || classification.executiveInboxAdmission || {},
+    source:'durable_executive_inbox',
+    priorityLevel:priority,
+    sourceRefs:classification.source_refs || classification.sourceRefs || context.source_refs || []
+  };
+}
+async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
+  const lim=Math.max(1,Math.min(Number(limit)||30,60));
+  if(!valExecutiveInbox?.classifyBatch){
+    return {ok:true,source:'canonical_executive_inbox_cached',items:[],queue:[],emails:[],needsReply:[],needsAttention:[],waitingOnResponse:[],draftSuggestions:[],lowPriority:[],errors:['Saved Executive Inbox classifier is unavailable.'],summary:{total:0,buckets:{},source:'cached_unavailable'}};
+  }
+  const timed=await Promise.race([
+    valExecutiveInbox.classifyBatch({limit:lim}),
+    new Promise((resolve)=>setTimeout(()=>resolve({ok:false,timeout:true,results:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
+  ]);
+  const rows=safeArray(timed.results)
+    .filter((row)=>row?.ok!==false)
+    .filter((row)=>{
+      const classification=row.classification||{};
+      const priority=String(classification.priority_level || classification.priorityLevel || 'unknown').toLowerCase();
+      return priority !== 'suppressed' && executiveInboxPriorityScore(priority) >= 3;
+    })
+    .map(executiveInboxCachedEmailFromClassification);
+  const items=rows.filter((item)=>item.messageId || item.threadId || item.conversationId || item.subject);
+  const buckets=items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{});
+  return {
+    ok:true,
+    source:'canonical_executive_inbox_cached',
+    cached:true,
+    staleAllowed:true,
+    message:items.length?'Showing saved Executive Inbox conversations. Use Scan to refresh Gmail/Outlook.':'No saved conversations currently cross the Executive Inbox gate. Use Scan to refresh Gmail/Outlook.',
+    items,
+    queue:items,
+    emails:items,
+    needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
+    needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
+    waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
+    draftSuggestions:[],
+    lowPriority:[],
+    errors:timed.timeout?[timed.error]:[],
+    providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
+    summary:{total:items.length,buckets,source:'cached_conversation_context',cacheOnly:true,activeWindow:'Saved conversations. Scan refreshes connected email.'}
+  };
+}
+async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force}={}){
+  if(preferCached){
+    return localExecutiveInboxQueue(req,{limit:req.query?.limit||30});
+  }
   const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150}};
   const data=await emailIntelligencePayload(queryReq,{force});
   if(data.ok===false)return {...data,items:[],queue:[]};
@@ -13515,21 +13599,243 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
   const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_backfill'}).catch(error=>({ok:false,origin:'email_backfill',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
   return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,sourceProcessing:{projectManagers:projectManagerIntake},providerErrors};
 }
+function boardBackfillJsonValue(value,fallback){
+  if(value===undefined||value===null||value==='')return fallback;
+  if(typeof value==='object')return value;
+  try{return JSON.parse(value);}
+  catch(e){return fallback;}
+}
+function boardBackfillArray(value){
+  const parsed=boardBackfillJsonValue(value,[]);
+  return Array.isArray(parsed)?parsed:[];
+}
+function boardBackfillObject(value){
+  const parsed=boardBackfillJsonValue(value,{});
+  return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+}
+function boardBackfillIso(value){
+  if(!value)return '';
+  if(value instanceof Date)return Number.isNaN(value.getTime())?'':value.toISOString();
+  return String(value||'');
+}
+function boardBackfillFirstText(...values){
+  for(const value of values){
+    if(typeof value==='string'&&value.trim())return compactText(value,1200);
+    if(value&&typeof value==='object'){
+      const found=value.executiveSummary||value.executive_summary||value.summary||value.title||value.content||value.text||value.description;
+      if(found)return compactText(found,1200);
+    }
+  }
+  return '';
+}
+async function boardBackfillTranscriptRuns(limit=120){
+  const lim=Math.max(1,Math.min(Number(limit)||120,300));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from transcript_intelligence_runs where tenant_id=$1 and user_id=$2 order by created_at desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().transcriptIntelligenceRuns||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+async function boardBackfillEmailMessages(limit=120){
+  const lim=Math.max(1,Math.min(Number(limit)||120,300));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from email_messages where tenant_id=$1 and user_id=$2 order by coalesce(received_at,sent_at,created_at) desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().emailMessages||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+async function boardBackfillCalendarEvents(limit=80){
+  const lim=Math.max(1,Math.min(Number(limit)||80,200));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from val_calendar_events where tenant_id=$1 and user_id=$2 order by coalesce(start_time,created_at) desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().calendarEvents||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+function boardBackfillTranscriptPayloadFromRun(run={}){
+  const final=boardBackfillObject(run.finalJson||run.final_json);
+  const evidenceRefs=boardBackfillArray(run.evidenceRefsJson||run.evidence_refs_json);
+  const commitments=boardBackfillArray(run.commitmentsJson||run.commitments_json);
+  const contextualTasks=boardBackfillArray(run.contextualTasksJson||run.contextual_tasks_json);
+  const readyForYou=boardBackfillArray(run.readyForYouCandidatesJson||run.ready_for_you_candidates_json);
+  const executiveInstructions=boardBackfillArray(run.executiveInstructionsJson||run.executive_instructions_json);
+  const relationshipSignals=boardBackfillArray(run.relationshipSignalsJson||run.relationship_signals_json);
+  const projectSignals=boardBackfillArray(run.projectSignalsJson||run.project_signals_json);
+  const sourceId=String(run.transcriptId||run.transcript_id||run.sourceId||run.source_id||run.id||'').trim();
+  const title=boardBackfillFirstText(final.title,final.meetingTitle,final.transcriptTitle,evidenceRefs[0]?.sourceLabel,evidenceRefs[0]?.title,`Transcript ${sourceId}`)||`Transcript ${sourceId}`;
+  const summary=boardBackfillFirstText(final.executiveSummary,final.summary,readyForYou[0],commitments[0],relationshipSignals[0],projectSignals[0],title);
+  const keyDecisions=boardBackfillArray(final.keyDecisions||final.key_decisions).concat(boardBackfillArray(run.chiefOfStaffSignalsJson||run.chief_of_staff_signals_json)).slice(0,20);
+  const tasks=commitments.concat(contextualTasks).map(item=>typeof item==='string'?{taskTitle:item,content:item}:item).filter(Boolean);
+  return {
+    sourceId,
+    title,
+    summary:{executiveSummary:summary,summary},
+    analysis:{...final,keyDecisions,tasks,actionItems:tasks,relationshipUpdates:relationshipSignals,projectSignals,executiveInstructions,readyForYouCandidates:readyForYou},
+    counts:{commitments:commitments.length,contextualTasks:contextualTasks.length,preparedWork:readyForYou.length,relationshipSignals:relationshipSignals.length,projectSignals:projectSignals.length},
+    createdDrafts:readyForYou,
+    stagedTasks:tasks,
+    createdTasks:[]
+  };
+}
+function boardBackfillTranscriptPayloadFromRecord(record={},detail={}){
+  const sourceId=String(record.id||record.transcriptId||detail.id||detail.transcriptId||'').trim();
+  const title=detail.title||record.title||record.meetingTitle||`Transcript ${sourceId}`;
+  const summary=boardBackfillFirstText(detail.summary?.executiveSummary,detail.summary?.summary,record.metadata?.summary,record.rawText,title);
+  const tasks=safeArray(detail.tasks).map(item=>({taskTitle:item.taskTitle||item.title||item.content||'',content:item.taskTitle||item.title||item.content||'',sourceQuote:item.sourceQuote||item.evidence||'',assignedToName:item.assignedToName||item.assignedPerson||'',dueDate:item.dueDate||null,confidence:item.confidence||0.65})).filter(item=>item.taskTitle);
+  const nativeActions=transcriptKrispNativeMetadata(record.metadata||{}).nativeActionItems.map(item=>typeof item==='string'?{taskTitle:item,content:item}:item);
+  return {
+    sourceId,
+    title,
+    summary:{executiveSummary:summary,summary},
+    analysis:{executiveSummary:summary,tasks:tasks.length?tasks:nativeActions,actionItems:tasks.length?tasks:nativeActions,keyDecisions:[],relationshipUpdates:[]},
+    counts:{tasksExtracted:(tasks.length||nativeActions.length),nativeActions:nativeActions.length},
+    stagedTasks:tasks.length?tasks:nativeActions,
+    createdTasks:[],
+    createdDrafts:[]
+  };
+}
+function boardBackfillEmailMessageFromRow(row={}){
+  const sender=boardBackfillObject(row.senderJson||row.sender_json||row.sender||row.from);
+  return {
+    id:row.id,
+    provider:row.provider||'email',
+    messageId:row.messageId||row.message_id||row.currentMessageId||row.current_message_id||row.id,
+    threadId:row.threadId||row.thread_id||row.emailThreadId||row.email_thread_id||'',
+    unifiedConversationId:row.unifiedConversationId||row.unified_conversation_id||'',
+    direction:row.direction||row.conversation_state||'unknown',
+    subject:row.subject||row.executiveMeaning||row.executive_meaning||'Email conversation',
+    bodyPreview:row.bodyPreview||row.body_preview||row.snippet||row.whyNow||row.why_now||'',
+    bodyText:row.bodyText||row.body_text||row.snippet||'',
+    snippet:row.snippet||'',
+    from:sender,
+    sender,
+    recipients:boardBackfillArray(row.recipientsJson||row.recipients_json||row.recipients),
+    receivedAt:boardBackfillIso(row.receivedAt||row.received_at||row.createdAt||row.created_at),
+    sentAt:boardBackfillIso(row.sentAt||row.sent_at)
+  };
+}
+function boardBackfillCalendarEventFromRow(row={}){
+  return {
+    id:row.id,
+    title:row.title||row.summary||'Calendar event',
+    summary:row.title||row.summary||'Calendar event',
+    source:row.source||'val',
+    startTime:boardBackfillIso(row.startTime||row.start_time),
+    endTime:boardBackfillIso(row.endTime||row.end_time),
+    attendees:boardBackfillArray(row.attendees||row.attendees_json),
+    metadata:boardBackfillObject(row.metadata||row.metadata_json)
+  };
+}
+async function backfillBoardPackets({days=3650,limit=160,skipTranscripts=false,skipEmail=false,skipCalendar=false,skipCommitments=false,skipProfiles=false}={}){
+  const result={processed:{transcriptRuns:0,transcriptArchives:0,emailMessages:0,calendarEvents:0,commitments:0,relationshipProfiles:0,projectProfiles:0},packets:0,errors:[],triggered:false};
+  if(!valBoardPackets)return {...result,skipped:true,reason:'Board packet service unavailable'};
+  const lim=Math.max(1,Math.min(Number(limit)||160,300));
+  const createdPackets=[];
+  const addPackets=packets=>{
+    const list=safeArray(packets).filter(Boolean);
+    createdPackets.push(...list);
+    result.packets+=list.length;
+  };
+  const seenTranscriptIds=new Set();
+  if(!skipTranscripts){
+    for(const run of await boardBackfillTranscriptRuns(lim)){
+      try{
+        const payload=boardBackfillTranscriptPayloadFromRun(run);
+        if(!payload.sourceId)continue;
+        seenTranscriptIds.add(String(payload.sourceId));
+        addPackets(await valBoardPackets.recordTranscriptProcessed(payload));
+        result.processed.transcriptRuns++;
+      }catch(e){result.errors.push({source:'transcript_intelligence_runs',id:run.id||run.transcript_id||'',error:e.message});}
+    }
+    const [records,index]=await Promise.all([
+      transcriptArchiveRecords(days,lim).catch(()=>[]),
+      transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))
+    ]);
+    for(const record of mergeTranscriptMigrationRecords(records,index).slice(0,lim)){
+      try{
+        const id=String(record.id||record.transcriptId||'');
+        if(!id||seenTranscriptIds.has(id))continue;
+        const detailRow=(index.transcripts||[]).find(t=>String(t.transcriptId)===id);
+        const detail=record.detail||(detailRow?transcriptDetailFromIndex(index,detailRow):{});
+        addPackets(await valBoardPackets.recordTranscriptProcessed(boardBackfillTranscriptPayloadFromRecord(record,detail)));
+        result.processed.transcriptArchives++;
+      }catch(e){result.errors.push({source:'transcript_archive',id:record.id||'',error:e.message});}
+    }
+  }
+  if(!skipEmail){
+    for(const row of await boardBackfillEmailMessages(lim)){
+      try{
+        addPackets(await valBoardPackets.recordEmailSync({savedMessages:[boardBackfillEmailMessageFromRow(row)]}));
+        result.processed.emailMessages++;
+      }catch(e){result.errors.push({source:'email_messages',id:row.id||row.message_id||'',error:e.message});}
+    }
+  }
+  if(!skipCalendar){
+    for(const row of await boardBackfillCalendarEvents(Math.min(lim,120))){
+      try{
+        addPackets(await valBoardPackets.recordCalendarEvent(boardBackfillCalendarEventFromRow(row)));
+        result.processed.calendarEvents++;
+      }catch(e){result.errors.push({source:'val_calendar_events',id:row.id||'',error:e.message});}
+    }
+  }
+  if(!skipCommitments&&valCommitments?.list){
+    try{
+      const commitments=await valCommitments.list({limit:lim});
+      for(const commitment of safeArray(commitments.commitments)){
+        try{
+          const packet=await valBoardPackets.recordCommitmentEvent({eventType:'commitment_indexed',commitment});
+          addPackets([packet]);
+          result.processed.commitments++;
+        }catch(e){result.errors.push({source:'commitment',id:commitment.id||'',error:e.message});}
+      }
+    }catch(e){result.errors.push({source:'commitments',error:e.message});}
+  }
+  if(!skipProfiles){
+    try{
+      const profiles=await listRelationshipProfiles({limit:lim});
+      for(const profile of safeArray(profiles)){
+        try{
+          const packet=await valBoardPackets.recordProfileEvent({eventType:'profile_reconciled',profile});
+          addPackets([packet]);
+          if(profile.profileType==='project')result.processed.projectProfiles++;else result.processed.relationshipProfiles++;
+        }catch(e){result.errors.push({source:'relationship_profile',id:profile.id||profile.profileKey||'',error:e.message});}
+      }
+    }catch(e){result.errors.push({source:'relationship_profiles',error:e.message});}
+  }
+  if(createdPackets.length){
+    result.triggered=true;
+    void triggerBoardIntelligenceForPackets(createdPackets.slice(0,80),{type:'board_reconciliation',sourceType:'board_reconcile',sourceId:`board_reconcile_${Date.now()}`});
+  }
+  return {...result,generatedAt:new Date().toISOString()};
+}
 async function backfillValIntelligence(options={}){
   if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
   const days=Math.max(1,Math.min(3650,Number(options.days)||3650));
   const transcriptLimit=Math.max(1,Math.min(500,Number(options.transcriptLimit)||250));
   const emailLimit=Math.max(1,Math.min(100,Number(options.emailLimit)||100));
+  const boardLimit=Math.max(1,Math.min(300,Number(options.boardLimit)||160));
   const [transcripts,email]=await Promise.all([
     options.skipTranscripts?Promise.resolve({processed:0,observations:0,relationshipEvents:0,agencyMoves:0,errors:[]}):backfillTranscriptEvidence({days,limit:transcriptLimit}),
     options.skipEmail?Promise.resolve({processed:0,saved:0,providerErrors:[]}):backfillEmailEvidence({days:Math.min(days,365),limit:emailLimit})
   ]);
+  const boardPackets=options.skipBoardPackets?{skipped:true,processed:{},packets:0,errors:[]}:await backfillBoardPackets({
+    days,
+    limit:boardLimit,
+    skipTranscripts:options.skipTranscripts,
+    skipEmail:options.skipEmail,
+    skipCalendar:options.skipCalendar,
+    skipCommitments:options.skipCommitments,
+    skipProfiles:options.skipProfiles
+  });
   const [counts,briefing,storedRelationships]=await Promise.all([
     executiveBriefingCounts(),
     buildExecutiveBriefing().catch(()=>null),
     relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
   ]);
-  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,boardPackets,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
 }
 
 function mapGoogleEvent(ev){
@@ -13786,35 +14092,81 @@ async function lookupApolloDecisionMaker(lead={}){
   if(!apolloKey) return {configured:false,error:'APOLLO_API_KEY is not set'};
   const domain=leadDomain(lead.website||'');
   const company=lead.organizationName||lead.name||'';
-  const params=new URLSearchParams();
-  apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
-  ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
-  if(domain) params.append('q_organization_domains_list[]',domain);
-  if(!domain && company) params.set('q_keywords',company);
-  if(lead.state) params.append('organization_locations[]',lead.state);
-  else if(lead.location) params.append('organization_locations[]',lead.location);
-  params.set('include_similar_titles','false');
-  params.set('page','1');
-  params.set('per_page','10');
-  const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
-  const response=await fetchWithTimeout(url,{
-    method:'POST',
-    headers:{
-      accept:'application/json',
-      'Content-Type':'application/json',
-      'x-api-key':apolloKey,
-      Authorization:`Bearer ${apolloKey}`
+  const headers={
+    accept:'application/json',
+    'Content-Type':'application/json',
+    'x-api-key':apolloKey,
+    Authorization:`Bearer ${apolloKey}`
+  };
+  const searchPeople=async(extraParams={},label='Apollo decision-maker lookup')=>{
+    const rows=[];
+    for(let page=1; page<=APOLLO_PEOPLE_SEARCH_PAGES; page++){
+      const params=new URLSearchParams();
+      apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
+      ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
+      if(domain) params.append('q_organization_domains_list[]',domain);
+      if(!domain && company) params.set('q_keywords',company);
+      Object.entries(extraParams||{}).forEach(([key,value])=>{
+        safeArray(value).forEach(item=>params.append(key,item));
+        if(!Array.isArray(value)&&value!==undefined&&value!==null&&String(value).trim())params.append(key,value);
+      });
+      params.set('include_similar_titles','true');
+      params.set('page',String(page));
+      params.set('per_page',String(APOLLO_PEOPLE_SEARCH_PER_PAGE));
+      const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
+      const response=await fetchWithTimeout(url,{method:'POST',headers},APOLLO_REQUEST_TIMEOUT_MS,label);
+      const data=await readJsonResponse(response);
+      if(!response.ok){
+        if(page===1) throw new Error(data.message || data.error || `Apollo ${response.status}`);
+        break;
+      }
+      const raw=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
+      rows.push(...raw);
+      if(raw.length<APOLLO_PEOPLE_SEARCH_PER_PAGE)break;
     }
-  },APOLLO_REQUEST_TIMEOUT_MS,'Apollo decision-maker lookup');
-  const data=await readJsonResponse(response);
-  if(!response.ok) return {configured:true,error:data.message || data.error || `Apollo ${response.status}`};
-  const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
-  const people=rawPeople.map(p=>normalizeApolloPerson(p,lead)).filter(p=>p.found);
-  const ranked=people
+    return rows;
+  };
+  const rankPeople=(rawPeople=[])=>rawPeople
+    .map(p=>normalizeApolloPerson(p,lead))
+    .filter(p=>p.found)
     .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
     .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain))
     .sort((a,b)=>b.matchScore-a.matchScore);
-  if(!ranked.length) return {configured:true,error:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
+  let rawPeople=[];
+  let companySearchError='';
+  try{
+    rawPeople=await searchPeople({},'Apollo decision-maker lookup');
+  }catch(error){
+    return {configured:true,error:error.message||'Apollo decision-maker lookup failed',rawCount:0};
+  }
+  let ranked=rankPeople(rawPeople);
+  if(!ranked.length && company){
+    try{
+      // company keyword fallback mirrors manual Apollo search before asking people search for organization_ids[].
+      const companyParams=new URLSearchParams();
+      companyParams.set('q_organization_name',company);
+      companyParams.set('q_keywords',company);
+      companyParams.set('page','1');
+      companyParams.set('per_page','10');
+      if(domain) companyParams.set('q_organization_domains_list[]',domain);
+      const companyUrl=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_companies/search?${companyParams.toString()}`;
+      const companyResponse=await fetchWithTimeout(companyUrl,{method:'POST',headers},APOLLO_REQUEST_TIMEOUT_MS,'Apollo company keyword lookup');
+      const companyData=await readJsonResponse(companyResponse);
+      if(!companyResponse.ok) throw new Error(companyData.message || companyData.error || `Apollo company ${companyResponse.status}`);
+      const organizationIds=safeArray(companyData.organizations||companyData.accounts||companyData.companies)
+        .map(org=>org.id||org.organization_id||org.account_id)
+        .filter(Boolean)
+        .slice(0,3);
+      if(organizationIds.length){
+        const organizationPeople=await searchPeople({'organization_ids[]':organizationIds},'Apollo organization decision-maker lookup');
+        rawPeople=rawPeople.concat(organizationPeople);
+        ranked=rankPeople(rawPeople);
+      }
+    }catch(error){
+      companySearchError=error.message||String(error);
+    }
+  }
+  if(!ranked.length) return {configured:true,error:companySearchError?`Apollo did not find a confident decision-maker match after company lookup: ${companySearchError}`:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
   return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:rawPeople.length};
 }
 
@@ -23376,7 +23728,7 @@ function chiefRecommendationHomeItems(recommendation={}){
   return [chiefCandidateHomeItem(recommendation,{title:recommendation.title,summary:recommendation.recommendation,evidence:sourceRefs,packetId:''},0,sourceRefs)].filter(Boolean);
 }
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:12}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.buildQueue?valReadyForYou.buildQueue({limit:5}).catch(error=>{console.warn('[ready-for-you] Home briefing queue build failed:',error.message);return null;}):Promise.resolve(null)]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:12}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.buildQueue?valReadyForYou.buildQueue({limit:20}).catch(error=>{console.warn('[ready-for-you] Home briefing queue build failed:',error.message);return null;}):Promise.resolve(null)]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
   const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
   const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);
@@ -29447,6 +29799,49 @@ async function saveTranscriptCanonicalPipeline({sourceId,title,transcript,payloa
   await logTranscriptAction(sourceId,'canonical_pipeline_saved',conversation.id||conversationId,'completed').catch(()=>{});
   return {conversation,identityLinks,decisions,evidenceItemId:evidence?.id||'',counts:{identityLinks:identityLinks.length,decisions:decisions.length}};
 }
+function transcriptActionItemPassesGate(line=''){
+  const text=String(line||'').replace(/\s+/g,' ').trim();
+  if(!text)return false;
+  if(/\b(laughter|haha|weather|hello|goodbye|bye|joke|small talk)\b/i.test(text))return false;
+  if(/\b(already|completed|finished|sent|done|nothing needs to happen|no action needed|does not need follow up|doesn't need follow up|maybe|might|could possibly|for example)\b/i.test(text))return false;
+  const hasActor=/\b(i will|i'll|we will|we'll|i can|we can|i need to|we need to|let me|i am going to|i'm going to|we are going to|we're going to|jessa will|val should|val needs to)\b/i.test(text);
+  const hasAssignedActor=/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+to\s+(?:send|share|schedule|review|prepare|update|introduce|connect|draft|write|build|create|finish|complete|confirm|check|call|email|text|nudge|forward|deliver|fix|research|compile|find|set up)\b/.test(text);
+  const hasAction=/\b(send|share|schedule|review|prepare|update|introduce|connect|draft|write|build|create|finish|complete|confirm|check|call|email|text|nudge|forward|deliver|fix|research|compile|find|set up)\b/i.test(text);
+  return (hasActor||hasAssignedActor)&&hasAction;
+}
+function extractFallbackTranscriptActionItems(lines=[]){
+  return safeArray(lines)
+    .map(line=>dashboardCleanText(line))
+    .filter(transcriptActionItemPassesGate)
+    .slice(0,12);
+}
+function normalizeTranscriptActionItems(items=[],transcript=''){
+  return safeArray(items)
+    .map(item=>typeof item==='string'?{taskTitle:cleanTaskTitle(item),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:item}:item)
+    .map(item=>({
+      ...item,
+      taskTitle:cleanTaskTitle(item.taskTitle||item.title),
+      taskDescription:item.taskDescription||item.description||item.notes||'',
+      confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),
+      sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence||item.taskTitle||item.title)
+    }))
+    .filter(item=>item.taskTitle&&item.sourceQuote&&transcriptActionItemPassesGate([item.taskTitle,item.taskDescription,item.sourceQuote].filter(Boolean).join(' ')))
+    .slice(0,20);
+}
+function normalizeTranscriptDecisions(items=[]){
+  return safeArray(items)
+    .map(item=>typeof item==='string'?dashboardCleanText(item):dashboardCleanText(item.title||item.summary||item.decision||''))
+    .filter(Boolean)
+    .filter(item=>/\b(decided|agreed|approved|selected|chose|confirmed)\b/i.test(item))
+    .slice(0,10);
+}
+function normalizeTranscriptAnalysis(parsed={},transcript=''){
+  const out={...(parsed||{})};
+  out.keyDecisions=normalizeTranscriptDecisions(out.keyDecisions||out.decisions);
+  out.tasks=normalizeTranscriptActionItems(out.tasks||out.actionItems,transcript);
+  out.actionItems=out.tasks;
+  return out;
+}
 function fallbackTranscriptSummary(transcript,notes='Processing fallback summary; transcript retained for review.'){
   const raw=String(transcript||'');
   const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
@@ -29456,10 +29851,10 @@ function fallbackTranscriptSummary(transcript,notes='Processing fallback summary
     executiveSummary:dashboardShortText(text,'Summary unavailable.',900),
     clientSummary:'',
     internalNotes:notes,
-    keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
+    keyDecisions:normalizeTranscriptDecisions(lines),
     openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),
     relationshipUpdates:[],
-    tasks:lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
+    tasks:extractFallbackTranscriptActionItems(lines).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
     contactUpdates:[],
     followupDrafts:[]
   };
@@ -29471,12 +29866,13 @@ async function processTranscriptPayload(payload){
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Use this layered transcript process internally before producing JSON: identify decisions, commitments, relationship signals, project signals, prepared-work opportunities, and evidence quotes before naming any task.','A transcript snippet is not an action item. Only name a task when a real actor, concrete action, outcome, and exact source quote are present.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
   try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
+  parsed=normalizeTranscriptAnalysis(parsed,transcript);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
@@ -30753,6 +31149,7 @@ const valReadyForYou = registerValReadyForYouRoutes(app,{
   executiveInboxService:valExecutiveInbox,
   meetingPrepService:valMeetingPrep,
   transcriptIntelligenceService:valTranscriptIntelligence,
+  commitmentsService:valCommitments,
   listDrafts,
   loadTasks,
   valDbReady:()=>valDbReady,
@@ -33447,10 +33844,55 @@ app.post('/api/val/intelligence/backfill',async(req,res)=>{
     if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Intelligence backfill begins after First Look.'});
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const result=await backfillValIntelligence(req.body||{});
-    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
+    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,boardPackets:result.boardPackets?.packets||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
     res.json(result);
   }catch(e){
     await auditLog({req,action:'val_intelligence_backfill_failed',resourceType:'intelligence',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/val/board/context',async(req,res)=>{
+  try{
+    if(!valBoardPackets?.boardContext){
+      return res.json({
+        ok:true,
+        observers:[],
+        packets:[],
+        byObserver:{},
+        reviewsByObserver:{},
+        sources:[],
+        sourceSummary:{total:0,live:0,ingress:0,pending:0,activeLive:0,activeIngress:0,claimAllSourcesSafe:false},
+        livePacketCount:0,
+        noExternalAction:true,
+        message:'Board packet service is unavailable in this runtime.'
+      });
+    }
+    const limit=Math.max(1,Math.min(300,Number(req.query.limit)||80));
+    const observerName=String(req.query.observerName||req.query.observer||'').trim();
+    const context=await valBoardPackets.boardContext({limit,observerName});
+    await auditLog({
+      req,
+      action:'val_board_context_loaded',
+      resourceType:'board_packets',
+      metadata:{limit,observerName,packets:context.livePacketCount||0},
+      success:true
+    }).catch(()=>{});
+    res.json({ok:true,...context,noExternalAction:true});
+  }catch(e){
+    await auditLog({req,action:'val_board_context_load_failed',resourceType:'board_packets',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message,packets:[],reviewsByObserver:{},noExternalAction:true});
+  }
+});
+app.post('/api/val/board/reconcile',async(req,res)=>{
+  try{
+    if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Board reconciliation begins after First Look.'});
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before reconciling Board packets.');
+    const result=await backfillBoardPackets(req.body||{});
+    await auditLog({req,action:'val_board_packets_reconciled',resourceType:'board_packets',metadata:{packets:result.packets||0,processed:result.processed||{},errors:result.errors?.length||0},success:true}).catch(()=>{});
+    res.json({ok:true,...result});
+  }catch(e){
+    await auditLog({req,action:'val_board_packets_reconcile_failed',resourceType:'board_packets',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });

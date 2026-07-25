@@ -24,6 +24,9 @@ test('ready for you routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/approve/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/reject/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/snooze/);
+  assert.match(routes,/function parseLimit\(value,defaultValue=3,max=25\)/);
+  assert.match(routes,/service\.listItems\(\{limit:parseLimit\(req\.query\.limit,20,25\)/);
+  assert.match(routes,/service\.buildQueue\(\{limit:parseLimit\(req\.body\?\.limit,20,25\)/);
 });
 
 test('builds a judgment-only review queue and limits visible items to three',async()=>{
@@ -88,6 +91,50 @@ test('builds a judgment-only review queue and limits visible items to three',asy
   const listed=await service.listItems();
   assert.equal(listed.items.length,3);
   assert.notEqual(listed.message,"I'm caught up.");
+});
+
+test('buildQueue keeps prepared work beyond the old five item cap',async()=>{
+  let store={readyForYouItems:[]};
+  const drafts=Array.from({length:8},(_,index)=>({
+    id:'draft_cap_' + index,
+    draftType:'proposal_draft',
+    provider:'internal',
+    subject:'Prepared proposal ' + (index + 1),
+    body:'This is a reviewable prepared proposal artifact body ' + (index + 1) + '.',
+    status:'ready_for_review',
+    sourceContext:{
+      source:'proposal',
+      preparedArtifactKind:'proposal_draft',
+      preparedArtifact:{kind:'proposal_draft',body:'Reviewable prepared proposal artifact ' + (index + 1) + '.'},
+      canValAct:'approval_required',
+      executionPath:'review_then_send'
+    },
+    createdAt:'2026-07-03T12:0' + index + ':00Z'
+  }));
+  const service=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_cap`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    executiveInboxService:{
+      reviewDrafts:async()=>({ok:true,drafts:[]}),
+      listReadyForYouDraftCandidates:async()=>[]
+    },
+    meetingPrepService:{listReadyForYouCandidates:async()=>[]},
+    transcriptIntelligenceService:{listReadyForYouCandidates:async()=>[]},
+    commitmentsService:{list:async()=>({ok:true,commitments:[]})},
+    listDrafts:async()=>drafts
+  });
+  const built=await service.buildQueue({limit:20});
+  assert.equal(built.allBuilt.length,8);
+  assert.equal(built.preparedCount,8);
+  assert.equal(built.items.length,3);
+  assert.ok(built.preparedItems.every(item=>item.metadataJson.source==='proposal'));
+  const listed=await service.listItems({limit:20});
+  assert.equal(listed.items.length,8);
+  assert.equal(listed.visibleLimit,20);
 });
 
 test('approve, reject, and snooze update local state only',async()=>{
@@ -269,6 +316,63 @@ test('transcript prepared artifacts stay visible in Ready For You',async()=>{
   assert.equal(item.metadataJson.noExternalSend,true);
   assert.ok(item.actionsJson.some(action=>action.key==='review_prepared_work'));
   assert.match(item.whatValPrepared,/Nothing was sent/);
+});
+
+test('commitment packets with enough context produce reviewable Leverage prepared work',async()=>{
+  let store={readyForYouItems:[]};
+  const ready=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_test`,
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    executiveInboxService:{reviewDrafts:async()=>({drafts:[]}),listReadyForYouDraftCandidates:async()=>[]},
+    meetingPrepService:{listReadyForYouCandidates:async()=>[]},
+    transcriptIntelligenceService:{listReadyForYouCandidates:async()=>[]},
+    commitmentsService:{
+      list:async()=>({ok:true,commitments:[{
+        id:'commitment_goall_dashboard',
+        title:'Finish the GOALL dashboard handoff with Mike',
+        description:'Finish the GOALL dashboard handoff with Mike so the agency has a clean next step.',
+        evidence_quote:'Mike said the dashboard needs to show pipeline projections, open follow-up, owner, and whether the team has enough context to move. Jessa said it needs to be HTML/CSS so it can be embedded as an iframe in the CRM dashboard.',
+        evidence_summary:'GOALL dashboard handoff needs an iframe-ready HTML/CSS draft.',
+        source_type:'transcript',
+        source_id:'tr_goall_dashboard_handoff',
+        source_title:'GOALL dashboard handoff with Mike',
+        owner_type:'user',
+        owner_name:'Jessa',
+        status:'open',
+        confidence_score:0.82,
+        workingBrief:{
+          projectName:'GOALL',
+          relationshipName:'Mike',
+          envelope:{envelopeType:'project',displayName:'GOALL',projectName:'GOALL'},
+          contextLines:[
+            'The dashboard needs to show pipeline projections.',
+            'The dashboard needs open follow-up, owner, and context readiness.',
+            'It needs to be HTML/CSS so it can be embedded as an iframe in the CRM dashboard.'
+          ],
+          sourceRefs:[{source_type:'transcript',source_id:'tr_goall_dashboard_handoff',quote_or_summary:'dashboard needs to show pipeline projections, open follow-up, owner, and whether the team has enough context to move',confidence:0.82}]
+        },
+        sourceRefs:[{source_type:'transcript',source_id:'tr_goall_dashboard_handoff',quote_or_summary:'iframe in the CRM dashboard',confidence:0.82}]
+      }]})
+    },
+    listDrafts:async()=>[]
+  });
+  const built=await ready.buildQueue({limit:5});
+  const item=built.preparedItems.find(row=>row.metadataJson?.commitmentId==='commitment_goall_dashboard');
+  assert.ok(item);
+  assert.equal(item.category,'prepared_work');
+  assert.equal(item.metadataJson.source,'commitment_packet');
+  assert.equal(item.metadataJson.preparedArtifactKind,'html_page_draft');
+  assert.equal(item.metadataJson.preparedArtifact.kind,'html_page_draft');
+  assert.equal(item.metadataJson.projectName,'GOALL');
+  assert.match(item.metadataJson.preparedArtifact.html,/GOALL Dashboard Handoff/);
+  assert.match(item.metadataJson.preparedArtifact.html,/pipeline projections/i);
+  assert.match(item.metadataJson.preparedArtifact.html,/iframe/i);
+  assert.ok(item.actionsJson.some(action=>action.key==='review_prepared_work'));
+  assert.equal(built.preparedCount,1);
 });
 
 test('meeting overview drafts preserve their reviewable email artifact for Leverage',async()=>{

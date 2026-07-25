@@ -82,6 +82,12 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/function executiveInboxSafeListed/);
   assert.match(server,/This is here because you told VAL this sender belongs in Executive Inbox/);
   assert.match(server,/function canonicalExecutiveInboxQueue/);
+  assert.match(server,/function localExecutiveInboxQueue/);
+  assert.match(server,/canonicalExecutiveInboxQueue\(req,\{force=false,preferCached=!force\}=\{\}\)/);
+  assert.match(server,/if\(preferCached\)\{\s*return localExecutiveInboxQueue\(req,\{limit:req\.query\?\.limit\|\|30\}\);/);
+  assert.match(server,/cached:true/);
+  assert.match(server,/staleAllowed:true/);
+  assert.match(server,/req\.query\.force==='1'\|\|req\.query\.refresh==='1'/);
   assert.match(server,/fetchGmailMessages\(\{query:`in:sent to:\$\{sender\}`/);
   assert.match(server,/waitingOnResponseFromSent\(sentGmail\.emails\|\|\[\],Array\.from\(gmailMap\.values\(\)\),0\)/);
   assert.match(server,/function emailShouldPrepareDraft/);

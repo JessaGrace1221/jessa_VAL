@@ -2737,9 +2737,11 @@ button.observer-node:focus-visible{
 .observer-signal-paths{
   position:absolute;
   inset:0;
+  z-index:2;
   width:100%;
   height:100%;
   overflow:visible;
+  pointer-events:none;
 }
 .observer-card-dismiss-surface{
   position:absolute;
@@ -2758,7 +2760,7 @@ button.observer-node:focus-visible{
   cursor:default;
 }
 .observer-graph-field.observer-card-open .observer-card-dismiss-surface{
-  pointer-events:none;
+  pointer-events:auto;
 }
 .observer-live-board.awaiting-witnessing .observer-signal-paths{
   opacity:0;
@@ -2858,7 +2860,7 @@ button.observer-node:focus-visible{
 .observer-live-orb-rose{fill:rgba(255,222,230,.92);stroke:transparent}
 .observer-live-orb-bridge{fill:rgba(255,242,210,.9);stroke:transparent}
 .observer-live-packet{
-  pointer-events:visiblePainted;
+  pointer-events:none;
   cursor:default;
   outline:none;
 }
@@ -2876,7 +2878,7 @@ button.observer-node:focus-visible{
 .observer-live-hit{
   fill:rgba(255,255,255,.001);
   stroke:transparent;
-  pointer-events:all;
+  pointer-events:none;
 }
 .observer-live-label{
   opacity:0;

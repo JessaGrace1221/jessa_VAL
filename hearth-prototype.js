@@ -6672,6 +6672,14 @@ async function submitActiveCoworkEntry(messageOverride = ''){
   const submit = homeCoworkSubmitNode();
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
+  if(observerScopedLane){
+    const localAnswer = observerCoworkCardAnswer(input, entry.context || {});
+    if(localAnswer){
+      appendHomeCoworkMessage('val', localAnswer);
+      if(submit) submit.disabled = false;
+      return true;
+    }
+  }
   try{
     const label = entry.entrypointId === 'board.chief_of_staff' ? 'Chief of Staff conversation' : entry.entrypointId === 'observer.discussion' ? 'Observer conversation' : entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'relationship.overview' ? 'Relationship next move' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
@@ -8447,7 +8455,10 @@ async function hydrateProjectIndex(){
   if(projectIndexRequest) return projectIndexRequest;
   projectIndexSourceLabel = 'Checking project index';
   updateProjectIndexSourceLabel();
-  projectIndexRequest = getJson('/api/projects/index?limit=80')
+  projectIndexRequest = getJson('/api/projects/index?limit=80', {
+    timeoutMs:9000,
+    timeoutMessage:'Project Managers took too long to open the live index.'
+  })
     .then((data) => {
       if(Array.isArray(data?.projects)){
         projectIndexProfiles = data.projects.reduce((profiles, item) => {
@@ -8725,8 +8736,16 @@ function openProjectIndex(){
   hydrateRelationshipIndex();
   hydrateProjectSuggestions();
   if(canUseApi && !projectIndexLoaded){
-    renderProjectManagerLoadingState();
-    hydrateProjectIndex();
+    const knownItems = Object.values(projectIndexProfiles).filter(projectIsDrawerAdmitted);
+    if(knownItems.length){
+      renderProjectRolodex();
+      const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
+      const selectedProject = selectedProjectId && knownItems.find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
+      renderProjectProfile((selectedProject || knownItems[0]).id);
+    }else{
+      renderProjectManagerLoadingState();
+    }
+    void hydrateProjectIndex();
     return;
   }
   renderProjectRolodex();
@@ -11010,11 +11029,11 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
-  setCorrespondenceLoadingState(true, 'Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox.');
+  setCorrespondenceLoadingState(true, 'Opening saved Executive Inbox context. Use Scan only when you want a fresh Gmail or Outlook pass.');
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
-  await Promise.all([
+  void Promise.all([
     hydrateRelationshipIndex({force:false}).catch(() => null),
     hydrateProjectIndex().catch(() => null)
   ]);
@@ -11025,9 +11044,9 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const inbox = await getJson('/api/val/executive-inbox/queue?days=90&limit=150', {
-      timeoutMs:16000,
-      timeoutMessage:'Executive Inbox is taking too long to load connected email context.'
+    const inbox = await getJson('/api/val/executive-inbox/queue?limit=60', {
+      timeoutMs:7000,
+      timeoutMessage:'Saved Executive Inbox context is taking too long to open.'
     });
     const merged = correspondenceItemsFromEmailIntelligence(inbox);
     const byId = new Map();
@@ -11036,7 +11055,7 @@ async function hydrateCorrespondenceDrawer(){
     });
     currentCorrespondenceItems = Array.from(byId.values());
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
-    currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No unresolved conversations crossed the Executive Inbox judgment gate.';
+    currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No saved conversations currently cross the Executive Inbox judgment gate. Use Scan to refresh Gmail or Outlook.';
     setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
     renderCorrespondenceBrief(activeCorrespondenceItem);
     await hydrateCorrespondenceRules();
@@ -11044,9 +11063,9 @@ async function hydrateCorrespondenceDrawer(){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
     currentCorrespondenceItems = [];
     activeCorrespondenceItem = null;
-    setCorrespondenceLoadingState(false, 'Executive Inbox could not load live Gmail-classified conversations.');
+    setCorrespondenceLoadingState(false, 'Executive Inbox could not open saved conversations. Use Scan to refresh Gmail or Outlook.');
     renderCorrespondenceBrief(activeCorrespondenceItem);
-    if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not load live Gmail-classified conversations. No demo emails are being shown.';
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not open saved conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
   }
 }
@@ -18823,10 +18842,12 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const observerLine = reason || observer?.currentlySeeing || observer?.truth || 'one source-backed pattern is asking for discernment.';
   const witnessLine = lines.find((line) => !/\b\d+\s+risk signals?\b/i.test(line));
   const watchedPattern = cleanVelocityPerspectiveLine(observerLine, 140).replace(/[.!?]+$/, '') || subject;
-  const observerContextLine = selectedName + ' is watching ' + watchedPattern + ' for you.';
+  const observerContextLine = reason
+    ? selectedName + ' can show the source trail behind this read.'
+    : selectedName + ' has the clearest Board lens if you want the full context.';
   return {
     headline: 'Good morning, ' + name + '.',
-    witness: witnessLine || ('I would keep ' + subject + ' in view today' + (reason ? ': ' + reason.replace(/[.!?]+$/, '') + '.' : '.')),
+    witness: witnessLine || (reason ? subject + ': ' + reason.replace(/[.!?]+$/, '') + '.' : 'No single source-backed move has earned the room yet.'),
     orientation: observerContextLine,
     permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
       ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
@@ -19300,7 +19321,7 @@ function hydrateRoomsFromBriefing(briefing){
       const b = sourceIdentityForItem(item);
       return (a.id && b.id && a.id === b.id) || itemTitle(candidate, '') === itemTitle(item, '');
     }) === index);
-  const leverageItems = briefingItems(briefing.readyForYou).concat(briefingItems(briefing.watching));
+  const leverageItems = briefingItems(briefing.readyForYou);
   const admittedAlignmentItems = homeAdmissionFilter('alignment', alignmentCandidates);
   const admittedLeverageItems = homeAdmissionFilter('leverage', leverageItems);
   const admittedHighest = firstBriefingItem(admittedAlignmentItems);
@@ -19470,11 +19491,11 @@ function hydrateLeverageFromReadyForYou(result = {}){
 async function hydratePreparedWorkQueue(){
   if(!canUseApi) return;
   try{
-    const result = await postJson('/api/val/ready-for-you/build', {limit:5});
+    const result = await postJson('/api/val/ready-for-you/build', {limit:20});
     hydrateLeverageFromReadyForYou(result);
   }catch(error){
     try{
-      const fallback = await getJson('/api/val/ready-for-you?limit=5');
+      const fallback = await getJson('/api/val/ready-for-you?limit=25');
       hydrateLeverageFromReadyForYou(fallback);
     }catch(inner){
       console.warn('Prepared work queue unavailable:', inner.message || error.message);
@@ -25973,19 +25994,79 @@ function taskWorkspaceIdentityValues(task = {}){
 
 function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
   const commitmentId = String(task.sourceCommitmentId || task.rawCommitment?.id || task.id || '');
-  const matchesCommitment = (value) => {
-    if(!commitmentId) return false;
+  const directTaskIds = new Set([
+    commitmentId,
+    task.id,
+    task.sourceCommitmentId,
+    task.rawCommitment?.id,
+    task.rawCommitment?.sourceCommitmentId,
+    task.rawCommitment?.source_commitment_id
+  ].filter(Boolean).map(String));
+  const packetIdValues = (value) => {
+    const metadata = value?.metadataJson || value?.metadata_json || value?.metadata || {};
     const sourceContext = value?.sourceContext || value?.source_context || value?.preparedArtifact?.sourceContext || value?.prepared_artifact?.source_context || {};
+    const artifact = value?.preparedArtifact || value?.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+    const sourcePacket = artifact.source_packet || artifact.sourcePacket || metadata.sourcePacket || metadata.source_packet || {};
+    const linkedContext = artifact.linked_context || artifact.linkedContext || metadata.linkedContext || metadata.linked_context || {};
+    const linkedTask = linkedContext.task || {};
+    const linkedTranscript = linkedContext.transcript || {};
+    const refs = [
+      value?.sourceRefsJson,
+      value?.source_refs,
+      value?.sourceRefs,
+      metadata.sourceRefsJson,
+      metadata.source_refs,
+      metadata.sourceRefs,
+      artifact.source_refs,
+      artifact.sourceRefs,
+      sourcePacket.source_refs,
+      sourcePacket.sourceRefs
+    ].flatMap((entry) => Array.isArray(entry) ? entry : []);
     const ids = [
+      value?.id,
       value?.commitmentId,
+      value?.commitment_id,
       value?.sourceCommitmentId,
       value?.source_commitment_id,
+      value?.sourceId,
+      value?.source_id,
+      value?.draftId,
+      value?.draft_id,
+      metadata.commitmentId,
+      metadata.commitment_id,
+      metadata.taskId,
+      metadata.task_id,
+      metadata.sourceId,
+      metadata.source_id,
+      metadata.draftId,
+      metadata.draft_id,
       sourceContext.commitmentId,
       sourceContext.commitment_id,
       sourceContext.sourceCommitmentId,
-      sourceContext.source_commitment_id
+      sourceContext.source_commitment_id,
+      sourceContext.sourceId,
+      sourceContext.source_id,
+      sourcePacket.commitment_id,
+      sourcePacket.commitmentId,
+      sourcePacket.source_id,
+      sourcePacket.sourceId,
+      linkedTask.id,
+      linkedTask.taskId,
+      linkedTask.commitmentId,
+      linkedTask.commitment_id,
+      linkedTranscript.id,
+      linkedTranscript.transcriptId,
+      ...refs.flatMap((ref) => [ref?.id, ref?.sourceId, ref?.source_id, ref?.transcriptId, ref?.transcript_id, ref?.commitmentId, ref?.commitment_id])
     ].filter(Boolean).map(String);
-    return ids.includes(commitmentId);
+    return Array.from(new Set(ids));
+  };
+  const matchesCommitment = (value) => {
+    if(!commitmentId) return false;
+    const ids = packetIdValues(value);
+    for(const id of directTaskIds){
+      if(ids.includes(id)) return true;
+    }
+    return false;
   };
   const attachedDrafts = drafts.filter((draft) => matchesCommitment(draft)).slice(0,2).map((draft) => ({
     kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
@@ -26119,9 +26200,18 @@ async function openTaskWorkspace(){
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
       getJson('/api/val/commitments?limit=120&ownerType=user',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Commitments are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
-      getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
+      postJson('/api/val/ready-for-you/build',{limit:25},{timeoutMs:12000,timeoutMessage:'Prepared work is taking too long to refresh.'})
     ]);
-    renderTaskWorkspace(Array.isArray(commitmentsResult?.commitments)?commitmentsResult.commitments:[],draftsResult?.drafts || [],readyResult?.items || []);
+    const readyItems = [
+      ...safeArray(readyResult?.preparedItems),
+      ...safeArray(readyResult?.prepared_items),
+      ...safeArray(readyResult?.allBuilt),
+      ...safeArray(readyResult?.items)
+    ].filter((item,index,list) => {
+      const id = String(item?.id || item?.metadataJson?.commitmentId || item?.metadata_json?.commitment_id || '');
+      return id ? list.findIndex((candidate) => String(candidate?.id || candidate?.metadataJson?.commitmentId || candidate?.metadata_json?.commitment_id || '') === id) === index : true;
+    });
+    renderTaskWorkspace(Array.isArray(commitmentsResult?.commitments)?commitmentsResult.commitments:[],draftsResult?.drafts || [],readyItems);
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;
@@ -26570,6 +26660,13 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
   const effectiveMeaningfulReviews = meaningfulReviews;
   const checkedReviews = safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : (proofReviews.length ? proofReviews : observerLiveReviews(observer.name, 8));
   const hasInspectableReviews = Boolean(effectiveMeaningfulReviews.length || checkedReviews.length || livePackets.length);
+  const visibleContextLines = [
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'What I am watching: ' + observer.watching : '',
+    Array.isArray(observer.evidenceItems) && observer.evidenceItems.length ? 'Evidence loaded: ' + observer.evidenceItems.join('; ') : (observer.evidence ? 'Evidence loaded: ' + observer.evidence : ''),
+    observer.concern ? 'My concern: ' + observer.concern : '',
+    observer.explore ? 'What I would explore next: ' + observer.explore : ''
+  ].filter((line) => line && !/no source-backed|waiting for reviewed packets|no live packet|waiting for proof/i.test(line));
   if(hasInspectableReviews && (asksEvidence || asksRelationshipRepair || asksContext)){
     if(!effectiveMeaningfulReviews.length){
       return [
@@ -26605,6 +26702,30 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
       '',
       'Source trail:',
       ...effectiveMeaningfulReviews.slice(0, 3).map((review) => '- ' + observerReviewEvidenceLine(review))
+    ].join('\n');
+  }
+  if(visibleContextLines.length && (asksEvidence || asksRelationshipRepair || asksContext)){
+    const named = observerCardNamedPeopleFromText(visibleContextLines.join(' '));
+    if(asksRelationshipRepair && observer.name === 'Relationship'){
+      return [
+        named.length
+          ? 'The relationship names visible in this loaded card are: ' + named.join(', ') + '.'
+          : 'I cannot name a relationship for repair from this card yet.',
+        '',
+        'What Relationship actually has loaded:',
+        ...visibleContextLines.map((line) => '- ' + line),
+        '',
+        named.length
+          ? 'Next useful question: which of those people needs presence before strategy?'
+          : 'I should not turn “trust and warmth” into a named repair claim until the source packet attaches the person, quote, and reason.'
+      ].join('\n');
+    }
+    return [
+      observer.name + ' is answering from the loaded card context:',
+      '',
+      ...visibleContextLines.map((line) => '- ' + line),
+      '',
+      'If you want a named person, project, quote, or exact source, the packet needs to include that proof before I claim it.'
     ].join('\n');
   }
   return [
@@ -26749,6 +26870,20 @@ function updateObserverSelectedCard(observerId = ''){
   }
 }
 
+function handleObserverBoardNodeActivation(node, event = null){
+  if(!node) return false;
+  const observerId = node.dataset?.observerCowork || '';
+  if(!observerId) return false;
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  if(node.classList.contains('observer-node')){
+    updateObserverSelectedCard(observerId);
+    return true;
+  }
+  void openObserverCowork(observerId,node.dataset?.observerRole || 'observer');
+  return true;
+}
+
 function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage, context} = {}){
   const sourceMarkup = observerCoworkContextMarkup(context || {});
   scraperPreviewList.hidden = false;
@@ -26891,8 +27026,19 @@ function openObserverBoardAfterWitnessing(){
 }
 
 async function openObserverBoard(options = {}){
+  const existingSelectedObserverId = deskWorkspace?.classList.contains('observer-board-mode')
+    ? workspaceInputPanel?.querySelector?.('.observer-node.is-selected')?.dataset?.observerCowork || ''
+    : '';
+  const requestedSelectedObserverId = options.selectedObserverId || existingSelectedObserverId || '';
+  let liveContextPromise = null;
+  if(!options.skipLiveLoad){
+    liveContextPromise = loadLiveObserverBoardContext();
+    await Promise.race([
+      liveContextPromise,
+      new Promise((resolve) => window.setTimeout(resolve, 180))
+    ]);
+  }
   const chief = observerBoardState.chiefOfStaff;
-  await loadLiveObserverBoardContext();
   const observerPositions = {
     'Capacity': {x:50,y:17,side:'bridge',visualName:'Capacity',signals:'Decision quality and load',pulseDur:'18.8s',pulseDelay:'6.6s'},
     'Calendar': {x:36,y:24,side:'sage',visualName:'Calendar',signals:'Time and preparation windows',pulseDur:'17.4s',pulseDelay:'4.2s'},
@@ -27076,12 +27222,23 @@ async function openObserverBoard(options = {}){
     event.preventDefault();
     event.stopPropagation();
   }, true);
+  workspaceInputPanel.querySelectorAll('.observer-node[data-observer-cowork],.observer-chief-card[data-observer-cowork]').forEach((node) => {
+    node.addEventListener('click', (event) => handleObserverBoardNodeActivation(node, event), true);
+  });
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
   const selectedObserverName = options.selectedObserverName || options.observerName || '';
-  if(selectedObserverName){
-    requestAnimationFrame(() => updateObserverSelectedCard(observerConversationId(selectedObserverName)));
+  const selectedObserverId = requestedSelectedObserverId || (selectedObserverName ? observerConversationId(selectedObserverName) : '');
+  if(selectedObserverId){
+    requestAnimationFrame(() => updateObserverSelectedCard(selectedObserverId));
+  }
+  if(liveContextPromise){
+    liveContextPromise.then(() => {
+      if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
+      const openCardObserverId = workspaceInputPanel?.querySelector?.('.observer-node.is-selected')?.dataset?.observerCowork || '';
+      openObserverBoard({...options, selectedObserverId:openCardObserverId || selectedObserverId, skipLiveLoad:true});
+    }).catch(() => {});
   }
 }
 
@@ -27383,7 +27540,11 @@ function closeCalendarPanel(){
   renderCalendarPacketReceiptStrip(null);
 }
 
-function openHomeObserverFullContext(){
+async function openHomeObserverFullContext(){
+  await Promise.race([
+    loadLiveObserverBoardContext(),
+    new Promise((resolve) => window.setTimeout(resolve, 2500))
+  ]);
   const observer = selectHomeObserverSignal(executiveBriefingState || {});
   if(!observer){
     return openObserverBoard();
@@ -28619,13 +28780,9 @@ workspaceInputPanel.addEventListener('click', (event) => {
     maybeDismissObserverSelectedCard(event);
     return;
   }
-  event.preventDefault();
-  event.stopPropagation();
-  if(observerButton.classList.contains('observer-node')){
-    updateObserverSelectedCard(observerButton.dataset.observerCowork || '');
+  if(handleObserverBoardNodeActivation(observerButton, event)){
     return;
   }
-  void openObserverCowork(observerButton.dataset.observerCowork || '',observerButton.dataset.observerRole || 'observer');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
   const alignmentDraftButton = event.target.closest('[data-alignment-load-draft]');
