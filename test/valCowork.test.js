@@ -335,7 +335,7 @@ test('Observer chat prioritizes live packet evidence over static card fallback',
   assert.match(hearth,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews\(observer\.name, 6\)/);
   assert.match(hearth,/tone\|changed\?\|shifts\?\|friction/);
   assert.match(hearth,/what changed\|how\.\*changed/);
-  assert.match(hearth,/Relationship would look first at/);
+  assert.match(hearth,/I would start with/);
   assert.match(hearth,/observerReviewNamedLine/);
   assert.match(hearth,/I would rather say “not enough signal yet” than make up a relationship, risk, or pattern/);
   assert.match(server,/Answer the user like a specific Board member, not like a generic assistant/);
