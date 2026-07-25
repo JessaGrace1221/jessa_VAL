@@ -54,7 +54,7 @@ if(drawerCoworkIcon && drawerCoworkIcon.parentElement !== document.body){
 const valDrawerLink = document.querySelector('.val-drawer-link');
 const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
-const valLiveStatus = document.querySelector('[data-val-live-status]');
+let valLiveStatus = document.querySelector('[data-val-live-status]');
 const valStatusFields = {
   onboarding: document.querySelector('[data-val-status="onboarding"]'),
   agreements: document.querySelector('[data-val-status="agreements"]'),
@@ -20863,8 +20863,27 @@ function updateValRoutingPanel({supportCircle = [], documentExamples = [], os = 
 
 async function hydrateValDrawer(){
   if(!valLiveStatus) return;
-  if(document.querySelector('.val-witnessing-entry')){
-    valLiveStatus.textContent = 'Nothing leaves this session. VAL will show what it notices before anything becomes memory.';
+  const witnessingEntry = document.querySelector('.val-witnessing-entry');
+  if(witnessingEntry){
+    if(!canUseApi){
+      valLiveStatus.textContent = 'Live Witnessing status appears when the VAL service is connected.';
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+      return;
+    }
+    valLiveStatus.textContent = 'Restoring your Witnessing Session...';
+    try{
+      const onboarding = await postJson('/api/teach-val/onboarding/start', {resume:true,resumeWitnessing:true,testMode:false,mode:'onboarding'});
+      activeValWitnessingSessionId = onboarding.session?.id || onboarding.id || '';
+      restoreValWitnessingStateFromOnboarding(onboarding);
+      renderValWitnessingEntry(onboarding);
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+    }catch(error){
+      valLiveStatus.textContent = 'Could not restore your Witnessing Session: ' + error.message;
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+    }
     return;
   }
   if(!canUseApi){
@@ -21504,6 +21523,19 @@ function renderValWitnessingConnectionHub(){
   ].join('');
 }
 
+function valWitnessingConnectionSurface(){
+  if(deskWorkspace?.getAttribute('aria-hidden') === 'false' && workspaceInputPanel?.querySelector('[data-val-witnessing-connection-list]')) return workspaceInputPanel;
+  if(valDetail?.getAttribute('aria-hidden') === 'false' && valDetail.querySelector('[data-val-witnessing-connection-list]')) return valDetail;
+  if(workspaceInputPanel?.querySelector('[data-val-witnessing-connection-list]')) return workspaceInputPanel;
+  return valDetail || workspaceInputPanel;
+}
+
+function renderValDrawerConnections(){
+  const target = document.querySelector('[data-val-drawer-connections]');
+  if(!target)return;
+  target.innerHTML = renderValWitnessingConnectionHub();
+}
+
 let pendingValWitnessingLaunch = null;
 
 function renderValOpenAISetup(){
@@ -21558,7 +21590,8 @@ async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', op
 }
 
 function renderValWitnessingConnections(payload = {}){
-  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  const root = valWitnessingConnectionSurface();
+  const target = root?.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
   const connections = Array.isArray(payload.connections) ? payload.connections : [];
   valWitnessingConnectionState = {...payload,connections};
@@ -21568,7 +21601,8 @@ function renderValWitnessingConnections(payload = {}){
 }
 
 async function refreshValWitnessingConnections(){
-  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  const root = valWitnessingConnectionSurface();
+  const target = root?.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
   if(!canUseApi){
     target.innerHTML = '<p class="val-witnessing-connection-loading">Connection status appears when VAL is connected to its live server.</p>';
@@ -21605,7 +21639,8 @@ window.addEventListener('message', event => {
 function showValWitnessingCredentialForm(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
   const copy = valWitnessingConnectionCopy[id];
-  const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+  const root = valWitnessingConnectionSurface();
+  const slot = root?.querySelector('[data-val-witnessing-credential-slot]');
   if(!copy || !copy.fieldLabel || !slot) return;
   slot.innerHTML = [
     '<form class="val-witnessing-credential-form" data-val-witnessing-credential-form="' + escapeHtml(id) + '">',
@@ -21620,13 +21655,14 @@ function showValWitnessingCredentialForm(provider = ''){
       '<small data-val-witnessing-credential-status>VAL will encrypt this key. It will not be shown again.</small>',
     '</form>'
   ].join('');
-  workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]')?.focus();
+  root.querySelector('[data-val-witnessing-credential-input="' + id + '"]')?.focus();
 }
 
 async function saveValWitnessingCredential(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
-  const input = workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
-  const status = workspaceInputPanel.querySelector('[data-val-witnessing-credential-status]');
+  const root = valWitnessingConnectionSurface();
+  const input = root?.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
+  const status = root?.querySelector('[data-val-witnessing-credential-status]');
   const apiKey = input?.value.trim() || '';
   if(!apiKey){
     if(status) status.textContent = 'Paste the connection key before saving it.';
@@ -21636,7 +21672,7 @@ async function saveValWitnessingCredential(provider = ''){
   try{
     const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey});
     if(input) input.value = '';
-    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    const slot = root?.querySelector('[data-val-witnessing-credential-slot]');
     if(slot) slot.innerHTML = '<p class="val-witnessing-credential-success">' + escapeHtml(result.message || 'Connection saved.') + '</p>';
     renderValWitnessingConnections({connections:result.connections || []});
     return true;
@@ -22374,8 +22410,8 @@ async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
   deskWorkspace.classList.add('witnessing-mode');
   renderValWitnessingConversation({
     card,
-    rawResponse: resumeTarget?.rawResponse ?? workspaceInputValue('val-witnessing-' + card.category),
-    state: resumeTarget?.state || (index === 0 ? 'intro' : 'question'),
+    rawResponse: resumeTarget?.rawResponse ?? valWitnessingState[card.category]?.rawResponse ?? workspaceInputValue('val-witnessing-' + card.category),
+    state: options.update ? 'question' : (resumeTarget?.state || (index === 0 ? 'intro' : 'question')),
     error: resumeTarget?.error || '',
     witness: resumeTarget?.witness || null
   });
@@ -22521,6 +22557,7 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
     rawResponse,
     confirmation
   };
+  let updatingCompletedSession = false;
   if(canUseApi && !mockScrapers){
     if(confirmation === 'yes'){
       renderValWitnessingConversation({
@@ -22537,6 +22574,7 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
         {confirmation},
         {timeoutMs:12000,timeoutMessage:'VAL is shaping the next question from what you just confirmed. Please try again.'}
       );
+      updatingCompletedSession = !!result?.updatingCompletedSession;
       const next = card.next ? valWitnessingCard(card.next) : null;
       const nextQuestion = String(result?.nextQuestion || '').trim();
       if(next && nextQuestion){
@@ -22548,6 +22586,10 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
     }catch(error){
       valWitnessingState[card.category].confirmationError = error.message;
     }
+  }
+  if(updatingCompletedSession && confirmation === 'yes'){
+    await openValWitnessingSession('meeting_val',{resume:true});
+    return;
   }
   if(confirmation === 'clarify' || confirmation === 'mostly'){
     renderValWitnessingConversation({
@@ -22712,6 +22754,62 @@ function valWitnessingResumeTarget(onboarding = {}){
   return {card, state: 'witnessed', rawResponse};
 }
 
+function renderValWitnessingEntry(onboarding = {}){
+  const entry = document.querySelector('.val-witnessing-entry');
+  if(!entry)return;
+  const target = valWitnessingResumeTarget(onboarding);
+  const imports = Array.isArray(onboarding.imports) ? onboarding.imports : [];
+  const byCategory = new Map(imports.map(item=>[item.category,item]));
+  const complete = target.state === 'complete' || onboarding.session?.status === 'committed' || onboarding.session?.state?.stage === 'complete';
+  const title = document.querySelector('[data-val-witnessing-title]');
+  if(complete){
+    if(title)title.textContent='Update Witnessing';
+    entry.setAttribute('aria-label','Review completed VAL Witnessing Session');
+    entry.innerHTML = [
+      '<div class="val-witnessing-entry-summary">',
+        '<span>Witnessing Session complete</span>',
+        '<strong>Your partnership context is saved.</strong>',
+        '<p>Review any step below. Updating one answer preserves the rest of the completed session.</p>',
+      '</div>',
+      '<div class="val-witnessing-update-list">',
+        valWitnessingCards.filter(card=>card.id!=='source_review').map(card=>{
+          const saved=byCategory.get(card.category);
+          return [
+            '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpdate:' + escapeHtml(card.id) + '">',
+              '<span>' + escapeHtml(card.movement) + '</span>',
+              '<strong>' + escapeHtml(card.title) + '</strong>',
+              '<small>' + (saved?'Update':'Add answer') + '</small>',
+            '</button>'
+          ].join('');
+        }).join(''),
+      '</div>',
+      '<div class="val-entry-actions">',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingOpenBoard">View Board of Observers</button>',
+      '</div>',
+      '<small data-val-live-status>Your saved answers remain intact until you deliberately update one.</small>'
+    ].join('');
+    valLiveStatus = entry.querySelector('[data-val-live-status]') || valLiveStatus;
+    return;
+  }
+  const hasSavedAnswers = imports.length > 0;
+  const actionLabel = hasSavedAnswers ? 'Resume Witnessing' : 'Start Witnessing';
+  if(title)title.textContent=actionLabel;
+  entry.setAttribute('aria-label','Continue VAL Witnessing Session');
+  entry.innerHTML = [
+    '<div class="val-witnessing-entry-summary">',
+      '<span>' + escapeHtml(hasSavedAnswers ? 'Witnessing Session in progress' : 'Begin your Witnessing Session') + '</span>',
+      '<strong>' + escapeHtml(hasSavedAnswers ? 'Pick up at ' + target.card.title + '.' : target.card.title) + '</strong>',
+      '<p>' + escapeHtml(target.card.question) + '</p>',
+    '</div>',
+    '<div class="val-entry-actions">',
+      '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume">' + escapeHtml(actionLabel) + '</button>',
+      hasSavedAnswers ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFresh">Start Fresh</button>' : '',
+    '</div>',
+    '<small data-val-live-status>' + escapeHtml(hasSavedAnswers ? 'Your previous answers are already saved. Continue from the next unfinished step.' : 'VAL will save each answer as you move through the session.') + '</small>'
+  ].join('');
+  valLiveStatus = entry.querySelector('[data-val-live-status]') || valLiveStatus;
+}
+
 async function resumeValWitnessingSession(){
   if(!canUseApi) return {sessionId: '', target: {card: valWitnessingCard('meeting_val'), state: 'intro', rawResponse: ''}};
   const result = await postJson('/api/teach-val/onboarding/start', {resume:true, resumeWitnessing:true, testMode:false, mode:'onboarding'});
@@ -22732,19 +22830,23 @@ async function resumeValWitnessingSession(){
 }
 
 async function reopenValWitnessingDocuments(){
+  return reopenValWitnessingCard('documents_templates');
+}
+
+async function reopenValWitnessingCard(cardId){
   if(!canUseApi){
-    await openValWitnessingSession('documents_templates');
+    await openValWitnessingSession(cardId);
     return;
   }
   const resumed=await resumeValWitnessingSession();
   const sessionId=resumed.sessionId;
   if(!sessionId)throw new Error('VAL could not find your saved Witnessing Session.');
   const result=await postJson(
-    '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/reopen-witnessing-card/documents_templates',
+    '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/reopen-witnessing-card/' + encodeURIComponent(cardId),
     {}
   );
   restoreValWitnessingStateFromOnboarding(result);
-  await openValWitnessingSession('documents_templates');
+  await openValWitnessingSession(cardId,{update:true});
 }
 
 async function startFreshValWitnessingSession(){
@@ -23296,7 +23398,7 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
     return;
   }
   if(command === 'valWitnessingCredentialForm'){
-    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    const slot = valWitnessingConnectionSurface()?.querySelector('[data-val-witnessing-credential-slot]');
     if(type === 'close'){
       if(slot) slot.innerHTML = '';
       return;
@@ -28092,6 +28194,15 @@ async function handleValDetailWorkflowClick(event){
     await openValWitnessingSession('meeting_val', {resume:true});
     return true;
   }
+  if(action.startsWith('valWitnessingUpdate:')){
+    await reopenValWitnessingCard(action.split(':')[1] || 'meeting_val');
+    return true;
+  }
+  if(action === 'valWitnessingRefreshConnections' || action.startsWith('valWitnessingCredentialForm:')){
+    const parts = action.split(':');
+    await handleValWitnessingWorkflowAction(parts[0],parts[1]||'',parts.slice(2));
+    return true;
+  }
   const preflight = await ensureHearthClickPacket({
     node:workflowButton,
     packetName:'val_os_packet',
@@ -28126,6 +28237,12 @@ async function handleValDetailWorkflowClick(event){
 }
 
 valDetail?.addEventListener('click', handleValDetailWorkflowClick);
+valDetail?.addEventListener('submit', async (event) => {
+  const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
+  if(!credentialForm)return;
+  event.preventDefault();
+  await saveValWitnessingCredential(credentialForm.dataset.valWitnessingCredentialForm);
+});
 
 sourceDrawerLink.addEventListener('click', () => {
   hideWorkspaceForDrawerNavigation();

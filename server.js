@@ -8467,15 +8467,12 @@ app.post('/api/teach-val/onboarding/:id/reopen-witnessing-card/:cardId',async(re
     if(!session)return res.status(404).json({ok:false,error:'Witnessing Session not found.'});
     const card=partnershipProtocolCardFor(req.params.cardId);
     if(!card)return res.status(404).json({ok:false,error:'Witnessing card not found.'});
-    if(card.id!=='documents_templates'){
-      return res.status(400).json({ok:false,error:'Only the Documents and Templates step can be reopened from this action.'});
-    }
     const state=normalizeTeachValState(session.state);
     state.reopenedWitnessingCard={
       cardId:card.id,
       category:card.category,
       reopenedAt:new Date().toISOString(),
-      preservesCompletedSession:true
+      preservesCompletedSession:session.status==='committed'||state.stage==='complete'
     };
     session.state=state;
     await saveTeachValSession(session);
@@ -8581,6 +8578,11 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     const priorImports=await listTeachValImports(session.id);
     const uploadedDocumentContext=await witnessingUploadedDocumentContext(rawResponse);
     const isDocumentStep=card.id==='documents_templates';
+    const sessionState=normalizeTeachValState(session.state);
+    const updatingCompletedSession=!!(
+      sessionState.reopenedWitnessingCard?.preservesCompletedSession&&
+      sessionState.reopenedWitnessingCard?.cardId===card.id
+    );
     if(!isDocumentStep&&!(await requireOpenAIForNewWitnessing(res))) return;
     const observedResponse=uploadedDocumentContext.modelContext
       ? `${rawResponse}\n\n${uploadedDocumentContext.modelContext}`
@@ -8696,12 +8698,21 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       return [];
     });
     if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_answer_saved',sourceType:'witnessing',sourceId:saved.id});
-    const state=normalizeTeachValState(session.state);
+    const state=sessionState;
     state.progress[card.category]=isDocumentStep?'Saved':'Witnessed';
-    state.stage=card.category;
+    state.stage=updatingCompletedSession?'complete':card.category;
     session.state=state;
     await saveTeachValSession(session);
-    res.json({ok:true,card,graph,witness,advance:isSourceConnectionStep||isDocumentStep,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    res.json({
+      ok:true,
+      card,
+      graph,
+      witness,
+      advance:!updatingCompletedSession&&(isSourceConnectionStep||isDocumentStep),
+      updatingCompletedSession,
+      import:teachValPublicImport(saved),
+      state:await teachValStateResponse(session.id)
+    });
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(req,res)=>{
@@ -8712,6 +8723,11 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
     if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This confirmation belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach it to the wrong question.'});
     if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
     const imports=await listTeachValImports(session.id);
+    const sessionState=normalizeTeachValState(session.state);
+    const updatingCompletedSession=!!(
+      sessionState.reopenedWitnessingCard?.preservesCompletedSession&&
+      sessionState.reopenedWitnessingCard?.cardId===card.id
+    );
     const existing=imports.find(i=>i.category===card.category);
     if(!existing)return res.status(404).json({ok:false,error:'Witnessing card has not been answered yet.'});
     const value=String(req.body.confirmation||req.body.value||'yes').trim().toLowerCase();
@@ -8743,7 +8759,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
     ));
     const nextCard=nextPartnershipProtocolCard(card);
     let nextQuestion='';
-    if(confirmation.status==='confirmed'&&nextCard){
+    if(confirmation.status==='confirmed'&&nextCard&&!updatingCompletedSession){
       nextQuestion=await composePartnershipProtocolNextQuestion({
         currentCard:card,
         nextCard,
@@ -8779,7 +8795,14 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
       return [];
     });
     if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_answer_confirmed',sourceType:'witnessing',sourceId:saved.id});
-    res.json({ok:true,card,confirmation,nextQuestion,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    if(updatingCompletedSession){
+      sessionState.stage='complete';
+      sessionState.progress[card.category]='Confirmed';
+      delete sessionState.reopenedWitnessingCard;
+      session.state=sessionState;
+      await saveTeachValSession(session);
+    }
+    res.json({ok:true,card,confirmation,nextQuestion,updatingCompletedSession,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{

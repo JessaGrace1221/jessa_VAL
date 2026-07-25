@@ -9,6 +9,7 @@ const vm=require('node:vm');
 const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(__dirname,'..','dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(__dirname,'..','command-center.js'),'utf8');
+const hearthJs=fs.readFileSync(path.join(__dirname,'..','hearth-prototype.js'),'utf8');
 
 test('Teach VAL commit promotes onboarding into core memory and evidence',()=>{
   assert.match(server,/async function promoteTeachValOnboardingToCoreMemory/);
@@ -588,7 +589,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   }
   assert.match(server,/documents_templates/);
   assert.match(server,/reopen-witnessing-card\/:cardId/);
-  assert.match(server,/Only the Documents and Templates step can be reopened from this action/);
+  assert.match(server,/preservesCompletedSession:session\.status==='committed'\|\|state\.stage==='complete'/);
   assert.match(server,/reopenedWitnessingCard/);
   assert.match(server,/import_context/);
   assert.match(server,/partnership_agreement/);
@@ -675,7 +676,19 @@ test('Witnessing document receipt saves immediately while Observer reading conti
   assert.match(route,/if\(!isDocumentStep&&!\(await requireOpenAIForNewWitnessing\(res\)\)\) return/);
   assert.match(route,/witnessingDocumentReceiptTurn\(\{card,rawResponse,documents:uploadedDocumentContext\.documents,nextCard\}\)/);
   assert.match(route,/observerReviewStatus:'queued'/);
-  assert.match(route,/advance:isSourceConnectionStep\|\|isDocumentStep/);
+  assert.match(route,/advance:!updatingCompletedSession&&\(isSourceConnectionStep\|\|isDocumentStep\)/);
   assert.match(server,/app\.post\('\/api\/val\/files\/:id\/observer-review'/);
   assert.match(server,/Only About Me documents are reviewed by all 14 Observers/);
+});
+
+test('Witnessing resumes the saved step and completed sessions expose per-step updates',()=>{
+  assert.match(hearthJs,/function renderValWitnessingEntry/);
+  assert.match(hearthJs,/Pick up at /);
+  assert.match(hearthJs,/valWitnessingUpdate:/);
+  assert.match(hearthJs,/Update':'Add answer/);
+  assert.match(hearthJs,/async function reopenValWitnessingCard/);
+  assert.match(server,/reopen-witnessing-card\/:cardId/);
+  assert.doesNotMatch(server,/Only the Documents and Templates step can be reopened/);
+  assert.match(server,/updatingCompletedSession/);
+  assert.match(server,/state\.stage=updatingCompletedSession\?'complete':card\.category/);
 });
