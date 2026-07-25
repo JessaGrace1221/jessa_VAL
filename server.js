@@ -15,7 +15,8 @@ const {createGhlMcpService} = require('./services/ghlMcpService');
 const {createKrispMcpService} = require('./services/krispMcpService');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
-const {DEFAULT_OBSERVERS} = require('./services/valIntelligenceSpine');
+const {DEFAULT_OBSERVERS,OBSERVER_PACKET_LENSES} = require('./services/valIntelligenceSpine');
+const {createAboutMeObserverReasoner} = require('./services/valAboutMeObserverReview');
 const {ensureValBoardPacketTables} = require('./services/valBoardPacketsSchema');
 const {registerValBoardPacketsRoutes} = require('./services/valBoardPacketsRoutes');
 const {ensureValEnvelopeTables} = require('./services/valEnvelopesSchema');
@@ -4193,7 +4194,7 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     category:'witness_documents_templates',
     title:'Documents and Templates',
     visibleQuestion:'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
-    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Classify each artifact as Document or Template; for Documents, identify the relationship or project; for Templates, identify what it is used for.',
+    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Preserve the selected document category. Independently identify any relationship or project the artifact belongs to and, for Templates, what it is used for.',
     whyThisCardExistsNow:'VAL needs to classify artifacts as documents or templates before interpreting or reusing them.',
     permanenceProfile:'mixed',
     creates:['uploaded_documents','uploaded_templates','document_relationship_links','document_project_links','template_use_cases','template_preservation_rules'],
@@ -4465,6 +4466,57 @@ async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[
       throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
     }
   }
+}
+
+function witnessingUploadIds(rawResponse=''){
+  return [...String(rawResponse||'').matchAll(/\bVAL file id:\s*([a-z0-9:_-]+)/ig)]
+    .map(match=>String(match[1]||'').trim())
+    .filter(Boolean)
+    .slice(0,8);
+}
+
+async function witnessingUploadedDocumentContext(rawResponse=''){
+  const ids=witnessingUploadIds(rawResponse);
+  if(!ids.length)return {documents:[],modelContext:''};
+  await valDbReady;
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(
+      `select id,type,title,raw_text,metadata,created_at
+       from val_transcripts
+       where user_id=$1 and id=any($2::text[])`,
+      [VAL_USER_ID,ids]
+    );
+    rows=(result.rows||[]).map(row=>({
+      id:row.id,
+      type:row.type,
+      title:row.title||'Uploaded document',
+      rawText:row.raw_text||'',
+      metadata:row.metadata||{},
+      createdAt:row.created_at?.toISOString?.()||row.created_at||''
+    }));
+  }else{
+    rows=(valStore().transcripts||[]).filter(row=>ids.includes(String(row.id||'')));
+  }
+  const byId=new Map(rows.map(row=>[String(row.id||''),row]));
+  const documents=ids.map(id=>byId.get(id)).filter(Boolean).filter(row=>{
+    const metadata=row.metadata||{};
+    return String(row.type||'')==='knowledge_document'
+      && String(metadata.uploadedVia||metadata.uploaded_via||'')==='val_witnessing_session';
+  }).map(row=>({
+    id:String(row.id||''),
+    title:String(row.title||row.metadata?.fileName||'Uploaded document'),
+    docType:String(row.metadata?.docType||row.metadata?.doc_type||'knowledge_document'),
+    rawText:String(row.rawText||row.raw_text||'').trim()
+  })).filter(row=>row.rawText);
+  const modelContext=documents.map((document,index)=>[
+    `Attached Witnessing document ${index+1}: ${document.title}`,
+    `VAL file id: ${document.id}`,
+    `Document type: ${document.docType}`,
+    'Document text:',
+    document.rawText
+  ].join('\n')).join('\n\n');
+  return {documents,modelContext};
 }
 function userFacingWitnessLine(line=''){
   return String(line||'')
@@ -8377,6 +8429,27 @@ app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/teach-val/onboarding/:id/reopen-witnessing-card/:cardId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Witnessing Session not found.'});
+    const card=partnershipProtocolCardFor(req.params.cardId);
+    if(!card)return res.status(404).json({ok:false,error:'Witnessing card not found.'});
+    if(card.id!=='documents_templates'){
+      return res.status(400).json({ok:false,error:'Only the Documents and Templates step can be reopened from this action.'});
+    }
+    const state=normalizeTeachValState(session.state);
+    state.reopenedWitnessingCard={
+      cardId:card.id,
+      category:card.category,
+      reopenedAt:new Date().toISOString(),
+      preservesCompletedSession:true
+    };
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({...await teachValStateResponse(session.id),reopenedCard:card});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
   try{
     const session=await getTeachValSession(req.params.id);
@@ -8475,6 +8548,10 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
+    const uploadedDocumentContext=await witnessingUploadedDocumentContext(rawResponse);
+    const observedResponse=uploadedDocumentContext.modelContext
+      ? `${rawResponse}\n\n${uploadedDocumentContext.modelContext}`
+      : rawResponse;
     const nextCard=nextPartnershipProtocolCard(card);
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
@@ -8509,8 +8586,8 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
             next_question:nextCard?.visibleQuestion||''
           }
         }
-      : await generatePartnershipProtocolTurn({card,rawResponse,priorImports});
-    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph,confirmation:sourceConnectionConfirmation});
+      : await generatePartnershipProtocolTurn({card,rawResponse:observedResponse,priorImports});
+    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse:observedResponse,graph,confirmation:sourceConnectionConfirmation});
     const evidenceChain=priorEvidenceChain.concat([integrityChain]);
     const currentState=partnershipCurrentState(evidenceChain,nextCard);
     const existing=priorImports.find(i=>i.category===card.category);
@@ -8531,6 +8608,13 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       card:{id:card.id,category:card.category,title:card.title},
       livingExecutiveGraph:graph,
       witness,
+      uploadedDocuments:uploadedDocumentContext.documents.map(document=>({
+        id:document.id,
+        title:document.title,
+        docType:document.docType,
+        characters:document.rawText.length,
+        readByVal:true
+      })),
       integrityChain,
       evidenceChain:compactPartnershipEvidenceChain(evidenceChain),
       currentState,
@@ -26061,6 +26145,62 @@ function meetingPrepRebuildExternalReviewText(context={}){
     ...ready.map(lookup=>lookup.summary)
   ].join('\n\n');
 }
+function aboutMeDocumentCategory(value=''){
+  return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')==='about_me';
+}
+const reasonAboutMeDocumentForObserver=createAboutMeObserverReasoner({
+  callModel:callValModel,
+  observerLenses:OBSERVER_PACKET_LENSES
+});
+async function queueKnowledgeDocumentObserverDelivery({input={},result={}}={}){
+  const document=input.document||input.source||input;
+  const sourceRecord=result.sourceProcessingRecord||{};
+  const sourceReceipt=sourceRecord.sourceReceiptJson||sourceRecord.source_receipt_json||{};
+  const category=document.documentCategory||document.document_category||sourceReceipt.documentCategory||sourceReceipt.document_category||'other';
+  const sourceId=String(document.sourceId||document.source_id||document.id||sourceRecord.sourceId||sourceRecord.source_id||'');
+  const title=String(document.title||document.fileName||document.filename||sourceRecord.sourceTitle||sourceRecord.source_title||'Uploaded document');
+  const rawText=String(document.rawText||document.raw_text||document.text||document.content||input.rawText||input.raw_text||'');
+  const packet=await valBoardPackets?.recordSourceEvent('document',{
+    id:sourceId,
+    sourceId,
+    title,
+    summary:rawText.slice(0,1400),
+    documentCategory:category,
+    sourceRefs:[{
+      sourceType:'knowledge_document',
+      sourceId,
+      quoteOrSummary:rawText.slice(0,900),
+      confidence:1
+    }],
+    payload:{
+      documentCategory:category,
+      sourceProcessingRecordId:sourceRecord.id||'',
+      characterCount:rawText.length,
+      noExternalAction:true
+    }
+  });
+  if(!aboutMeDocumentCategory(category)){
+    return {status:'delivered',packetId:packet?.id||'',observerCount:14,modelBacked:false};
+  }
+  const event={
+    type:'about_me_document',
+    sourceType:'document',
+    sourceId,
+    packetIds:packet?.id?[packet.id]:[],
+    document:{id:sourceId,title,rawText,documentCategory:category}
+  };
+  Promise.resolve().then(async()=>{
+    if(!valIntelligenceSpine)throw new Error('VAL Intelligence Spine is not ready.');
+    await valIntelligenceSpine.runIntelligencePass({event,observerSuite:DEFAULT_OBSERVERS});
+  }).catch(error=>console.warn('[val-board] About Me Observer review failed:',error.message));
+  return {
+    status:'processing',
+    packetId:packet?.id||'',
+    observerCount:DEFAULT_OBSERVERS.length,
+    modelBacked:true,
+    message:'All 14 Observers are reading this About Me document.'
+  };
+}
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
 function validDueDate(value){ if(!value)return null; const d=new Date(value); return isNaN(d.getTime())?null:d.toISOString(); }
@@ -31417,6 +31557,8 @@ const valSourceProcessing = registerValSourceProcessingRoutes(app,{
     return packet;
   },
   allowRelationshipDocumentEmailPost:()=>!requestContext.getStore()?.publicHearthTest,
+  allowKnowledgeDocumentPost:()=>!requestContext.getStore()?.publicHearthTest,
+  afterKnowledgeDocument:queueKnowledgeDocumentObserverDelivery,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -32729,6 +32871,7 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console,
+  observerReasoner:reasonAboutMeDocumentForObserver,
   loaders:{
     loadTasks,
     listTeachValCoreMemory,
@@ -36051,6 +36194,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         project:req.body.project||CLIENT_CONFIG.projectName||CLIENT_CONFIG.brandName||'',
         client:req.body.client||CLIENT_CONFIG.clientName||'',
         docType:inferredDocType,
+        documentCategory:req.body.documentCategory||'other',
         chapterNumber:req.body.chapterNumber||'',
         chapterTitle:req.body.chapterTitle||'',
         canonicalManuscript:inferredDocType==='manuscript',
@@ -36067,7 +36211,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         importance:isBookEditorProject()?4:3,
         metadata
       });
-      let processed=null,processingError='';
+      let processed=null,processingError='',observerDelivery=null;
       if(isTranscriptUpload&&String(req.body.processTranscript||'true')!=='false'){
         try{
           processed=await processTranscriptPayload({
@@ -36083,9 +36227,34 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
           processingError=e.message||String(e);
           await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});
         }
+      }else if(!isTranscriptUpload){
+        try{
+          const knowledgeDocumentInput={
+            document:{
+              id:saved.id,
+              sourceId:saved.id,
+              sourceType:'knowledge_document',
+              title:req.body.title||file.originalname,
+              fileName:file.originalname,
+              mimeType:file.mimetype,
+              rawText:text,
+              docType:inferredDocType,
+              documentCategory:metadata.documentCategory,
+              uploadedVia:metadata.uploadedVia,
+              createdAt:new Date().toISOString()
+            }
+          };
+          processed=await valSourceProcessing.processKnowledgeDocument(knowledgeDocumentInput);
+          observerDelivery=await queueKnowledgeDocumentObserverDelivery({
+            input:knowledgeDocumentInput,
+            result:processed
+          });
+        }catch(e){
+          processingError=e.message||String(e);
+        }
       }
-      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,processingError},success:!processingError}).catch(()=>{});
-      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,processingError,counts:processed?.counts||null});
+      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',processingError},success:!processingError}).catch(()=>{});
+      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',whatValDidReceipt:processed?.whatValDidReceipt||null,observerDelivery,processingError,counts:processed?.counts||null});
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
   }catch(e){res.status(500).json({error:e.message});}

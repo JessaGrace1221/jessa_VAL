@@ -43,6 +43,25 @@ function normalizeSourceRef(ref={}){
     created_at:ref.created_at||ref.createdAt||new Date().toISOString()
   };
 }
+function contextForPersistence(contextPacket={}){
+  const event=contextPacket.event||{};
+  const document=event.document||{};
+  const rawText=String(document.rawText||document.raw_text||'');
+  if(!rawText)return contextPacket;
+  return {
+    ...contextPacket,
+    event:{
+      ...event,
+      document:{
+        ...document,
+        rawText:undefined,
+        raw_text:undefined,
+        characterCount:rawText.length,
+        sourceTextStoredSeparately:true
+      }
+    }
+  };
+}
 function sourceRefsFromRows(rows=[],sourceType='unknown',summaryKey='summary',idKey='id',limit=8){
   return safeArray(rows).slice(0,limit).map(row=>normalizeSourceRef({
     sourceType,
@@ -332,6 +351,7 @@ function createValIntelligenceSpine({
   userId=()=>'default',
   logger=console,
   promptRegistry=createValPromptRegistry(),
+  observerReasoner=null,
   loaders={}
 }={}){
   function now(){ return new Date().toISOString(); }
@@ -730,7 +750,33 @@ function createValIntelligenceSpine({
   async function runObserver({observerName,promptKey,contextPacket,eventRunId='',output=null}={}){
     const scope=currentScope();
     const prompt=promptRegistry.getPrompt(promptKey||'event_intelligence_pass');
-    const generated=output || buildObserverOutput(observerName,contextPacket||{});
+    const deterministicOutput=buildObserverOutput(observerName,contextPacket||{});
+    let generated=output;
+    if(!generated && typeof observerReasoner==='function'){
+      try{
+        generated=await observerReasoner({
+          observerName,
+          promptKey:promptKey||'event_intelligence_pass',
+          contextPacket:contextPacket||{},
+          deterministicOutput
+        });
+      }catch(error){
+        logger.warn?.(`[val-spine] model-backed observer ${observerName} failed: ${error.message}`);
+        generated={
+          ...deterministicOutput,
+          observation:'No Observer conclusion was stored because the evidence review failed.',
+          closing_statement:'This source still needs a successful evidence-backed review.',
+          confidence:0,
+          conviction:0,
+          status:'review_failed',
+          unknowns:[
+            ...safeArray(deterministicOutput.unknowns),
+            {source:'observer_reasoner',reason:error.message}
+          ]
+        };
+      }
+    }
+    generated=generated || deterministicOutput;
     const row={
       id:uuid('observer'),
       tenantId:scope.tenantId,
@@ -740,7 +786,7 @@ function createValIntelligenceSpine({
       promptKey:promptKey||'event_intelligence_pass',
       promptSource:prompt.sourcePath||'',
       status:'completed',
-      contextPacketJson:contextPacket||{},
+      contextPacketJson:contextForPersistence(contextPacket||{}),
       outputJson:generated,
       confidence:Number(generated.confidence||0),
       conviction:Number(generated.conviction||0),
@@ -1069,7 +1115,7 @@ function createValIntelligenceSpine({
       eventSourceType:event.sourceType||event.source_type||'manual',
       eventSourceId:event.sourceId||event.source_id||'',
       status:'running',
-      contextPacketJson:contextPacket,
+      contextPacketJson:contextForPersistence(contextPacket),
       unknownsJson:contextPacket.unknowns||[],
       sourceRefsJson:contextPacket.sourceRefs||[],
       resultJson:{},
@@ -1110,4 +1156,10 @@ function createValIntelligenceSpine({
   };
 }
 
-module.exports = {createValIntelligenceSpine,DEFAULT_OBSERVERS,normalizeSourceRef};
+module.exports = {
+  createValIntelligenceSpine,
+  DEFAULT_OBSERVERS,
+  OBSERVER_PACKET_LENSES,
+  contextForPersistence,
+  normalizeSourceRef
+};

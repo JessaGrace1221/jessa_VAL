@@ -119,10 +119,10 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
   {
     sourceType:'document',
     label:'Documents and uploads',
-    status:'ingress',
-    hook:'POST /api/val/board/events/document',
+    status:'live',
+    hook:'VAL document upload and source-processing knowledge-document intake',
     packetTypes:['document_packet','learning_packet'],
-    claim:'Uploaded, linked, or generated documents become Board packets when the document surface sends them to the source-specific Board ingress.'
+    claim:'Uploaded knowledge documents become Board packets automatically. About Me documents also receive an individual, source-backed review from all 14 Observers.'
   },
   {
     sourceType:'task',
@@ -295,6 +295,8 @@ const STOP_NAME_WORDS = new Set([
   'Jessa','Grace','Please','Thanks','Thank','Sorry','Good','Morning','Afternoon','Evening',
   'Your','Receipt','Document','Invoice','Fwd','Today','Update','Question','Response',
   'Master','Edits','Voice','User','Try','Send','Check','Hot','The','Meeting',
+  'Documents','Attachment','Attachments','Invoices','Receipts','Payment','Payments',
+  'Google','Workspace','Google Workspace','Google Payments','Available','Account','Accounts',
   'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday',
   'Action','Items','Key','Points','Source','Transcript','Meeting','Calendar',
   'Project','Relationship','Capacity','Courage','Delight','Meaning','Momentum',

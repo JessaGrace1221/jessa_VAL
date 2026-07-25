@@ -5158,7 +5158,93 @@ button.observer-node:focus-visible{
 .val-witnessing-tool-row{
   display:flex;
   flex-wrap:wrap;
+  align-items:flex-end;
   gap:10px;
+}
+.val-witnessing-document-category{
+  display:grid;
+  flex:1 1 240px;
+  gap:6px;
+  color:rgba(34,19,15,.72);
+  font:600 .72rem/1.2 var(--sans);
+}
+.val-witnessing-document-category span{
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.val-witnessing-document-category select{
+  width:100%;
+  min-height:42px;
+  border:1px solid rgba(64,86,61,.24);
+  border-radius:8px;
+  background:rgba(255,255,255,.9);
+  color:rgba(34,19,15,.92);
+  padding:0 34px 0 12px;
+  font:500 .88rem/1 var(--sans);
+}
+.val-observer-document-receipts{
+  width:min(760px,100%);
+  margin-top:12px;
+  border:1px solid rgba(64,86,61,.16);
+  border-radius:8px;
+  background:rgba(255,255,255,.82);
+  padding:16px;
+}
+.val-observer-document-receipts-head{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:4px 16px;
+  padding-bottom:12px;
+  border-bottom:1px solid rgba(64,86,61,.12);
+}
+.val-observer-document-receipts-head span{
+  grid-column:1 / -1;
+  color:rgba(64,86,61,.76);
+  font:600 .7rem/1.2 var(--sans);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.val-observer-document-receipts-head strong{
+  color:rgba(34,19,15,.9);
+  font:600 .95rem/1.3 var(--sans);
+}
+.val-observer-document-receipts-head small{
+  color:rgba(34,19,15,.6);
+}
+.val-observer-document-receipts-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 18px;
+}
+.val-observer-document-receipts-list article{
+  display:grid;
+  gap:4px;
+  min-width:0;
+  padding:12px 0;
+  border-bottom:1px solid rgba(64,86,61,.1);
+}
+.val-observer-document-receipts-list article span{
+  color:rgba(64,86,61,.82);
+  font:600 .72rem/1.2 var(--sans);
+}
+.val-observer-document-receipts-list article strong{
+  color:rgba(34,19,15,.88);
+  font:500 .84rem/1.4 var(--sans);
+}
+.val-observer-document-receipts-list article.reading strong{
+  color:rgba(34,19,15,.48);
+}
+.val-observer-document-receipts-list blockquote{
+  margin:2px 0 0;
+  color:rgba(34,19,15,.66);
+  font:400 .78rem/1.45 var(--sans);
+}
+.val-observer-document-receipts-list small{
+  color:rgba(34,19,15,.48);
+  font-size:.68rem;
+}
+@media(max-width:720px){
+  .val-observer-document-receipts-list{grid-template-columns:1fr}
 }
 .val-witnessing-tool-row button,
 .val-witnessing-tool-row a,

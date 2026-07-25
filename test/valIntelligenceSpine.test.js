@@ -2,7 +2,8 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {createValIntelligenceSpine,normalizeSourceRef}=require('../services/valIntelligenceSpine');
+const {createValIntelligenceSpine,contextForPersistence,normalizeSourceRef}=require('../services/valIntelligenceSpine');
+const {createAboutMeObserverReasoner,documentChunks,exactEvidence}=require('../services/valAboutMeObserverReview');
 const {VAL_INTELLIGENCE_SPINE_SQL}=require('../services/valIntelligenceSpineSchema');
 
 const root=path.join(__dirname,'..');
@@ -40,6 +41,121 @@ test('source references normalize to the shared audit structure',()=>{
   assert.equal(ref.quote_or_summary,'Something happened.');
   assert.equal(ref.confidence,1);
   assert.ok(ref.created_at);
+});
+
+test('Observer audit records do not duplicate complete About Me source text',()=>{
+  const stored=contextForPersistence({
+    event:{
+      type:'about_me_document',
+      document:{id:'doc_1',title:'About Me',rawText:'Private source evidence lives once.'}
+    }
+  });
+  assert.equal(stored.event.document.rawText,undefined);
+  assert.equal(stored.event.document.characterCount,35);
+  assert.equal(stored.event.document.sourceTextStoredSeparately,true);
+});
+
+test('About Me evidence keeps exact quotes and reads every document section',async()=>{
+  const calls=[];
+  const reasoner=createAboutMeObserverReasoner({
+    observerLenses:{Capacity:{lens:'tradeoffs',sees:'capacity and decision quality'}},
+    callModel:async input=>{
+      calls.push(input);
+      const sourceLine=input.user.includes('SECOND SECTION')
+        ? 'SECOND SECTION protects unhurried thinking.'
+        : 'FIRST SECTION values directness.';
+      return JSON.stringify({
+        status:'observed',
+        observation:'The user protects decision quality.',
+        useful_context:['Protect clear decisions.'],
+        evidence_quotes:[sourceLine,'This sentence was invented.'],
+        confidence:0.88
+      });
+    }
+  });
+  const rawText='FIRST SECTION values directness.'.padEnd(24000,' ')+'SECOND SECTION protects unhurried thinking.';
+  const output=await reasoner({
+    observerName:'Capacity',
+    contextPacket:{
+      event:{
+        type:'about_me_document',
+        packetIds:['packet_about_me'],
+        document:{id:'doc_about_me',title:'Jessa About Me',rawText}
+      }
+    },
+    deterministicOutput:{observer:'Capacity'}
+  });
+  assert.equal(documentChunks(rawText).length,2);
+  assert.equal(calls.length,2);
+  assert.equal(output.document_review.sectionsRead,2);
+  assert.equal(output.document_review.charactersRead,rawText.length);
+  assert.equal(output.packetReviews[0].status,'observed');
+  assert.deepEqual(
+    output.evidence.map(item=>item.quote_or_summary),
+    ['FIRST SECTION values directness.','SECOND SECTION protects unhurried thinking.']
+  );
+  assert.deepEqual(exactEvidence(rawText,['This sentence was invented.']),[]);
+});
+
+test('About Me review stores an honest no-signal receipt when a lens finds nothing',async()=>{
+  const reasoner=createAboutMeObserverReasoner({
+    observerLenses:{Calendar:{lens:'timing',sees:'calendar reality'}},
+    callModel:async()=>JSON.stringify({
+      status:'observed',
+      observation:'Invented observation.',
+      evidence_quotes:['A quote not present in the document.'],
+      confidence:0.91
+    })
+  });
+  const output=await reasoner({
+    observerName:'Calendar',
+    contextPacket:{event:{type:'about_me_document',document:{id:'doc_1',title:'About Me',rawText:'I value candor and humane work.'}}},
+    deterministicOutput:{observer:'Calendar'}
+  });
+  assert.equal(output.packetReviews[0].status,'no_signal');
+  assert.equal(output.observation,'No meaningful signal from my lens.');
+  assert.equal(output.document_review.charactersRead,31);
+});
+
+test('About Me intelligence invokes one independent reasoner for each of 14 Observers',async()=>{
+  let store={tasks:[]};
+  const calls=[];
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,8)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async({observerName,deterministicOutput})=>{
+      calls.push(observerName);
+      return {
+        ...deterministicOutput,
+        observation:`${observerName} read the document.`,
+        evidence:[{source_type:'knowledge_document',source_id:'doc_about_me',quote_or_summary:'I value directness.',confidence:1}],
+        document_review:{sourceId:'doc_about_me',status:'observed',sectionsRead:1,charactersRead:18},
+        confidence:0.9,
+        conviction:0.7
+      };
+    },
+    loaders:{
+      listBoardPackets:async()=>[],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'about_me_document',sourceType:'document',sourceId:'doc_about_me',document:{id:'doc_about_me',rawText:'I value directness.'}}
+  });
+  assert.equal(result.observerRuns.length,14);
+  assert.equal(new Set(calls).size,14);
+  assert.ok(calls.includes('Delight'));
+  assert.ok(calls.includes('Synchronicity'));
+  assert.ok(calls.includes('Witnessing'));
+  assert.ok(result.observerRuns.every(run=>run.outputJson.document_review?.sourceId==='doc_about_me'));
+  assert.ok(result.observerRuns.every(run=>run.contextPacketJson.event.document.rawText===undefined));
 });
 
 test('in-memory intelligence pass records observers, round table, recommendation, momentum, and unknowns',async()=>{

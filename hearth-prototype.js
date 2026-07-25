@@ -17292,6 +17292,8 @@ async function appendValWitnessingFiles(category, files = []){
   if(!selected.length) return;
   const card = valWitnessingCard(category);
   const mode = 'val-witnessing-' + card.category;
+  const documentCategory = workspaceInputPanel.querySelector('[data-val-witnessing-document-category="' + card.category + '"]')?.value || 'other';
+  const documentCategoryLabel = valWitnessingDocumentCategoryLabel(documentCategory);
   const statusTarget = workspaceInputPanel.querySelector('.val-conversation-helper');
   if(statusTarget) statusTarget.textContent = 'Uploading ' + selected.length + ' file' + (selected.length === 1 ? '' : 's') + ' into VAL document context...';
   const receipts = [];
@@ -17303,14 +17305,19 @@ async function appendValWitnessingFiles(category, files = []){
         form.append('files', file, file.name);
         form.append('uploadedVia', 'val_witnessing_session');
         form.append('docType', 'knowledge_document');
+        form.append('documentCategory', documentCategory);
         form.append('title', file.name);
         const response = await fetch('/api/val/files', {method:'POST', body:form});
         const data = await response.json().catch(() => ({}));
         if(!response.ok) throw new Error(data.error || data.message || 'Upload failed');
         receipt += '\nVAL file id: ' + (data.id || data.files?.[0]?.id || 'saved');
-        receipt += '\nClassification needed: Document or Template.';
-        receipt += '\nIf Document: which relationship or project does this belong to?';
-        receipt += '\nIf Template: what is this template used for?';
+        receipt += '\nVAL read the document text and attached it to this Witnessing answer.';
+        receipt += '\nCategory: ' + documentCategoryLabel + '.';
+        if(data.observerDelivery?.modelBacked){
+          receipt += '\nAll 14 Observers are reading it now. Their evidence-backed receipts will appear below.';
+          pollValObserverDocumentReceipts(data.id || data.files?.[0]?.id || '', category);
+        }
+        receipt += '\nAdd the relationship or project this belongs to when relevant.';
       }catch(error){
         receipt += '\nUpload note: VAL could not read this file yet (' + (error.message || 'upload failed') + '). Keep the file named here and add its purpose below.';
       }
@@ -17328,6 +17335,82 @@ async function appendValWitnessingFiles(category, files = []){
     appendToWorkspaceInput(receipts.join('\n\n'));
   }
   if(statusTarget) statusTarget.textContent = 'File context added. Tell VAL whether each item is a Document or Template before continuing.';
+}
+
+const valWitnessingDocumentCategories = [
+  {value:'about_me', label:'About Me'},
+  {value:'assessments', label:'Assessments'},
+  {value:'templates', label:'Templates'},
+  {value:'current_contracts', label:'Current Contracts'},
+  {value:'sops', label:'SOPs'},
+  {value:'project_documents', label:'Project Documents'},
+  {value:'relationship_documents', label:'Relationship Documents'},
+  {value:'reference_material', label:'Reference Material'},
+  {value:'other', label:'Other'}
+];
+
+function valWitnessingDocumentCategoryLabel(value=''){
+  return valWitnessingDocumentCategories.find(category=>category.value===value)?.label || 'Other';
+}
+
+function valObserverDocumentRunsForSource(runs=[],sourceId=''){
+  return (Array.isArray(runs)?runs:[]).filter(run=>{
+    const event=run.contextPacketJson?.event||run.context_packet_json?.event||{};
+    const document=event.document||{};
+    return event.type==='about_me_document'&&String(document.id||document.sourceId||'')===String(sourceId||'');
+  });
+}
+
+function renderValObserverDocumentReceipts(target,runs=[],title='About Me document'){
+  if(!target)return;
+  const completedByName=new Map(runs.map(run=>[run.observerName||run.observer_name,run]));
+  const observerNames=[
+    'Executive Inbox','Relationship','Project','Capacity','Courage','Delight','Opportunity',
+    'Momentum','Meaning','Synchronicity','Commitment','Calendar','Environment','Witnessing'
+  ];
+  target.hidden=false;
+  target.innerHTML=[
+    '<div class="val-observer-document-receipts-head">',
+      '<span>Board reading receipts</span>',
+      '<strong>' + escapeHtml(title) + '</strong>',
+      '<small>' + completedByName.size + ' of 14 complete</small>',
+    '</div>',
+    '<div class="val-observer-document-receipts-list">',
+      observerNames.map(name=>{
+        const run=completedByName.get(name);
+        const output=run?.outputJson||run?.output_json||{};
+        const review=output.document_review||output.documentReview||{};
+        const evidence=(output.evidence||[])[0];
+        const complete=!!run;
+        const noSignal=review.status==='no_signal';
+        return [
+          '<article class="' + (complete?'complete':'reading') + '">',
+            '<span>' + escapeHtml(name) + '</span>',
+            '<strong>' + escapeHtml(complete?(noSignal?'No meaningful signal from my lens.':output.observation||'Source-backed context found.'):'Reading...') + '</strong>',
+            evidence?.quote_or_summary ? '<blockquote>' + escapeHtml(evidence.quote_or_summary) + '</blockquote>' : '',
+            complete ? '<small>' + escapeHtml(String(review.charactersRead||0)) + ' characters read</small>' : '',
+          '</article>'
+        ].join('');
+      }).join(''),
+    '</div>'
+  ].join('');
+}
+
+async function pollValObserverDocumentReceipts(sourceId,category,attempt=0){
+  if(!sourceId)return;
+  const target=workspaceInputPanel.querySelector('[data-val-observer-document-receipts="' + category + '"]');
+  if(!target)return;
+  try{
+    const payload=await getJson('/api/val/observers/runs?limit=200');
+    const runs=valObserverDocumentRunsForSource(payload.runs||[],sourceId);
+    renderValObserverDocumentReceipts(target,runs,sourceId);
+    if(runs.length<14&&attempt<90){
+      window.setTimeout(()=>pollValObserverDocumentReceipts(sourceId,category,attempt+1),2000);
+    }
+  }catch(error){
+    target.hidden=false;
+    target.innerHTML='<p>Observer reading receipts need attention: ' + escapeHtml(error.message||'Could not load receipts.') + '</p>';
+  }
 }
 
 async function copyValWitnessingImportPrompt(){
@@ -21006,7 +21089,7 @@ function valWorkspaceCopy(action){
       meaning: 'This is where VAL begins the partnership by learning who it is partnering with before it tries to optimize the work.',
       understanding: ['VAL asks one meaningful question at a time.', 'Every reflection should show evidence, name what changed in VAL understanding, and invite correction.', 'No account connection, external action, or durable memory promotion happens from this first slice.'],
       recommendation: 'Start with Meeting VAL, then move through story, mission, and principles only after each reflection feels accurate.',
-      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
+      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Revisit Documents', workflow:'valWitnessingDocuments'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
     },
     working_agreements: {
       title: 'Set VAL working agreements.',
@@ -21566,9 +21649,16 @@ function valWitnessingContextTools(card){
   if(card.id === 'documents_templates'){
     return [
       '<div class="val-witnessing-tool-row">',
-        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload document or template</button>',
+        '<label class="val-witnessing-document-category">',
+          '<span>Category</span>',
+          '<select data-val-witnessing-document-category="' + escapeHtml(card.category) + '">',
+            valWitnessingDocumentCategories.map(category=>'<option value="' + escapeHtml(category.value) + '">' + escapeHtml(category.label) + '</option>').join(''),
+          '</select>',
+        '</label>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload files</button>',
         '<input type="file" data-val-witnessing-file-input="' + escapeHtml(card.category) + '" multiple hidden>',
-      '</div>'
+      '</div>',
+      '<section class="val-observer-document-receipts" data-val-observer-document-receipts="' + escapeHtml(card.category) + '" hidden></section>'
     ].join('');
   }
   if(card.id === 'import_context'){
@@ -22623,6 +22713,22 @@ async function resumeValWitnessingSession(){
     };
   }
   return {sessionId: activeValWitnessingSessionId, target, onboarding: result};
+}
+
+async function reopenValWitnessingDocuments(){
+  if(!canUseApi){
+    await openValWitnessingSession('documents_templates');
+    return;
+  }
+  const resumed=await resumeValWitnessingSession();
+  const sessionId=resumed.sessionId;
+  if(!sessionId)throw new Error('VAL could not find your saved Witnessing Session.');
+  const result=await postJson(
+    '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/reopen-witnessing-card/documents_templates',
+    {}
+  );
+  restoreValWitnessingStateFromOnboarding(result);
+  await openValWitnessingSession('documents_templates');
 }
 
 async function startFreshValWitnessingSession(){
@@ -27484,6 +27590,51 @@ async function openObserverBoard(options = {}){
   }
 }
 
+async function hydrateObserverBoardLiveContext(){
+  if(!canUseApi||mockScrapers)return;
+  try{
+    const [board,runsPayload]=await Promise.all([
+      getJson('/api/val/board/context?limit=100'),
+      getJson('/api/val/observers/runs?limit=200')
+    ]);
+    const packets=Array.isArray(board.packets)?board.packets:[];
+    const runs=Array.isArray(runsPayload.runs)?runsPayload.runs:[];
+    const latestByObserver=new Map();
+    runs.forEach(run=>{
+      const name=run.observerName||run.observer_name;
+      if(name&&!latestByObserver.has(name))latestByObserver.set(name,run);
+    });
+    observerBoardState.observers.forEach(observer=>{
+      const card=workspaceInputPanel.querySelector('[data-observer-name="' + CSS.escape(observer.name) + '"]');
+      if(!card)return;
+      const run=latestByObserver.get(observer.name);
+      const output=run?.outputJson||run?.output_json||{};
+      const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||null;
+      const relevantPackets=packets.filter(packet=>
+        (packet.routeObserversJson||packet.route_observers_json||[]).some(route=>route.observerName===observer.name)
+      );
+      const statement=output.observation||review?.observation||review?.seeing||'No completed evidence-backed observation yet.';
+      const evidence=(output.evidence||review?.evidence||[])[0];
+      card.querySelector('p').textContent=statement;
+      card.querySelector('small').textContent=evidence?.quote_or_summary
+        ? 'Evidence: “' + evidence.quote_or_summary + '”'
+        : 'Evidence: ' + relevantPackets.length + ' source packet' + (relevantPackets.length===1?'':'s') + ' available; no supported claim stored yet.';
+    });
+    const chiefCard=workspaceInputPanel.querySelector('.observer-chief-card');
+    if(chiefCard){
+      chiefCard.querySelector('strong').textContent=packets.length
+        ? packets.length + ' live source packet' + (packets.length===1?' is':'s are') + ' available to all 14 Observers.'
+        : 'Holding space for Analytical and Relational Context.';
+      chiefCard.querySelector('p').textContent=packets.length
+        ? 'Each Observer must either store an evidence-backed observation or explicitly return no meaningful signal from its lens.'
+        : 'No Observer activity is being claimed because no live source packets are present.';
+    }
+  }catch(error){
+    const note=workspaceInputPanel.querySelector('.observer-board-note');
+    if(note)note.textContent='Live Board evidence could not load: ' + (error.message||'unknown error');
+  }
+}
+
 function orientHomeCoworkFromInput(){
   if(deskWorkspace?.classList.contains('alignment-function-mode') || deskWorkspace?.classList.contains('leverage-function-mode')) return;
   const input = workspaceInputValue('cowork');
@@ -27940,6 +28091,18 @@ async function handleValDetailWorkflowClick(event){
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   if(action === 'valConnections:review' || action === 'valConnections'){
     openValConnectionsWorkspace();
+    return true;
+  }
+  if(action === 'valWitnessingResume'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return true;
+  }
+  if(action === 'valWitnessingFresh'){
+    await openValWitnessingSession('meeting_val', {fresh:true});
+    return true;
+  }
+  if(action === 'valWitnessingDocuments'){
+    await reopenValWitnessingDocuments();
     return true;
   }
   await handleWorkflowAction(action, workflowButton);
@@ -29540,6 +29703,13 @@ if(location.hash === '#valWitnessingResume'){
   setTimeout(() => {
     openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
       valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
+    });
+  }, 120);
+}
+if(location.hash === '#valWitnessingDocuments'){
+  setTimeout(() => {
+    reopenValWitnessingDocuments().catch((error) => {
+      valLiveStatus.textContent = 'Could not reopen Documents: ' + error.message;
     });
   }, 120);
 }

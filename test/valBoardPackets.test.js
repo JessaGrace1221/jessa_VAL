@@ -30,6 +30,8 @@ test('Board packet schema and routes are mounted',()=>{
     triggerSource.indexOf('enrichBoardPacketsWithModel') < triggerSource.indexOf('return valIntelligenceSpine.runIntelligencePass'),
     'Observer digestion must finish before the Chief of Staff intelligence spine runs.'
   );
+  assert.match(server,/queueKnowledgeDocumentObserverDelivery/);
+  assert.match(server,/recordSourceEvent\('document'/);
 });
 
 test('Board packet service routes and digests each packet through every observer',async()=>{
@@ -175,7 +177,6 @@ test('Board context exposes durable Witnessing completion instead of relying on 
   assert.equal(context.witnessingAnsweredCount,12);
   assert.equal(context.livePacketCount,1);
 });
-
 test('Observer reviews preserve concrete named evidence for project-first executive context',async()=>{
   let store={};
   const service=createValBoardPacketsService({
@@ -226,7 +227,9 @@ test('Board source registry separates automatic hooks from source-specific ingre
     assert.ok(byType[sourceType]?.hook,sourceType);
     assert.ok(byType[sourceType]?.claim,sourceType);
   }
-  for(const sourceType of ['sms','linkedin_visibility','document','public_research']){
+  assert.equal(byType.document?.status,'live');
+  assert.match(byType.document?.claim||'',/all 14 Observers/);
+  for(const sourceType of ['sms','linkedin_visibility','public_research']){
     assert.equal(byType[sourceType]?.status,'ingress',sourceType);
     assert.match(byType[sourceType]?.hook||'',/\/api\/val\/board\/events\//,sourceType);
     assert.ok(byType[sourceType]?.claim,sourceType);
@@ -278,7 +281,7 @@ test('source-specific Board event ingress creates claim-safe packets for non-aut
   assert.equal(readiness.sources.find(source=>source.sourceType==='linkedin_visibility').claimSafe,true);
   assert.equal(readiness.sources.find(source=>source.sourceType==='document').claimSafe,true);
   assert.equal(readiness.sources.find(source=>source.sourceType==='public_research').claimSafe,true);
-  assert.ok(readiness.summary.activeIngress>=4);
+  assert.ok(readiness.summary.activeIngress>=3);
   const packets=await service.listPackets({limit:20});
   assert.ok(packets.some(packet=>packet.sourceType==='sms'&&packet.packetType==='relationship_packet'));
   assert.ok(packets.some(packet=>packet.sourceType==='linkedin_visibility'&&packet.packetType==='relationship_packet'));

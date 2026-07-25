@@ -498,6 +498,13 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/const PARTNERSHIP_PROTOCOL_CARDS/);
   assert.match(server,/function partnershipProtocolCardFor/);
   assert.match(server,/async function observePartnershipProtocolAnswer/);
+  assert.match(server,/function witnessingUploadIds/);
+  assert.match(server,/async function witnessingUploadedDocumentContext/);
+  assert.match(server,/where user_id=\$1 and id=any\(\$2::text\[\]\)/);
+  assert.match(server,/uploadedVia\|\|metadata\.uploaded_via/);
+  assert.match(server,/const observedResponse=uploadedDocumentContext\.modelContext/);
+  assert.match(server,/uploadedDocuments:uploadedDocumentContext\.documents/);
+  assert.match(server,/documentCategory:req\.body\.documentCategory\|\|'other'/);
   assert.match(server,/async function witnessPartnershipProtocolAnswer/);
   assert.match(server,/function fallbackPartnershipProtocolGraph/);
   assert.match(server,/function fallbackPartnershipProtocolWitness/);
@@ -580,6 +587,9 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
     assert.match(server,new RegExp(category));
   }
   assert.match(server,/documents_templates/);
+  assert.match(server,/reopen-witnessing-card\/:cardId/);
+  assert.match(server,/Only the Documents and Templates step can be reopened from this action/);
+  assert.match(server,/reopenedWitnessingCard/);
   assert.match(server,/import_context/);
   assert.match(server,/partnership_agreement/);
   assert.match(server,/chief_of_staff\.optimization_priorities/);
@@ -650,7 +660,7 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/normalizePartnershipWitnessResponse/);
   assert.match(turn,/repairPartnershipWitnessJson/);
   assert.match(turn,/fallbackPartnershipProtocolWitness\(\{card,rawResponse,graph\}\)/);
-  assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
+  assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse:observedResponse,priorImports\}\)/);
   assert.doesNotMatch(route,/composePartnershipProtocolNextQuestion/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'[\s\S]*?composePartnershipProtocolNextQuestion/);
   assert.match(server,/nextQuestion/);

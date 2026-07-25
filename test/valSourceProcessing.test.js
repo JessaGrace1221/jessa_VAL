@@ -40,12 +40,48 @@ test('source processing routes are backend-only and mounted',()=>{
   assert.match(server,/ensureValSourceProcessingTables/);
   assert.match(server,/registerValSourceProcessingRoutes/);
   assert.match(routes,/\/api\/val\/source-processing\/relationship-document-email/);
+  assert.match(routes,/\/api\/val\/source-processing\/knowledge-document/);
   assert.match(routes,/\/api\/val\/source-processing\/records/);
   assert.match(routes,/\/api\/val\/source-processing\/surface-registrations/);
   assert.match(routes,/listSurfaceRegistrations/);
   assert.match(routes,/allowRelationshipDocumentEmailPost/);
   assert.match(routes,/Authentication required/);
   assert.match(server,/allowRelationshipDocumentEmailPost:\(\)=>!requestContext\.getStore\(\)\?\.publicHearthTest/);
+  assert.match(server,/allowKnowledgeDocumentPost:\(\)=>!requestContext\.getStore\(\)\?\.publicHearthTest/);
+  assert.match(server,/valSourceProcessing\.processKnowledgeDocument\(knowledgeDocumentInput\)/);
+  assert.match(server,/sourceProcessingRecordId:processed\?\.sourceProcessingRecord\?\.id/);
+  assert.match(server,/afterKnowledgeDocument:queueKnowledgeDocumentObserverDelivery/);
+});
+
+test('knowledge documents keep their complete extracted text and Witnessing receipt',async()=>{
+  const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const {sourceProcessing}=servicesFor(store);
+  const rawText='DISC profile: Jessa moves quickly, values directness, and needs enough relational context to trust a decision.';
+  const result=await sourceProcessing.processKnowledgeDocument({
+    document:{
+      id:'file_disc_profile',
+      title:'Jessa DISC Profile.pdf',
+      fileName:'Jessa DISC Profile.pdf',
+      mimeType:'application/pdf',
+      rawText,
+      docType:'knowledge_document',
+      documentCategory:'about_me',
+      uploadedVia:'val_witnessing_session'
+    }
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.documentRead,true);
+  assert.equal(result.witnessingContextAvailable,true);
+  assert.equal(result.sourceProcessingRecord.sourceReceiptJson.rawText,rawText);
+  assert.equal(result.sourceProcessingRecord.sourceReceiptJson.characterCount,rawText.length);
+  assert.equal(result.sourceProcessingRecord.sourceReceiptJson.documentCategory,'about_me');
+  assert.equal(result.sourceProcessingRecord.executiveRelevanceJson.document_read,true);
+  assert.deepEqual(result.sourceProcessingRecord.domainRoutesJson,['documents','witnessing']);
+  assert.ok(result.sourceProcessingRecord.packetUpdatesJson.some(packet=>packet.target==='witnessing_context'&&packet.status==='available'));
+  assert.match(result.sourceProcessingRecord.witnessObservationsJson[0].observation,/read "Jessa DISC Profile\.pdf"/);
+  assert.equal(result.sourceProcessingRecord.metadataJson.noExternalAction,true);
+  assert.equal(result.sourceProcessingRecord.metadataJson.documentCategory,'about_me');
 });
 
 test('live email document intake routes admitted relationship attachments through source processing',()=>{
