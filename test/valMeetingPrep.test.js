@@ -27,14 +27,58 @@ test('meeting prep routes are backend-only and mounted',()=>{
   assert.match(server,/ensureRelationshipPacketFromAttendee:ensureRelationshipPacketFromCalendarAttendee/);
   assert.match(server,/sourceType:'calendar_event_attendee'/);
   assert.match(server,/saveRelationshipTimelineEvent/);
+  assert.match(server,/const phone=normalizeContextPhone\(contact\.phone\|\|contact\.contactPhone\|\|contact\.phoneNumber/);
+  assert.match(server,/phone,\s*\n\s*networkAdmission:'calendar_attendee'/);
+  assert.match(server,/name:name\|\|email,\s*\n\s*email,\s*\n\s*phone,/);
   assert.match(routes,/\/api\/val\/calendar\/meeting-prep/);
   assert.match(routes,/\/api\/val\/calendar\/meeting-prep\/:eventId/);
   assert.match(routes,/\/api\/val\/calendar\/post-meeting-capture/);
   assert.match(meetingPrepServiceSource,/withMeetingPrepTimeout\(enrichRelationshipPublicContext/);
+  assert.match(meetingPrepServiceSource,/afterPublicContextEvent/);
+  assert.match(server,/afterPublicContextEvent:async/);
+  assert.match(server,/recordSourceEvent\(event\.sourceType\|\|'public_research'/);
   assert.match(meetingPrepServiceSource,/VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS/);
   assert.match(server,/app\.post\('\/api\/val\/contacts\/create'/);
   assert.match(server,/relationshipDossier=contactId\?buildRelationshipDossier/);
   assert.match(server,/Use this contactId as the canonical relationship key going forward/);
+});
+
+test('meeting prep public and LinkedIn attendee context is sent to the Board',async()=>{
+  let store={};
+  const event={id:'cal_public_board',source:'google',title:'GOALL review with Greg',startTime:'2026-07-27T14:00:00Z',attendees:[{name:'Greg Zlevor',email:'greg@example.com'}]};
+  const boardEvents=[];
+  const service=createValMeetingPrepService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_board`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    loadContextCalendarEvents:async()=>({events:[event],errors:[]}),
+    resolveContactFromContext:async()=>({status:'matched',confidence:0.9,contact:{id:'relationship-profile:greg',relationshipProfileId:'rel_greg',name:'Greg Zlevor',email:'greg@example.com',company:'Westwood'}}),
+    resolveMeetingContext:async()=>({meeting:event,contactResolution:{},relationshipContext:{},transcripts:[],tasks:[],openLoops:[],sourcesChecked:['Calendar events (1)'],errors:[]}),
+    enrichRelationshipPublicContext:async()=>({
+      cached:false,
+      profile:{id:'rel_greg',displayName:'Greg Zlevor'},
+      enrichment:{
+        status:'complete',
+        provider:'outscraper',
+        organization:'Westwood',
+        summary:'Fresh public context found for the GOALL review.',
+        latestLinkedInPost:'Greg shared a post about leadership momentum.',
+        latestLinkedInUrl:'https://www.linkedin.com/posts/gregzlevor_fresh',
+        sourceRefs:[{type:'linkedin_recent_signal',sourceId:'https://www.linkedin.com/posts/gregzlevor_fresh',summary:'Greg shared a post about leadership momentum.'}]
+      }
+    }),
+    afterPublicContextEvent:async(event)=>boardEvents.push(event)
+  });
+  const result=await service.buildMeetingPrep({eventId:'cal_public_board'});
+  assert.equal(result.ok,true);
+  assert.equal(boardEvents.length,1);
+  assert.equal(boardEvents[0].sourceType,'linkedin_visibility');
+  assert.match(boardEvents[0].summary,/leadership momentum/i);
+  assert.equal(boardEvents[0].eventType,'meeting_prep_public_context');
+  assert.ok(boardEvents[0].sourceRefs.length);
 });
 
 test('meeting prep rebuild allows the OpenAI brief enough time to finish',()=>{

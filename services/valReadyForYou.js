@@ -497,7 +497,8 @@ function createValReadyForYouService({
       .slice(0,Math.max(1,Math.min(Number(limit)||5,5)));
     const saved=[];
     for(const item of actionable) saved.push(await saveItem(item));
-    return {ok:true,state:saved.length?'has_items':'caught_up',message:saved.length?'Ready for review.':"I'm caught up.",items:saved.slice(0,3),allBuilt:saved,preparedCount:preparedWorkCount(saved),unknowns,caughtUp:saved.length===0};
+    const preparedItems=saved.filter(readyItemHasConcretePreparedWork);
+    return {ok:true,state:saved.length?'has_items':'caught_up',message:saved.length?'Ready for review.':"I'm caught up.",items:saved.slice(0,3),allBuilt:saved,preparedItems,prepared_items:preparedItems,preparedCount:preparedItems.length,unknowns,caughtUp:saved.length===0};
   }
   async function updateState(id,{status,decision={},snoozedUntil=null}={}){
     const reviewedAt=new Date().toISOString();
@@ -527,4 +528,4 @@ function createValReadyForYouService({
   };
 }
 
-module.exports={createValReadyForYouService,draftToCandidate,draftEvaluationToCandidate,internalDraftCandidate,meetingPrepCandidate,transcriptCandidate,parseReadyRow,preparedWorkCount};
+module.exports={createValReadyForYouService,draftToCandidate,draftEvaluationToCandidate,internalDraftCandidate,meetingPrepCandidate,transcriptCandidate,parseReadyRow,preparedWorkCount,readyItemHasConcretePreparedWork};

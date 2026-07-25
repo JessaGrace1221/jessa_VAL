@@ -133,6 +133,30 @@ function registerValExternalActionsRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.post('/api/val/external-actions/sms-send-packet',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.createSmsSendPacket!=='function')throw new Error('SMS send packets are not available.');
+      const packet=await service.createSmsSendPacket(req.body||{});
+      await afterExternalActionPacket(packet,{req,phase:'created'}).catch(error=>{packet.boardPacketWarning=error.message;});
+      await auditLog({req,action:'sms_send_packet_created',resourceType:'val_external_action_packet',resourceId:packet.id,metadata:{actionType:packet.actionType,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
+      res.json({ok:true,packet,no_external_action:true,execution_available:false});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
+  app.post('/api/val/external-actions/sms-send-now',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.createSmsSendPacket!=='function')throw new Error('SMS send packets are not available.');
+      const packet=await service.createSmsSendPacket(req.body||{});
+      const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final SMS approved from VAL send gate.'});
+      const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
+      await afterExternalActionPacket(result.packet||approved,{req,phase:result.executed?'executed':'execution_not_completed'}).catch(error=>{result.boardPacketWarning=error.message;});
+      await auditLog({req,action:result.executed?'sms_send_gate_executed':'sms_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
+      res.status(result.ok?200:409).json({...result,packet:result.packet||approved,final_confirmation:true});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.post('/api/val/external-actions/:id/fresh-risk-check',async(req,res)=>{
     try{
       await waitForDb();

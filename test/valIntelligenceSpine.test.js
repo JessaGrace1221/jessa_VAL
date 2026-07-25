@@ -146,3 +146,165 @@ test('every Board observer reviews every live packet through its own lens',async
   assert.deepEqual(result.roundTable.outputJson.reviewed_packet_ids,[packet.id]);
   assert.equal(result.roundTable.outputJson.observer_packet_review_counts.Delight,1);
 });
+
+test('Chief of Staff orders Alignment from the highest evidence packet, not an abstract signal',async()=>{
+  let store={tasks:[]};
+  const packet={
+    id:'board_packet_goall_dashboard',
+    sourceType:'transcript',
+    sourceId:'tr_goall_mike',
+    packetType:'meeting_evidence_packet',
+    title:'GOALL dashboard handoff with Mike',
+    summary:'Mike needs the GOALL dashboard/projections handoff clarified before Monday.',
+    primaryObserversJson:['Project','Momentum','Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:'tr_goall_mike',quote_or_summary:'We need the projections/dashboard handoff with Mike cleaned up before Monday.',confidence:0.9}],
+    prototype:false,
+    createdAt:new Date().toISOString()
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_goall_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({event:{type:'board_packet_received',sourceType:'transcript',sourceId:'tr_goall_mike',packetIds:[packet.id]}});
+  assert.equal(result.recommendation.title,'Clarify the GOALL dashboard handoff');
+  assert.match(result.recommendation.recommendation,/Finish the dashboard\/projections handoff with Mike/);
+  assert.match(result.recommendation.why,/Project owns the work/);
+  assert.equal(result.recommendation.sourceRefsJson[0].source_id,'tr_goall_mike');
+  assert.ok(result.recommendation.nextCandidatesJson.every(candidate=>candidate.title));
+});
+
+test('Chief of Staff applies user Witnessing optimization priorities when ordering packets',async()=>{
+  let store={tasks:[]};
+  const revenuePacket={
+    id:'board_packet_revenue_scope',
+    sourceType:'email',
+    sourceId:'email_scope_1',
+    packetType:'email_attention_packet',
+    title:'Proposal pricing reply from Michele',
+    summary:'Michele asked for the payment structure and proposal scope for the project.',
+    primaryObserversJson:['Opportunity'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'email',source_id:'email_scope_1',quote_or_summary:'Can you send the payment structure and project proposal?',confidence:0.86}],
+    prototype:false,
+    createdAt:new Date().toISOString()
+  };
+  const taskPacket={
+    id:'board_packet_generic_tasks',
+    sourceType:'task',
+    sourceId:'task_many',
+    packetType:'task_packet',
+    title:'Several transcript tasks extracted',
+    summary:'Multiple generic task signals were extracted from a transcript.',
+    primaryObserversJson:['Project','Momentum','Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:'tr_many',quote_or_summary:'Several action items were discussed.',confidence:0.75}],
+    prototype:false,
+    createdAt:new Date().toISOString()
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_priority_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    loaders:{
+      listBoardPackets:async()=>[taskPacket,revenuePacket],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[{
+        id:'teach_priority_1',
+        category:'witness_chief_priorities',
+        title:'Chief of Staff Priorities',
+        summary:'Optimize for revenue, capacity, and values first.',
+        rawText:'For me personally, optimize for revenue, capacity, and values first.'
+      }],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({event:{type:'board_packet_received',sourceType:'email',sourceId:'email_scope_1',packetIds:[revenuePacket.id,taskPacket.id]}});
+  assert.equal(result.recommendation.sourceRefsJson[0].source_id,'email_scope_1');
+  assert.equal(result.recommendation.nextCandidatesJson[0].packetId,taskPacket.id);
+  assert.match(JSON.stringify(result.recommendation.anxietyVsMomentumJson),/Revenue/);
+  assert.match(JSON.stringify(result.recommendation.anxietyVsMomentumJson),/Chief of Staff Priorities/);
+});
+
+test('Chief of Staff completion advances ordered packet queue before closing recommendation',async()=>{
+  let store={tasks:[]};
+  const firstPacket={
+    id:'board_packet_first_priority',
+    sourceType:'email',
+    sourceId:'email_priority_1',
+    packetType:'email_attention_packet',
+    title:'Revenue reply needs one clean answer',
+    summary:'A client asked for proposal terms and needs a decision.',
+    primaryObserversJson:['Opportunity','Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'email',source_id:'email_priority_1',quote_or_summary:'Can you send the proposal terms?',confidence:0.88}],
+    prototype:false,
+    createdAt:new Date().toISOString()
+  };
+  const secondPacket={
+    id:'board_packet_second_priority',
+    sourceType:'transcript',
+    sourceId:'tr_priority_2',
+    packetType:'meeting_evidence_packet',
+    title:'Relationship repair should happen before Monday',
+    summary:'A transcript showed tension that should be repaired before the next meeting.',
+    primaryObserversJson:['Relationship','Courage'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:'tr_priority_2',quote_or_summary:'The tone got tense before the call ended.',confidence:0.82}],
+    prototype:false,
+    createdAt:new Date(Date.now()-1000).toISOString()
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_queue_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    loaders:{
+      listBoardPackets:async()=>[firstPacket,secondPacket],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({event:{type:'board_packet_received',sourceType:'email',sourceId:'email_priority_1',packetIds:[firstPacket.id,secondPacket.id]}});
+  const selectedPacketId=result.recommendation.anxietyVsMomentumJson.current_packet.packetId;
+  const nextPacketId=result.recommendation.nextCandidatesJson[0].packetId;
+  assert.ok([firstPacket.id,secondPacket.id].includes(selectedPacketId));
+  assert.ok([firstPacket.id,secondPacket.id].includes(nextPacketId));
+  assert.notEqual(selectedPacketId,nextPacketId);
+
+  const stillActive=await spine.completeChiefRecommendation(result.recommendation.id,{
+    feedback:{packetId:selectedPacketId},
+    completionNote:'Marked done from Home Alignment.'
+  });
+  assert.equal(stillActive.status,'active');
+  assert.deepEqual(stillActive.userFeedbackJson.completedPacketIds,[selectedPacketId]);
+  assert.deepEqual(stillActive.userFeedbackJson.remainingPacketIds,[nextPacketId]);
+  assert.equal(stillActive.completedAt,null);
+
+  const closed=await spine.completeChiefRecommendation(result.recommendation.id,{
+    feedback:{packetId:nextPacketId},
+    completionNote:'Marked done from Home Alignment.'
+  });
+  assert.equal(closed.status,'completed');
+  assert.deepEqual(closed.userFeedbackJson.completedPacketIds,[selectedPacketId,nextPacketId]);
+  assert.ok(closed.completedAt);
+});
