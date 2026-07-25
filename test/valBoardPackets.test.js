@@ -750,8 +750,8 @@ test('Board front end prefers live Board context over prototype packets',()=>{
 test('Witnessing completion automatically reconciles every historical Board packet',()=>{
   assert.match(server,/post-Witnessing reconciliation deferred/);
   assert.match(server,/backfillBoardPackets\(\{days:3650,limit:300\}\)/);
-  assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(createdPackets\.slice\(0,80\)/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(createdPackets,/);
+  assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(reviewablePackets\.slice\(0,80\)/);
+  assert.match(server,/triggerBoardIntelligenceForPackets\(reviewablePackets,/);
   assert.match(server,/board_packet_witnessing_complete_/);
   assert.match(server,/triggerBoardIntelligenceForPackets\(\[completeSessionPacket\]/);
   assert.match(frontend,/await openObserverBoardAfterWitnessing\(\)/);

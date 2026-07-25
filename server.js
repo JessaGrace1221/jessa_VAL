@@ -14038,9 +14038,26 @@ async function backfillBoardPackets({days=3650,limit=160,skipTranscripts=false,s
       }
     }catch(e){result.errors.push({source:'relationship_profiles',error:e.message});}
   }
-  if(createdPackets.length){
-    result.triggered=true;
-    void triggerBoardIntelligenceForPackets(createdPackets,{type:'board_reconciliation',sourceType:'board_reconcile',sourceId:`board_reconcile_${Date.now()}`});
+  const reviewablePackets=createdPackets.filter(packet=>packet?.status==='active'&&!packet.prototype);
+  if(reviewablePackets.length){
+    result.modelReview={
+      requested:reviewablePackets.length,
+      status:'preflight',
+      completed:0,
+      error:''
+    };
+    try{
+      await modelReviewBoardPacket(reviewablePackets[0],reviewablePackets.slice(1,13));
+      result.modelReview.status='queued';
+      result.modelReview.completed=1;
+      result.triggered=true;
+      void triggerBoardIntelligenceForPackets(reviewablePackets,{type:'board_reconciliation',sourceType:'board_reconcile',sourceId:`board_reconcile_${Date.now()}`});
+    }catch(error){
+      result.modelReview.status='provider_unavailable';
+      result.modelReview.error=error.message;
+      result.errors.push({source:'observer_model_preflight',error:error.message});
+      result.triggered=false;
+    }
   }
   return {...result,generatedAt:new Date().toISOString()};
 }
