@@ -738,6 +738,9 @@ const observerBoardState = {
   livePacketCount: 0,
   witnessingComplete: null,
   witnessingSessionId: '',
+  witnessingStage: '',
+  witnessingAnsweredCount: 0,
+  witnessingNextStep: '',
   sourceSummary: null,
   sources: []
 };
@@ -971,6 +974,9 @@ async function loadLiveObserverBoardContext(){
       ? result.witnessingComplete
       : observerBoardState.witnessingComplete;
     observerBoardState.witnessingSessionId = String(result?.witnessingSessionId || observerBoardState.witnessingSessionId || '');
+    observerBoardState.witnessingStage = String(result?.witnessingStage || '');
+    observerBoardState.witnessingAnsweredCount = Math.max(0, Number(result?.witnessingAnsweredCount) || 0);
+    observerBoardState.witnessingNextStep = String(result?.witnessingNextStep || '');
     observerBoardState.sourceSummary = result?.sourceSummary || null;
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
     observerBoardState.reviewsByObserver = result?.reviewsByObserver && typeof result.reviewsByObserver === 'object' ? result.reviewsByObserver : {};
@@ -18935,6 +18941,47 @@ function applyVelocityPerspective(briefing = executiveBriefingState || {}){
   if(permission) permission.textContent = perspective.permission;
 }
 
+function applyWitnessingPendingPerspective(status = observerBoardState){
+  const name = homePerspectiveUserName();
+  const answered = Math.max(0, Number(status?.witnessingAnsweredCount) || 0);
+  const atFirstLook = status?.witnessingStage === 'witness_connect_sources';
+  if(title) title.textContent = 'Good morning, ' + name + '.';
+  if(witness) witness.textContent = atFirstLook
+    ? 'Your Witnessing Session is paused at First Look.'
+    : 'Your Witnessing Session is not complete yet.';
+  if(orientation) orientation.textContent = answered
+    ? 'I have ' + answered + ' confirmed answers. Finish the remaining review before I present Board conclusions as truth.'
+    : 'Finish Witnessing before I present Board conclusions as truth.';
+  if(permission) permission.textContent = 'The Board has source packets waiting, but I will not pretend they are ready before you finish confirming the context.';
+}
+
+function renderWitnessingPendingEvidence(status = observerBoardState){
+  if(!evidence) return;
+  const answered = Math.max(0, Number(status?.witnessingAnsweredCount) || 0);
+  const nextStep = status?.witnessingNextStep || 'Continue your Witnessing Session';
+  evidence.innerHTML = [
+    '<div>',
+      '<p class="evidence-label">Witnessing Session</p>',
+      '<ul>',
+        answered ? '<li>' + answered + ' answers are confirmed.</li>' : '',
+        '<li>' + escapeHtml(nextStep) + '.</li>',
+        '<li>Observer conclusions remain hidden until the Partnership Promise is committed.</li>',
+      '</ul>',
+      '<div class="hearth-evidence-actions">',
+        '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+      '</div>',
+    '</div>',
+    '<div>',
+      '<p class="evidence-label">Why VAL is waiting</p>',
+      '<ul>',
+        '<li>Source packets can wait without becoming executive guidance.</li>',
+        '<li>Completing Witnessing automatically reconciles the Board across connected sources.</li>',
+        '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
+      '</ul>',
+    '</div>'
+  ].join('');
+}
+
 function hydrateGreetingFromBriefing(briefing){
   const greeting = briefing.dailyWitness;
   if(!greeting) return;
@@ -19720,15 +19767,35 @@ async function hydrateHomePresence(options = {}){
   }
   try{
     const refreshSuffix = options.refresh ? '?refreshPerspective=1&t=' + encodeURIComponent(Date.now()) : '';
-    const briefing = await getJson('/api/executive-briefing' + refreshSuffix, {cache: options.refresh ? 'no-store' : 'default'});
+    const [briefing,boardStatus] = await Promise.all([
+      getJson('/api/executive-briefing' + refreshSuffix, {cache: options.refresh ? 'no-store' : 'default'}),
+      getJson('/api/val/board/status', {cache:'no-store'}).catch(() => null)
+    ]);
     if(!briefing || briefing.bookMode) return;
     executiveBriefingState = briefing;
     window.executiveBriefingState = briefing;
-    hydrateGreetingFromBriefing(briefing);
+    if(boardStatus){
+      observerBoardState.witnessingComplete = typeof boardStatus.witnessingComplete === 'boolean'
+        ? boardStatus.witnessingComplete
+        : observerBoardState.witnessingComplete;
+      observerBoardState.witnessingSessionId = String(boardStatus.witnessingSessionId || '');
+      observerBoardState.witnessingStage = String(boardStatus.witnessingStage || '');
+      observerBoardState.witnessingAnsweredCount = Math.max(0, Number(boardStatus.witnessingAnsweredCount) || 0);
+      observerBoardState.witnessingNextStep = String(boardStatus.witnessingNextStep || '');
+    }
+    if(boardStatus && boardStatus.witnessingComplete === false){
+      applyWitnessingPendingPerspective(boardStatus);
+    }else{
+      hydrateGreetingFromBriefing(briefing);
+    }
     hydrateRoomsFromBriefing(briefing);
     hydratePreparedWorkQueue();
     hydrateAlignmentFromProjectPins();
-    renderWhyTodayPanel(briefing, 'loaded');
+    if(boardStatus && boardStatus.witnessingComplete === false){
+      renderWitnessingPendingEvidence(boardStatus);
+    }else{
+      renderWhyTodayPanel(briefing, 'loaded');
+    }
   }catch(error){
     applyVelocityPerspective(null);
     renderWhyTodayPanel(null, 'unavailable');
@@ -27293,7 +27360,18 @@ async function openObserverBoard(options = {}){
     : '';
   const boardStatus = showPacketField
     ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets' + (sourceReadinessLabel ? ' · ' + sourceReadinessLabel : ''))
-    : 'Holding Space';
+    : observerBoardState.witnessingSessionId
+      ? 'First Look Needed'
+      : 'Holding Space';
+  const boardHoldingMessage = observerBoardState.witnessingSessionId
+    ? [
+        '<div class="observer-holding-space" role="status">',
+          '<strong>Your Witnessing Session is paused.</strong>',
+          '<span>' + escapeHtml(observerBoardState.witnessingNextStep || 'Continue Witnessing before the Board presents conclusions.') + '.</span>',
+          '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+        '</div>'
+      ].join('')
+    : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>';
   closeCalendarPanel();
   setWorkspaceContent({
     lens: 'Board of Observers',
@@ -27325,7 +27403,7 @@ async function openObserverBoard(options = {}){
       '</aside>',
       '<div class="observer-graph-field">',
         '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',
-        showPacketField ? '' : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>',
+        showPacketField ? '' : boardHoldingMessage,
         '<svg class="observer-signal-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">',
           baseObserverPaths,
           observerFilaments,

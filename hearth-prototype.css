@@ -2796,6 +2796,32 @@ button.observer-node:focus-visible{
 }
 .observer-holding-space::before{top:0}
 .observer-holding-space::after{bottom:0}
+.observer-holding-space strong,
+.observer-holding-space span{
+  display:block;
+  letter-spacing:0;
+  text-transform:none;
+}
+.observer-holding-space strong{
+  color:rgba(35,44,38,.9);
+  font:600 1rem/1.35 var(--body);
+}
+.observer-holding-space span{
+  margin-top:7px;
+  color:rgba(57,68,60,.75);
+  font:400 .86rem/1.45 var(--body);
+}
+.observer-holding-space button{
+  margin-top:14px;
+  border:1px solid rgba(92,116,92,.34);
+  border-radius:8px;
+  padding:8px 13px;
+  background:rgba(244,248,243,.76);
+  color:#344737;
+  font:500 .78rem/1 var(--body);
+  letter-spacing:0;
+  text-transform:none;
+}
 .observer-path{
   fill:none;
   stroke-width:.5;

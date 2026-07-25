@@ -872,21 +872,31 @@ function createValBoardPacketsService({
     }
     return rows;
   }
+  async function witnessingStatus(){
+    const witnessing=await Promise.resolve(getWitnessingCompletion()).catch(error=>({
+      complete:false,
+      sessionId:'',
+      error:error.message
+    }));
+    return {
+      witnessingComplete:!!witnessing?.complete,
+      witnessingSessionId:String(witnessing?.sessionId||''),
+      witnessingStatus:witnessing?.complete?'complete':'not_complete',
+      witnessingStage:String(witnessing?.stage||''),
+      witnessingAnsweredCount:Math.max(0,Number(witnessing?.answeredCount)||0),
+      witnessingNextStep:String(witnessing?.nextStep||''),
+      witnessingError:String(witnessing?.error||'')
+    };
+  }
   async function boardContext({limit=80,observerName=''}={}){
     const [packets,witnessing]=await Promise.all([
       listPackets({limit,observerName}),
-      Promise.resolve(getWitnessingCompletion()).catch(error=>({
-        complete:false,
-        sessionId:'',
-        error:error.message
-      }))
+      witnessingStatus()
     ]);
     const sourceReadiness=sourceReadinessFromPackets(packets);
     return {
       observers:BOARD_OBSERVERS,
-      witnessingComplete:!!witnessing?.complete,
-      witnessingSessionId:String(witnessing?.sessionId||''),
-      witnessingStatus:witnessing?.complete?'complete':'not_complete',
+      ...witnessing,
       sources:sourceReadiness.sources,
       sourceSummary:sourceReadiness.summary,
       livePacketCount:packets.length,
@@ -963,6 +973,7 @@ function createValBoardPacketsService({
     applyModelObserverReviews,
     listPackets,
     boardContext,
+    witnessingStatus,
     sourceReadiness:async({limit=300}={})=>sourceReadinessFromPackets(await listPackets({limit}))
   };
 }

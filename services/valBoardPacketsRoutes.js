@@ -31,6 +31,13 @@ function registerValBoardPacketsRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.get('/api/val/board/status',async(req,res)=>{
+    try{
+      await waitForDb();
+      res.json({ok:true,...await service.witnessingStatus()});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.get('/api/val/board/sources',async(req,res)=>{
     try{
       await waitForDb();

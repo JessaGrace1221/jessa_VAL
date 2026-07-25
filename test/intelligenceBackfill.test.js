@@ -35,7 +35,8 @@ test('intelligence backfill reconciles historical evidence into Board packets',(
   assert.match(server,/valBoardPackets\.recordCalendarEvent/);
   assert.match(server,/valBoardPackets\.recordCommitmentEvent/);
   assert.match(server,/valBoardPackets\.recordProfileEvent/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(createdPackets\.slice\(0,80\),\{type:'board_reconciliation'/);
+  assert.match(server,/triggerBoardIntelligenceForPackets\(createdPackets,\{type:'board_reconciliation'/);
+  assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(createdPackets\.slice\(0,80\)/);
 });
 
 test('Board packet reconciliation reads existing source tables and local stores',()=>{

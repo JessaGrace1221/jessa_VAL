@@ -8972,6 +8972,11 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     session.status=testMode?'test_completed':'committed';
     session.state=state;
     await saveTeachValSession(session);
+    if(!testMode){
+      void backfillBoardPackets({days:3650,limit:300}).catch(error=>{
+        console.warn('[val-board] post-Witnessing reconciliation deferred:',error.message);
+      });
+    }
     await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status,promotion,operationalInsightCount:operationalInsights.length},success:webhook.status!=='failed'}).catch(()=>{});
     res.json({ok:true,payload,webhook,promotion,operationalInsights:testMode?operationalInsights:operationalInsights.map(i=>({id:i.id,title:i.title,category:i.data?.sourceCategory,hasRuleDraft:!!i.data?.ruleDraft,targetRooms:i.data?.targetRooms||[]})),memory:testMode?[]:await listTeachValMemory(session.id),state});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -13849,7 +13854,7 @@ async function backfillBoardPackets({days=3650,limit=160,skipTranscripts=false,s
   }
   if(createdPackets.length){
     result.triggered=true;
-    void triggerBoardIntelligenceForPackets(createdPackets.slice(0,80),{type:'board_reconciliation',sourceType:'board_reconcile',sourceId:`board_reconcile_${Date.now()}`});
+    void triggerBoardIntelligenceForPackets(createdPackets,{type:'board_reconciliation',sourceType:'board_reconcile',sourceId:`board_reconcile_${Date.now()}`});
   }
   return {...result,generatedAt:new Date().toISOString()};
 }
@@ -31175,8 +31180,30 @@ valBoardPackets = registerValBoardPacketsRoutes(app,{
   tenantId,
   userId:currentUserId,
   getWitnessingCompletion:async()=>{
-    const session=await getTeachValCompletedWitnessingSession();
-    return {complete:!!session?.id,sessionId:session?.id||''};
+    const completed=await getTeachValCompletedWitnessingSession();
+    if(completed?.id){
+      return {
+        complete:true,
+        sessionId:completed.id,
+        stage:'complete',
+        answeredCount:(await listTeachValImports(completed.id).catch(()=>[])).length,
+        nextStep:''
+      };
+    }
+    const session=await getTeachValWitnessingSession();
+    const imports=session?.id ? await listTeachValImports(session.id).catch(()=>[]) : [];
+    const stage=String(session?.state?.stage||'');
+    return {
+      complete:false,
+      sessionId:session?.id||'',
+      stage,
+      answeredCount:imports.filter(item=>/^witness_/.test(String(item.category||''))).length,
+      nextStep:stage==='witness_connect_sources'
+        ? 'Prepare and confirm your First Look'
+        : session?.id
+          ? 'Continue your Witnessing Session'
+          : 'Begin your Witnessing Session'
+    };
   },
   envelopeService:valEnvelopes,
   valDbReady:()=>valDbReady,

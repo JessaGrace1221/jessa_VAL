@@ -149,7 +149,13 @@ test('Board context exposes durable Witnessing completion instead of relying on 
     uuid:prefix=>`${prefix}_witnessed`,
     tenantId:()=>'tenant',
     userId:()=>'user',
-    getWitnessingCompletion:async()=>({complete:true,sessionId:'witnessing_complete_1'}),
+    getWitnessingCompletion:async()=>({
+      complete:true,
+      sessionId:'witnessing_complete_1',
+      stage:'complete',
+      answeredCount:12,
+      nextStep:''
+    }),
     logger:{log(){}}
   });
 
@@ -165,6 +171,8 @@ test('Board context exposes durable Witnessing completion instead of relying on 
   assert.equal(context.witnessingComplete,true);
   assert.equal(context.witnessingSessionId,'witnessing_complete_1');
   assert.equal(context.witnessingStatus,'complete');
+  assert.equal(context.witnessingStage,'complete');
+  assert.equal(context.witnessingAnsweredCount,12);
   assert.equal(context.livePacketCount,1);
 });
 
@@ -521,6 +529,8 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/loadLiveObserverBoardContext/);
   assert.match(frontend,/fetch\('\/api\/val\/board\/context\?limit=80'/);
   assert.match(routes,/app\.get\('\/api\/val\/board\/context'/);
+  assert.match(routes,/app\.get\('\/api\/val\/board\/status'/);
+  assert.match(routes,/service\.witnessingStatus\(\)/);
   assert.match(routes,/service\.boardContext\(\{limit:/);
   assert.match(frontend,/observerBoardConnectionsFromPackets/);
   assert.match(frontend,/observerBoardState\.livePackets/);
@@ -528,9 +538,20 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/observerBoardState\.reviewsByObserver/);
   assert.match(frontend,/observerBoardState\.witnessingComplete/);
   assert.match(frontend,/typeof observerBoardState\.witnessingComplete === 'boolean'/);
+  assert.match(frontend,/applyWitnessingPendingPerspective/);
+  assert.match(frontend,/renderWitnessingPendingEvidence/);
+  assert.match(server,/Prepare and confirm your First Look/);
+  assert.match(frontend,/data-workflow-action="valWitnessingResume"/);
   assert.match(frontend,/function observerLiveReviews/);
   assert.match(frontend,/function observerMeaningfulLiveReviews/);
   assert.match(frontend,/function observerReviewEvidenceLine/);
   assert.match(frontend,/Live packets through this lens/);
   assert.match(frontend,/Holding space for Analytical and Relational Context/);
+});
+
+test('Witnessing completion automatically reconciles every historical Board packet',()=>{
+  assert.match(server,/post-Witnessing reconciliation deferred/);
+  assert.match(server,/backfillBoardPackets\(\{days:3650,limit:300\}\)/);
+  assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(createdPackets\.slice\(0,80\)/);
+  assert.match(server,/triggerBoardIntelligenceForPackets\(createdPackets,/);
 });
