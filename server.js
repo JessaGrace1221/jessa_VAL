@@ -65,6 +65,10 @@ function safeArray(value){
   return Array.isArray(value) ? value : [];
 }
 
+function compactText(value='',limit=900){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+
 app.use(cors());
 app.use(express.json({limit:'50mb'}));
 app.use(express.urlencoded({extended:true,limit:'50mb'}));
@@ -34744,6 +34748,85 @@ function selectedSourceSection(title,lines=[]){
   return [title,...cleaned.map(line=>'- '+line)].join('\n');
 }
 
+function selectedSourceObserverReviews(source={}){
+  const observer=source.selectedObserver&&typeof source.selectedObserver==='object'?source.selectedObserver:{};
+  const boardObserver=source.board?.observer&&typeof source.board.observer==='object'?source.board.observer:{};
+  const reviews=[
+    ...safeArray(source.observerProofReviews),
+    ...safeArray(observer.meaningfulReviews),
+    ...safeArray(observer.liveReviews),
+    ...safeArray(boardObserver.meaningfulReviews),
+    ...safeArray(boardObserver.liveReviews)
+  ].filter(Boolean);
+  const seen=new Set();
+  return reviews.map((review)=>({
+    observerName:review.observerName||observer.name||boardObserver.name||source.chiefOfStaffRead?.selectedObserver||'Observer',
+    status:review.status||'observed',
+    line:review.line||review.lensFinding||review.observation||'',
+    evidenceLine:review.evidenceLine||review.evidence?.quoteOrSummary||review.evidence?.packetTitle||review.evidence?.sourceType||'',
+    people:safeArray(review.people),
+    projects:safeArray(review.projects),
+    decisionObjects:safeArray(review.decisionObjects)
+  })).filter((review)=>{
+    const key=[review.observerName,review.line,review.evidenceLine,review.people.join(','),review.projects.join(',')].join('|').toLowerCase();
+    if(seen.has(key))return false;
+    seen.add(key);
+    return review.line||review.evidenceLine||review.people.length||review.projects.length||review.decisionObjects.length;
+  }).slice(0,8);
+}
+
+function selectedSourceObserverDirectAnswer({lastUser='',selectedSourceContext={}}={}){
+  const text=String(lastUser||'').trim();
+  if(!text||!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const isObserverContext=selectedSourceContext.homeFullContext||selectedSourceContext.selectedObserver||safeArray(selectedSourceContext.observerProofReviews).length;
+  if(!isObserverContext)return '';
+  const asksObserverQuestion=/\b(evidence|proof|source|why|context|what.*seeing|watching|concern|explore|tone|changed|repair|relationship|who|which|person|people|project|what changed|what happened|why.*matter)\b/i.test(text);
+  if(!asksObserverQuestion)return '';
+  const observer=selectedSourceContext.selectedObserver&&typeof selectedSourceContext.selectedObserver==='object'?selectedSourceContext.selectedObserver:{};
+  const observerName=observer.name||selectedSourceContext.chiefOfStaffRead?.selectedObserver||selectedSourceContext.observerName||'this Observer';
+  const reviews=selectedSourceObserverReviews(selectedSourceContext);
+  const observed=reviews.filter(review=>String(review.status||'observed')==='observed');
+  const sourceTrail=safeArray(selectedSourceContext.sourceTrail)
+    .map(item=>compactText(item.line||item.title||item.summary||'',260))
+    .filter(Boolean)
+    .slice(0,4);
+  if(!observed.length){
+    return [
+      `I cannot answer that honestly from ${observerName} yet.`,
+      '',
+      'The Observer lens is open, but the source-backed packet review is not attached to this card.',
+      sourceTrail.length?'':'',
+      sourceTrail.length?'The only source trail currently attached is:':'',
+      ...sourceTrail.map(line=>'- '+line),
+      '',
+      'That gap needs to be fixed before I name a person, repair need, tone shift, or concern.'
+    ].filter(Boolean).join('\n');
+  }
+  const people=Array.from(new Set(observed.flatMap(review=>safeArray(review.people)).filter(Boolean))).slice(0,5);
+  const projects=Array.from(new Set(observed.flatMap(review=>safeArray(review.projects)).filter(Boolean))).slice(0,4);
+  const objects=Array.from(new Set(observed.flatMap(review=>safeArray(review.decisionObjects)).filter(Boolean))).slice(0,4);
+  const primaryPerson=people[0]||'';
+  const lead=observerName==='Relationship'&&/\b(repair|relationship|who|which|tone|changed|trust|warmth|distance)\b/i.test(text)
+    ? (primaryPerson ? `I would start with ${primaryPerson}.` : 'I do not have a named relationship attached yet, so I will stay at the source level.')
+    : `${observerName} is answering from the packet review, not from a generic guess.`;
+  return [
+    lead,
+    '',
+    'What I actually observed:',
+    ...observed.slice(0,4).map(review=>'- '+compactText(review.line||review.evidenceLine,260)),
+    people.length||projects.length||objects.length?'':'',
+    people.length?'People named: '+people.join(', '):'',
+    projects.length?'Projects named: '+projects.join(', '):'',
+    objects.length?'Work named: '+objects.join(', '):'',
+    '',
+    'Evidence I can point to:',
+    ...(observed.slice(0,3).map(review=>compactText(review.evidenceLine||review.line,260)).filter(Boolean).map(line=>'- '+line)),
+    ...(!observed.some(review=>review.evidenceLine)&&sourceTrail.length?sourceTrail.map(line=>'- '+line):[]),
+    '',
+    observer.explore?'What I would explore next: '+compactText(observer.explore,180):'What I would explore next: what changed, who is affected, and what move protects trust without adding noise.'
+  ].filter(Boolean).join('\n');
+}
+
 function selectedSourceHtmlEscape(value=''){
   return String(value||'')
     .replace(/&/g,'&amp;')
@@ -34877,6 +34960,8 @@ function selectedHearthSourceFallbackAnswer({lastUser='',selectedSourceContext={
 function selectedHearthSourceDirectAnswer({lastUser='',selectedSourceContext={},selectedSourcePrompt=''}={}){
   const text=String(lastUser||'').trim();
   if(!text||!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const observerAnswer=selectedSourceObserverDirectAnswer({lastUser:text,selectedSourceContext});
+  if(observerAnswer)return observerAnswer;
   const asksForFullArtifact=/\b(write|draft|generate|build|create|code|html|css|javascript|iframe|template|full page|complete version)\b/i.test(text);
   if(asksForFullArtifact&&/\b(html|css|iframe|embed|dashboard|page|template|code|build|create)\b/i.test(text)){
     return selectedHearthSourceFallbackAnswer({lastUser:text,selectedSourceContext,selectedSourcePrompt});
