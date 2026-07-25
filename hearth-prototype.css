@@ -269,10 +269,21 @@ button,a{font:inherit}
   box-shadow:0 16px 34px rgba(9,5,4,.16);
   cursor:pointer;
   filter:drop-shadow(0 0 12px rgba(255,236,202,.22));
-  animation:observer-board-pulse 3.8s ease-in-out infinite,observer-board-flicker 9s steps(1,end) infinite;
   transition:transform .22s ease,filter .22s ease;
 }
+.observer-board-button::before{
+  content:"";
+  position:absolute;
+  inset:4px;
+  border-radius:999px;
+  background:radial-gradient(circle,rgba(255,249,239,.2),rgba(255,249,239,.04) 54%,transparent 74%);
+  filter:drop-shadow(0 0 12px rgba(255,236,202,.22));
+  animation:observer-board-glow 3.8s ease-in-out infinite,observer-board-flicker 9s steps(1,end) infinite;
+  pointer-events:none;
+}
 .observer-board-button img{
+  position:relative;
+  z-index:1;
   display:block;
   width:58px;
   height:58px;
@@ -2747,7 +2758,7 @@ button.observer-node:focus-visible{
   cursor:default;
 }
 .observer-graph-field.observer-card-open .observer-card-dismiss-surface{
-  pointer-events:auto;
+  pointer-events:none;
 }
 .observer-live-board.awaiting-witnessing .observer-signal-paths{
   opacity:0;
@@ -2899,7 +2910,7 @@ button.observer-node:focus-visible{
   left:calc(var(--x,50) * 1%);
   top:calc(var(--y,50) * 1%);
   transform:translate(-50%,-50%);
-  z-index:4;
+  z-index:12;
 }
 .observer-val-node{
   --x:50;
@@ -2971,7 +2982,7 @@ button.observer-node:focus-visible{
   overflow:visible;
 }
 .observer-node.is-selected{
-  z-index:8;
+  z-index:42;
 }
 .observer-node.is-selected .observer-node-label{
   opacity:0;
@@ -3402,6 +3413,7 @@ button.observer-node:focus-visible{
 .task-workspace-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
 .task-workspace-actions button{min-height:34px;padding:0 13px;border:1px solid rgba(91,105,79,.16);border-radius:8px;background:rgba(255,255,255,.66);color:rgba(53,66,49,.88);font:540 .78rem/1 var(--body)}
 .task-workspace-actions button.primary{border-color:rgba(91,105,79,.22);background:linear-gradient(135deg,rgba(198,216,178,.42),rgba(239,163,170,.2)),rgba(255,255,255,.86);color:rgba(45,61,40,.94)}
+.task-workspace-held-back{margin:0;padding:14px 24px;border-top:1px solid rgba(91,105,79,.09);color:rgba(53,66,49,.68);font-size:.78rem;line-height:1.4;background:linear-gradient(90deg,rgba(255,255,255,.72),rgba(236,244,228,.24),rgba(249,234,236,.22))}
 .task-workspace-empty,.task-workspace-loading{display:grid;place-items:center;gap:8px;min-height:260px;padding:40px;text-align:center}
 .task-workspace-empty p,.task-workspace-loading p{margin:0;color:rgba(45,27,22,.62)}
 .task-workspace-loading span{width:24px;height:24px;border:3px solid rgba(69,89,65,.15);border-top-color:rgba(69,89,65,.72);border-radius:50%;animation:taskWorkspaceSpin .9s linear infinite}
@@ -13470,7 +13482,7 @@ button.timeline-overview-receipt:focus-visible{
   0%,100%{opacity:.26;transform:translateY(0) scale(.75)}
   50%{opacity:.78;transform:translateY(-20px) scale(1)}
 }
-@keyframes observer-board-pulse{0%,100%{opacity:.88;transform:scale(1)}50%{opacity:1;transform:scale(1.055)}}
+@keyframes observer-board-glow{0%,100%{opacity:.78}50%{opacity:1}}
 @keyframes observer-board-flicker{0%,93%,100%{filter:drop-shadow(0 0 12px rgba(255,236,202,.22))}94%{filter:drop-shadow(0 0 20px rgba(255,236,202,.42)) brightness(1.08)}95%{filter:drop-shadow(0 0 8px rgba(255,236,202,.16)) brightness(.97)}96%{filter:drop-shadow(0 0 16px rgba(255,236,202,.34)) brightness(1.04)}}
 @keyframes desk-return-glow{0%{opacity:.9;filter:blur(16px)}100%{opacity:.72;filter:blur(10px)}}
 @keyframes desk-return-rooms{0%{filter:brightness(1.08);transform:translateY(8px) scale(.99)}100%{filter:brightness(1);transform:translateY(0) scale(1)}}
