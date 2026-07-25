@@ -540,6 +540,7 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/typeof observerBoardState\.witnessingComplete === 'boolean'/);
   assert.match(frontend,/applyWitnessingPendingPerspective/);
   assert.match(frontend,/renderWitnessingPendingEvidence/);
+  assert.match(frontend,/if\(observerBoardState\.witnessingComplete === false\)\{\s*renderWitnessingPendingEvidence\(observerBoardState\);\s*return;/);
   assert.match(server,/const session=await getTeachValWitnessingResumeSession\(\)/);
   assert.doesNotMatch(server,/const session=await getTeachValWitnessingSession\(\)/);
   assert.match(server,/Prepare and confirm your First Look/);

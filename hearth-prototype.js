@@ -19050,6 +19050,10 @@ function executiveEvidenceLine(item = {}){
 
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   if(!evidence) return;
+  if(observerBoardState.witnessingComplete === false){
+    renderWitnessingPendingEvidence(observerBoardState);
+    return;
+  }
   const velocityCount = homeAdmittedCount('velocity');
   const alignmentCount = homeAdmittedCount('alignment');
   const leverageCount = homeAdmittedCount('leverage');
