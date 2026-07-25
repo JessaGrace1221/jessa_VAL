@@ -366,7 +366,7 @@ function createValIntelligenceSpine({
     return {tenantId:tenantId(),userId:userId()};
   }
   async function pgInsert(table,row,columns,returning='*'){
-    const values=columns.map(c=>row[c]);
+    const values=columns.map(c=>/(Json|Ids)$/.test(c)&&row[c]!=null?JSON.stringify(row[c]):row[c]);
     const params=columns.map((_,i)=>`$${i+1}`).join(',');
     const names=columns.map(c=>c.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())).join(',');
     const r=await dbQuery(`insert into ${table} (${names}) values (${params}) returning ${returning}`,values);
@@ -777,6 +777,10 @@ function createValIntelligenceSpine({
       }
     }
     generated=generated || deterministicOutput;
+    const reviewFailed=generated.status==='review_failed';
+    const reviewError=reviewFailed
+      ? String(safeArray(generated.unknowns).find(item=>item?.source==='observer_reasoner')?.reason||'Observer evidence review failed.')
+      : '';
     const row={
       id:uuid('observer'),
       tenantId:scope.tenantId,
@@ -785,7 +789,7 @@ function createValIntelligenceSpine({
       observerName,
       promptKey:promptKey||'event_intelligence_pass',
       promptSource:prompt.sourcePath||'',
-      status:'completed',
+      status:reviewFailed?'review_failed':'completed',
       contextPacketJson:contextForPersistence(contextPacket||{}),
       outputJson:generated,
       confidence:Number(generated.confidence||0),
@@ -793,7 +797,7 @@ function createValIntelligenceSpine({
       unknownsJson:safeArray(generated.unknowns),
       evidenceRefsJson:safeArray(generated.evidence).map(normalizeSourceRef),
       closingStatement:generated.closing_statement||'',
-      errorMessage:'',
+      errorMessage:reviewError,
       createdAt:now()
     };
     const saved=await saveObserverRun(row);
@@ -1127,6 +1131,22 @@ function createValIntelligenceSpine({
     const observerRuns=[];
     for(const observer of observerSuite){
       observerRuns.push(await runObserver({...observer,contextPacket,eventRunId:eventRun.id}));
+    }
+    const failedObserverRuns=observerRuns.filter(run=>run.status!=='completed');
+    if(failedObserverRuns.length){
+      const errorMessage=`${failedObserverRuns.length} of ${observerSuite.length} Observer reviews did not complete.`;
+      await updateEventRun(eventRun.id,{
+        status:'review_failed',
+        resultJson:{observerRunIds:observerRuns.map(r=>r.id),failedObserverRunIds:failedObserverRuns.map(r=>r.id)},
+        unknownsJson:[
+          ...(contextPacket.unknowns||[]),
+          {source:'observer_suite',reason:errorMessage}
+        ],
+        sourceRefsJson:contextPacket.sourceRefs||[],
+        errorMessage,
+        completedAt:now()
+      });
+      throw new Error(errorMessage);
     }
     const roundTable=await runRoundTable({eventRunId:eventRun.id,observerRuns});
     const recommendation=await recommendChiefOfStaff({roundTableRunId:roundTable.id,observerRuns});

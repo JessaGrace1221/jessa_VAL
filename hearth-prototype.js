@@ -17363,7 +17363,17 @@ function valObserverDocumentRunsForSource(runs=[],sourceId=''){
 
 function renderValObserverDocumentReceipts(target,runs=[],title='About Me document'){
   if(!target)return;
-  const completedByName=new Map(runs.map(run=>[run.observerName||run.observer_name,run]));
+  const runsByName=new Map();
+  runs.forEach(run=>{
+    const name=run.observerName||run.observer_name;
+    if(name&&!runsByName.has(name))runsByName.set(name,run);
+  });
+  const completedByName=new Map([...runsByName].filter(([,run])=>{
+    const output=run?.outputJson||run?.output_json||{};
+    const review=output.document_review||output.documentReview||{};
+    return run?.status==='completed'&&['observed','no_signal'].includes(review.status);
+  }));
+  const failedByName=new Map([...runsByName].filter(([,run])=>run?.status==='review_failed'));
   const observerNames=[
     'Executive Inbox','Relationship','Project','Capacity','Courage','Delight','Opportunity',
     'Momentum','Meaning','Synchronicity','Commitment','Calendar','Environment','Witnessing'
@@ -17378,15 +17388,16 @@ function renderValObserverDocumentReceipts(target,runs=[],title='About Me docume
     '<div class="val-observer-document-receipts-list">',
       observerNames.map(name=>{
         const run=completedByName.get(name);
+        const failed=failedByName.get(name);
         const output=run?.outputJson||run?.output_json||{};
         const review=output.document_review||output.documentReview||{};
         const evidence=(output.evidence||[])[0];
         const complete=!!run;
         const noSignal=review.status==='no_signal';
         return [
-          '<article class="' + (complete?'complete':'reading') + '">',
+          '<article class="' + (complete?'complete':failed?'queued':'reading') + '">',
             '<span>' + escapeHtml(name) + '</span>',
-            '<strong>' + escapeHtml(complete?(noSignal?'No meaningful signal from my lens.':output.observation||'Source-backed context found.'):'Reading...') + '</strong>',
+            '<strong>' + escapeHtml(complete?(noSignal?'No meaningful signal from my lens.':output.observation||'Source-backed context found.'):failed?'Reading queued.':'Reading...') + '</strong>',
             evidence?.quote_or_summary ? '<blockquote>' + escapeHtml(evidence.quote_or_summary) + '</blockquote>' : '',
             complete ? '<small>' + escapeHtml(String(review.charactersRead||0)) + ' characters read</small>' : '',
           '</article>'
@@ -17404,7 +17415,12 @@ async function pollValObserverDocumentReceipts(sourceId,category,attempt=0){
     const payload=await getJson('/api/val/observers/runs?limit=200');
     const runs=valObserverDocumentRunsForSource(payload.runs||[],sourceId);
     renderValObserverDocumentReceipts(target,runs,sourceId);
-    if(runs.length<14&&attempt<90){
+    const completeCount=runs.filter(run=>{
+      const output=run?.outputJson||run?.output_json||{};
+      const review=output.document_review||output.documentReview||{};
+      return run?.status==='completed'&&['observed','no_signal'].includes(review.status);
+    }).length;
+    if(completeCount<14&&attempt<90){
       window.setTimeout(()=>pollValObserverDocumentReceipts(sourceId,category,attempt+1),2000);
     }
   }catch(error){
@@ -22423,7 +22439,7 @@ async function saveValWitnessingCard(category){
     openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
     return;
   }
-  if(!(await ensureOpenAIConnectionBeforeWitnessing(card.id,{resume:true}))) return;
+  if(card.id !== 'documents_templates' && !(await ensureOpenAIConnectionBeforeWitnessing(card.id,{resume:true}))) return;
   try{
     const sessionId = await ensureValWitnessingSession();
     const result = await postJson(

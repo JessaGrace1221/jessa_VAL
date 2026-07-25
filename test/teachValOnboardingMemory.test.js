@@ -604,7 +604,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/immediate_consumers/);
   assert.match(server,/future_consumers/);
   assert.match(server,/saveTeachValImport/);
-  assert.match(server,/status:isSourceConnectionStep\?'Confirmed':'Witnessed'/);
+  assert.match(server,/status:isSourceConnectionStep\?'Confirmed':\(isDocumentStep\?'Saved':'Witnessed'\)/);
   assert.doesNotMatch(server,/Memory saved/);
 });
 
@@ -666,4 +666,16 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(server,/nextQuestion/);
   assert.match(server,/openai_connection_required/);
   assert.match(server,/Your answer is still here\. Please try again\./);
+});
+
+test('Witnessing document receipt saves immediately while Observer reading continues separately',()=>{
+  const route=server.match(/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId',[\s\S]*?\n}\);\napp\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'/)?.[0] || '';
+  assert.match(server,/function witnessingDocumentReceiptTurn/);
+  assert.match(route,/const isDocumentStep=card\.id==='documents_templates'/);
+  assert.match(route,/if\(!isDocumentStep&&!\(await requireOpenAIForNewWitnessing\(res\)\)\) return/);
+  assert.match(route,/witnessingDocumentReceiptTurn\(\{card,rawResponse,documents:uploadedDocumentContext\.documents,nextCard\}\)/);
+  assert.match(route,/observerReviewStatus:'queued'/);
+  assert.match(route,/advance:isSourceConnectionStep\|\|isDocumentStep/);
+  assert.match(server,/app\.post\('\/api\/val\/files\/:id\/observer-review'/);
+  assert.match(server,/Only About Me documents are reviewed by all 14 Observers/);
 });

@@ -3062,6 +3062,13 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(hearthCss, /\.val-first-look-source-grid/);
 });
 
+test('Witnessing About Me receipts only count evidence-backed Observer completions',()=>{
+  assert.match(hearthJs,/run\?\.status==='completed'&&\['observed','no_signal'\]\.includes\(review\.status\)/);
+  assert.match(hearthJs,/failedByName/);
+  assert.match(hearthJs,/Reading queued\./);
+  assert.match(hearthJs,/card\.id !== 'documents_templates' && !\(await ensureOpenAIConnectionBeforeWitnessing/);
+});
+
 test('VAL completion cue is user-gesture gated and quiet for background work', () => {
   assert.match(hearthHtml, /data-completion-sound-toggle/);
   assert.match(hearthCss, /\.completion-sound-toggle/);

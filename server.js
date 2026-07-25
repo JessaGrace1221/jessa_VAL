@@ -4518,6 +4518,38 @@ async function witnessingUploadedDocumentContext(rawResponse=''){
   ].join('\n')).join('\n\n');
   return {documents,modelContext};
 }
+function witnessingDocumentReceiptTurn({card,rawResponse,documents=[],nextCard=null}={}){
+  const graph=normalizePartnershipProtocolGraph({
+    facts:documents.map(document=>({
+      claim:`VAL preserved the full extracted text of ${document.title} (${document.rawText.length.toLocaleString('en-US')} characters).`,
+      status:'confirmed',
+      confidence_source:'successful_document_extraction',
+      evidence_refs:['current_answer']
+    })),
+    observations:[],
+    hypotheses:[],
+    next_question_recommendation:{
+      question:nextCard?.visibleQuestion||'',
+      why:'The documents are safely stored. Observer interpretation continues independently from this conversation step.',
+      evidence_refs:['current_answer']
+    }
+  },card,rawResponse);
+  const count=documents.length;
+  return {
+    graph,
+    witness:{
+      lines:[
+        `I saved ${count} document${count===1?'':'s'} and preserved the full extracted text.`,
+        'The Board reading is running separately, so you do not need to wait here or upload the files again.',
+        'Each Observer will either show the source-backed context it found or say that the document held no meaningful signal for its lens.'
+      ],
+      confirmation_options:[],
+      follow_up_lines:[],
+      carried_questions:[],
+      next_question:nextCard?.visibleQuestion||''
+    }
+  };
+}
 function userFacingWitnessLine(line=''){
   return String(line||'')
     .replace(/\bThe user\b/g,'You')
@@ -8544,11 +8576,12 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This answer belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach your answer to the wrong question.'});
     if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
     if(card.id==='source_review')return res.status(409).json({ok:false,error:'The First Look is prepared directly from your connected sources. Use Prepare my First Look so VAL can show exactly what it read.'});
-    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
     const uploadedDocumentContext=await witnessingUploadedDocumentContext(rawResponse);
+    const isDocumentStep=card.id==='documents_templates';
+    if(!isDocumentStep&&!(await requireOpenAIForNewWitnessing(res))) return;
     const observedResponse=uploadedDocumentContext.modelContext
       ? `${rawResponse}\n\n${uploadedDocumentContext.modelContext}`
       : rawResponse;
@@ -8575,7 +8608,9 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
         evidence_refs:['current_answer']
       }
     },card,rawResponse) : null;
-    const {graph,witness}=isSourceConnectionStep
+    const {graph,witness}=isDocumentStep
+      ? witnessingDocumentReceiptTurn({card,rawResponse,documents:uploadedDocumentContext.documents,nextCard})
+      : isSourceConnectionStep
       ? {
           graph:sourceConnectionGraph,
           witness:{
@@ -8587,7 +8622,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
           }
         }
       : await generatePartnershipProtocolTurn({card,rawResponse:observedResponse,priorImports});
-    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse:observedResponse,graph,confirmation:sourceConnectionConfirmation});
+    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph,confirmation:sourceConnectionConfirmation});
     const evidenceChain=priorEvidenceChain.concat([integrityChain]);
     const currentState=partnershipCurrentState(evidenceChain,nextCard);
     const existing=priorImports.find(i=>i.category===card.category);
@@ -8613,7 +8648,8 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
         title:document.title,
         docType:document.docType,
         characters:document.rawText.length,
-        readByVal:true
+        textExtracted:true,
+        observerReviewStatus:'queued'
       })),
       integrityChain,
       evidenceChain:compactPartnershipEvidenceChain(evidenceChain),
@@ -8643,7 +8679,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       structuredSummary,
       extractedItems:partnershipGraphItems(card.category,graph),
       reviewed:isSourceConnectionStep,
-      status:isSourceConnectionStep?'Confirmed':'Witnessed'
+      status:isSourceConnectionStep?'Confirmed':(isDocumentStep?'Saved':'Witnessed')
     });
     const boardPackets=await valBoardPackets?.recordWitnessingAnswer({
       id:saved.id,
@@ -8661,11 +8697,11 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     });
     if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_answer_saved',sourceType:'witnessing',sourceId:saved.id});
     const state=normalizeTeachValState(session.state);
-    state.progress[card.category]='Witnessed';
+    state.progress[card.category]=isDocumentStep?'Saved':'Witnessed';
     state.stage=card.category;
     session.state=state;
     await saveTeachValSession(session);
-    res.json({ok:true,card,graph,witness,advance:isSourceConnectionStep,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    res.json({ok:true,card,graph,witness,advance:isSourceConnectionStep||isDocumentStep,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(req,res)=>{
@@ -25857,7 +25893,36 @@ async function ghlPlatformContext(query,dashboard,opts={}){
   ].filter(Boolean).join('\n\n');
 }
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
-  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+  try{
+    return await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+  }catch(openAiError){
+    const anthropicKey=await resolveAnthropicKey().catch(()=>'');
+    if(!anthropicKey)throw openAiError;
+    console.warn('[VAL model] OpenAI unavailable; using configured Anthropic fallback:',openAiError.message);
+    const body={
+      model:process.env.VAL_ANTHROPIC_MODEL||'claude-sonnet-4-20250514',
+      max_tokens:maxTokens,
+      temperature,
+      system:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
+      messages:[{
+        role:'user',
+        content:String(user||'')+(json||jsonSchema?'\n\nReturn valid JSON only.':'')
+      }]
+    };
+    const options={
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':anthropicKey,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify(body)
+    };
+    const response=timeoutMs
+      ? await fetchWithTimeout('https://api.anthropic.com/v1/messages',options,timeoutMs,'Anthropic response')
+      : await fetch('https://api.anthropic.com/v1/messages',options);
+    const payload=await readJsonResponse(response);
+    if(!response.ok||payload.error)throw new Error(payload.error?.message||`Anthropic response failed (${response.status}).`);
+    const text=safeArray(payload.content).map(item=>item?.text||'').join('\n').trim();
+    if(!text)throw new Error('Anthropic returned no response text.');
+    return text;
+  }
 }
 function meetingPrepRebuildTimeout(promise,ms,fallback){
   return Promise.race([
@@ -36258,6 +36323,63 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
   }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/val/files/:id/observer-review',async(req,res)=>{
+  try{
+    await valDbReady;
+    const id=String(req.params.id||'').trim();
+    let document=null;
+    if(pgPool){
+      const result=await dbQuery(
+        `select id,type,title,raw_text,metadata,created_at
+         from val_transcripts
+         where user_id=$1 and id=$2
+         limit 1`,
+        [VAL_USER_ID,id]
+      );
+      const row=result.rows?.[0];
+      if(row)document={
+        id:row.id,
+        sourceId:row.id,
+        sourceType:'knowledge_document',
+        title:row.title||row.metadata?.fileName||'Uploaded document',
+        fileName:row.metadata?.fileName||row.title||'Uploaded document',
+        rawText:row.raw_text||'',
+        docType:row.metadata?.docType||'knowledge_document',
+        documentCategory:row.metadata?.documentCategory||'other',
+        uploadedVia:row.metadata?.uploadedVia||'val_file_upload',
+        createdAt:row.created_at?.toISOString?.()||row.created_at||''
+      };
+    }else{
+      const row=(valStore().transcripts||[]).find(item=>String(item.id||'')===id);
+      if(row)document={
+        id:row.id,
+        sourceId:row.id,
+        sourceType:'knowledge_document',
+        title:row.title||row.metadata?.fileName||'Uploaded document',
+        fileName:row.metadata?.fileName||row.title||'Uploaded document',
+        rawText:row.rawText||row.raw_text||row.transcript||'',
+        docType:row.metadata?.docType||'knowledge_document',
+        documentCategory:row.metadata?.documentCategory||'other',
+        uploadedVia:row.metadata?.uploadedVia||'val_file_upload',
+        createdAt:row.createdAt||''
+      };
+    }
+    if(!document||!document.rawText)return res.status(404).json({ok:false,error:'The saved document text could not be found.'});
+    if(!aboutMeDocumentCategory(document.documentCategory)){
+      return res.status(400).json({ok:false,error:'Only About Me documents are reviewed by all 14 Observers.'});
+    }
+    const sourceProcessingRecord=await valSourceProcessing.getSourceProcessingRecord?.({
+      sourceType:'knowledge_document',
+      sourceId:id
+    }).catch(()=>null);
+    const observerDelivery=await queueKnowledgeDocumentObserverDelivery({
+      input:{document},
+      result:{sourceProcessingRecord:sourceProcessingRecord||{}}
+    });
+    res.json({ok:true,id,title:document.title,characters:document.rawText.length,observerDelivery});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
 // ════════════════════════════════════════════════════════

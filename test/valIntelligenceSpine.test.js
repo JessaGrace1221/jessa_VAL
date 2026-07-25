@@ -158,6 +158,38 @@ test('About Me intelligence invokes one independent reasoner for each of 14 Obse
   assert.ok(result.observerRuns.every(run=>run.contextPacketJson.event.document.rawText===undefined));
 });
 
+test('failed Observer reasoning is never stored or advanced as completed',async()=>{
+  let store={tasks:[]};
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,8)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async()=>{throw new Error('provider unavailable');},
+    loaders:{
+      listBoardPackets:async()=>[],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  await assert.rejects(
+    spine.runIntelligencePass({
+      event:{type:'about_me_document',sourceType:'document',sourceId:'doc_failed',document:{id:'doc_failed',rawText:'Source text.'}}
+    }),
+    /14 of 14 Observer reviews did not complete/
+  );
+  assert.equal(store.observerRuns.length,14);
+  assert.ok(store.observerRuns.every(run=>run.status==='review_failed'));
+  assert.ok(store.observerRuns.every(run=>run.errorMessage==='provider unavailable'));
+  assert.equal(store.roundTableRuns.length,0);
+  assert.equal(store.chiefOfStaffRecommendations.length,0);
+  assert.equal(store.eventIntelligenceRuns[0].status,'review_failed');
+});
+
 test('in-memory intelligence pass records observers, round table, recommendation, momentum, and unknowns',async()=>{
   let store={
     memoryItems:[{id:'mem_1',kind:'teach_val_project',summary:'Frisson: protect human judgment',rawText:'Frisson is about wisdom, not productivity.'}],
