@@ -36370,13 +36370,9 @@ app.post('/api/val/files/:id/observer-review',async(req,res)=>{
     if(!aboutMeDocumentCategory(document.documentCategory)){
       return res.status(400).json({ok:false,error:'Only About Me documents are reviewed by all 14 Observers.'});
     }
-    const sourceProcessingRecord=await valSourceProcessing.getSourceProcessingRecord?.({
-      sourceType:'knowledge_document',
-      sourceId:id
-    }).catch(()=>null);
     const observerDelivery=await queueKnowledgeDocumentObserverDelivery({
       input:{document},
-      result:{sourceProcessingRecord:sourceProcessingRecord||{}}
+      result:{sourceProcessingRecord:{}}
     });
     res.json({ok:true,id,title:document.title,characters:document.rawText.length,observerDelivery});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
