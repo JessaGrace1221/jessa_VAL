@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {createValBoardPacketsService,BOARD_OBSERVERS,BOARD_SOURCE_REGISTRY}=require('../services/valBoardPackets');
+const {createValBoardPacketsService,BOARD_OBSERVERS,BOARD_SOURCE_REGISTRY,validateObservationSource}=require('../services/valBoardPackets');
 const {VAL_BOARD_PACKETS_SQL}=require('../services/valBoardPacketsSchema');
 
 const root=path.join(__dirname,'..');
@@ -62,13 +62,13 @@ test('Board packet service routes and digests each packet through every observer
   assert.ok(packet.primaryObserversJson.includes('Capacity'));
   assert.ok(packet.routeObserversJson.every(route=>route.reason));
   assert.equal(packet.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
-  assert.ok(packet.payloadJson.observerReviews.some(review=>review.observerName==='Relationship'&&review.status==='observed'));
+  assert.ok(packet.payloadJson.observerReviews.some(review=>review.observerName==='Executive Inbox'&&review.status==='observed'));
   assert.ok(packet.payloadJson.observerReviews.some(review=>review.status==='no_signal'));
   assert.ok(packet.payloadJson.observerReviews.every(review=>review.evidence.sourceType==='email'));
   const relationshipReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
-  assert.match(relationshipReview.lensFinding,/Michelle has a relationship signal worth inspecting/i);
-  assert.ok(Array.isArray(relationshipReview.people));
-  assert.ok(Array.isArray(relationshipReview.projects));
+  assert.equal(relationshipReview.status,'no_signal');
+  assert.deepEqual(relationshipReview.people,[]);
+  assert.deepEqual(relationshipReview.projects,[]);
 });
 
 test('model-backed Observer reviews replace fallback reviews only with packet-grounded entities',async()=>{
@@ -102,8 +102,8 @@ test('model-backed Observer reviews replace fallback reviews only with packet-gr
     confidence:0.86
   }));
   const saved=await service.applyModelObserverReviews(packet.id,reviews);
-  assert.equal(saved.payloadJson.observerReviewVersion,4);
-  assert.equal(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v2');
+  assert.equal(saved.payloadJson.observerReviewVersion,5);
+  assert.equal(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v3');
   assert.equal(saved.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
   const relationship=saved.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
   assert.equal(relationship.status,'observed');
@@ -475,8 +475,8 @@ test('Board packet people extraction ignores user and politeness filler words',a
   const packet=await service.recordSourceEvent('sms',{
     id:'sms_michelle_intro',
     title:'Michelle introduction',
-    summary:'Jessa asked: Please introduce VAL to Michelle after the GOALL dashboard discussion.',
-    sourceRefs:[{sourceType:'sms',sourceId:'sms_michelle_intro',quoteOrSummary:'Please introduce VAL to Michelle after the GOALL dashboard discussion.',confidence:0.9}]
+    summary:'Michelle sounded frustrated after the GOALL dashboard discussion and the trust between us needs attention.',
+    sourceRefs:[{sourceType:'sms',sourceId:'sms_michelle_intro',quoteOrSummary:'Michelle sounded frustrated after the GOALL dashboard discussion and the trust between us needs attention.',confidence:0.9}]
   });
   const relationshipReview=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
   assert.ok(relationshipReview.people.includes('Michelle'));
@@ -507,6 +507,185 @@ test('Board reviews do not turn document labels or routing into fabricated peopl
   assert.equal(capacityReview.status,'no_signal');
   assert.match(relationshipReview.lensFinding,/No meaningful Relationship signal/);
   assert.equal(packet.payloadJson.observerReviewVersion,2);
+});
+
+test('placeholder-only GHL evidence is quarantined before any Observer receives it',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  const validation=validateObservationSource({
+    sourceType:'ghl_voice',
+    sourceId:'voice-placeholder',
+    summary:'User: {{custom.user_request}}{{message.body}} for {{contact.full_name}}'
+  });
+  assert.equal(validation.valid,false);
+  assert.match(validation.rejectionReason,/merge fields/i);
+  const packet=await service.recordCoworkEvent({
+    sourceType:'ghl_voice',
+    conversationId:'voice-placeholder',
+    summary:'User: {{custom.user_request}}{{message.body}} for {{contact.full_name}}'
+  });
+  assert.equal(packet.status,'rejected_source');
+  assert.deepEqual(packet.routeObserversJson,[]);
+  assert.deepEqual(packet.payloadJson.observerReviews,[]);
+  assert.equal((await service.listPackets({limit:20})).length,0);
+});
+
+test('tool failures remain execution history and never become Capacity or Board evidence',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'tool_error',
+    sourceId:'gmail-error-1',
+    title:'Inbox lookup failed',
+    summary:'VAL could not find a matching email in the connected inbox windows. Try a sender, subject word, or date range.'
+  });
+  assert.equal(packet.status,'rejected_source');
+  assert.equal(packet.routeObserversJson.some(route=>route.observerName==='Capacity'),false);
+  assert.equal((await service.boardContext()).livePacketCount,0);
+});
+
+test('a real capacity statement produces one concise source-backed Capacity fallback review',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'transcript',
+    sourceId:'capacity-real-1',
+    packetType:'meeting_evidence_packet',
+    title:'Friday planning conversation',
+    summary:'Jessa said she has six back-to-back meetings and cannot take on another deadline this week.',
+    sourceRefs:[{
+      sourceType:'transcript',
+      sourceId:'capacity-real-1',
+      quoteOrSummary:'I have six back-to-back meetings and cannot take on another deadline this week.',
+      confidence:0.94
+    }]
+  });
+  const capacity=packet.payloadJson.observerReviews.find(review=>review.observerName==='Capacity');
+  assert.equal(capacity.status,'observed');
+  assert.match(capacity.lensFinding,/timing|decision load/i);
+  assert.match(capacity.evidence.quoteOrSummary,/six back-to-back meetings/i);
+  const route=packet.routeObserversJson.find(item=>item.observerName==='Capacity');
+  assert.ok(route.routingConfidence>=0.7);
+  assert.match(route.supportingExcerpt,/six back-to-back meetings/i);
+});
+
+test('the same source and packet type update one durable packet instead of duplicating Observer findings',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  const input={
+    sourceType:'task',
+    sourceId:'task-duplicate-1',
+    packetType:'task_packet',
+    title:'Follow up with Mike',
+    summary:'Mike is owed a follow-up by Friday.'
+  };
+  const first=await service.createPacket(input);
+  const second=await service.createPacket({...input,summary:'Mike is owed a follow-up by Friday. The owner is Jessa.'});
+  assert.equal(first.id,second.id);
+  const packets=await service.listPackets({limit:20});
+  assert.equal(packets.length,1);
+  assert.equal(packets[0].payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
+  assert.equal(new Set(packets[0].payloadJson.observerReviews.map(review=>review.observerFindingKey)).size,14);
+});
+
+test('legacy contaminated active packets are removed from active Board state on read',async()=>{
+  let store={valBoardPackets:[{
+    id:'legacy-placeholder-packet',
+    tenantId:'tenant',
+    userId:'user',
+    sourceType:'ghl_text',
+    sourceId:'legacy-placeholder',
+    packetType:'cowork_packet',
+    title:'Legacy GHL turn',
+    summary:'User: {{custom.user_request}}{{message.body}} VAL: I could not find a matching email in the connected inbox windows.',
+    status:'active',
+    routeObserversJson:BOARD_OBSERVERS.map(observerName=>({observerName})),
+    primaryObserversJson:['Capacity'],
+    sourceRefsJson:[],
+    payloadJson:{observerReviews:[]},
+    prototype:false,
+    createdAt:'2026-07-24T12:00:00.000Z',
+    updatedAt:'2026-07-24T12:00:00.000Z'
+  }]};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  assert.equal((await service.listPackets({limit:20})).length,0);
+  assert.equal(store.valBoardPackets[0].status,'rejected_source');
+  assert.deepEqual(store.valBoardPackets[0].routeObserversJson,[]);
+  assert.deepEqual(store.valBoardPackets[0].payloadJson.observerReviews,[]);
+});
+
+test('all fourteen Observers receive one valid packet and preserve fourteen distinct model reviews',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'witnessing',
+    sourceId:'all-observers-1',
+    packetType:'identity_context_packet',
+    title:'Jessa operating context',
+    summary:'Jessa described her values, relationships, projects, commitments, calendar, capacity, courage, delight, opportunities, momentum, environment, communication needs, repeated patterns, and the meaning she wants VAL to protect.'
+  });
+  const reviews=BOARD_OBSERVERS.map((observerName,index)=>({
+    observerName,
+    status:'observed',
+    lensFinding:`${observerName} found source-backed operating context number ${index+1}.`,
+    observation:`The Witnessing source contains material within the ${observerName} constitution.`,
+    concern:`The ${observerName} signal could be missed if this source is ignored.`,
+    question:`What should ${observerName} continue watching?`,
+    confidence:0.78
+  }));
+  const reviewed=await service.applyModelObserverReviews(packet.id,reviews);
+  assert.deepEqual(reviewed.routeObserversJson.map(route=>route.observerName),BOARD_OBSERVERS);
+  assert.equal(reviewed.payloadJson.observerReviews.length,14);
+  assert.deepEqual(reviewed.payloadJson.observerReviews.map(review=>review.observerName),BOARD_OBSERVERS);
+  assert.equal(new Set(reviewed.payloadJson.observerReviews.map(review=>review.lensFinding)).size,14);
+  assert.equal(new Set(reviewed.payloadJson.observerReviews.map(review=>review.observerFindingKey)).size,14);
+  assert.ok(reviewed.routeObserversJson.every(route=>route.routingConfidence===0.78));
+});
+
+test('every registered platform source delivers valid evidence to all fourteen Observers',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',userId:()=>'user',logger:{log(){},warn(){}}
+  });
+  for(const source of BOARD_SOURCE_REGISTRY){
+    const packet=await service.createPacket({
+      sourceType:source.sourceType,
+      sourceId:`platform-${source.sourceType}`,
+      packetType:source.packetTypes[0],
+      title:`Platform evidence from ${source.label}`,
+      summary:`A valid ${source.label} source supplied concrete human evidence for Board review.`
+    });
+    assert.equal(packet.status,'active',source.sourceType);
+    assert.deepEqual(packet.routeObserversJson.map(route=>route.observerName),BOARD_OBSERVERS,source.sourceType);
+    assert.equal(packet.payloadJson.observerReviews.length,14,source.sourceType);
+  }
+});
+
+test('Observer cards expose an honest quiet state when no valid evidence qualifies',()=>{
+  assert.match(frontend,/I am not currently holding any reliable observations about your/);
+  assert.match(frontend,/Nothing active right now\./);
+  assert.match(frontend,/No qualifying evidence has been received\./);
+  assert.match(frontend,/No supported concern right now\./);
+  assert.match(frontend,/Nothing to explore yet\./);
 });
 
 test('profile persistence paths emit Board packets when relationship/project truth changes',()=>{

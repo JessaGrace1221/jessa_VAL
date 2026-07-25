@@ -31286,6 +31286,7 @@ const BOARD_MODEL_LENS_CONTRACT=[
   'Witnessing: the user’s own revealed values, preferences, boundaries, fears, desires, and operating truth.'
 ].join('\n');
 function boardModelPacketPayload(packet={}){
+  const payload=packet.payloadJson||{};
   return {
     id:packet.id,
     sourceType:packet.sourceType,
@@ -31294,7 +31295,16 @@ function boardModelPacketPayload(packet={}){
     title:packet.title,
     summary:packet.summary,
     sourceRefs:safeArray(packet.sourceRefsJson).slice(0,8),
-    payload:packet.payloadJson
+    evidenceContent:payload.evidenceContent||packet.summary||'',
+    provenance:payload.provenance||{},
+    structuredContext:{
+      participants:safeArray(payload.participants).slice(0,20),
+      keyDecisions:safeArray(payload.keyDecisions).slice(0,20),
+      relationshipUpdates:safeArray(payload.relationshipUpdates).slice(0,20),
+      openQuestions:safeArray(payload.openQuestions).slice(0,20),
+      projectName:payload.projectName||payload.project_name||'',
+      eventType:payload.eventType||payload.event_type||''
+    }
   };
 }
 async function modelReviewBoardPacket(packet={},recentPackets=[]){
@@ -31312,6 +31322,7 @@ async function modelReviewBoardPacket(packet={},recentPackets=[]){
     'observation must briefly explain why this lens noticed it and must not paste or summarize the entire source.',
     'concern must state the specific consequence this Observer is watching. question must be the one useful question this Observer would explore with the user.',
     'Do not repeat lensFinding in observation, concern, or question. Do not prefix fields with Source or Evidence.',
+    'Return no_signal when this lens has no meaningful evidence. Do not force all lenses to observe.',
     'Return JSON only: {"reviews":[{"observerName":"","status":"observed|no_signal","lensFinding":"","observation":"","concern":"","question":"","people":[],"projects":[],"decisionObjects":[],"confidence":0.0}]}',
     'Return exactly one review for each Observer using these names and boundaries:',
     BOARD_MODEL_LENS_CONTRACT
@@ -31332,8 +31343,8 @@ async function enrichBoardPacketsWithModel(packets=[],event={}){
   const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype);
   if(!livePackets.length||!valBoardPackets?.applyModelObserverReviews)return livePackets;
   const candidates=livePackets.filter(packet=>
-    Number(packet.payloadJson?.observerReviewVersion||0)<4||
-    packet.payloadJson?.observerReviewMode!=='model_backed_observer_suite_v2'
+    Number(packet.payloadJson?.observerReviewVersion||0)<5||
+    packet.payloadJson?.observerReviewMode!=='model_backed_observer_suite_v3'
   );
   if(!candidates.length)return livePackets;
   const recentPackets=await valBoardPackets.listPackets({limit:24}).catch(()=>livePackets);
@@ -31349,7 +31360,7 @@ async function enrichBoardPacketsWithModel(packets=[],event={}){
   return livePackets.map(packet=>byId.get(packet.id)||packet);
 }
 async function triggerBoardIntelligenceForPackets(packets=[],event={}){
-  let livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype);
+  let livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
   if(!livePackets.length||!valIntelligenceSpine?.runIntelligencePass)return null;
   livePackets=await enrichBoardPacketsWithModel(livePackets,event);
   const first=livePackets[0];
@@ -31392,8 +31403,9 @@ function conversationTurnSourceRefs({selectedSourceContext={},sourceRefs=[]}={})
 
 function compactConversationTurn(messages=[],limit=2400){
   return safeArray(messages)
-    .slice(-8)
-    .map(message=>`${message?.role==='assistant'?'VAL':'User'}: ${String(message?.content||'').replace(/\s+/g,' ').trim()}`)
+    .filter(message=>message?.role==='user')
+    .slice(-6)
+    .map(message=>`User: ${String(message?.content||'').replace(/\s+/g,' ').trim()}`)
     .filter(Boolean)
     .join('\n')
     .slice(0,limit);
@@ -31412,20 +31424,23 @@ async function recordValConversationTurnPacket({conversationId,title,sourceType=
   const source=boardConversationSourceType(sourceType||channel,'cowork');
   const id=String(conversationId||'').trim()||uuid('chat_turn');
   const summary=compactConversationTurn(messages.length?messages:[
-    {role:'user',content:lastUser},
-    {role:'assistant',content:assistantContent}
+    {role:'user',content:lastUser}
   ]);
   const packet=await valBoardPackets.recordCoworkEvent({
     sourceType:source,
     conversationId:id,
     sessionId:id,
     title:title||`${source.replace(/_/g,' ')} turn`,
-    summary:summary||assistantContent||lastUser||'VAL conversation turn.',
+    summary:summary||lastUser||'',
     sourceRefs,
     channel:channel||source,
     lastUser,
-    assistantContent,
-    metadata,
+    metadata:{
+      ...metadata,
+      assistantResponseRecordedInExecutionHistory:!!assistantContent
+    },
+    generatedBy:'user_conversation_ingress',
+    isGeneratedContent:false,
     noExternalAction:metadata?.noExternalAction!==false
   }).catch(error=>{
     console.warn('[val-board] conversation turn packet creation failed:',error.message);

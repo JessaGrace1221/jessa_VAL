@@ -26836,7 +26836,29 @@ function observerReviewEvidenceLine(review = {}){
   const title = evidence.packetTitle || evidence.packetType || 'Board packet';
   const sourceType = String(evidence.sourceType || 'source').replace(/_/g, ' ');
   const quote = evidence.quoteOrSummary || review.observation || '';
-  return observerCompactLine(title + ' · ' + sourceType + (quote ? ': ' + quote : ''), title, 210);
+  const entities = [
+    ...safeArray(review.people),
+    ...safeArray(review.projects)
+  ].filter(Boolean).slice(0, 4);
+  const createdAt = evidence.sourceCreatedAt || '';
+  const date = createdAt && !Number.isNaN(new Date(createdAt).getTime())
+    ? new Date(createdAt).toLocaleDateString([], {month:'short',day:'numeric'})
+    : '';
+  return observerCompactLine([title, sourceType, entities.join(', '), date].filter(Boolean).join(' · ') + (quote ? ': ' + quote : ''), title, 260);
+}
+
+function observerEvidenceItem(review = {}){
+  const rawLink = String(review?.evidence?.sourceLink || '').trim();
+  const safeLink = /^(?:https?:\/\/|\/(?!\/))/i.test(rawLink) ? rawLink : '';
+  return {text:observerReviewEvidenceLine(review),link:safeLink};
+}
+
+function observerEvidenceItemMarkup(item){
+  const evidence = item && typeof item === 'object' ? item : {text:String(item || ''),link:''};
+  const text = escapeHtml(evidence.text || '');
+  return evidence.link
+    ? '<li><a href="' + escapeHtml(evidence.link) + '" target="_blank" rel="noopener noreferrer">' + text + '</a></li>'
+    : '<li>' + text + '</li>';
 }
 
 function observerReviewSummaryLine(review = {}){
@@ -27254,7 +27276,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
     : latestDeduction
       ? observerCompactLine(latestDeduction.lensFinding || latestDeduction.observation, '', 220)
       : completedReviews.length
-        ? name + ' completed its review and found no meaningful signal in the latest source packets.'
+        ? 'I am not currently holding any reliable observations about your ' + name.toLowerCase() + '.'
       : hasLiveReviews
         ? name + ' received ' + receivedCount + ' packet' + (receivedCount === 1 ? '' : 's') + '. A concise source-backed deduction has not completed yet.'
         : 'No source-backed signal is loaded for this lens yet.';
@@ -27263,30 +27285,30 @@ function observerBoardCardMarkup(observer = null, position = {}){
     : latestDeduction
       ? observerCompactLine(latestDeduction.observation, 'Watching the evidence attached to this deduction.', 220)
       : completedReviews.length
-        ? 'No pattern, concern, or decision from these packets crossed this Observer’s evidence threshold.'
+        ? 'Nothing active right now.'
       : hasLiveReviews
         ? 'Waiting for the Observer review to distinguish a real signal from ordinary source material.'
         : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
   const evidenceItems = isChief
     ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
-    : meaningfulReviews.length
-      ? meaningfulReviews.map(observerReviewEvidenceLine)
+      : meaningfulReviews.length
+      ? meaningfulReviews.map(observerEvidenceItem)
       : completedReviews.length
-        ? completedReviews.slice(0, 3).map((review) => 'Checked: ' + observerReviewEvidenceLine(review))
+        ? ['No qualifying evidence has been received.']
       : checkedReviews.length
         ? checkedReviews.slice(0, 3).map((review) => 'Received: ' + observerReviewEvidenceLine(review))
         : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
     : latestDeduction
-      ? observerCompactLine(latestDeduction.concern, 'No separate concern rose from this deduction.', 200)
-      : completedReviews.length ? 'No concern rose from the packets this Observer completed.'
+      ? observerCompactLine(latestDeduction.concern, 'No supported concern right now.', 200)
+      : completedReviews.length ? 'No supported concern right now.'
       : hasLiveReviews ? 'No concern is being claimed before the deduction is complete.' : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
     : latestDeduction
-      ? observerCompactLine(latestDeduction.question, observer.explore || observer.stance, 180)
-      : completedReviews.length ? 'No question needs executive attention from these packets.'
+      ? observerCompactLine(latestDeduction.question, 'Nothing to explore yet.', 180)
+      : completedReviews.length ? 'Nothing to explore yet.'
       : hasLiveReviews ? 'What, if anything, becomes meaningful through this lens?' : 'Open or ingest a source packet, then ask this Observer what it noticed.';
   const packetFrom = isChief ? 'Board' : String(latestDeduction?.evidence?.sourceType || checkedReviews[0]?.evidence?.sourceType || 'No live source').replace(/_/g, ' ');
   const packetObservation = isChief
@@ -27304,10 +27326,12 @@ function observerBoardCardMarkup(observer = null, position = {}){
       '<button type="button" aria-label="' + escapeHtml(chatLabel) + '" data-observer-cowork="' + escapeHtml(observerId) + '" data-observer-role="' + escapeHtml(role) + '">' + escapeHtml(chatLabel) + '</button>',
       '<div><em>Currently Seeing</em><p>' + escapeHtml(currentlySeeing) + '</p></div>',
       '<div><em>What I’m Watching</em><p>' + escapeHtml(watching) + '</p></div>',
-      '<div><em>Evidence</em><ul>' + evidenceItems.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul></div>',
+      '<div><em>Evidence</em><ul>' + evidenceItems.map(observerEvidenceItemMarkup).join('') + '</ul></div>',
       '<div><em>My Concern</em><p>' + escapeHtml(concern) + '</p></div>',
       '<div><em>What I’d Like to Explore</em><p>' + escapeHtml(explore) + '</p></div>',
-      '<figure class="observer-card-packet-note" aria-live="polite"><i></i><figcaption><span>New observation received from ' + escapeHtml(packetFrom) + '</span><p>' + escapeHtml(packetObservation) + '</p></figcaption></figure>',
+      latestDeduction
+        ? '<figure class="observer-card-packet-note" aria-live="polite"><i></i><figcaption><span>New observation received from ' + escapeHtml(packetFrom) + '</span><p>' + escapeHtml(packetObservation) + '</p></figcaption></figure>'
+        : '',
     '</aside>'
   ].join('');
 }

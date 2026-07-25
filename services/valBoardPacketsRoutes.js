@@ -50,7 +50,7 @@ function registerValBoardPacketsRoutes(app,deps={}){
       await waitForDb();
       const packet=await service.createPacket(req.body||{});
       await auditLog({req,action:'val_board_packet_created',resourceType:'val_board_packet',resourceId:packet.id,metadata:{sourceType:packet.sourceType,sourceId:packet.sourceId,packetType:packet.packetType,prototype:packet.prototype},success:true}).catch(()=>{});
-      res.json({ok:true,packet});
+      res.json({ok:packet.status==='active',packet,rejected:packet.status!=='active',rejectionReason:packet.payloadJson?.sourceValidation?.rejectionReason||''});
     }catch(e){
       await auditLog({req,action:'val_board_packet_create_failed',resourceType:'val_board_packet',metadata:{error:e.message},success:false}).catch(()=>{});
       res.status(500).json({ok:false,error:e.message});
@@ -62,9 +62,11 @@ function registerValBoardPacketsRoutes(app,deps={}){
       await waitForDb();
       if(typeof service.recordSourceEvent!=='function')throw new Error('Board source event ingress is not available.');
       const packet=await service.recordSourceEvent(String(req.params.sourceType||''),req.body||{});
-      await afterSourceEvent({packet,sourceType:packet.sourceType,sourceId:packet.sourceId,request:req.body||{}}).catch(()=>{});
+      if(packet.status==='active'){
+        await afterSourceEvent({packet,sourceType:packet.sourceType,sourceId:packet.sourceId,request:req.body||{}}).catch(()=>{});
+      }
       await auditLog({req,action:'val_board_source_event_created',resourceType:'val_board_packet',resourceId:packet.id,metadata:{sourceType:packet.sourceType,sourceId:packet.sourceId,packetType:packet.packetType},success:true}).catch(()=>{});
-      res.json({ok:true,packet});
+      res.json({ok:packet.status==='active',packet,rejected:packet.status!=='active',rejectionReason:packet.payloadJson?.sourceValidation?.rejectionReason||''});
     }catch(e){
       await auditLog({req,action:'val_board_source_event_failed',resourceType:'val_board_packet',metadata:{sourceType:req.params.sourceType,error:e.message},success:false}).catch(()=>{});
       res.status(500).json({ok:false,error:e.message});

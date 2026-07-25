@@ -1,3 +1,5 @@
+const crypto=require('node:crypto');
+
 const BOARD_OBSERVERS = [
   'Executive Inbox',
   'Relationship',
@@ -15,7 +17,7 @@ const BOARD_OBSERVERS = [
   'Witnessing'
 ];
 const OBSERVER_REVIEW_VERSION = 2;
-const MODEL_OBSERVER_REVIEW_VERSION = 4;
+const MODEL_OBSERVER_REVIEW_VERSION = 5;
 
 const PRIMARY_ROUTES = Object.freeze({
   email_attention_packet:['Courage','Relationship','Commitment','Opportunity','Executive Inbox'],
@@ -180,6 +182,58 @@ function boardSourceByType(sourceType=''){
 
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+function normalizedEvidenceText(value=''){
+  return String(value||'').replace(/\s+/g,' ').trim().toLowerCase();
+}
+function evidenceHash(value=''){
+  return crypto.createHash('sha256').update(normalizedEvidenceText(value)).digest('hex').slice(0,24);
+}
+const INELIGIBLE_OBSERVATION_SOURCE_TYPES=new Set([
+  'assistant_response','system_event','tool_error','observer_output','observer_summary','chief_of_staff_output'
+]);
+const UNRESOLVED_MERGE_FIELD_RE=/\{\{\s*[^{}]+\s*\}\}|\bcustom\.user_request\b|\bmessage\.body\b|\bcontact\.(?:full_name|id)\b/i;
+const EXECUTION_ERROR_RE=/\b(?:connected inbox windows|only seeing the placeholder text|could not find a matching email|try a sender, subject word, or date range|VAL could not finish|VAL took longer than expected|tool (?:failed|error)|request failed|invalid url)\b/i;
+
+function observationSourceContent(source={}){
+  const refs=safeArray(source.sourceRefs||source.sourceRefsJson||source.source_refs_json);
+  return compactText([
+    source.summary,
+    source.description,
+    source.content,
+    source.text,
+    source.message,
+    source.body,
+    source.rawResponse,
+    refs.map(ref=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||'').join(' ')
+  ].filter(Boolean).join(' '),12000);
+}
+
+function validateObservationSource(source={}){
+  const sourceType=registrySourceKey(source.sourceType||source.source_type||source.type||'manual');
+  const sourceId=String(source.sourceId||source.source_id||source.id||'').trim();
+  const cleanContent=observationSourceContent(source);
+  const payload=source.payloadJson||source.payload||{};
+  const generatedBy=String(source.generatedBy||source.generated_by||payload.generatedBy||payload.generated_by||'').trim();
+  const isGeneratedContent=source.isGeneratedContent===true||source.is_generated_content===true||
+    payload.isGeneratedContent===true||payload.is_generated_content===true||
+    /^(?:observer|chief_of_staff|val_board|board_synthesis)/i.test(generatedBy);
+  let rejectionReason='';
+  if(INELIGIBLE_OBSERVATION_SOURCE_TYPES.has(sourceType))rejectionReason=`${sourceType} is execution history, not Observer evidence.`;
+  else if(isGeneratedContent)rejectionReason='Generated Board or assistant content cannot be re-ingested as source evidence.';
+  else if(UNRESOLVED_MERGE_FIELD_RE.test(cleanContent))rejectionReason='The source contains unresolved merge fields.';
+  else if(EXECUTION_ERROR_RE.test(cleanContent))rejectionReason='The source is a tool or execution failure, not human evidence.';
+  else if(!cleanContent)rejectionReason='The source contains no usable evidence.';
+  return {
+    valid:!rejectionReason,
+    rejectionReason,
+    cleanContent,
+    sourceType,
+    sourceId,
+    generatedBy,
+    isGeneratedContent,
+    contentHash:evidenceHash(cleanContent)
+  };
+}
 function jsonValue(value,fallback){
   if(value==null)return fallback;
   if(typeof value==='string'){
@@ -207,7 +261,8 @@ function normalizeSourceRef(ref={}){
     source_id:String(ref.source_id||ref.sourceId||ref.id||''),
     quote_or_summary:compactText(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||'',900),
     confidence:Math.max(0,Math.min(1,Number(ref.confidence)||0.65)),
-    created_at:ref.created_at||ref.createdAt||new Date().toISOString()
+    created_at:ref.created_at||ref.createdAt||new Date().toISOString(),
+    source_link:String(ref.source_link||ref.sourceLink||ref.url||'')
   };
 }
 function routeReason(observerName='',packetType='',sourceType=''){
@@ -231,16 +286,24 @@ function routeReason(observerName='',packetType='',sourceType=''){
   };
   return reasons[observer]||`This packet is visible to ${observer} for context.`;
 }
-function observerRoutes(packetType='',sourceType=''){
+function observerRoutes(packetType='',sourceType='',packet=null){
   const primary=new Set(PRIMARY_ROUTES[packetType]||[]);
-  return BOARD_OBSERVERS.map(observerName=>({
-    observerName,
-    primary:primary.has(observerName),
-    reason:routeReason(observerName,packetType,sourceType)
-  }));
+  return BOARD_OBSERVERS.map(observerName=>{
+    const signal=packet?observerMeaningfulSignal(observerName,packet):null;
+    return {
+      observerName,
+      observerId:stableKey(observerName),
+      primary:primary.has(observerName),
+      routingConfidence:signal?.meaningful?signal.confidence:0,
+      routingReason:signal?.meaningful?signal.reason:'Delivered for review; no deterministic deduction is claimed.',
+      supportingExcerpt:signal?.meaningful?signal.supportingExcerpt:'',
+      sourceId:String(packet?.sourceId||''),
+      reason:routeReason(observerName,packetType,sourceType)
+    };
+  });
 }
-function packetId(uuid,scope,sourceType,sourceId,packetType,title){
-  return stableKey(`board_${scope.tenantId}_${scope.userId}_${sourceType}_${sourceId}_${packetType}_${title}`)||uuid('boardpacket');
+function packetId(uuid,scope,sourceType,sourceId,packetType){
+  return stableKey(`board_${scope.tenantId}_${scope.userId}_${sourceType}_${sourceId}_${packetType}`)||uuid('boardpacket');
 }
 function registrySourceKey(packetSourceType=''){
   const source=String(packetSourceType||'').toLowerCase();
@@ -392,30 +455,34 @@ function packetDecisionNouns(packet={}){
 function observerMeaningfulSignal(observerName='',packet={}){
   const primary=safeArray(packet.primaryObserversJson).includes(observerName);
   const text=packetSearchText(packet);
-  const terms=OBSERVER_SIGNAL_TERMS[observerName]||[];
-  const matched=terms.filter(term=>text.includes(term)).slice(0,4);
   const source=registrySourceKey(packet.sourceType||packet.source_type);
-  const packetType=String(packet.packetType||packet.packet_type||'');
   const people=packetPeople(packet);
   const projects=packetProjects(packet);
-  const interactionSource=['email','transcript','calendar_event','cowork','ghl_voice','ghl_text','sms','relationship_profile'].includes(source);
-  const sourceSignal={
-    'Executive Inbox':['email','ghl_voice','ghl_text','sms'].includes(source),
-    Relationship:interactionSource&&people.length>0,
-    Project:projects.length>0||source==='project_profile',
-    Capacity:source==='calendar_event'||/\b(capacity|deadline|overdue|due|load|bandwidth|timing|energy|tradeoff)\b/i.test(text),
-    Courage:/\b(avoid|avoided|hesitat|frustrat|tension|pushback|hard|risk|direct|truth)\b/i.test(text),
-    Delight:/\b(joy|delight|curiosity|relief|restore|ground|play|alive|connection)\b/i.test(text),
-    Opportunity:/\b(opportun|revenue|proposal|pricing|sale|lead|opening|introduction)\b/i.test(text),
-    Momentum:/\b(move|progress|stuck|blocked|finish|done|handoff|next step|forward)\b/i.test(text),
-    Meaning:/\b(value|purpose|meaning|why|story|matters|vision|mission)\b/i.test(text),
-    Synchronicity:/\b(repeat|again|echo|pattern|convergen|cluster|coincidence)\b/i.test(text),
+  const patterns={
+    'Executive Inbox':['email','ghl_voice','ghl_text','sms'].includes(source)&&/\b(reply|respond|send|email|message|introduction|follow[- ]?up)\b/i.test(text),
+    Relationship:people.length>0&&(/\b(frustrat\w*|tension|repair|distance|trust|warmth|tone|connection|relationship)\b/i.test(text)||source==='relationship_profile'),
+    Project:(projects.length>0&&/\b(block|handoff|deliver|scope|owner|milestone|build|finish|project)\b/i.test(text))||source==='project_profile',
+    Capacity:/\b(no bandwidth|cannot take on|can't take on|overload|overwhelmed|exhausted|fatigue|back[- ]to[- ]back|too many meetings|competing deadlines|capacity constraint|need recovery|decision load)\b/i.test(text),
+    Courage:/\b(avoid|avoided|hesitat|softened truth|pushback|hard choice|needs? directness|not saying)\b/i.test(text),
+    Delight:/\b(joy|delight|curiosity|relief|restore|grounding|play|alive|energized)\b/i.test(text),
+    Opportunity:/\b(opportunity|revenue|proposal|pricing|sale|lead|opening|introduction|mutual value)\b/i.test(text),
+    Momentum:/\b(stuck|blocked|finished|completed|handoff|next step|moved forward|lost momentum)\b/i.test(text),
+    Meaning:/\b(value|purpose|meaning|larger story|matters|vision|mission)\b/i.test(text),
+    Synchronicity:/\b(repeated|again|echo|recurring pattern|convergence|coincidence|timing cluster)\b/i.test(text),
     Commitment:source==='task'||/\b(commitment|promise|follow[- ]?up|action item|owed|due|owner|open loop)\b/i.test(text),
-    Calendar:source==='calendar_event'||/\b(calendar|meeting|appointment|schedule|today|tomorrow|monday|friday|time|prep)\b/i.test(text),
-    Environment:/\b(environment|room|travel|location|weather|body|interrupt|external condition)\b/i.test(text),
-    Witnessing:source==='witnessing'||/\b(witnessing|onboarding|revealed|preference|remember|protect)\b/i.test(text)
+    Calendar:source==='calendar_event'||/\b(meeting|appointment|schedule|calendar|preparation window)\b/i.test(text),
+    Environment:/\b(environment|room|travel|location|weather|physical space|interruption|external condition)\b/i.test(text),
+    Witnessing:source==='witnessing'||/\b(witnessing|onboarding|revealed preference|asked VAL to remember|protect this)\b/i.test(text)
   };
-  return {meaningful:Boolean(matched.length||sourceSignal[observerName]),matched,primary};
+  const meaningful=Boolean(patterns[observerName]);
+  return {
+    meaningful,
+    matched:[],
+    primary,
+    confidence:meaningful?0.72:0,
+    reason:meaningful?`The complete source contains a concrete ${observerName} signal.`:'No deterministic signal.',
+    supportingExcerpt:meaningful?compactText(packetEvidenceText(packet),260):''
+  };
 }
 
 function observerEvidence(packet={}){
@@ -427,7 +494,9 @@ function observerEvidence(packet={}){
     packetType:packet.packetType,
     packetTitle:packet.title,
     quoteOrSummary:bestRef?.quote_or_summary||packet.summary||packet.title||'Source receipt exists but no excerpt was attached.',
-    confidence:bestRef?.confidence||0.65
+    confidence:bestRef?.confidence||0.65,
+    sourceCreatedAt:bestRef?.created_at||packet.createdAt||'',
+    sourceLink:bestRef?.source_link||bestRef?.sourceLink||packet.payloadJson?.sourceLink||''
   };
 }
 
@@ -467,8 +536,7 @@ function observerLensFinding(observerName='',packet={},signal={}){
 function observerObservationText(observerName='',packet={},signal={}){
   if(!signal.meaningful)return observerLensFinding(observerName,packet,signal);
   const reason=routeReason(observerName,packet.packetType,packet.sourceType);
-  const matched=signal.matched?.length ? ` Terms I recognized: ${signal.matched.join(', ')}.` : '';
-  return `${observerLensFinding(observerName,packet,signal)} Why this lens received it: ${reason}${matched}`;
+  return `${observerLensFinding(observerName,packet,signal)} Why this lens received it: ${reason}`;
 }
 
 function observerReviewsForPacket(packet={}){
@@ -477,15 +545,18 @@ function observerReviewsForPacket(packet={}){
     const people=packetPeople(packet);
     const projects=packetProjects(packet);
     const decisionObjects=packetDecisionNouns(packet);
+    const contentHash=packet.payloadJson?.contentHash||evidenceHash(packetEvidenceText(packet));
     return {
       reviewVersion:OBSERVER_REVIEW_VERSION,
       observerName,
+      observerId:stableKey(observerName),
+      observerFindingKey:`${packet.sourceType}:${packet.sourceId}:${contentHash}:${stableKey(observerName)}`,
       status:signal.meaningful?'observed':'no_signal',
       primary:signal.primary,
       matchedTerms:signal.matched,
-      people,
-      projects,
-      decisionObjects,
+      people:signal.meaningful?people:[],
+      projects:signal.meaningful?projects:[],
+      decisionObjects:signal.meaningful?decisionObjects:[],
       lensFinding:observerLensFinding(observerName,packet,signal),
       observation:observerObservationText(observerName,packet,signal),
       evidence:observerEvidence(packet),
@@ -495,9 +566,15 @@ function observerReviewsForPacket(packet={}){
 }
 
 function withObserverReviews(packet={}){
+  if(packet.status!=='active')return {
+    ...packet,
+    routeObserversJson:[],
+    primaryObserversJson:[],
+    payloadJson:{...(packet.payloadJson||{}),observerReviews:[]}
+  };
   const existing=safeArray(packet.payloadJson?.observerReviews);
   const currentVersion=Number(packet.payloadJson?.observerReviewVersion||0);
-  if(existing.length===BOARD_OBSERVERS.length&&currentVersion>=OBSERVER_REVIEW_VERSION)return packet;
+  if(existing.length===BOARD_OBSERVERS.length&&currentVersion>=MODEL_OBSERVER_REVIEW_VERSION)return packet;
   const reviewed={...packet};
   reviewed.payloadJson={
     ...(packet.payloadJson||{}),
@@ -593,10 +670,13 @@ function createValBoardPacketsService({
     const projects=safeArray(raw.projects).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,120)).slice(0,6);
     const decisionObjects=safeArray(raw.decisionObjects||raw.decision_objects).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,160)).slice(0,6);
     const noSignal=`No meaningful ${observerName} signal in ${String(packet.sourceType||'source').replace(/_/g,' ')} "${compactText(packet.title||packet.packetType,120)}".`;
+    const contentHash=packet.payloadJson?.contentHash||evidenceHash(packetEvidenceText(packet));
     return {
       reviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
-      reviewMode:'model_backed_observer_suite_v2',
+      reviewMode:'model_backed_observer_suite_v3',
       observerName,
+      observerId:stableKey(observerName),
+      observerFindingKey:`${packet.sourceType}:${packet.sourceId}:${contentHash}:${stableKey(observerName)}`,
       status:observed?'observed':'no_signal',
       primary:!!fallback?.primary,
       matchedTerms:safeArray(fallback?.matchedTerms),
@@ -619,12 +699,25 @@ function createValBoardPacketsService({
     const missing=BOARD_OBSERVERS.filter(observerName=>!byObserver.has(observerName));
     if(missing.length)throw new Error('Observer suite was incomplete: '+missing.join(', '));
     const normalized=BOARD_OBSERVERS.map(observerName=>normalizedModelObserverReview(observerName,byObserver.get(observerName),packet));
+    const normalizedByObserver=new Map(normalized.map(review=>[review.observerName,review]));
     const reviewed={
       ...packet,
+      routeObserversJson:safeArray(packet.routeObserversJson).map(route=>{
+        const review=normalizedByObserver.get(route.observerName);
+        return {
+          ...route,
+          routingConfidence:review?.status==='observed'?review.confidence:0,
+          routingReason:review?.status==='observed'
+            ? `The ${route.observerName} review found a source-backed signal.`
+            : `The ${route.observerName} review found no meaningful signal.`,
+          supportingExcerpt:review?.status==='observed'?compactText(review.evidence?.quoteOrSummary,260):'',
+          sourceId:packet.sourceId
+        };
+      }),
       payloadJson:{
         ...(packet.payloadJson||{}),
         observerReviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
-        observerReviewMode:'model_backed_observer_suite_v2',
+        observerReviewMode:'model_backed_observer_suite_v3',
         observerReviews:normalized
       },
       updatedAt:new Date().toISOString()
@@ -636,11 +729,10 @@ function createValBoardPacketsService({
     const sourceType=String(input.sourceType||input.source_type||'manual').trim();
     const sourceId=String(input.sourceId||input.source_id||uuid('source')).trim();
     const packetType=String(input.packetType||input.packet_type||'learning_packet').trim();
-    const routes=observerRoutes(packetType,sourceType);
-    const primary=routes.filter(route=>route.primary).map(route=>route.observerName);
+    const validation=validateObservationSource({...input,sourceType,sourceId});
     const now=new Date().toISOString();
     let packet={
-      id:String(input.id||packetId(uuid,sc,sourceType,sourceId,packetType,input.title||'packet')).trim(),
+      id:String(input.id||packetId(uuid,sc,sourceType,sourceId,packetType)).trim(),
       tenantId:sc.tenantId,
       userId:sc.userId,
       sourceType,
@@ -648,18 +740,42 @@ function createValBoardPacketsService({
       packetType,
       title:compactText(input.title||packetType.replace(/_/g,' '),220),
       summary:compactText(input.summary||input.description||'',1400),
-      status:String(input.status||'active'),
-      routeObserversJson:routes,
-      primaryObserversJson:primary,
+      status:validation.valid?String(input.status||'active'):'rejected_source',
+      routeObserversJson:[],
+      primaryObserversJson:[],
       sourceRefsJson:safeArray(input.sourceRefs||input.sourceRefsJson||input.source_refs_json).map(normalizeSourceRef),
-      payloadJson:input.payloadJson||input.payload||{},
+      payloadJson:{
+        ...(input.payloadJson||input.payload||{}),
+        evidenceContent:validation.cleanContent,
+        contentHash:validation.contentHash,
+        evidenceKey:`${sourceType}:${sourceId}:${validation.contentHash}`,
+        provenance:{
+          sourceType,
+          sourceId,
+          sourceCreatedAt:input.sourceCreatedAt||input.source_created_at||input.createdAt||input.created_at||now,
+          generatedBy:validation.generatedBy||'source_ingress',
+          observerId:'',
+          packetId:String(input.id||packetId(uuid,sc,sourceType,sourceId,packetType)).trim(),
+          parentPacketId:String(input.parentPacketId||input.parent_packet_id||''),
+          isGeneratedContent:validation.isGeneratedContent
+        },
+        sourceValidation:validation
+      },
       prototype:!!input.prototype,
       deliveredAt:input.deliveredAt||input.delivered_at||null,
       createdAt:input.createdAt||input.created_at||now,
       updatedAt:now
     };
+    if(validation.valid){
+      packet.routeObserversJson=observerRoutes(packetType,sourceType,packet);
+      packet.primaryObserversJson=packet.routeObserversJson.filter(route=>route.primary).map(route=>route.observerName);
+    }
     packet=withObserverReviews(packet);
     const saved=await savePacket(packet);
+    if(!validation.valid){
+      logger.warn?.(`[val-board] rejected ${sourceType}:${sourceId}: ${validation.rejectionReason}`);
+      return saved;
+    }
     if(envelopeService&&typeof envelopeService.upsertForPacket==='function'){
       try{
         saved.envelope=await envelopeService.upsertForPacket(saved);
@@ -863,7 +979,7 @@ function createValBoardPacketsService({
       if(sourceType){params.push(sourceType);where+=` and source_type=$${params.length}`;}
       if(!includePrototype)where+=' and prototype=false';
       const r=await dbQuery(`select * from val_board_packets where ${where} order by created_at desc limit ${lim}`,params);
-      rows=(r.rows||[]).map(toCamelRow).map(withObserverReviews);
+      rows=(r.rows||[]).map(toCamelRow);
     }else{
       rows=safeArray(store().valBoardPackets)
         .filter(row=>row.tenantId===tenantId()&&row.userId===userId())
@@ -872,8 +988,49 @@ function createValBoardPacketsService({
         .filter(row=>includePrototype||!row.prototype)
         .sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
         .slice(0,lim)
-        .map(withObserverReviews);
+        ;
     }
+    const activeRows=[];
+    const durablePacketKeys=new Set();
+    for(const row of rows){
+      const validation=validateObservationSource(row);
+      if(row.status==='active'&&!validation.valid){
+        await savePacket({
+          ...row,
+          status:'rejected_source',
+          routeObserversJson:[],
+          primaryObserversJson:[],
+          payloadJson:{
+            ...(row.payloadJson||{}),
+            observerReviews:[],
+            sourceValidation:validation
+          },
+          updatedAt:new Date().toISOString()
+        });
+        continue;
+      }
+      const durableKey=[
+        row.tenantId,
+        row.userId,
+        registrySourceKey(row.sourceType),
+        row.sourceId,
+        row.packetType
+      ].join(':');
+      if(row.status==='active'&&durablePacketKeys.has(durableKey)){
+        await savePacket({
+          ...row,
+          status:'superseded_duplicate',
+          routeObserversJson:[],
+          primaryObserversJson:[],
+          payloadJson:{...(row.payloadJson||{}),observerReviews:[],supersededByEvidenceKey:durableKey},
+          updatedAt:new Date().toISOString()
+        });
+        continue;
+      }
+      durablePacketKeys.add(durableKey);
+      activeRows.push(withObserverReviews(row));
+    }
+    rows=activeRows;
     if(observerName){
       rows=rows.filter(row=>safeArray(row.routeObserversJson).some(route=>route.observerName===observerName));
     }
@@ -963,6 +1120,7 @@ function createValBoardPacketsService({
     PRIMARY_ROUTES,
     boardSourceByType,
     registrySourceKey,
+    validateObservationSource,
     normalizeSourceRef,
     observerRoutes,
     observerReviewsForPacket,
@@ -985,4 +1143,4 @@ function createValBoardPacketsService({
   };
 }
 
-module.exports={createValBoardPacketsService,BOARD_OBSERVERS,PRIMARY_ROUTES,BOARD_SOURCE_REGISTRY,boardSourceByType};
+module.exports={createValBoardPacketsService,BOARD_OBSERVERS,PRIMARY_ROUTES,BOARD_SOURCE_REGISTRY,boardSourceByType,validateObservationSource};
