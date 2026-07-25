@@ -212,7 +212,8 @@ function createValSourceProcessingService({
   userId=()=>'default',
   reviewUpdatesService=null,
   readyForYouService=null,
-  listProjectProfiles=null
+  listProjectProfiles=null,
+  afterDocumentEvent=null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -263,6 +264,34 @@ function createValSourceProcessingService({
     if(typeof listProjectProfiles==='function')return safeArray(await listProjectProfiles({limit:200}).catch(()=>[]));
     return safeArray(store().relationshipProfiles).filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
+  async function notifyBoardOfDocuments({record={},documents=[],relationship={},projectName='',eventType='document_source_processed'}={}){
+    if(typeof afterDocumentEvent!=='function')return [];
+    const events=[];
+    for(const doc of safeArray(documents)){
+      if(documentLooksLikeCalendarInvite(doc))continue;
+      const event={
+        id:firstText(doc.id,doc.sourceId,doc.source_id,stableKey([record.sourceType,record.sourceId,doc.title].join(':'))),
+        eventType,
+        sourceType:'document',
+        sourceId:firstText(doc.sourceId,doc.source_id,doc.id,record.sourceId,record.source_id),
+        title:firstText(doc.title,doc.fileName,doc.filename,doc.name,record.sourceTitle,record.source_title,'Document'),
+        summary:firstText(doc.summary,doc.bodyPreview,doc.text,doc.description,record.sourceTitle,record.source_title,'Document evidence was processed.'),
+        relationship:firstText(relationship.name,relationship.displayName,relationship.email),
+        projectName:firstText(projectName,record.metadataJson?.projectName,record.metadata_json?.projectName),
+        sourceProcessingRecordId:record.id,
+        sourceRefs:[normalizeSourceRef({
+          sourceType:firstText(record.sourceType,record.source_type,'source_processing'),
+          sourceId:firstText(record.sourceId,record.source_id,record.id),
+          quoteOrSummary:firstText(record.sourceTitle,record.source_title,doc.summary,doc.title),
+          confidence:0.82
+        })],
+        noExternalAction:true
+      };
+      const result=await afterDocumentEvent(event).catch(()=>null);
+      if(result)events.push(result);
+    }
+    return events;
+  }
   async function processRelationshipDocumentEmail(input={}){
     const sc=scope();
     const relationship=input.relationship||{};
@@ -298,6 +327,7 @@ function createValSourceProcessingService({
       record.status='no_action';
       record.noActionReceiptJson={reason:'Document sender is not an admitted relationship, so VAL will not suggest a project.',sourceType,sourceId};
       const saved=await saveRecord(record);
+      await notifyBoardOfDocuments({record:saved,documents,relationship,projectName,eventType:'document_source_no_action'});
       return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
     }
     if(!documents.length){
@@ -310,6 +340,7 @@ function createValSourceProcessingService({
     if(existing){
       record.noActionReceiptJson={reason:'A matching project already exists. VAL should link documents rather than suggest a new project.',projectId:existing.projectId||existing.id||existing.profileKey||'',sourceType,sourceId};
       const saved=await saveRecord(record);
+      await notifyBoardOfDocuments({record:saved,documents,relationship,projectName,eventType:'document_linked_to_existing_project'});
       return {ok:true,sourceProcessingRecord:saved,existingProject:existing,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_external_action:true};
     }
     if(!reviewUpdatesService?.createRelationshipDocumentProjectSuggestion)throw new Error('Review update service does not support relationship document project suggestions.');
@@ -396,6 +427,7 @@ function createValSourceProcessingService({
       packetUpdatesJson:[{target:'project_packet',status:'review_required',reviewUpdateId:update.id}],
       metadataJson:{...(savedRecord.metadataJson||{}),reviewUpdateId:update.id,preparedArtifactRecordId:preparedArtifact.id,readyForYouItemId:readyItem.id,surfaceRegistrationIds:[projectSurface.id,leverageSurface.id],whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt}
     });
+    await notifyBoardOfDocuments({record:finalRecord,documents,relationship,projectName,eventType:'document_project_review_prepared'});
     return {ok:true,sourceProcessingRecord:finalRecord,projectSuggestion:update,preparedArtifactRecord:preparedArtifact,readyForYouItem:readyItem,surfaceRegistrations:[projectSurface,leverageSurface],whatValDidReceipt:finalRecord.whatValDidReceipt,what_val_did_receipt:finalRecord.whatValDidReceipt,no_external_action:true};
   }
   async function listSourceRecords({limit=50}={}){

@@ -16,9 +16,15 @@ const {
 test('documents routes expose canonical document index and reference APIs', () => {
   assert.match(server, /registerValDocumentsRoutes/);
   assert.match(server, /const valDocuments = registerValDocumentsRoutes/);
+  assert.match(server, /afterDocumentEvent:async\(event\)=>\{/);
+  assert.match(server, /recordSourceEvent\('document',event\)/);
+  assert.match(server, /document packet failed/);
   assert.match(routes, /\/api\/val\/documents'/);
   assert.match(routes, /\/api\/val\/documents\/reference/);
   assert.match(routes, /reference-used/);
+  assert.match(routes, /afterDocumentEvent/);
+  assert.match(routes, /eventType:'document_reference_used'/);
+  assert.match(routes, /sourceType:'document'/);
   assert.match(routes, /val_document_reference_used/);
 });
 

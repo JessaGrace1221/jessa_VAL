@@ -260,6 +260,7 @@ const clientFeatureLocks = {
 let clientDisplayName = '';
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
+const homeCompletedItemsStorageKey = 'val.hearth.completedHomeItems.v1';
 let activeScraperType = '';
 let executiveBriefingState = null;
 let activeHomeWorkspace = null;
@@ -781,7 +782,12 @@ const observerBoardState = {
     {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?', currentlySeeing:'Time is shaping what is wise.', watching:'Preparation windows, recovery space, meeting load, and whether the day can hold the work.', evidenceItems:['4 calendar events','2 prep windows','1 capacity constraint'], concern:'The schedule may be asking for more judgment than the day can hold.', explore:'What should be moved, protected, or prepared?', packetFrom:'Capacity', incomingObservation:'Decision quality drops if this stays compressed.'},
     {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?', currentlySeeing:'External context may affect judgment.', watching:'Location, physical conditions, travel, interruptions, and environmental friction.', evidenceItems:['3 context signals','2 location factors','1 external constraint'], concern:'The body may be absorbing context the plan has ignored.', explore:'What environmental friction should VAL account for?', packetFrom:'Capacity', incomingObservation:'Recovery context matters before the next hard call.'},
     {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?', currentlySeeing:'The user’s own words are present as grounding context.', watching:'Stated values, operating preferences, boundaries, fears, desires, and self-knowledge.', evidenceItems:['9 witnessing notes','5 stated values','4 operating preferences'], concern:'A recommendation may drift if it forgets what the user already revealed.', explore:'What should VAL remember before advising?', packetFrom:'Meaning', incomingObservation:'A current pattern matches onboarding context.'}
-  ]
+  ],
+  reviewsByObserver: {},
+  livePackets: [],
+  livePacketCount: 0,
+  sourceSummary: null,
+  sources: []
 };
 
 const observerBoardPacketRoutingContract = [
@@ -1011,12 +1017,14 @@ async function loadLiveObserverBoardContext(){
     observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
     observerBoardState.sourceSummary = result?.sourceSummary || null;
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
+    observerBoardState.reviewsByObserver = result?.reviewsByObserver && typeof result.reviewsByObserver === 'object' ? result.reviewsByObserver : {};
     return result || null;
   }catch(error){
     observerBoardState.livePackets = [];
     observerBoardState.livePacketCount = 0;
     observerBoardState.sourceSummary = null;
     observerBoardState.sources = [];
+    observerBoardState.reviewsByObserver = {};
     observerBoardState.livePacketError = error.message;
     return null;
   }finally{
@@ -2191,6 +2199,46 @@ function writeAttendedRooms(attended){
   }
 }
 
+function readCompletedHomeItems(){
+  try{
+    return JSON.parse(localStorage.getItem(homeCompletedItemsStorageKey) || '{}') || {};
+  }catch(error){
+    return {};
+  }
+}
+
+function writeCompletedHomeItems(items){
+  try{
+    localStorage.setItem(homeCompletedItemsStorageKey, JSON.stringify(items || {}));
+  }catch(error){
+    // Durable source marks are helpful, but the product should still work if storage is unavailable.
+  }
+}
+
+function homeCompletionKey(roomName = '', item = {}){
+  const metadata = itemMetadata(item);
+  const identity = sourceIdentityForItem(item);
+  const explicitId = item.chiefQueuePacketId || item.chief_queue_packet_id || metadata.chiefQueuePacketId || metadata.chief_queue_packet_id || item.chiefRecommendationId || item.chief_recommendation_id || metadata.chiefRecommendationId || metadata.chief_recommendation_id || item.sourceCommitmentId || item.commitmentId || metadata.sourceCommitmentId || metadata.commitmentId || '';
+  const sourceType = identity.type || item.sourceType || item.source_type || item.type || item.itemType || roomName || 'home';
+  const sourceId = explicitId || identity.id || item.sourceId || item.source_id || item.target?.id || item.id || itemTitle(item, '');
+  if(!sourceId)return '';
+  return [roomName || 'home', sourceType, sourceId].map((part)=>String(part || '').toLowerCase().replace(/[^a-z0-9:_-]+/g, '_')).join('|');
+}
+
+function homeItemCompleted(roomName = '', item = {}){
+  const key = homeCompletionKey(roomName, item);
+  if(!key)return false;
+  return Boolean(readCompletedHomeItems()[key]);
+}
+
+function markHomeItemCompleted(roomName = '', item = {}, mode = 'done'){
+  const key = homeCompletionKey(roomName, item);
+  if(!key)return;
+  const completed = readCompletedHomeItems();
+  completed[key] = {roomName, mode, title:itemTitle(item, ''), completedAt:new Date().toISOString()};
+  writeCompletedHomeItems(completed);
+}
+
 function roomNameFromWorkspace(workspace = {}, fallback = ''){
   const lens = String(workspace.lens || fallback || '').toLowerCase();
   if(/velocity/.test(lens)) return 'velocity';
@@ -2236,6 +2284,7 @@ function clearRoomAttendance(event){
   event?.preventDefault?.();
   event?.stopPropagation?.();
   writeAttendedRooms({});
+  writeCompletedHomeItems({});
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('room-has-been-held');
     delete room.dataset.attended;
@@ -5960,7 +6009,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? savedMessages.map((saved) => renderHomeCoworkMessage(saved.role === 'user' ? 'user' : 'val', saved.content || '')).join('')
       : renderHomeCoworkMessage('val', session.entrypointId === 'board.chief_of_staff'
         ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
-        : 'I am here with this Observer\'s context. What would you like to examine together?');
+        : 'This Observer is loaded with the evidence behind the card. What do you want to examine first?');
     response.scrollTop = response.scrollHeight;
   }
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
@@ -6012,8 +6061,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
-  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  const textarea = homeCoworkTextareaNode();
+  const submit = homeCoworkSubmitNode();
   const isComplete = !isObserverConversation && (workItem.status === 'applied' || session.status === 'completed');
   const chatShouldStayOpen = session.entrypointId.startsWith('transcript.') || session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff';
   const isReadyForReview = !isComplete && !chatShouldStayOpen && (session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
@@ -6572,12 +6621,23 @@ async function finalizeActiveCoworkResponse(entry = {}, result = {}){
 async function submitActiveCoworkEntry(messageOverride = ''){
   const entry = activeCoworkEntry;
   if(!entry) return false;
-  if(entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff'){
-    return false;
-  }
+  const observerScopedLane = entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff';
   if(!entry.sessionId){
+    if(observerScopedLane){
+      const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
+      if(!projectCleanText(input)) return true;
+      appendHomeCoworkMessage('user', input);
+      const textarea = homeCoworkTextareaNode();
+      const submit = homeCoworkSubmitNode();
+      if(textarea) textarea.value = '';
+      if(submit) submit.disabled = true;
+      const localAnswer = observerCoworkCardAnswer(input, entry.context || {});
+      appendHomeCoworkMessage('val', localAnswer || 'I have this Observer context loaded, but the saved conversation is still opening. Ask me one direct question about the card, evidence, person, project, or what changed.');
+      if(submit) submit.disabled = false;
+      return true;
+    }
     if(entry.status === 'opening'){
-      const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+      const submit = homeCoworkSubmitNode();
       if(submit) submit.disabled = true;
       showCoworkContextGathering('VAL is finishing the selected section packet. Your message remains here and will stay scoped to this Project Manager.');
     }
@@ -6588,8 +6648,8 @@ async function submitActiveCoworkEntry(messageOverride = ''){
   const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!projectCleanText(input)) return true;
   appendHomeCoworkMessage('user',input);
-  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  const textarea = homeCoworkTextareaNode();
+  const submit = homeCoworkSubmitNode();
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
@@ -11587,6 +11647,18 @@ function openProjectCoworkSession(node = null){
   return openProjectOverviewCowork(node);
 }
 
+function selectedSourceContextHasLoadedPacket(selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return false;
+  return Boolean(
+    selectedSourceContext.cardTitle ||
+    selectedSourceContext.cardMeaning ||
+    selectedSourceContext.sourceBrief ||
+    (Array.isArray(selectedSourceContext.contextLines) && selectedSourceContext.contextLines.length) ||
+    (Array.isArray(selectedSourceContext.sourceRefs) && selectedSourceContext.sourceRefs.length) ||
+    (selectedSourceContext.workingBrief && typeof selectedSourceContext.workingBrief === 'object' && Object.keys(selectedSourceContext.workingBrief).length)
+  );
+}
+
 function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = '', selectedSourceContext = null}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
@@ -11611,7 +11683,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     selectedSourceContext
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
-  if(showGathering) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
+  if(showGathering && !selectedSourceContextHasLoadedPacket(selectedSourceContext)) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
 }
 
 function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefing || {}){
@@ -18141,6 +18213,15 @@ function preparedArtifactHomeCopy(item){
     workspaceMeaning: 'VAL prepared the email from the transcript and held it for approval.',
     recommendation: 'Read for accuracy and relationship tone before releasing it.'
   };
+  if(kind === 'meeting_overview_email_draft') return {
+    observation: 'Meeting overview prepared',
+    implication: subject + ' has action items and key points ready to review.',
+    invitation: 'Would you like to review the overview?',
+    action: 'Review meeting overview',
+    workspaceTitle: subject,
+    workspaceMeaning: 'VAL prepared the transcript action items and key points as a reviewable overview.',
+    recommendation: 'Edit the overview, choose recipients if needed, and approve any external send separately.'
+  };
   return null;
 }
 
@@ -18597,6 +18678,21 @@ function homeObserverWatchingLine(observer = null, briefing = {}){
   return name + ' is watching ' + watching.replace(/[.!?]+$/, '') + ' for you.';
 }
 
+function homeChiefOfStaffSubject(briefing = {}){
+  const source = homeBriefingEvidenceSources(briefing || {})[0] || briefing.highestLeverageMove || firstBriefingItem(briefing?.alsoImportant) || firstBriefingItem(briefing?.watching) || {};
+  const identity = sourceIdentityForItem(source);
+  const titleText = cleanVelocityPerspectiveLine(identity.label || source.title || source.name || source.summary || '', 120);
+  if(titleText) return titleText.replace(/[.!?]+$/, '');
+  const observer = selectHomeObserverSignal(briefing || {});
+  return observer?.name ? observer.name + ' context' : 'one source-backed pattern';
+}
+
+function homeChiefOfStaffReason(briefing = {}){
+  const source = homeBriefingEvidenceSources(briefing || {})[0] || briefing.highestLeverageMove || {};
+  const raw = source.reason_it_matters || source.why || source.recommendation || source.summary || source.detail || briefing.todayTheme?.why || '';
+  return cleanVelocityPerspectiveLine(raw, 150);
+}
+
 function homeObserverSignalText(briefing = {}){
   const daily = briefing.dailyWitness || {};
   return [
@@ -18665,6 +18761,8 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const daily = briefing.dailyWitness || {};
   const name = homePerspectiveUserName();
   const observer = selectHomeObserverSignal(briefing);
+  const subject = homeChiefOfStaffSubject(briefing);
+  const reason = homeChiefOfStaffReason(briefing);
   const lines = [
     daily.perspective,
     daily.what_was_witnessed,
@@ -18675,12 +18773,13 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
     .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
   const selectedName = observer?.name || 'Meaning';
-  const observerLine = observer?.currentlySeeing || observer?.truth || 'One signal is asking for discernment.';
+  const observerLine = reason || observer?.currentlySeeing || observer?.truth || 'one source-backed pattern is asking for discernment.';
   const witnessLine = lines.find((line) => !/\b\d+\s+risk signals?\b/i.test(line));
+  const observerContextLine = selectedName + ' has the source context behind ' + subject + (observerLine ? ': ' + cleanVelocityPerspectiveLine(observerLine, 140).replace(/[.!?]+$/, '') + '.' : '.');
   return {
     headline: 'Good morning, ' + name + '.',
-    witness: witnessLine || homeObserverWatchingLine(observer, briefing) || homeBigPictureWitnessLine(briefing),
-    orientation: selectedName + ' is the Observer I would listen to first: ' + observerLine,
+    witness: witnessLine || ('I would keep ' + subject + ' in view today' + (reason ? ': ' + reason.replace(/[.!?]+$/, '') + '.' : '.')),
+    orientation: observerContextLine,
     permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
       ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
       : 'If no Observer has earned the room, I will keep the desk quiet.')
@@ -18722,6 +18821,24 @@ function dailyWitnessEvidenceLabel(item = {}){
   return titleText;
 }
 
+function homeBriefingEvidenceSources(briefing = {}){
+  return [
+    ...(briefing?.dailyWitness?.evidence || []),
+    ...(briefing?.highestLeverageMove ? [briefing.highestLeverageMove] : []),
+    ...briefingItems(briefing?.alsoImportant).slice(0, 3),
+    ...briefingItems(briefing?.watching).slice(0, 3)
+  ].filter((item, index, list) => {
+    const text = [item.title, item.summary].filter(Boolean).join(' ');
+    if(!text || /Email may contain a risk, blocker, or relationship concern/i.test(text)) return false;
+    const identity = sourceIdentityForItem(item);
+    const key = identity.id || text.toLowerCase();
+    return list.findIndex((candidate) => {
+      const candidateIdentity = sourceIdentityForItem(candidate);
+      return (candidateIdentity.id || [candidate.title, candidate.summary].filter(Boolean).join(' ').toLowerCase()) === key;
+    }) === index;
+  }).slice(0, 5);
+}
+
 function executiveEvidenceLine(item = {}){
   const identity = sourceIdentityForItem(item);
   const source = compactSentence(identity.label || item.title || item.name || item.source_type || 'Supporting source', 'Supporting source')
@@ -18752,21 +18869,7 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   const velocityCount = homeAdmittedCount('velocity');
   const alignmentCount = homeAdmittedCount('alignment');
   const leverageCount = homeAdmittedCount('leverage');
-  const sourceEvidence = [
-    ...(briefing?.dailyWitness?.evidence || []),
-    ...(briefing?.highestLeverageMove ? [briefing.highestLeverageMove] : []),
-    ...briefingItems(briefing?.alsoImportant).slice(0, 3),
-    ...briefingItems(briefing?.watching).slice(0, 3)
-  ].filter((item, index, list) => {
-    const text = [item.title, item.summary].filter(Boolean).join(' ');
-    if(!text || /Email may contain a risk, blocker, or relationship concern/i.test(text)) return false;
-    const identity = sourceIdentityForItem(item);
-    const key = identity.id || text.toLowerCase();
-    return list.findIndex((candidate) => {
-      const candidateIdentity = sourceIdentityForItem(candidate);
-      return (candidateIdentity.id || [candidate.title, candidate.summary].filter(Boolean).join(' ').toLowerCase()) === key;
-    }) === index;
-  }).slice(0, 5);
+  const sourceEvidence = homeBriefingEvidenceSources(briefing || {});
   const sensitiveWithheld = (briefing?.dailyWitness?.internalUnderstanding?.things_intentionally_not_mentioned || [])
     .some((item) => /sensitive/i.test(String(item.topic || item.reason || '')));
   const generatedLine = status === 'loaded'
@@ -19084,7 +19187,9 @@ function homeAdmissionResult(roomName, item = {}){
 }
 
 function homeAdmissionFilter(roomName, items = []){
-  return briefingItems(items).filter((item) => homeAdmissionResult(roomName, item).passed);
+  return briefingItems(items)
+    .filter((item) => !(roomName === 'alignment' && homeItemCompleted(roomName, item)))
+    .filter((item) => homeAdmissionResult(roomName, item).passed);
 }
 
 function setHomeRoomQueue(roomName, items){
@@ -19138,9 +19243,9 @@ function hydrateRoomsFromBriefing(briefing){
   const velocityItems = briefingItems(briefing.whatChanged).concat(briefingItems(briefing.momentum));
   const admittedVelocityItems = homeAdmissionFilter('velocity', velocityItems);
   const changed = firstBriefingItem(admittedVelocityItems);
-  const highest = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
-  const alignmentCandidates = [highest]
-    .concat(briefingItems(briefing.alsoImportant))
+  const chiefAlignmentQueue = briefingItems(briefing.chiefAlignmentQueue);
+  const highest = firstBriefingItem(chiefAlignmentQueue) || briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
+  const alignmentCandidates = (chiefAlignmentQueue.length ? chiefAlignmentQueue : [highest].concat(briefingItems(briefing.alsoImportant)))
     .filter(Boolean)
     .filter((item, index, list) => list.findIndex((candidate) => {
       const a = sourceIdentityForItem(candidate);
@@ -19259,9 +19364,11 @@ function updatePreparedCount(count){
 }
 
 function hydrateLeverageFromReadyForYou(result = {}){
+  const preparedItems = Array.isArray(result.preparedItems) ? result.preparedItems : (Array.isArray(result.prepared_items) ? result.prepared_items : []);
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
-  const queueItems = (allBuilt.length ? allBuilt : items).map(normalizeReadyForYouItem).filter((item) => item?.id);
+  const queueSource = preparedItems.length ? preparedItems : (allBuilt.length ? allBuilt : items);
+  const queueItems = queueSource.map(normalizeReadyForYouItem).filter((item) => item?.id);
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
   setHomeRoomQueue('leverage', admittedQueueItems);
   const preparedCount = admittedQueueItems.length;
@@ -19661,6 +19768,10 @@ async function importApprovedScraperLeads(type){
 }
 
 function workspaceInputValue(mode){
+  if(mode === 'cowork'){
+    const activeTextarea = homeCoworkTextareaNode?.();
+    if(activeTextarea) return activeTextarea.value.trim();
+  }
   return workspaceInputPanel.querySelector('[data-workspace-input="' + mode + '"]')?.value.trim() || '';
 }
 
@@ -19850,7 +19961,7 @@ async function runCowork(mode, messageOverride = ''){
   let visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
   if(keepHomeCoworkOpen && await confirmPendingHomeCoworkActionPacket(visiblePrompt)){
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(textarea) textarea.value = '';
     return;
   }
@@ -19883,7 +19994,7 @@ async function runCowork(mode, messageOverride = ''){
   ].filter(Boolean).join('\n\n');
   if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(textarea) textarea.value = '';
   }
   if(keepHomeCoworkOpen && observerCoworkLane){
@@ -19893,10 +20004,19 @@ async function runCowork(mode, messageOverride = ''){
       return;
     }
   }
+  if(keepHomeCoworkOpen && hasSelectedCoworkSource && !observerCoworkLane){
+    const briefAnswer = alignmentCoworkBriefAnswer(visiblePrompt, activeCoworkSelectedSourceContext);
+    if(briefAnswer){
+      appendHomeCoworkMessage('val', briefAnswer);
+      const textarea = homeCoworkTextareaNode();
+      if(textarea) textarea.value = '';
+      return;
+    }
+  }
   if(mockScrapers || !canUseApi){
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', mode === 'draft' ? 'A draft can begin here. Start with one plain paragraph, then refine from there.' : 'Name the decision, list the tradeoffs, and choose the next reversible step.');
-      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      const textarea = homeCoworkTextareaNode();
       if(textarea) textarea.value = '';
       return;
     }
@@ -19928,7 +20048,7 @@ async function runCowork(mode, messageOverride = ''){
     return;
   }
   if(keepHomeCoworkOpen){
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(suppressVisibleUserPrompt && textarea){
       textarea.value = '';
       textarea.placeholder = 'Add the next thought...';
@@ -19975,8 +20095,8 @@ async function runCowork(mode, messageOverride = ''){
   }
   try{
     const requestOptions = hasSelectedCoworkSource ? {
-      timeoutMs: 65000,
-      timeoutMessage: 'I’m still reading the selected source. Ask me one smaller piece and I’ll stay with that source.'
+      timeoutMs: 22000,
+      timeoutMessage: 'I have the selected source loaded, but this answer took too long. Ask for one concrete output and I will answer from the loaded packet.'
     } : observerCoworkLane ? {
       timeoutMs: 18000,
       timeoutMessage: 'The observer answer took too long. Ask one direct question about the loaded card and I will answer from that card only.'
@@ -20021,7 +20141,7 @@ async function runCowork(mode, messageOverride = ''){
     }
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', content, {meetingPrep: mode === 'meeting_prep'});
-      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      const textarea = homeCoworkTextareaNode();
       if(textarea){
         textarea.value = '';
         textarea.placeholder = 'Add the next thought...';
@@ -20768,12 +20888,23 @@ const valWitnessingCards = [
     placeholder: 'Name what would create relief, trust, momentum, protection, better decisions, clearer communication, or a stronger first month.',
     helper: 'VAL is listening for the kind of usefulness that would actually matter in your life and work.',
     writesTo: 'success definition, trust conditions, early value, and partnership expectations',
+    next: 'chief_priorities'
+  },
+  {
+    id: 'chief_priorities',
+    category: 'witness_chief_priorities',
+    movement: 'Movement 7',
+    title: 'Chief of Staff Priorities',
+    question: 'When the Board sees everything, what should your Chief of Staff optimize for first?',
+    placeholder: 'Name three priorities. For example: revenue, capacity, values. Or: urgency, relationships, promises.',
+    helper: 'These priorities teach the Chief of Staff how to order what deserves your attention after every Observer has weighed in.',
+    writesTo: 'chief of staff optimization priorities, ordering rules, and Home briefing judgment',
     next: 'connect_sources'
   },
   {
     id: 'connect_sources',
     category: 'witness_connect_sources',
-    movement: 'Movement 7',
+    movement: 'Movement 8',
     title: 'Connect Your World',
     question: 'Choose the sources you want VAL to review with you.',
     placeholder: 'Optional. For example: “meetings that need follow-up,” “new relationships,” or “projects that feel stuck.” Leave this blank if nothing comes to mind yet.',
@@ -20784,7 +20915,7 @@ const valWitnessingCards = [
   {
     id: 'source_review',
     category: 'witness_source_review',
-    movement: 'Movement 8',
+    movement: 'Movement 9',
     title: 'VAL Reviews What It Sees',
     question: 'VAL will prepare a short, confirmable review of the communication rhythm, commitments, capacity signals, and relationship patterns it can see.',
     placeholder: 'Name anything VAL should pay special attention to while preparing that review.',
@@ -20795,7 +20926,7 @@ const valWitnessingCards = [
   {
     id: 'key_relationships',
     category: 'witness_key_relationships',
-    movement: 'Movement 9',
+    movement: 'Movement 10',
     title: 'Confirm Key Relationships',
     question: 'Who should VAL understand first, and do you have a LinkedIn commenting support circle?',
     placeholder: 'For key relationships, name the people VAL should understand. If you have a LinkedIn support circle, include only each person’s name and LinkedIn profile link.',
@@ -20806,7 +20937,7 @@ const valWitnessingCards = [
   {
     id: 'documents_templates',
     category: 'witness_documents_templates',
-    movement: 'Movement 10',
+    movement: 'Movement 11',
     title: 'Documents and Templates',
     question: 'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
     placeholder: 'For each item, say Document or Template. If it is a Document, name the relationship or project it belongs to. If it is a Template, tell VAL what it is used for.',
@@ -20817,7 +20948,7 @@ const valWitnessingCards = [
   {
     id: 'import_context',
     category: 'witness_import_context',
-    movement: 'Movement 11',
+    movement: 'Movement 12',
     title: 'Import Prior Context',
     question: 'Use one prompt in ChatGPT or Claude, then paste the response here.',
     placeholder: 'Paste the full response from ChatGPT or Claude, plus any profiles, assessments, bio notes, health/care context, family schedules, coach notes, or anything VAL should hold lightly.',
@@ -20828,7 +20959,7 @@ const valWitnessingCards = [
   {
     id: 'partnership_agreement',
     category: 'witness_partnership_agreement',
-    movement: 'Movement 12',
+    movement: 'Movement 13',
     title: 'Partnership Promise',
     question: 'Here is what VAL learned, what VAL will support, and what VAL will protect.',
     placeholder: 'VAL will create a warm partnership summary here. You can add anything you want included in the first 30 days.',
@@ -20840,10 +20971,11 @@ const valWitnessingCards = [
 const valWitnessingState = {};
 const valWitnessingPhases = [
   {id: 'witness', label: 'Witness', time: '10 min', start: 0, end: 5},
-  {id: 'connect', label: 'Connect', time: '5 min', start: 6, end: 6},
-  {id: 'review', label: 'Review', time: '3 min', start: 7, end: 7},
-  {id: 'relationships', label: 'Confirm relationships', time: '3 min', start: 8, end: 8},
-  {id: 'promise', label: 'Partnership promise', time: '5 min', start: 9, end: 11}
+  {id: 'chief', label: 'Chief priorities', time: '2 min', start: 6, end: 6},
+  {id: 'connect', label: 'Connect', time: '5 min', start: 7, end: 7},
+  {id: 'review', label: 'Review', time: '3 min', start: 8, end: 8},
+  {id: 'relationships', label: 'Confirm relationships', time: '3 min', start: 9, end: 9},
+  {id: 'promise', label: 'Partnership promise', time: '5 min', start: 10, end: 12}
 ];
 
 function valWitnessingCard(idOrCategory = 'meeting_val'){
@@ -24068,20 +24200,349 @@ function collectHomeCoworkSourceIds(value, result = {transcriptIds:new Set(), ev
   return result;
 }
 
-function homeCoworkSelectedSourceContext(active = {}){
-  const sourceItem = active.sourceItem || active.packetFields?.sourceItem || {};
-  const sourceRefs = sourceItem.sourceRefsJson || sourceItem.source_refs || sourceItem.sourceRefs || sourceItem.metadata?.sourceRefs || sourceItem.metadataJson?.sourceRefs || sourceItem.evidence || [];
-  const ids = collectHomeCoworkSourceIds({active, sourceItem, sourceRefs});
+function collectHomeCoworkContextText(value, result = [], depth = 0){
+  if(!value || depth > 4 || result.length > 80) return result;
+  if(typeof value === 'string' || typeof value === 'number'){
+    const text = projectCleanText(value);
+    if(text) result.push(text);
+    return result;
+  }
+  if(Array.isArray(value)){
+    value.slice(0, 20).forEach((item) => collectHomeCoworkContextText(item, result, depth + 1));
+    return result;
+  }
+  if(typeof value !== 'object') return result;
+  Object.keys(value).forEach((key) => {
+    if(result.length > 80) return;
+    if(/^(title|name|label|summary|meaning|description|project|projectName|project_name|projectTitle|project_title|relationshipName|relationship_name|contactName|contact_name|personName|person_name|counterpartyName|counterparty_name|what_changed|why_it_matters|what_val_now_knows|evidence_summary|recommended_next_step|source_title|sourceTitle|sourceRefs|source_refs|metadata|metadataJson|payload|packetFields|sourceItem)$/i.test(key)){
+      collectHomeCoworkContextText(value[key], result, depth + 1);
+    }
+  });
+  return result;
+}
+
+function homeCoworkContextLines(active = {}, sourceItem = {}, sourceRefs = []){
+  const values = [
+    active.title,
+    active.meaning,
+    active.summary,
+    active.recommendation,
+    ...(Array.isArray(active.understanding) ? active.understanding : []),
+    active.packetFields?.what_changed,
+    active.packetFields?.why_it_matters,
+    active.packetFields?.what_val_now_knows,
+    active.packetFields?.evidence_summary,
+    active.packetFields?.recommended_next_step,
+    sourceItem.title,
+    sourceItem.summary,
+    sourceItem.reason_it_matters,
+    sourceItem.why,
+    sourceItem.recommendation,
+    sourceItem.whatChanged,
+    sourceItem.what_changed,
+    sourceItem.whyNowPacket?.why_now,
+    sourceItem.whyNowPacket?.decision_needed,
+    sourceItem.whyNowPacket?.cost_if_delayed,
+    sourceItem.why_now_packet?.why_now,
+    sourceItem.why_now_packet?.decision_needed,
+    sourceItem.why_now_packet?.cost_if_delayed,
+    ...sourceOfSourceLines(sourceItem),
+    ...sourceRefs.map((ref) => typeof ref === 'string'
+      ? ref
+      : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.detail || ref.title || ''))
+  ];
+  return Array.from(new Set(values.map((value) => projectCleanText(value)).filter(Boolean))).slice(0, 30);
+}
+
+function homeCoworkSourceItem(active = {}){
+  const fromWorkspace = active.sourceItem && typeof active.sourceItem === 'object' ? active.sourceItem : {};
+  const fromPacket = active.packetFields?.sourceItem && typeof active.packetFields.sourceItem === 'object' ? active.packetFields.sourceItem : {};
+  const merged = {...fromPacket, ...fromWorkspace};
+  const fallbackId = active.sourceId || active.source_id || active.id || '';
+  if(!Object.keys(merged).length && fallbackId){
+    return {
+      id: fallbackId,
+      title: active.title || active.name || '',
+      summary: active.meaning || active.summary || '',
+      sourceType: active.sourceType || active.source_type || active.cardType || '',
+      sourceId: fallbackId
+    };
+  }
   return {
-    cardTitle: compactSentence(active.title || sourceItem.title || '', ''),
-    cardMeaning: compactSentence(active.meaning || active.summary || sourceItem.summary || sourceItem.reason_it_matters || '', ''),
+    ...active,
+    ...merged,
+    id: merged.id || merged.sourceId || merged.source_id || fallbackId || active.id || '',
+    title: merged.title || active.title || active.name || '',
+    summary: merged.summary || active.meaning || active.summary || '',
+    sourceType: merged.sourceType || merged.source_type || active.sourceType || active.source_type || '',
+    sourceId: merged.sourceId || merged.source_id || active.sourceId || active.source_id || ''
+  };
+}
+
+function firstHomeCoworkValueByKeys(value, keys = [], depth = 0){
+  if(!value || depth > 5) return '';
+  if(Array.isArray(value)){
+    for(const item of value){
+      const found = firstHomeCoworkValueByKeys(item, keys, depth + 1);
+      if(found) return found;
+    }
+    return '';
+  }
+  if(typeof value !== 'object') return '';
+  for(const key of keys){
+    const direct = value[key];
+    if(typeof direct === 'string' && projectCleanText(direct)) return projectCleanText(direct);
+    if(direct && typeof direct === 'object'){
+      const label = direct.name || direct.title || direct.label;
+      if(typeof label === 'string' && projectCleanText(label)) return projectCleanText(label);
+    }
+  }
+  for(const nestedKey of Object.keys(value)){
+    if(/^(metadata|metadataJson|payload|packetFields|sourceItem|target|sourceRefs|source_refs|preparedArtifact|prepared_artifact|whyNowPacket|why_now_packet)$/i.test(nestedKey)){
+      const found = firstHomeCoworkValueByKeys(value[nestedKey], keys, depth + 1);
+      if(found) return found;
+    }
+  }
+  return '';
+}
+
+function homeCoworkEnvelopeHint(active = {}, sourceItem = {}, sourceRefs = []){
+  const contextRoot = {active, sourceItem, sourceRefs};
+  let projectName = firstHomeCoworkValueByKeys(contextRoot, [
+    'projectName','project_name','projectTitle','project_title','project','projectDisplayName','project_display_name'
+  ]);
+  const contextText = collectHomeCoworkContextText(contextRoot).join(' ');
+  if(!projectName && /\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff/i.test(contextText)){
+    projectName = 'GOALL';
+  }
+  if(projectName){
+    const isGoall = /\bGOALL\b/i.test(projectName) || /\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff/i.test(contextText);
+    return {
+      envelopeType: 'project',
+      displayName: projectName,
+      projectName,
+      managerColorName: isGoall ? 'Taffy' : '',
+      managerColorHex: isGoall ? '#ee78bf' : '',
+      reason: 'Project context wins before relationship context.'
+    };
+  }
+  const relationshipName = firstHomeCoworkValueByKeys(contextRoot, [
+    'relationshipName','relationship_name','contactName','contact_name','personName','person_name','counterpartyName','counterparty_name','person','contact'
+  ]);
+  if(relationshipName){
+    return {
+      envelopeType: 'relationship',
+      displayName: relationshipName,
+      relationshipName,
+      reason: 'No project was attached, so relationship context is the working envelope.'
+    };
+  }
+  return {
+    envelopeType: 'general',
+    displayName: 'General VAL context',
+    reason: 'No project or relationship was attached to this packet.'
+  };
+}
+
+function homeCoworkEnvelopeLine(envelope = {}){
+  if(!envelope || typeof envelope !== 'object') return '';
+  if(envelope.envelopeType === 'project'){
+    return 'Envelope: Project ' + (envelope.displayName || envelope.projectName || 'selected project') + (envelope.managerColorName ? ' (' + envelope.managerColorName + ')' : '') + '.';
+  }
+  if(envelope.envelopeType === 'relationship'){
+    return 'Envelope: Relationship ' + (envelope.displayName || envelope.relationshipName || 'selected relationship') + '.';
+  }
+  return 'Envelope: General VAL context.';
+}
+
+function homeCoworkSelectedSourceContext(active = {}){
+  const sourceItem = homeCoworkSourceItem(active);
+  const workingBrief = sourceItem.workingBrief || sourceItem.working_brief || active.workingBrief || active.working_brief || sourceItem.rawCommitment?.workingBrief || sourceItem.rawCommitment?.working_brief || null;
+  const sourceRefs = workingBrief?.sourceRefs || sourceItem.sourceRefsJson || sourceItem.source_refs || sourceItem.sourceRefs || active.sourceRefsJson || active.source_refs || active.sourceRefs || sourceItem.metadata?.sourceRefs || sourceItem.metadataJson?.sourceRefs || active.evidence || sourceItem.evidence || [];
+  const ids = collectHomeCoworkSourceIds({active, sourceItem, sourceRefs});
+  const envelope = workingBrief?.envelope || homeCoworkEnvelopeHint(active, sourceItem, sourceRefs);
+  const contextLines = Array.isArray(workingBrief?.contextLines) && workingBrief.contextLines.length ? workingBrief.contextLines : homeCoworkContextLines(active, sourceItem, sourceRefs);
+  return {
+    cardTitle: compactSentence(workingBrief?.objective || active.title || sourceItem.title || '', ''),
+    cardMeaning: compactSentence(workingBrief?.sourceSummary || active.meaning || active.summary || sourceItem.summary || sourceItem.reason_it_matters || '', ''),
     sourceIdentity: sourceIdentityForItem(sourceItem),
     sourceRefs,
+    contextLines,
+    sourceBrief: contextLines.join('\n'),
+    workingBrief,
+    envelope,
     transcriptIds: Array.from(ids.transcriptIds),
     evidenceIds: Array.from(ids.evidenceIds),
     observationIds: Array.from(ids.observationIds),
     sourceItem
   };
+}
+
+function alignmentCoworkBriefAnswer(prompt = '', selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return '';
+  const text = String(prompt || '').toLowerCase();
+  const asksForArtifact = /\b(html|css|iframe|embed|code|build|create|draft|template|page|mockup|wireframe|copy)\b/.test(text);
+  if(!/\b(outline|element|context|evidence|source|what is this|what do you know|what have you got|brief|dashboard|proposal|handoff)\b/.test(text) && !asksForArtifact) return '';
+  const brief = selectedSourceContext.workingBrief || {};
+  const title = selectedSourceContext.cardTitle || brief.objective || 'this work';
+  const envelope = selectedSourceContext.envelope || brief.envelope || {};
+  const projectLine = envelope.envelopeType === 'project'
+    ? 'This is attached to the ' + (envelope.projectName || envelope.displayName || 'selected') + ' project.'
+    : envelope.envelopeType === 'relationship'
+    ? 'This is attached to the ' + (envelope.relationshipName || envelope.displayName || 'selected') + ' relationship.'
+    : '';
+  const lines = Array.from(new Set([
+    ...(Array.isArray(brief.contextLines) ? brief.contextLines : []),
+    ...(Array.isArray(selectedSourceContext.contextLines) ? selectedSourceContext.contextLines : []),
+    ...(Array.isArray(selectedSourceContext.sourceRefs) ? selectedSourceContext.sourceRefs.map((ref) => typeof ref === 'string' ? ref : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.title || '')) : [])
+  ].map((line) => compactSentence(line, '', 360)).filter(Boolean))).slice(0, 8);
+  if(!lines.length) return '';
+  const dashboardLike = /\bdashboard\b/i.test(title + ' ' + lines.join(' '));
+  if(asksForArtifact && (dashboardLike || /\b(html|css|iframe|embed|dashboard|page|template)\b/.test(text))){
+    const summaryLines = lines.slice(0, 5);
+    const titleText = compactSentence(title, 'Dashboard handoff');
+    const projectText = projectLine || 'This is attached to the selected Alignment packet.';
+    const metricOne = summaryLines[0] || 'Source context loaded from the selected packet.';
+    const metricTwo = summaryLines.find((line) => /\b(next|handoff|owner|action|finish|send|review)\b/i.test(line)) || summaryLines[1] || 'Next step needs one clear owner.';
+    const metricThree = summaryLines.find((line) => /\b(risk|block|loose|waiting|unclear|trust|relationship)\b/i.test(line)) || summaryLines[2] || 'Open questions stay visible until resolved.';
+    return [
+      'Yes. I have the packet, so I’m not going to ask what “this” is.',
+      '',
+      'Here is a clean iframe-ready first version based on the loaded context:',
+      '',
+      '```html',
+      '<!doctype html>',
+      '<html lang="en">',
+      '<head>',
+      '  <meta charset="utf-8" />',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+      '  <title>' + escapeHtml(titleText) + '</title>',
+      '  <style>',
+      '    :root {',
+      '      --sage: #6f806c;',
+      '      --rose: #c98995;',
+      '      --ink: #232521;',
+      '      --muted: #6f726a;',
+      '      --line: rgba(111, 128, 108, 0.22);',
+      '      --glass: rgba(255,255,255,0.78);',
+      '    }',
+      '    * { box-sizing: border-box; }',
+      '    body {',
+      '      margin: 0;',
+      '      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;',
+      '      color: var(--ink);',
+      '      background: linear-gradient(135deg, rgba(111,128,108,.11), rgba(201,137,149,.12));',
+      '    }',
+      '    .val-dashboard {',
+      '      width: 100%;',
+      '      min-height: 100vh;',
+      '      padding: 24px;',
+      '      background: var(--glass);',
+      '    }',
+      '    .eyebrow {',
+      '      margin: 0 0 10px;',
+      '      font-size: 11px;',
+      '      letter-spacing: .16em;',
+      '      text-transform: uppercase;',
+      '      color: var(--sage);',
+      '    }',
+      '    h1 {',
+      '      margin: 0;',
+      '      max-width: 760px;',
+      '      font-size: clamp(28px, 4vw, 48px);',
+      '      line-height: 1.04;',
+      '      font-weight: 520;',
+      '      letter-spacing: 0;',
+      '    }',
+      '    .context {',
+      '      margin: 14px 0 28px;',
+      '      max-width: 760px;',
+      '      color: var(--muted);',
+      '      font-size: 15px;',
+      '      line-height: 1.55;',
+      '    }',
+      '    .grid {',
+      '      display: grid;',
+      '      grid-template-columns: repeat(3, minmax(0, 1fr));',
+      '      gap: 12px;',
+      '    }',
+      '    .card {',
+      '      min-height: 156px;',
+      '      padding: 18px;',
+      '      border: 1px solid var(--line);',
+      '      border-radius: 14px;',
+      '      background: rgba(255,255,255,.82);',
+      '      box-shadow: 0 18px 45px rgba(36, 35, 30, .08);',
+      '    }',
+      '    .label {',
+      '      margin: 0 0 18px;',
+      '      font-size: 10px;',
+      '      letter-spacing: .14em;',
+      '      text-transform: uppercase;',
+      '      color: var(--sage);',
+      '    }',
+      '    .value {',
+      '      margin: 0;',
+      '      font-size: 18px;',
+      '      line-height: 1.35;',
+      '      font-weight: 460;',
+      '    }',
+      '    .next {',
+      '      margin-top: 12px;',
+      '      border-color: rgba(201,137,149,.28);',
+      '      background: linear-gradient(135deg, rgba(255,255,255,.88), rgba(201,137,149,.10));',
+      '    }',
+      '    @media (max-width: 760px) {',
+      '      .val-dashboard { padding: 18px; }',
+      '      .grid { grid-template-columns: 1fr; }',
+      '    }',
+      '  </style>',
+      '</head>',
+      '<body>',
+      '  <main class="val-dashboard">',
+      '    <p class="eyebrow">VAL prepared context</p>',
+      '    <h1>' + escapeHtml(titleText) + '</h1>',
+      '    <p class="context">' + escapeHtml(projectText) + '</p>',
+      '    <section class="grid" aria-label="Dashboard context">',
+      '      <article class="card">',
+      '        <p class="label">Purpose</p>',
+      '        <p class="value">' + escapeHtml(metricOne) + '</p>',
+      '      </article>',
+      '      <article class="card">',
+      '        <p class="label">Next Move</p>',
+      '        <p class="value">' + escapeHtml(metricTwo) + '</p>',
+      '      </article>',
+      '      <article class="card next">',
+      '        <p class="label">Watch Point</p>',
+      '        <p class="value">' + escapeHtml(metricThree) + '</p>',
+      '      </article>',
+      '    </section>',
+      '  </main>',
+      '</body>',
+      '</html>',
+      '```',
+      '',
+      'Use this as the first iframe pass. The next refinement should be visual polish or live CRM fields, not rebuilding the context.'
+    ].join('\n');
+  }
+  if(dashboardLike){
+    return [
+      'Here is the loaded context I have for ' + title + ':',
+      projectLine,
+      '',
+      ...lines.map((line) => '- ' + line),
+      '',
+      'For the dashboard itself, I would turn this into: purpose, status, owners, next step, timeline, open questions, and any handoff notes already named in the source. If you want, I can now draft the iframe-ready HTML from this packet.'
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    'Here is the source context I have for ' + title + ':',
+    projectLine,
+    '',
+    ...lines.map((line) => '- ' + line),
+    '',
+    'I can work directly from this packet. Tell me whether you want a draft, a plan, wording, HTML, or the next decision.'
+  ].filter(Boolean).join('\n');
 }
 
 function openHomeCardCowork(workspace){
@@ -24091,6 +24552,7 @@ function openHomeCardCowork(workspace){
   const cardTitle = compactSentence(active.title, 'this action');
   const alignmentQuestion = alignmentCoworkQuestion(cardTitle);
   const selectedSourceContext = homeCoworkSelectedSourceContext(active);
+  const envelopeLine = homeCoworkEnvelopeLine(selectedSourceContext.envelope);
   openContextualCoworkSession({
     returnTarget: 'home',
     title: isAlignment ? 'Work through this action' : 'Co-Work with VAL: ' + cardTitle,
@@ -24101,8 +24563,10 @@ function openHomeCardCowork(workspace){
       active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
       active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : '',
-      isAlignment ? 'Selected source context JSON: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : '',
-      isAlignment ? 'Alignment Co-Work rule: help the user finish the actual task. If they ask for an artifact such as HTML, copy, a draft, a checklist, or a working plan, produce the artifact directly in the chat. Do not narrate process, expose backend context, or send them to another page unless they ask.' : ''
+      isAlignment ? envelopeLine : '',
+      isAlignment ? 'Envelope rule: Project context wins first. Relationship context is fallback only when no project is attached. Use the selected Envelope as the primary working context.' : '',
+      isAlignment ? 'Private selected context JSON: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : '',
+      isAlignment ? 'Alignment Co-Work rule: help the user finish the actual task. If they ask for an artifact such as HTML, copy, a draft, a checklist, or a working plan, produce the artifact directly in the chat using the loaded packet/envelope before asking for more. Do not ask what "this" is when cardTitle, sourceRefs, transcriptIds, evidenceIds, or envelope are present. Do not narrate process, expose backend context, or send them to another page unless they ask.' : ''
     ].filter(Boolean),
     recommendation: isAlignment ? 'Finish it, change it, delegate it, or ask VAL to prepare the next move.' : active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
     placeholder: isAlignment ? 'Tell VAL what you need to finish this...' : 'Tell VAL what you need from this card...',
@@ -24255,9 +24719,163 @@ function leverageExecutiveFacts(workspace = {}, draft = null){
   ];
 }
 
+function leveragePreparedIdentifiers(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const sourceContext = item.sourceContext || item.source_context || artifact.sourceContext || artifact.source_context || metadata.sourceContext || metadata.source_context || {};
+  return {
+    draftId: item.draftId || item.draft_id || artifact.draftId || artifact.draft_id || sourceContext.draftId || sourceContext.draft_id || metadata.draftId || metadata.draft_id || '',
+    readyForYouId: item.readyForYouId || item.ready_for_you_id || sourceContext.readyForYouId || sourceContext.ready_for_you_id || metadata.readyForYouId || metadata.ready_for_you_id || item.id || '',
+    externalActionPacketId: item.externalActionPacketId || item.external_action_packet_id || sourceContext.externalActionPacketId || sourceContext.external_action_packet_id || metadata.externalActionPacketId || metadata.external_action_packet_id || ''
+  };
+}
+
+function leveragePreparedRecipient(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const sourceContext = item.sourceContext || item.source_context || artifact.sourceContext || artifact.source_context || metadata.sourceContext || metadata.source_context || {};
+  const to = item.to || item.recipientEmail || item.recipient_email || artifact.to || artifact.recipientEmail || artifact.recipient_email || sourceContext.to || sourceContext.recipientEmail || sourceContext.recipient_email || metadata.to || metadata.recipientEmail || metadata.recipient_email || '';
+  return String(to || '').trim();
+}
+
+function leveragePreparedSendPayload(workspace = {}, draft = null){
+  const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
+  const artifact = preparedArtifactForHomeItem(source);
+  const ids = leveragePreparedIdentifiers(source);
+  return {
+    to: leveragePreparedRecipient(source),
+    subject: draft?.title || artifact.subject || artifact.title || source.subject || source.title || 'VAL prepared message',
+    body: draft?.body || artifact.body || artifact.content || source.draftBody || source.draft_body || '',
+    provider: source.provider || artifact.provider || metadata.provider || 'gmail',
+    threadId: source.threadId || source.thread_id || artifact.threadId || artifact.thread_id || metadata.threadId || metadata.thread_id || '',
+    messageId: source.messageId || source.message_id || artifact.messageId || artifact.message_id || metadata.messageId || metadata.message_id || '',
+    sourceContext:{
+      source:'hearth_leverage',
+      draftId:ids.draftId,
+      readyForYouId:ids.readyForYouId,
+      originalSource:source.source || metadata.source || ''
+    },
+    sourceRefs:source.sourceRefsJson || source.sourceRefs || source.source_refs || metadata.sourceRefs || metadata.source_refs || [],
+    finalApprovalSurface:'hearth_leverage'
+  };
+}
+
+function removeCurrentLeverageItem(){
+  const active = activeHomeWorkspace?.workspace || {};
+  const activeSource = active.sourceItem || {};
+  if(!activeSource || !Object.keys(activeSource).length) return;
+  const activeIdentity = sourceIdentityForItem(activeSource);
+  setHomeRoomQueue('leverage', (homeRoomQueues.leverage || []).filter((item) => {
+    const source = item?.sourceItem || item || {};
+    const identity = sourceIdentityForItem(source);
+    return (identity.id || identity.label) !== (activeIdentity.id || activeIdentity.label);
+  }));
+  setRoomCopy(currentState);
+}
+
+async function approvePreparedLeverageItem(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const draft = leverageDraftFromWorkspace(workspace);
+  const verb = preparedApprovalVerb(item);
+  const ids = leveragePreparedIdentifiers(item);
+  if(/sent/.test(verb)){
+    const payload = leveragePreparedSendPayload(workspace, draft);
+    if(!payload.body || !payload.to){
+      renderHomeActionResult('approve_prepared', {
+        status:'needs_recipient',
+        message:'VAL has the draft, but cannot send until the recipient is attached.'
+      });
+      return;
+    }
+    try{
+      const result = await postJson('/api/val/external-actions/email-send-now', {...payload, approvalNote:'Sent from Leverage.'});
+      if(result.ok && result.executed){
+        removeCurrentLeverageItem();
+        setWorkspaceContent({
+          lens:'Leverage Receipt',
+          title:'Sent.',
+          meaning:result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'The approved message left VAL through the send gate.',
+          understanding:[payload.subject, 'Recipient: ' + payload.to, 'Provider: ' + payload.provider],
+          recommendation:'Open the next prepared item, or return to the desk.',
+          actions:[{label:'Open next prepared item', workflow:'leverage'}, {label:'Close and return to desk', workflow:'cancel:meeting'}],
+          label:'Leverage send receipt',
+          sourceItem:item,
+          suppressClarityStandard:true
+        });
+        return;
+      }
+      renderHomeActionResult('approve_prepared', {
+        status:'send_not_completed',
+        message: result.error || result.packet?.status || 'The send gate did not complete. Nothing else changed.'
+      });
+      return;
+    }catch(error){
+      renderHomeActionResult('approve_prepared', {
+        status:'send_failed',
+        message:'The send gate did not complete: ' + error.message
+      });
+      return;
+    }
+  }
+  if(canUseApi && ids.externalActionPacketId){
+    try{
+      const result = await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/execute', {finalConfirmation:true,executedBy:'hearth_leverage'});
+      if(result.ok && result.executed) removeCurrentLeverageItem();
+      renderHomeActionResult('approve_prepared', {
+        status:result.executed ? 'executed' : 'execution_not_completed',
+        message:result.executed ? 'VAL executed the approved prepared action.' : (result.error || 'The execution gate did not complete.')
+      });
+      return;
+    }catch(error){
+      renderHomeActionResult('approve_prepared', {status:'execution_failed', message:error.message});
+      return;
+    }
+  }
+  if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/approve', {note:'Approved from Hearth Leverage.'}).catch(() => null);
+  }
+  removeCurrentLeverageItem();
+  renderPreparedApprovalReceipt();
+}
+
+async function savePreparedLeverageEdits(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const ids = leveragePreparedIdentifiers(item);
+  const editor = scraperPreviewList?.querySelector('[data-leverage-draft-editor]');
+  const body = editor?.value || workspace.draftBody || '';
+  if(activeHomeWorkspace?.workspace) activeHomeWorkspace.workspace.draftBody = body;
+  if(canUseApi && ids.draftId){
+    await postJson('/api/val/drafts/' + encodeURIComponent(ids.draftId), {body}, {method:'PATCH'}).catch(() => null);
+  }
+  renderHomeActionResult('save_prepared_edits', {
+    status: ids.draftId ? 'draft_edits_saved' : 'local_edits_saved',
+    message: ids.draftId ? 'VAL saved the edits to the prepared draft.' : 'VAL saved the edited prepared work locally for review.'
+  });
+}
+
+async function holdPreparedLeverageItem(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const ids = leveragePreparedIdentifiers(item);
+  if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
+  }else if(canUseApi && ids.externalActionPacketId){
+    await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
+  }
+  removeCurrentLeverageItem();
+  renderHomeActionResult('hold_prepared', {
+    status:'held',
+    message:'VAL held this prepared work. Nothing was sent, scheduled, or changed.'
+  });
+}
+
 function renderAlignmentFunctionWorkspace(workspace = {}){
   const active = workspace || {};
   const fields = active.packetFields || {};
+  const selectedSourceContext = homeCoworkSelectedSourceContext(active);
   const title = compactSentence(active.title || fields.what_changed || 'Alignment review', 'Alignment review');
   const meaning = fields.why_it_matters || active.meaning || 'VAL is holding the signal, the context, and the recommended next move for review.';
   const recommendation = fields.recommended_next_step || active.recommendation || 'Review the signal, then decide what should happen next.';
@@ -24275,12 +24893,14 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   );
   const evidence = fields.evidence_summary || fields.source_type || active.coworkContext || 'No source evidence is exposed here until you choose to inspect it.';
   const known = fields.what_val_now_knows || 'VAL is keeping the relevant context private until it is useful to show.';
+  activeCoworkSelectedSourceContext = selectedSourceContext;
   activeCoworkHeldContext = [
     title,
     'Why it matters: ' + meaning,
     'What VAL now knows: ' + known,
     'Evidence: ' + evidence,
-    'Recommended next step: ' + recommendation
+    'Recommended next step: ' + recommendation,
+    selectedSourceContextHasLoadedPacket(selectedSourceContext) ? 'Loaded selected packet: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : ''
   ].filter(Boolean).join('\n');
   activeCoworkContextLocked = false;
   setWorkspaceContent({
@@ -24417,6 +25037,13 @@ function renderLeverageFunctionWorkspace(workspace = {}){
   openWorkspaceShell('Leverage function workspace', {returnTarget:'home', keepDrawerOpen:true});
 }
 
+function leverageReviewableQueueItems(){
+  return (homeRoomQueues.leverage || []).filter((queueItem) => {
+    const sourceItem = queueItem?.sourceItem || queueItem || {};
+    return hasPreparedWorkPacketAndActionStatus(sourceItem) && Boolean(leverageDraftFromWorkspace({sourceItem}));
+  });
+}
+
 function openVelocityAwarenessWorkspace(){
   const items = homeRoomQueues.velocity || [];
   setWorkspaceContent({
@@ -24486,8 +25113,11 @@ function openAlignmentCoworkDirect(){
 }
 
 function openLeverageApprovalWorkspace(){
-  const items = homeRoomQueues.leverage || [];
-  const firstWorkspace = items.length ? activateHomeQueueItem('leverage', 0) : null;
+  const queue = homeRoomQueues.leverage || [];
+  const reviewableItems = leverageReviewableQueueItems();
+  const firstReviewable = reviewableItems[0] || null;
+  const reviewableIndex = firstReviewable ? queue.findIndex((item) => item === firstReviewable) : -1;
+  const firstWorkspace = reviewableIndex >= 0 ? activateHomeQueueItem('leverage', reviewableIndex) : null;
   if(firstWorkspace){
     activeHomeWorkspace = {roomName:'leverage', workspace:firstWorkspace};
     activeClarityWorkspace = firstWorkspace;
@@ -24496,9 +25126,9 @@ function openLeverageApprovalWorkspace(){
   }
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
   renderLeverageFunctionWorkspace({
-    title: count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-    meaning: count ? 'Prepared work is still loading into review. Nothing has been approved or sent.' : 'Leverage opens only real prepared work, not loose possibilities.',
-    recommendation: count ? 'Open Leverage again once the review queue finishes loading.' : 'Nothing needs approval from Leverage.',
+    title: count ? 'Prepared work is still attaching.' : 'No prepared work is waiting right now.',
+    meaning: count ? 'VAL can see prepared-work candidates, but no reviewable draft body or artifact is attached yet.' : 'Leverage opens only real prepared work, not loose possibilities.',
+    recommendation: count ? 'VAL should finish the artifact before Leverage asks you to review it. No approval is requested from an empty packet.' : 'Nothing needs approval from Leverage.',
     packetFields: {},
     sourceItem: {},
     cardType: 'prepared_work'
@@ -24773,25 +25403,15 @@ async function handleHomeRoomAction(action, node = null){
     return;
   }
   if(action === 'approve_prepared'){
-    renderPreparedApprovalReceipt();
+    await approvePreparedLeverageItem();
     return;
   }
   if(action === 'save_prepared_edits'){
-    const editor = scraperPreviewList?.querySelector('[data-leverage-draft-editor]');
-    if(activeHomeWorkspace?.workspace){
-      activeHomeWorkspace.workspace.draftBody = editor?.value || activeHomeWorkspace.workspace.draftBody || '';
-    }
-    renderHomeActionResult(action, {
-      status: 'edits_saved',
-      message: 'VAL saved the edited prepared work locally for review.'
-    });
+    await savePreparedLeverageEdits();
     return;
   }
   if(action === 'hold_prepared'){
-    renderHomeActionResult(action, {
-      status: 'held',
-      message: 'VAL held this prepared work. Nothing was sent, scheduled, or changed.'
-    });
+    await holdPreparedLeverageItem();
     return;
   }
   if(action === 'complete_project_pin'){
@@ -25024,6 +25644,18 @@ function homeCoworkResponseNode(){
   return scraperPreviewList?.querySelector?.('[data-home-cowork-response]') || null;
 }
 
+function homeCoworkFormNode(){
+  return scraperPreviewList?.querySelector?.('[data-home-cowork-form]') || workspaceInputPanel?.querySelector?.('[data-home-cowork-form]') || null;
+}
+
+function homeCoworkTextareaNode(){
+  return homeCoworkFormNode()?.querySelector?.('[data-workspace-input="cowork"]') || null;
+}
+
+function homeCoworkSubmitNode(){
+  return homeCoworkFormNode()?.querySelector?.('[data-home-cowork-submit]') || null;
+}
+
 function renderMeetingPrepInlineMarkdown(value = ''){
   return escapeHtml(String(value || ''))
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -25143,6 +25775,37 @@ function hideCoworkContextGathering(){
   if(panel) panel.hidden = true;
 }
 
+function taskWorkspacePreviewText(value = '', limit = 220){
+  const clean = compactSentence(String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\s*-\s*\[\s*\]\s*/g, ' ')
+    .replace(/^Hi everyone,?\s*here are[^:]*:?\s*/i, '')
+    .replace(/^Here are[^:]*action items[^:]*:?\s*/i, '')
+    .replace(/^Hi everyone,?\s*here are[^:]*:?\s*/i, '')
+    .replace(/^Action Items?\s*:?\s*/i, '')
+    .replace(/^Key Points?\s*:?\s*/i, '')
+    .replace(/^Meeting overview\s*:?\s*/i, '')
+    .replace(/\s+-\s+_?Jessa\s+Grace_?\s*-\s*Due\s*:?\s*[^.]*$/i, '')
+    .replace(/\s+-\s+Due\s*:?\s*[^.]*$/i, '')
+    .trim(), '');
+  if(!clean) return '';
+  const sentence = clean.split(/(?<=[.!?])\s+/).find((line) => line.length >= 18 && line.length <= limit) || clean;
+  if(sentence.length <= limit) return sentence;
+  return sentence.slice(0, limit).replace(/\s+\S*$/, '').trim() + '...';
+}
+
+function taskWorkspaceDisplayTitle(task = {}){
+  return taskWorkspacePreviewText(task.title || task.description || task.notes || '', 120) || 'Untitled commitment';
+}
+
+function taskWorkspaceDisplayNotes(task = {}){
+  const sourceTitle = task.rawCommitment?.source_title || task.sourceTitle || '';
+  const evidence = taskWorkspacePreviewText(task.notes || task.rawCommitment?.evidence_quote || '', 180);
+  if(evidence && evidence !== taskWorkspaceDisplayTitle(task)) return evidence;
+  if(sourceTitle) return 'Source-backed context is attached from ' + sourceTitle + '.';
+  return 'Source-backed context is attached. Open the source transcript when you need the full evidence.';
+}
+
 function normalizeTaskWorkspaceItem(item = {}){
   if(item.__workspaceKind === 'commitment') return item;
   if(item.source_type || item.owner_type || item.evidence_quote){
@@ -25153,8 +25816,11 @@ function normalizeTaskWorkspaceItem(item = {}){
     return {
       id:item.id || '',
       __workspaceKind:'commitment',
-      title:item.title || item.description || 'Untitled commitment',
-      notes:item.evidence_summary || item.description || item.evidence_quote || '',
+      title:taskWorkspacePreviewText(item.title || item.description || item.evidence_quote || '', 140) || 'Untitled commitment',
+      notes:taskWorkspacePreviewText(item.evidence_summary || item.description || item.evidence_quote || '', 240),
+      workingBrief:item.workingBrief || item.working_brief || null,
+      sourceRefs:item.sourceRefs || item.source_refs || [],
+      sourceContext:item.sourceContext || item.source_context || {},
       contactName:owner,
       dueDate:item.due_at || '',
       completed:['complete','completed','dismissed'].includes(status),
@@ -25177,6 +25843,46 @@ function normalizeTaskWorkspaceItem(item = {}){
     };
   }
   return item;
+}
+
+function commitmentWorkingBriefForTask(task = {}){
+  return task.workingBrief || task.working_brief || task.rawCommitment?.workingBrief || task.rawCommitment?.working_brief || null;
+}
+
+function selectedSourceContextFromCommitmentTask(task = {}){
+  const brief = commitmentWorkingBriefForTask(task) || {};
+  const raw = task.rawCommitment || {};
+  const sourceRefs = Array.isArray(brief.sourceRefs) ? brief.sourceRefs : (Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : (Array.isArray(task.sourceRefs) ? task.sourceRefs : [])));
+  const sourceContext = brief.sourceContext || raw.source_context || task.sourceContext || {};
+  const sourceItem = {
+    ...raw,
+    id:raw.id || task.id || '',
+    title:raw.title || task.title || '',
+    summary:raw.evidence_summary || task.notes || '',
+    sourceType:raw.source_type || sourceContext.sourceType || task.sourceType || '',
+    sourceId:raw.source_id || sourceContext.sourceId || task.sourceId || '',
+    sourceTitle:raw.source_title || sourceContext.sourceTitle || '',
+    sourceRefs,
+    workingBrief:brief
+  };
+  const envelope = brief.envelope || homeCoworkEnvelopeHint({title:task.title,sourceItem}, sourceItem, sourceRefs);
+  const contextLines = Array.isArray(brief.contextLines) && brief.contextLines.length
+    ? brief.contextLines
+    : homeCoworkContextLines({title:task.title,meaning:task.notes}, sourceItem, sourceRefs);
+  return {
+    cardTitle: compactSentence(brief.objective || task.title || sourceItem.title || '', 'this commitment'),
+    cardMeaning: compactSentence(brief.sourceSummary || task.notes || sourceItem.summary || '', ''),
+    sourceIdentity: sourceIdentityForItem(sourceItem),
+    sourceRefs,
+    contextLines,
+    sourceBrief: contextLines.join('\n'),
+    workingBrief: brief,
+    envelope,
+    transcriptIds: sourceContext.transcriptId ? [sourceContext.transcriptId] : (task.relatedTranscriptId ? [task.relatedTranscriptId] : []),
+    evidenceIds: [],
+    observationIds: [],
+    sourceItem
+  };
 }
 
 function taskWorkspaceDetails(task = {}){
@@ -25223,9 +25929,20 @@ function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
   const attachedDrafts = drafts.filter((draft) => matchesCommitment(draft)).slice(0,2).map((draft) => ({
     kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
   }));
-  const attachedReady = readyItems.filter(matchesCommitment).slice(0,2).map((item) => ({
-    kind:'prepared',id:item.id || '',title:item.title || item.whatValPrepared || 'Prepared work',status:item.status || item.itemStatus || 'ready',body:item.whatValPrepared || item.summary || item.whatUserNeedsToDo || ''
-  }));
+  const attachedReady = readyItems
+    .filter(matchesCommitment)
+    .filter((item) => hasPreparedWorkPacketAndActionStatus(item) && Boolean(leverageDraftFromWorkspace({sourceItem:item})))
+    .slice(0,2)
+    .map((item) => {
+      const draft = leverageDraftFromWorkspace({sourceItem:item}) || {};
+      return {
+        kind:preparedArtifactKind(item) || 'prepared_work',
+        id:item.id || '',
+        title:draft.title || item.title || item.whatValPrepared || 'Prepared work',
+        status:item.status || item.itemStatus || 'ready',
+        body:draft.body || ''
+      };
+    });
   return [...attachedDrafts,...attachedReady].filter((item,index,list) => list.findIndex((candidate) => candidate.kind === item.kind && candidate.id === item.id) === index);
 }
 
@@ -25252,8 +25969,8 @@ function setTaskCompanionOpenCount(count = 0){
   if(taskCompanionCount) taskCompanionCount.textContent = String(safeCount);
   if(taskCompanionButton){
     taskCompanionButton.dataset.openCount = String(safeCount);
-    taskCompanionButton.setAttribute('aria-label', 'Open commitments: ' + safeCount + ' open');
-    taskCompanionButton.title = safeCount + ' open commitments';
+    taskCompanionButton.setAttribute('aria-label', 'Open your commitments: ' + safeCount + ' open');
+    taskCompanionButton.title = safeCount + ' open commitments that need you';
   }
 }
 
@@ -25274,8 +25991,8 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<section class="task-workspace" aria-label="Open commitments">',
-      '<header class="task-workspace-header"><div><span>Commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Check off what is done. Co-work only when you need help. Drafts appear only when VAL has actually prepared one.</p></header>',
+    '<section class="task-workspace" aria-label="Your open commitments">',
+      '<header class="task-workspace-header"><div><span>Your commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Only the promises and follow-through that need you appear here. Check off what is done; co-work only when you need help.</p></header>',
       openTasks.length ? '<div class="task-workspace-list">' + openTasks.map((task) => {
         const transcriptId = taskWorkspaceTranscriptId(task);
         const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
@@ -25284,14 +26001,16 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
         const status = task.schedulingStatus && task.schedulingStatus !== 'unscheduled' ? task.schedulingStatus : 'Open';
         const hasPrepared = attachments.length > 0;
         const state = hasPrepared ? 'VAL Ready' : 'Needs You';
+        const displayTitle = taskWorkspaceDisplayTitle(task);
+        const displayNotes = taskWorkspaceDisplayNotes(task);
         return [
           '<article class="task-workspace-row" data-task-workspace-row="' + escapeHtml(task.id || '') + '">',
             '<div class="task-workspace-row-main">',
-              '<button type="button" class="task-workspace-check" data-task-done="' + escapeHtml(task.id || '') + '" aria-label="Mark done: ' + escapeHtml(task.title || 'Untitled commitment') + '"></button>',
-              '<div><span>' + escapeHtml(state) + '</span><h3>' + escapeHtml(task.title || 'Untitled commitment') + '</h3><p>' + escapeHtml(task.notes || '') + '</p></div>',
+              '<button type="button" class="task-workspace-check" data-task-done="' + escapeHtml(task.id || '') + '" aria-label="Mark done: ' + escapeHtml(displayTitle) + '"></button>',
+              '<div><span>' + escapeHtml(state) + '</span><h3>' + escapeHtml(displayTitle) + '</h3><p>' + escapeHtml(displayNotes) + '</p></div>',
             '</div>',
             '<dl class="task-workspace-meta"><div><dt>Due</dt><dd>' + escapeHtml(taskWorkspaceDueLabel(task.dueDate)) + '</dd></div><div><dt>Owner</dt><dd>' + escapeHtml(owner) + '</dd></div><div><dt>Status</dt><dd>' + escapeHtml(status) + '</dd></div></dl>',
-            attachments.length ? '<div class="task-workspace-prepared"><span>Prepared by VAL</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(compactSentence(item.body,'Prepared work is attached.')) + '</p><small>' + escapeHtml(item.status) + '</small></div>').join('') + '</div>' : '',
+            attachments.length ? '<div class="task-workspace-prepared"><span>Prepared by VAL</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(taskWorkspacePreviewText(item.title, 90) || 'Prepared draft') + '</strong><small>' + escapeHtml(item.status || 'ready') + '</small></div>').join('') + '</div>' : '',
             '<div class="task-workspace-actions">',
               transcriptId ? '<button type="button" data-task-open-transcript="' + escapeHtml(transcriptId) + '">Open source transcript</button>' : '',
               '<button type="button" data-task-cowork="' + escapeHtml(task.id || '') + '">Co-work</button>',
@@ -25307,7 +26026,7 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
 async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
-    const result = await getJson('/api/val/commitments?limit=200', {cache:'no-store'});
+    const result = await getJson('/api/val/commitments?limit=120&ownerType=user', {cache:'no-store'});
     const items = Array.isArray(result?.commitments) ? result.commitments.map(normalizeTaskWorkspaceItem) : [];
     setTaskCompanionOpenCount(items.filter((task) => !task.completed).length);
   }catch(error){
@@ -25332,7 +26051,7 @@ async function openTaskWorkspace(){
   openWorkspaceShell('Commitments',{returnTarget:'home'});
   try{
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/commitments?limit=200',{cache:'no-store'}),
+      getJson('/api/val/commitments?limit=120&ownerType=user',{cache:'no-store'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
       getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
     ]);
@@ -25395,8 +26114,13 @@ async function completeTaskFromWorkspace(taskId = ''){
 
 function openTaskCowork(taskId = ''){
   const task = taskById(taskId) || {};
+  const selectedSourceContext = selectedSourceContextFromCommitmentTask(task);
+  const brief = selectedSourceContext.workingBrief || {};
   activeCoworkHeldContext = [
     'Commitment: ' + (task.title || 'Untitled commitment'),
+    brief.envelope ? homeCoworkEnvelopeLine(brief.envelope) : '',
+    brief.sourceQuote ? 'Source quote: ' + brief.sourceQuote : '',
+    Array.isArray(brief.contextLines) && brief.contextLines.length ? 'Loaded working brief: ' + brief.contextLines.join(' | ') : '',
     task.notes ? 'Why it matters: ' + task.notes : '',
     task.contactName ? 'Owner/contact: ' + task.contactName : '',
     task.dueDate ? 'Due: ' + taskWorkspaceDueLabel(task.dueDate) : '',
@@ -25409,10 +26133,13 @@ function openTaskCowork(taskId = ''){
     meaning:'Work through this commitment without leaving the context behind.',
     context:activeCoworkHeldContext.split('\n'),
     recommendation:'Clarify the next move, draft only if needed, or mark it done when it is complete.',
-    placeholder:'Help me finish this commitment...',
-    helper:'VAL has this commitment, due date, owner, and source details loaded.',
+    placeholder:brief.suggestedPrompt || 'Help me finish this commitment...',
+    helper:'VAL has this commitment packet, source evidence, and working brief loaded.',
     initialValue:'',
-    backWorkflow:'cancel:meeting'
+    selectedSourceContext,
+    initialMessage:brief.suggestedPrompt || '',
+    backWorkflow:'cancel:meeting',
+    showGathering:false
   });
 }
 
@@ -25436,8 +26163,8 @@ async function openTaskPreparedWork(taskId = ''){
       title:prepared.title || task.title || 'Prepared work',
       summary:task.notes || prepared.body || '',
       target:{type:prepared.kind || 'draft', id:prepared.id || task.id || '', name:prepared.title || task.title || 'Prepared work'},
-      preparedArtifactKind:prepared.kind === 'draft' ? 'email_draft' : 'prepared_work',
-      preparedArtifact:{kind:prepared.kind === 'draft' ? 'email_draft' : 'prepared_work', id:prepared.id || task.id || '', title:prepared.title || 'Prepared draft', body:prepared.body || ''}
+      preparedArtifactKind:prepared.kind === 'draft' ? 'email_draft' : prepared.kind || 'prepared_work',
+      preparedArtifact:{kind:prepared.kind === 'draft' ? 'email_draft' : prepared.kind || 'prepared_work', id:prepared.id || task.id || '', title:prepared.title || 'Prepared draft', body:prepared.body || ''}
     },
     packetFields:{
       what_changed:prepared.title || task.title || 'Prepared work',
@@ -25456,6 +26183,142 @@ function observerConversationId(value = ''){
   return String(value || 'observer').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'observer';
 }
 
+function observerLiveReviews(observerName = '', limit = 8){
+  const name = String(observerName || '').trim();
+  if(!name) return [];
+  const indexed = safeArray(observerBoardState.reviewsByObserver?.[name]);
+  const fromPackets = safeArray(observerBoardState.livePackets)
+    .map((packet) => safeArray(packet.payloadJson?.observerReviews).find((review) => review?.observerName === name))
+    .filter(Boolean);
+  const reviews = indexed.length ? indexed : fromPackets;
+  return reviews
+    .slice()
+    .sort((a,b) => String(b.reviewedAt || '').localeCompare(String(a.reviewedAt || '')))
+    .slice(0, limit);
+}
+
+function observerMeaningfulLiveReviews(observerName = '', limit = 6){
+  return observerLiveReviews(observerName, 24)
+    .filter((review) => review.status === 'observed')
+    .slice(0, limit);
+}
+
+function observerReviewEvidenceLine(review = {}){
+  const evidence = review.evidence || {};
+  const title = evidence.packetTitle || evidence.packetType || 'Board packet';
+  const sourceType = String(evidence.sourceType || 'source').replace(/_/g, ' ');
+  const sourceId = evidence.sourceId ? ' #' + evidence.sourceId : '';
+  const quote = evidence.quoteOrSummary || review.observation || '';
+  return compactSentence(title + ' · ' + sourceType + sourceId + (quote ? ': ' + quote : ''), title, 260);
+}
+
+function observerReviewSummaryLine(review = {}){
+  return compactSentence(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 340);
+}
+
+function observerReviewNamedLine(review = {}){
+  const people = safeArray(review.people).filter(Boolean);
+  const projects = safeArray(review.projects).filter(Boolean);
+  const objects = safeArray(review.decisionObjects).filter(Boolean);
+  const left = [
+    people.length ? 'People: ' + people.join(', ') : '',
+    projects.length ? 'Projects: ' + projects.join(', ') : '',
+    objects.length ? 'Work: ' + objects.join(', ') : ''
+  ].filter(Boolean).join(' | ');
+  const finding = observerReviewSummaryLine(review);
+  return left ? left + ' — ' + finding : finding;
+}
+
+function normalizedObserverProofReviews(context = {}){
+  return safeArray(context.observerProofReviews).map((review) => ({
+    ...review,
+    status:review.status || 'observed',
+    observerName:review.observerName || context.selectedObserver?.name || '',
+    lensFinding:review.lensFinding || review.observation || review.line || '',
+    observation:review.observation || review.lensFinding || review.line || '',
+    evidence:{
+      ...(review.evidence || {}),
+      packetTitle:review.evidence?.packetTitle || review.packetTitle || 'Board packet',
+      sourceType:review.evidence?.sourceType || review.sourceType || 'source',
+      sourceId:review.evidence?.sourceId || review.sourceId || '',
+      quoteOrSummary:review.evidence?.quoteOrSummary || review.evidenceLine || review.line || review.observation || review.lensFinding || ''
+    }
+  }));
+}
+
+const OBSERVER_CARD_ENTITY_STOPWORDS = new Set([
+  'VAL','Board','Observer','Observers','Chief','Staff','Relationship','Relationships','Project','Projects','Capacity','Courage','Delight',
+  'Meaning','Momentum','Commitment','Calendar','Environment','Witnessing','Executive','Inbox','Currently','Seeing','Watching','Evidence',
+  'Concern','Question','Source','Trail','Home','GHL','CRM','HTML','CSS','SMS','Tone','Transcript','Calendar','The',
+  'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'
+]);
+
+function observerCardNamedPeopleFromText(text = ''){
+  const matches = String(text || '').match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g) || [];
+  const seen = new Set();
+  return matches
+    .map((name) => compactSentence(name, name, 80))
+    .filter((name) => name && !OBSERVER_CARD_ENTITY_STOPWORDS.has(name) && !OBSERVER_CARD_ENTITY_STOPWORDS.has(String(name).split(/\s+/)[0]))
+    .filter((name) => {
+      const key = String(name).toLowerCase();
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+function observerCardProjectsFromText(text = ''){
+  const raw = String(text || '');
+  const projects = [];
+  if(/\bGOALL\b/i.test(raw)) projects.push('GOALL');
+  if(/\bdashboard|handoff|projection/i.test(raw)) projects.push('dashboard handoff');
+  if(/\bproposal|payment|pricing/i.test(raw)) projects.push('proposal or payment decision');
+  return Array.from(new Set(projects)).slice(0, 4);
+}
+
+function observerCardReviewFromVisibleContext(observer = {}, context = {}){
+  const sourceTrail = safeArray(context.sourceTrail);
+  const text = [
+    observer.currentlySeeing,
+    observer.watching,
+    safeArray(observer.evidenceItems).join(' '),
+    observer.evidence,
+    observer.concern,
+    observer.explore,
+    observer.incomingObservation,
+    sourceTrail.map((item) => item.line || item.title || item.summary || '').join(' ')
+  ].filter(Boolean).join(' ');
+  const line = compactSentence([
+    observer.currentlySeeing,
+    observer.concern,
+    observer.explore
+  ].filter(Boolean).join(' '), observer.currentlySeeing || observer.concern || observer.explore || '', 700);
+  const evidenceLine = compactSentence([
+    safeArray(observer.evidenceItems).join('; '),
+    observer.evidence,
+    sourceTrail.map((item) => item.line || item.title || item.summary || '').filter(Boolean).join(' | ')
+  ].filter(Boolean).join(' | '), '', 900);
+  if(!line && !evidenceLine) return null;
+  return {
+    status:'observed',
+    observerName:observer.name || 'Observer',
+    people:observerCardNamedPeopleFromText(text),
+    projects:observerCardProjectsFromText(text),
+    decisionObjects:observerCardProjectsFromText(text),
+    lensFinding:line || evidenceLine,
+    observation:line || evidenceLine,
+    evidence:{quoteOrSummary:evidenceLine || line}
+  };
+}
+
+function homeObserverProofReviews(observer = null, limit = 5){
+  if(!observer?.name) return [];
+  const meaningful = observerMeaningfulLiveReviews(observer.name, limit);
+  if(meaningful.length) return meaningful;
+  return observerLiveReviews(observer.name, limit);
+}
+
 function observerConversationContext(observer = null, role = 'observer'){
   const transcript = currentTimelineTranscript || {};
   const receipt = transcript.id ? timelineSourceReceipt(transcript) : {};
@@ -25470,17 +26333,22 @@ function observerConversationContext(observer = null, role = 'observer'){
     stance:observer.stance,
     truth:observer.truth,
     evidence:observer.evidence,
+    evidenceItems:observer.evidenceItems || [],
     currentlySeeing:observer.currentlySeeing,
     watching:observer.watching,
     concern:observer.concern,
     explore:observer.explore,
-    perspective:observer.perspective
+    perspective:observer.perspective,
+    packetFrom:observer.packetFrom,
+    incomingObservation:observer.incomingObservation,
+    liveReviews:observerLiveReviews(observer.name, 10),
+    meaningfulReviews:observerMeaningfulLiveReviews(observer.name, 6)
   } : null;
   return {
     title:role === 'chief' ? 'Chat with Your Chief of Staff' : 'Talk with the ' + (observer?.name || 'Selected') + ' Observer',
     role,
     selectedObserver,
-    board:role === 'chief' ? observerBoardState : {chiefOfStaff:observerBoardState.chiefOfStaff,observer:selectedObserver},
+    board:role === 'chief' ? observerBoardState : {chiefOfStaff:observerBoardState.chiefOfStaff,observer:selectedObserver,livePackets:observerBoardState.livePackets,reviewsByObserver:observerBoardState.reviewsByObserver},
     home:queueSummary,
     executiveBriefing:executiveBriefingState ? {
       perspective:executiveBriefingState.perspective || executiveBriefingState.message || executiveBriefingState.summary || '',
@@ -25511,8 +26379,74 @@ function observerConversationContext(observer = null, role = 'observer'){
   };
 }
 
+function homeObserverContextOpening(observer = null, briefing = executiveBriefingState || {}){
+  const perspective = chiefOfStaffPerspectiveFromBriefing(briefing || {});
+  const observerName = observer?.name || 'this Observer';
+  const evidenceSources = homeBriefingEvidenceSources(briefing || {});
+  const sourceLines = evidenceSources.map(executiveEvidenceLine).filter(Boolean);
+  const proofReviews = homeObserverProofReviews(observer, 5);
+  const meaningfulProof = proofReviews.filter((review) => review.status === 'observed');
+  const readLine = cleanVelocityPerspectiveLine(perspective.witness, 220) || homeObserverWatchingLine(observer, briefing || {});
+  return [
+    'Here is why I brought ' + observerName + ' into Home.',
+    '',
+    readLine,
+    '',
+    meaningfulProof.length ? 'What ' + observerName + ' actually observed:' : 'What ' + observerName + ' checked:',
+    proofReviews.length
+      ? proofReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)).join('\n')
+      : '- The Observer packet reviews have not attached to this Home read yet, so I should not pretend there is proof.',
+    '',
+    sourceLines.length ? 'Source trail:' : 'Source trail missing:',
+    sourceLines.length ? sourceLines.map((line) => '- ' + line).join('\n') : '- The originating source has not attached yet.',
+    '',
+    'Ask me about the exact signal, the person or project involved, what changed, or what I would do next.'
+  ].filter(Boolean).join('\n');
+}
+
+function homeObserverContextPatch(observer = null, briefing = executiveBriefingState || {}){
+  const perspective = chiefOfStaffPerspectiveFromBriefing(briefing || {});
+  const evidenceSources = homeBriefingEvidenceSources(briefing || {});
+  const observerName = observer?.name || 'Observer';
+  return {
+    source:'home_full_context',
+    homeFullContext:true,
+    chiefOfStaffRead:{
+      headline:perspective.headline,
+      witness:perspective.witness,
+      orientation:perspective.orientation,
+      permission:perspective.permission,
+      selectedObserver:observerName
+    },
+    sourceTrail:evidenceSources.map((item) => ({
+      line:executiveEvidenceLine(item),
+      identity:sourceIdentityForItem(item),
+      title:itemTitle(item, 'Supporting source'),
+      summary:item.summary || item.reason_it_matters || item.reason || item.why || '',
+      sourceRefs:item.sourceRefsJson || item.sourceRefs || item.source_refs || item.evidence || []
+    })),
+    observerProofReviews:homeObserverProofReviews(observer, 8).map((review) => ({
+      status:review.status || '',
+      observerName:review.observerName || observerName,
+      line:observerReviewNamedLine(review),
+      evidenceLine:observerReviewEvidenceLine(review),
+      people:safeArray(review.people),
+      projects:safeArray(review.projects),
+      decisionObjects:safeArray(review.decisionObjects),
+      observation:review.observation || '',
+      lensFinding:review.lensFinding || ''
+    })),
+    openingAnswer:homeObserverContextOpening(observer, briefing)
+  };
+}
+
 function observerCoworkContextLines(context = {}){
   const observer = context.selectedObserver || {};
+  const chiefRead = context.chiefOfStaffRead || {};
+  const sourceTrail = Array.isArray(context.sourceTrail) ? context.sourceTrail : [];
+  const proofReviews = Array.isArray(context.observerProofReviews) ? context.observerProofReviews : [];
+  const meaningfulReviews = safeArray(observer.meaningfulReviews).slice(0, 5);
+  const liveReviews = safeArray(observer.liveReviews).slice(0, 8);
   if(context.role === 'chief'){
     return [
       'Lens: Chief of Staff',
@@ -25524,9 +26458,15 @@ function observerCoworkContextLines(context = {}){
   }
   return [
     observer.name ? 'Lens: ' + observer.name : '',
+    chiefRead.witness ? 'Chief of Staff read: ' + chiefRead.witness : '',
+    chiefRead.orientation ? 'Why this Observer: ' + chiefRead.orientation : '',
+    proofReviews.length ? 'Home proof reviews: ' + proofReviews.map((review) => review.line || review.evidenceLine).filter(Boolean).join(' | ') : '',
+    meaningfulReviews.length ? 'Observer reviewed packets: ' + meaningfulReviews.map(observerReviewSummaryLine).join(' | ') : '',
+    !meaningfulReviews.length && liveReviews.length ? 'Observer checked packets with no current meaningful signal: ' + liveReviews.map(observerReviewEvidenceLine).slice(0, 4).join(' | ') : '',
     observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
     observer.watching ? 'What I am watching: ' + observer.watching : '',
     Array.isArray(observer.evidenceItems) && observer.evidenceItems.length ? 'Evidence: ' + observer.evidenceItems.join('; ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    sourceTrail.length ? 'Source trail: ' + sourceTrail.map((item) => item.line || item.title).filter(Boolean).join(' | ') : '',
     observer.concern ? 'My concern: ' + observer.concern : '',
     observer.explore ? 'What I would like to explore: ' + observer.explore : '',
     observer.packetFrom || observer.incomingObservation ? 'Latest packet: ' + [observer.packetFrom ? 'from ' + observer.packetFrom : '', observer.incomingObservation || ''].filter(Boolean).join(' - ') : ''
@@ -25550,9 +26490,54 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
   const text = projectCleanText(prompt).toLowerCase();
   if(!text) return '';
   const asksEvidence = /\bevidence|proof|source|where.*come from|what.*have\b/i.test(text);
-  const asksRelationshipRepair = /\bwhich relationships?|who|repair|presence|distance|open loops?|warmth|trust\b/i.test(text);
-  const asksContext = /\bcontext|card|currently seeing|watching|concern|explore|mean|noticed\b/i.test(text);
+  const asksRelationshipRepair = /\bwhich relationships?|who|repair|presence|distance|open loops?|warmth|trust|tone|changed?|shifts?|friction\b/i.test(text);
+  const asksContext = /\bcontext|card|currently seeing|watching|concern|explore|mean|noticed|pattern|signal|why|what changed|how.*changed\b/i.test(text);
   if(!asksEvidence && !asksRelationshipRepair && !asksContext) return '';
+  const proofReviews = normalizedObserverProofReviews(context);
+  const livePackets = safeArray(context.board?.livePackets || context.board?.packets || observerBoardState.livePackets);
+  const meaningfulReviews = (safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews.length ? proofReviews : observerMeaningfulLiveReviews(observer.name, 6))
+    .filter((review) => review.status === 'observed')
+    .slice(0, 6);
+  const cardReview = observerCardReviewFromVisibleContext(observer, context);
+  const effectiveMeaningfulReviews = meaningfulReviews.length ? meaningfulReviews : (cardReview ? [cardReview] : []);
+  const checkedReviews = safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : (proofReviews.length ? proofReviews : observerLiveReviews(observer.name, 8));
+  const hasInspectableReviews = Boolean(effectiveMeaningfulReviews.length || checkedReviews.length || livePackets.length);
+  if(hasInspectableReviews && (asksEvidence || asksRelationshipRepair || asksContext)){
+    if(!effectiveMeaningfulReviews.length){
+      return [
+        observer.name + ' checked the live Board packets and is not claiming a meaningful signal from this lens yet.',
+        '',
+        checkedReviews.length ? 'What I checked:' : 'What is missing:',
+        checkedReviews.length ? checkedReviews.slice(0, 5).map((review) => '- ' + observerReviewEvidenceLine(review)).join('\n') : '- No packet reviews are attached to this Observer yet.',
+        '',
+        'I would rather say “not enough signal yet” than make up a relationship, risk, or pattern.'
+      ].join('\n');
+    }
+    if(asksRelationshipRepair && observer.name === 'Relationship'){
+      const named = effectiveMeaningfulReviews
+        .flatMap((review) => safeArray(review.people).map((person) => ({person,review})))
+        .filter((item) => item.person)
+        .slice(0, 5);
+      return [
+        named.length
+          ? 'Relationship would look first at ' + named.map((item) => item.person).join(', ') + '.'
+          : 'Relationship is not naming a specific person from the packet yet.',
+        '',
+        ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+        safeArray(context.sourceTrail).length ? '\nSource trail:\n' + safeArray(context.sourceTrail).slice(0, 4).map((item) => '- ' + (item.line || item.title || item.summary || 'Supporting source')).join('\n') : '',
+        '',
+        'That is the proof line: if the packet names the person, I name the person. If it only names the source, I stay at the source level.'
+      ].filter(Boolean).join('\n');
+    }
+    return [
+      observer.name + ' is answering from live Board packet reviews:',
+      '',
+      ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+      '',
+      'Source trail:',
+      ...effectiveMeaningfulReviews.slice(0, 3).map((review) => '- ' + observerReviewEvidenceLine(review))
+    ].join('\n');
+  }
   const evidence = Array.isArray(observer.evidenceItems) ? observer.evidenceItems : [];
   const lines = [
     observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
@@ -25604,25 +26589,31 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const name = isChief ? 'Chief of Staff' : observer.name;
   const observerId = isChief ? 'chief-of-staff' : observerConversationId(observer.name);
   const role = isChief ? 'chief' : 'observer';
+  const meaningfulReviews = isChief ? [] : observerMeaningfulLiveReviews(name, 4);
+  const checkedReviews = isChief ? [] : observerLiveReviews(name, 5);
   const currentlySeeing = isChief
     ? 'The full Board is active.'
-    : observer.currentlySeeing || observer.truth;
+    : meaningfulReviews[0]?.observation || observer.currentlySeeing || observer.truth;
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
-    : observer.watching || observer.evidence;
+    : meaningfulReviews.length ? 'Live packets through this lens, with no claim made unless evidence is attached.' : observer.watching || observer.evidence;
   const evidenceItems = isChief
     ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
-    : observer.evidenceItems || [position.signals || observer.evidence];
+    : meaningfulReviews.length
+      ? meaningfulReviews.map(observerReviewEvidenceLine)
+      : checkedReviews.length
+        ? checkedReviews.slice(0, 3).map((review) => 'Checked: ' + observerReviewEvidenceLine(review))
+        : observer.evidenceItems || [position.signals || observer.evidence];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
-    : observer.concern || observer.truth;
+    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : observer.concern || observer.truth;
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
     : observer.explore || observer.stance;
-  const packetFrom = isChief ? 'Board' : observer.packetFrom || 'Chief of Staff';
+  const packetFrom = isChief ? 'Board' : String(meaningfulReviews[0]?.evidence?.sourceType || observer.packetFrom || 'Chief of Staff').replace(/_/g, ' ');
   const packetObservation = isChief
     ? 'Several perspectives are converging around the same decision.'
-    : observer.incomingObservation || observer.stance;
+    : meaningfulReviews[0]?.observation || observer.incomingObservation || observer.stance;
   const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
   return [
     '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
@@ -25738,13 +26729,13 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
               '<span class="val-presence-orbit"></span>',
               '<span class="val-presence-core">VAL</span>',
             '</span>',
-            '<div>',
+          '<div>',
               '<p>VAL</p>',
-              '<small>Scoped observer conversation. Nothing external happens from here.</small>',
+              '<small>' + escapeHtml(context?.selectedObserver?.name ? context.selectedObserver.name + ' context is loaded.' : 'Board context is loaded.') + '</small>',
             '</div>',
           '</div>',
           '<div class="home-cowork-thread" data-home-cowork-response>',
-            renderHomeCoworkMessage('val', initialMessage || 'I am here with this Observer lens. What would you like to examine together?'),
+            renderHomeCoworkMessage('val', initialMessage || 'This Observer is loaded with the evidence behind the card. What do you want to examine first?'),
           '</div>',
           '<section class="observer-cowork-chatbar-shell" data-observer-cowork-chatbar>',
             '<form class="home-cowork-chatbar observer-cowork-chatbar" data-home-cowork-form>',
@@ -25770,7 +26761,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
   enableValAutocorrect(scraperPreviewList);
 }
 
-async function openObserverCowork(observerId = '', role = 'observer'){
+async function openObserverCowork(observerId = '', role = 'observer', options = {}){
   const isChief = role === 'chief';
   const observer = isChief ? null : observerBoardState.observers.find((item) => observerConversationId(item.name) === observerId);
   if(!isChief && !observer) return;
@@ -25780,7 +26771,10 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   const detail = isChief
     ? 'Your Chief of Staff can see the full Board context and help you find patterns, risks, and opportunities.'
     : 'This Observer holds the ' + observer.name + ' lens and the evidence available to it.';
-  const context = observerConversationContext(observer,isChief ? 'chief' : 'observer');
+  const context = {
+    ...observerConversationContext(observer,isChief ? 'chief' : 'observer'),
+    ...(options.contextPatch || {})
+  };
   closeCalendarPanel();
   if(!deskWorkspace.classList.contains('observer-board-mode') || !workspaceInputPanel.querySelector('.observer-live-board')){
     openObserverBoard();
@@ -25792,16 +26786,16 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   activeCoworkContextLocked = true;
   activeCoworkHeldContext = observerCoworkHeldContext(context);
   renderObserverCoworkOverlay({
-    title,
-    detail,
-    placeholder:isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...',
-    initialMessage:isChief
+    title:options.title || title,
+    detail:options.detail || detail,
+    placeholder:options.placeholder || (isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...'),
+    initialMessage:options.initialMessage || context.openingAnswer || (isChief
       ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
-      : 'I am here with the ' + observer.name + ' lens. What would you like to examine together?',
+      : observer.name + ' is loaded with the evidence behind this card. What do you want to examine first?'),
     historyMessage:'This conversation is saved and will be here when you return.',
     context
   });
-  activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'ready'};
+  activeCoworkEntry = {entrypointId,observerId:stableId,title:options.title || title,context,sessionId:'',workItemId:'',status:'ready'};
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
   hideCoworkContextGathering();
@@ -25809,11 +26803,12 @@ async function openObserverCowork(observerId = '', role = 'observer'){
     const result = await postJson('/api/val/cowork/entries/open',{
       entrypointId,
       scope:{entityType:isChief ? 'observer_board' : 'observer',entityId:stableId,sectionId:isChief ? 'board' : 'observer'},
-      title,
+      title:options.title || title,
       context
     },{timeoutMs:15000,timeoutMessage:'VAL could not open this saved conversation yet.'});
     const userAlreadyStarted = Boolean(homeCoworkResponseNode()?.querySelector?.('.home-cowork-message.user'));
-    renderCoworkEntryResult(result,{hydrateConversation:!userAlreadyStarted,suppressMessage:true});
+    const preserveInitialContext = Boolean(options.initialMessage || options.contextPatch?.openingAnswer || options.contextPatch?.homeFullContext);
+    renderCoworkEntryResult(result,{hydrateConversation:!userAlreadyStarted && !preserveInitialContext,suppressMessage:true});
   }catch(error){
     hideCoworkContextGathering();
     console.warn('Observer saved conversation unavailable:', error);
@@ -26139,9 +27134,72 @@ async function handlePrimaryAction(button){
   openWorkspace(button.dataset.openRoom);
 }
 
+function alignmentCompletionCommitmentId(item = {}){
+  const metadata = itemMetadata(item);
+  const identity = sourceIdentityForItem(item);
+  const candidates = [
+    item.sourceCommitmentId,
+    item.commitmentId,
+    item.rawCommitment?.id,
+    metadata.sourceCommitmentId,
+    metadata.commitmentId,
+    item.target?.type === 'commitment' ? item.target?.id : '',
+    /commitment/i.test(String(identity.type || item.sourceType || item.source_type || '')) ? identity.id : ''
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+function alignmentCompletionChiefRecommendationId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.chiefRecommendationId,
+    item.chief_recommendation_id,
+    metadata.chiefRecommendationId,
+    metadata.chief_recommendation_id,
+    item.target?.type === 'chief_of_staff_recommendation' ? item.target?.id : ''
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+function alignmentCompletionChiefQueuePacketId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.chiefQueuePacketId,
+    item.chief_queue_packet_id,
+    metadata.chiefQueuePacketId,
+    metadata.chief_queue_packet_id
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+async function persistAlignmentDone(item = {}){
+  const commitmentId = alignmentCompletionCommitmentId(item);
+  const chiefRecommendationId = alignmentCompletionChiefRecommendationId(item);
+  const chiefQueuePacketId = alignmentCompletionChiefQueuePacketId(item);
+  if(!canUseApi) return;
+  if(commitmentId){
+    await postJson('/api/val/commitments/' + encodeURIComponent(commitmentId) + '/status', {
+      status:'complete',
+      reason:'Marked done from Home Alignment.'
+    });
+  }
+  if(chiefRecommendationId){
+    await postJson('/api/val/chief-of-staff/' + encodeURIComponent(chiefRecommendationId) + '/complete', {
+      outcome:'completed',
+      completionNote:'Marked done from Home Alignment.',
+      feedback:{packetId:chiefQueuePacketId,chiefQueuePacketId}
+    });
+  }
+}
+
 function markAlignmentCardDone(){
   const queue = homeRoomQueues.alignment || [];
-  const handledTitle = itemTitle(queue[0]?.sourceItem || queue[0] || {}, 'Alignment action');
+  const handledItem = queue[0]?.sourceItem || queue[0] || {};
+  const handledTitle = itemTitle(handledItem, 'Alignment action');
+  markHomeItemCompleted('alignment', handledItem, 'done');
+  void persistAlignmentDone(handledItem).catch((error) => {
+    console.warn('[hearth] Alignment done could not persist:', error.message);
+  });
   if(queue.length) queue.shift();
   homeRoomQueues.alignment = queue.map((item, index) => ({...item, priority:index + 1}));
   if(homeRoomQueues.alignment.length){
@@ -26275,6 +27333,21 @@ function closeCalendarPanel(){
   renderCalendarPacketReceiptStrip(null);
 }
 
+function openHomeObserverFullContext(){
+  const observer = selectHomeObserverSignal(executiveBriefingState || {});
+  if(!observer){
+    return openObserverBoard();
+  }
+  const contextPatch = homeObserverContextPatch(observer, executiveBriefingState || {});
+  return openObserverCowork(observerConversationId(observer.name), 'observer', {
+    title:'Talk with ' + observer.name,
+    detail:'This is the context ' + observer.name + ' gave the Chief of Staff for the Home read.',
+    placeholder:'Ask ' + observer.name + ' what it noticed...',
+    initialMessage:contextPatch.openingAnswer,
+    contextPatch
+  });
+}
+
 leanButton?.addEventListener('click', () => {
   const isOpen = evidence.classList.toggle('open');
   hearth.classList.toggle('evidence-open', isOpen);
@@ -26291,8 +27364,7 @@ evidence?.addEventListener('click', (event) => {
   hearth.classList.remove('evidence-open');
   leanButton?.setAttribute('aria-expanded', 'false');
   if(action === 'board'){
-    const observer = selectHomeObserverSignal(executiveBriefingState || {});
-    return openObserverBoard({selectedObserverName:observer?.name || ''});
+    return openHomeObserverFullContext();
   }
   if(action === 'alignment') return openAlignmentExecutionWorkspace();
   if(action === 'leverage') return openLeverageApprovalWorkspace();
@@ -27468,12 +28540,12 @@ workspaceInputPanel.addEventListener('click', (event) => {
     };
     if(navigator.clipboard?.writeText){
       navigator.clipboard.writeText(value).then(done).catch(() => {
-        const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+        const textarea = homeCoworkTextareaNode() || workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
         if(textarea) textarea.value = value;
         done();
       });
     }else{
-      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      const textarea = homeCoworkTextareaNode() || workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
       if(textarea) textarea.value = value;
       done();
     }

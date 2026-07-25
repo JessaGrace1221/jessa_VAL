@@ -6936,6 +6936,11 @@ var CHAT_URL  = PROXY+'/api/val/chat';
 var FILES_URL = PROXY+'/api/val/files';
 var BOOK_STATE_URL = PROXY+'/api/val/book-state';
 
+function valEndpointSpeak(data,fallback){
+  data=data||{};
+  return String(data.speak||(data.message&&data.message.content)||data.content||data.reply||data.text||data.message||fallback||'I could not process that.').trim();
+}
+
 var chatHistory=[],selFile=null,voiceOn=false,recording=false,uploadBatchState=null,uploadAudioCtx=null;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
 var keepAlive=null,meetingMode=false,meetingLog=[],meetingIntroPending=false,savedChat=false,activeConversationId=null;
@@ -9680,7 +9685,7 @@ function chat(msg,inp){
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return apiTextOrJson(r);})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  .then(function(d){var m=valEndpointSpeak(d,'I could not process that.');chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
@@ -9693,7 +9698,7 @@ function chatSilent(msg){
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return apiTextOrJson(r);})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  .then(function(d){var m=valEndpointSpeak(d,'I could not process that.');chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
@@ -9852,7 +9857,7 @@ function runValAction(action,label,query){
   })
   .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
-    var text=d.content||'I could not generate that yet.';
+    var text=valEndpointSpeak(d,'I could not generate that yet.');
     chatHistory.push({role:'assistant',content:text});
     addMsg(text,false);
     if(d.createdTasks&&d.createdTasks.length){
@@ -10507,7 +10512,7 @@ function sendToVAL(prompt, onComplete){
   fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
-    var m=(d.message&&d.message.content)||d.message||'Could not process.';
+    var m=valEndpointSpeak(d,'Could not process.');
     chatHistory.push({role:'assistant',content:m});
     addMsg(m,false);
     if(onComplete) onComplete();

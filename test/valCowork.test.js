@@ -307,10 +307,11 @@ test('Observer and Chief of Staff conversations resume their own durable message
   assert.equal(replies.length,2);
 });
 
-test('Hearth exposes unresolved tasks with source and prepared-work continuation paths',()=>{
+test('Hearth exposes unresolved commitments with source and prepared-work continuation paths',()=>{
   assert.match(hearthHtml,/class="task-companion-button"/);
   assert.match(hearth,/function openTaskWorkspace/);
-  assert.match(hearth,/getJson\('\/api\/val\/tasks'/);
+  assert.match(hearth,/getJson\('\/api\/val\/commitments\?limit=120&ownerType=user'/);
+  assert.match(hearth,/Open your commitments/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
   assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=5&includeSnoozed=true'/);
   assert.match(hearth,/function openTaskSourceTranscript/);
@@ -323,8 +324,156 @@ test('Hearth opens Observer and Chief cards as resumable scoped Co-Work conversa
   assert.match(hearth,/function openObserverCowork/);
   assert.match(hearth,/const entrypointId = isChief \? 'board\.chief_of_staff' : 'observer\.discussion'/);
   assert.match(hearth,/data-observer-cowork="chief-of-staff"/);
-  assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:true,suppressMessage:true\}\)/);
+  assert.match(hearth,/const preserveInitialContext = Boolean\(options\.initialMessage \|\| options\.contextPatch\?\.openingAnswer \|\| options\.contextPatch\?\.homeFullContext\)/);
+  assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:!userAlreadyStarted && !preserveInitialContext,suppressMessage:true\}\)/);
   assert.match(hearth,/observerButton\.dataset\.observerCowork/);
+});
+
+test('Observer chat prioritizes live packet evidence over static card fallback',()=>{
+  assert.match(hearth,/const livePackets = safeArray\(context\.board\?\.livePackets \|\| context\.board\?\.packets \|\| observerBoardState\.livePackets\)/);
+  assert.match(hearth,/const proofReviews = normalizedObserverProofReviews\(context\)/);
+  assert.match(hearth,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews\(observer\.name, 6\)/);
+  assert.match(hearth,/tone\|changed\?\|shifts\?\|friction/);
+  assert.match(hearth,/what changed\|how\.\*changed/);
+  assert.match(hearth,/Relationship would look first at/);
+  assert.match(hearth,/observerReviewNamedLine/);
+  assert.match(hearth,/I would rather say “not enough signal yet” than make up a relationship, risk, or pattern/);
+  assert.match(server,/Answer the user like a specific Board member, not like a generic assistant/);
+  assert.match(server,/First answer the exact question in plain language/);
+  assert.match(server,/Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review/);
+  assert.match(server,/timeoutMs:20000/);
+});
+
+test('Observer Co-Work evidence questions answer from the loaded brief before model lookup',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        currentlySeeing:'Mike sounded frustrated after the dashboard handoff stayed vague.',
+        watching:'Tone, repair opportunities, mutual value, and signs of distance.',
+        evidenceItems:['Transcript: GOALL dashboard handoff','Calendar: Monday GOALL touch point'],
+        concern:'The relationship may need repair before strategy moves forward.',
+        explore:'Which relationship needs presence before strategy?'
+      },
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What evidence do you have? How has tone changed?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would look at Mike first|loaded Observer card|live packet reviews/i);
+  assert.match(answered.message,/Mike sounded frustrated|GOALL dashboard handoff/i);
+  assert.match(answered.message,/Source: GOALL transcript/i);
+});
+
+test('Observer Co-Work can answer from Home proof packet reviews without model lookup',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{name:'Relationship'},
+      observerProofReviews:[{
+        status:'observed',
+        observerName:'Relationship',
+        people:['Mike'],
+        projects:['GOALL'],
+        decisionObjects:['dashboard handoff'],
+        line:'People: Mike | Projects: GOALL | Work: dashboard handoff - Mike may need relational attention.',
+        evidenceLine:'GOALL dashboard handoff - transcript #krisp-goall: Mike asked twice for a cleaner dashboard handoff.'
+      }],
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would look at Mike first/);
+  assert.match(answered.message,/Why I am saying that/);
+  assert.match(answered.message,/Evidence I can point to/);
+  assert.match(answered.message,/Projects: GOALL/);
+  assert.match(answered.message,/dashboard handoff/);
+  assert.match(answered.message,/What I would explore next/);
+});
+
+test('Observer Co-Work can answer from loaded card text when proof reviews are missing',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        currentlySeeing:'Mike sounded frustrated because the GOALL dashboard handoff stayed vague.',
+        watching:'Changes in tone, repair opportunities, mutual value, and signs of distance.',
+        evidenceItems:['Transcript: GOALL dashboard handoff'],
+        concern:'The relationship may need repair before strategy moves forward.',
+        explore:'Which relationship needs presence before strategy?'
+      },
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would look at Mike first/);
+  assert.match(answered.message,/Project context: GOALL/);
+  assert.match(answered.message,/dashboard handoff/);
+  assert.match(answered.message,/Source: GOALL transcript/);
+});
+
+test('Observer Co-Work answers tone questions from proof packet reviews immediately',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{name:'Relationship'},
+      observerProofReviews:[{
+        status:'observed',
+        observerName:'Relationship',
+        people:['Mike'],
+        projects:['GOALL'],
+        decisionObjects:['dashboard handoff'],
+        line:'People: Mike | Projects: GOALL | Work: dashboard handoff - Mike sounded frustrated when the dashboard handoff stayed vague.',
+        evidenceLine:'GOALL dashboard handoff - transcript #krisp-goall: Mike asked twice for a cleaner dashboard handoff.'
+      }],
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'How has tone changed?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would look at Mike first/);
+  assert.match(answered.message,/Mike sounded frustrated/);
+  assert.match(answered.message,/GOALL dashboard handoff - transcript/);
 });
 
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{

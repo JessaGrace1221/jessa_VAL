@@ -110,8 +110,8 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(hearth,/const actionPrepLane = Boolean\(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep\(visiblePrompt\)\);/);
   assert.match(hearth,/const needsFullValContext = Boolean\(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext\(visiblePrompt\)\);/);
   assert.match(hearth,/const voiceFastLane = Boolean\(valCoworkVoiceState\.active && mode !== 'meeting_prep' && !needsFullValContext && !actionPrepLane\);/);
-  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext && !actionPrepLane\);/);
-  assert.match(hearth,/latencyMode: actionPrepLane \? 'action_fast' : \(voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)\)/);
+  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !hasSelectedCoworkSource && !needsFullValContext && !actionPrepLane\);/);
+  assert.match(hearth,/latencyMode: observerCoworkLane \? 'observer_card' : \(actionPrepLane \? 'action_fast' : \(voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)\)\)/);
   assert.match(hearth,/showCoworkContextGathering\('VAL is thinking with you\.', \{noTimeout:true\}\);/);
   assert.doesNotMatch(hearth,/showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'\)/);
   assert.match(server,/function hearthFastChatEnabled/);
@@ -257,6 +257,7 @@ test('GHL voice actions can inherit recipient and body from transcript context',
 test('Home VAL chat Rolodex resolves action contacts from Stewardship context',()=>{
   assert.match(server,/function hearthActionProfileCompany/);
   assert.match(server,/function hearthActionUsableEmail/);
+  assert.match(server,/function hearthActionProfileContactId/);
   assert.match(server,/example\.com/);
   assert.match(server,/function hearthActionCompanyHint/);
   assert.match(server,/Julian Method|is\\s\+where\\s\+\(\?:she\|he\|they\)\\s\+works/);
@@ -264,8 +265,19 @@ test('Home VAL chat Rolodex resolves action contacts from Stewardship context',(
   assert.match(server,/function hearthActionLooseNameScore/);
   assert.match(server,/listRelationshipProfiles\(\{limit:800\}\)/);
   assert.match(server,/relationshipProfilePrimaryEmail\(profile\)/);
+  assert.match(server,/relationshipProfilePrimaryPhone\(profile\)/);
+  assert.match(server,/const contactId=hearthActionProfileContactId\(profile\)/);
   assert.match(server,/hearthActionLooseNameScore\(cleanNeedle,comparable\)/);
   assert.match(server,/resolveContactFromContext\(\{name:needle,email:directEmail,company:companyHint\}\)/);
+});
+
+test('Home VAL prepares SMS as a real approval packet when GHL contact is linked',()=>{
+  assert.match(server,/valExternalActions\.createSmsSendPacket/);
+  assert.match(server,/contactId:contact\.contactId/);
+  assert.match(server,/home_sms_action_packet/);
+  assert.match(server,/I found \$\{contactName\} and prepared the SMS for approval/);
+  assert.match(server,/needs:'ghl_contact_link'/);
+  assert.match(server,/Say “Send” when you want me to send it\. Nothing has been sent yet\./);
 });
 
 test('Stewardship Network stores GHL-ready email and phone details in the Rolodex',()=>{
