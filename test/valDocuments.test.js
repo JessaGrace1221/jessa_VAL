@@ -9,9 +9,23 @@ const routes = fs.readFileSync(path.join(root, 'services/valDocumentsRoutes.js')
 
 const {
   createValDocumentsService,
+  documentRecord,
   documentMatches,
   documentLooksLikeCalendarInvite
 } = require('../services/valDocuments');
+
+test('documents preserve their durable executive category separately from links', () => {
+  const document = documentRecord({
+    id:'contract_1',
+    title:'Current GOALL Agreement',
+    documentCategory:'current_contracts',
+    project:'GOALL',
+    relationship:'Mike'
+  });
+  assert.equal(document.category,'current_contracts');
+  assert.equal(document.project,'GOALL');
+  assert.equal(document.relationship,'Mike');
+});
 
 test('documents routes expose canonical document index and reference APIs', () => {
   assert.match(server, /registerValDocumentsRoutes/);

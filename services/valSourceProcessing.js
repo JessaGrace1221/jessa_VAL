@@ -263,6 +263,90 @@ function createValSourceProcessingService({
     if(typeof listProjectProfiles==='function')return safeArray(await listProjectProfiles({limit:200}).catch(()=>[]));
     return safeArray(store().relationshipProfiles).filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
+  async function processKnowledgeDocument(input={}){
+    const sc=scope();
+    const document=input.document||input.source||{};
+    const sourceType=firstText(document.sourceType,document.source_type,input.sourceType,'knowledge_document');
+    const sourceId=firstText(document.sourceId,document.source_id,document.id,input.sourceId,uuid('document'));
+    const sourceTitle=firstText(document.title,document.fileName,document.filename,input.title,'Uploaded document');
+    const rawText=String(document.rawText||document.raw_text||document.text||document.content||input.rawText||input.raw_text||input.text||input.content||'').trim();
+    if(!rawText)throw new Error('Knowledge document processing requires readable document text.');
+    const uploadedVia=firstText(document.uploadedVia,document.uploaded_via,input.uploadedVia,input.uploaded_via,'val_file_upload');
+    const docType=firstText(document.docType,document.doc_type,input.docType,input.doc_type,'knowledge_document');
+    const documentCategory=firstText(document.documentCategory,document.document_category,input.documentCategory,input.document_category,'other');
+    const sourceRef=normalizeSourceRef({
+      sourceType,
+      sourceId,
+      quoteOrSummary:compactText(rawText,900),
+      confidence:1,
+      createdAt:firstText(document.createdAt,document.created_at,input.createdAt,input.created_at,now())
+    });
+    const packetUpdates=[
+      {target:'knowledge_document_packet',status:'stored',sourceType,sourceId,sourceTitle}
+    ];
+    const domainRoutes=['documents'];
+    if(uploadedVia==='val_witnessing_session'){
+      packetUpdates.push({target:'witnessing_context',status:'available',sourceType,sourceId,sourceTitle});
+      domainRoutes.push('witnessing');
+    }
+    const record=await saveRecord({
+      id:sourceRecordId(uuid,sc,sourceType,sourceId),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      sourceType,
+      sourceId,
+      sourceTitle,
+      status:'processed',
+      sourceReceiptJson:{
+        sourceType,
+        sourceId,
+        sourceTitle,
+        receivedAt:firstText(document.createdAt,document.created_at,input.createdAt,input.created_at,now()),
+        uploadedVia,
+        docType,
+        documentCategory,
+        mimeType:firstText(document.mimeType,document.mime_type,input.mimeType,input.mime_type),
+        fileName:firstText(document.fileName,document.filename,input.fileName,input.filename,sourceTitle),
+        characterCount:rawText.length,
+        rawText
+      },
+      witnessObservationsJson:[{
+        observer:'witness',
+        observation:`VAL read "${sourceTitle}" and stored its extracted text as inspectable source evidence.`,
+        evidence_refs:[sourceRef]
+      }],
+      executiveRelevanceJson:{
+        document_read:true,
+        witnessing_context_available:uploadedVia==='val_witnessing_session',
+        recommendation_created:false
+      },
+      domainRoutesJson:domainRoutes,
+      packetUpdatesJson:packetUpdates,
+      reviewUpdatesJson:[],
+      preparedWorkCandidatesJson:[],
+      noActionReceiptJson:{},
+      unknownsJson:[],
+      metadataJson:{
+        source:'knowledge_document_upload',
+        uploadedVia,
+        docType,
+        documentCategory,
+        documentRead:true,
+        noExternalAction:true
+      },
+      createdAt:now(),
+      updatedAt:now()
+    });
+    return {
+      ok:true,
+      sourceProcessingRecord:record,
+      whatValDidReceipt:record.whatValDidReceipt,
+      what_val_did_receipt:record.whatValDidReceipt,
+      documentRead:true,
+      witnessingContextAvailable:uploadedVia==='val_witnessing_session',
+      no_external_action:true
+    };
+  }
   async function processRelationshipDocumentEmail(input={}){
     const sc=scope();
     const relationship=input.relationship||{};
@@ -435,7 +519,7 @@ function createValSourceProcessingService({
       .slice(0,lim);
     return {ok:true,surfaceRegistrations:rows};
   }
-  return {processRelationshipDocumentEmail,listSourceRecords,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration,sourceProcessingWhatValDidReceipt};
+  return {processKnowledgeDocument,processRelationshipDocumentEmail,listSourceRecords,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration,sourceProcessingWhatValDidReceipt};
 }
 
 module.exports={createValSourceProcessingService,relationshipAdmitted,documentsFromInput,readyItemFromProjectSuggestion,surfaceMetadataFromProjectSuggestion,sourceProcessingWhatValDidReceipt};

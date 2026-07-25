@@ -545,14 +545,20 @@ const observerBoardState = {
     next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
-    {name: 'Executive Inbox', truth: 'Not ready to advise from the Board.', evidence: 'Requires a live email packet with sender, thread, relationship, draft, and rule context.', stance: 'Needs packet'},
-    {name: 'Relationships', truth: 'Not ready to advise from the Board.', evidence: 'Requires relationship packet evidence, recent signal, source, and missing-context notes.', stance: 'Needs packet'},
-    {name: 'Projects', truth: 'Not ready to advise from the Board.', evidence: 'Requires project packet evidence, current phase, next move, owner, and source receipts.', stance: 'Needs packet'},
-    {name: 'Transcripts', truth: 'Not ready to advise from the Board.', evidence: 'Requires transcript packet evidence with matched event, attendees, project, and review status.', stance: 'Needs packet'},
-    {name: 'Velocity', truth: 'Not ready to advise from the Board.', evidence: 'Requires confirmed changes since the user was away.', stance: 'Needs packet'},
-    {name: 'Alignment', truth: 'Not ready to advise from the Board.', evidence: 'Requires a ranked priority packet instead of a generic priority list.', stance: 'Needs packet'},
-    {name: 'Leverage', truth: 'Not ready to advise from the Board.', evidence: 'Requires prepared drafts or artifacts VAL actually made while the user was away.', stance: 'Needs packet'},
-    {name: 'Commitments', truth: 'Not ready to advise from the Board.', evidence: 'Requires who owes whom what, by when, and the source quote behind it.', stance: 'Needs packet'}
+    {name:'Executive Inbox',truth:'No important human should be accidentally neglected.',evidence:'Waiting for source-backed communication context.',stance:'Communication'},
+    {name:'Relationship',truth:'Trust compounds over time.',evidence:'Waiting for source-backed relationship context.',stance:'Trust'},
+    {name:'Project',truth:'Work that creates long-term value should continue moving.',evidence:'Waiting for source-backed project context.',stance:'Movement'},
+    {name:'Capacity',truth:'Decision quality matters more than today’s output.',evidence:'Waiting for source-backed capacity context.',stance:'Tradeoffs'},
+    {name:'Courage',truth:'Anxiety can disguise itself as productivity.',evidence:'Waiting for source-backed challenge context.',stance:'Truth'},
+    {name:'Delight',truth:'Joy and connection are not distractions from effectiveness.',evidence:'Waiting for source-backed delight context.',stance:'Aliveness'},
+    {name:'Opportunity',truth:'Possibility can emerge quietly before it becomes obvious.',evidence:'Waiting for source-backed opportunity context.',stance:'Openings'},
+    {name:'Momentum',truth:'Motion is not the same as momentum.',evidence:'Waiting for source-backed movement context.',stance:'Progress'},
+    {name:'Meaning',truth:'Memory stores. Meaning connects.',evidence:'Waiting for source-backed meaning context.',stance:'Purpose'},
+    {name:'Synchronicity',truth:'Repeated arrivals deserve attention before they become certainty.',evidence:'Waiting for source-backed convergence.',stance:'Patterns'},
+    {name:'Commitment',truth:'Tasks are software. Commitments are promises.',evidence:'Waiting for source-backed commitment context.',stance:'Promises'},
+    {name:'Calendar',truth:'Time is a strategic asset.',evidence:'Waiting for source-backed timing context.',stance:'Time'},
+    {name:'Environment',truth:'The body and environment are part of executive context.',evidence:'Waiting for source-backed environment context.',stance:'Conditions'},
+    {name:'Witnessing',truth:'The user’s own words are foundational context.',evidence:'Waiting for direct user-revealed context.',stance:'Known truth'}
   ]
 };
 
@@ -12015,6 +12021,8 @@ async function appendValWitnessingFiles(category, files = []){
   if(!selected.length) return;
   const card = valWitnessingCard(category);
   const mode = 'val-witnessing-' + card.category;
+  const documentCategory = workspaceInputPanel.querySelector('[data-val-witnessing-document-category="' + card.category + '"]')?.value || 'other';
+  const documentCategoryLabel = valWitnessingDocumentCategoryLabel(documentCategory);
   const statusTarget = workspaceInputPanel.querySelector('.val-conversation-helper');
   if(statusTarget) statusTarget.textContent = 'Uploading ' + selected.length + ' file' + (selected.length === 1 ? '' : 's') + ' into VAL document context...';
   const receipts = [];
@@ -12026,14 +12034,19 @@ async function appendValWitnessingFiles(category, files = []){
         form.append('files', file, file.name);
         form.append('uploadedVia', 'val_witnessing_session');
         form.append('docType', 'knowledge_document');
+        form.append('documentCategory', documentCategory);
         form.append('title', file.name);
         const response = await fetch('/api/val/files', {method:'POST', body:form});
         const data = await response.json().catch(() => ({}));
         if(!response.ok) throw new Error(data.error || data.message || 'Upload failed');
         receipt += '\nVAL file id: ' + (data.id || data.files?.[0]?.id || 'saved');
-        receipt += '\nClassification needed: Document or Template.';
-        receipt += '\nIf Document: which relationship or project does this belong to?';
-        receipt += '\nIf Template: what is this template used for?';
+        receipt += '\nVAL read the document text and attached it to this Witnessing answer.';
+        receipt += '\nCategory: ' + documentCategoryLabel + '.';
+        if(data.observerDelivery?.modelBacked){
+          receipt += '\nAll 14 Observers are reading it now. Their evidence-backed receipts will appear below.';
+          pollValObserverDocumentReceipts(data.id || data.files?.[0]?.id || '', category);
+        }
+        receipt += '\nAdd the relationship or project this belongs to when relevant.';
       }catch(error){
         receipt += '\nUpload note: VAL could not read this file yet (' + (error.message || 'upload failed') + '). Keep the file named here and add its purpose below.';
       }
@@ -12051,6 +12064,82 @@ async function appendValWitnessingFiles(category, files = []){
     appendToWorkspaceInput(receipts.join('\n\n'));
   }
   if(statusTarget) statusTarget.textContent = 'File context added. Tell VAL whether each item is a Document or Template before continuing.';
+}
+
+const valWitnessingDocumentCategories = [
+  {value:'about_me', label:'About Me'},
+  {value:'assessments', label:'Assessments'},
+  {value:'templates', label:'Templates'},
+  {value:'current_contracts', label:'Current Contracts'},
+  {value:'sops', label:'SOPs'},
+  {value:'project_documents', label:'Project Documents'},
+  {value:'relationship_documents', label:'Relationship Documents'},
+  {value:'reference_material', label:'Reference Material'},
+  {value:'other', label:'Other'}
+];
+
+function valWitnessingDocumentCategoryLabel(value=''){
+  return valWitnessingDocumentCategories.find(category=>category.value===value)?.label || 'Other';
+}
+
+function valObserverDocumentRunsForSource(runs=[],sourceId=''){
+  return (Array.isArray(runs)?runs:[]).filter(run=>{
+    const event=run.contextPacketJson?.event||run.context_packet_json?.event||{};
+    const document=event.document||{};
+    return event.type==='about_me_document'&&String(document.id||document.sourceId||'')===String(sourceId||'');
+  });
+}
+
+function renderValObserverDocumentReceipts(target,runs=[],title='About Me document'){
+  if(!target)return;
+  const completedByName=new Map(runs.map(run=>[run.observerName||run.observer_name,run]));
+  const observerNames=[
+    'Executive Inbox','Relationship','Project','Capacity','Courage','Delight','Opportunity',
+    'Momentum','Meaning','Synchronicity','Commitment','Calendar','Environment','Witnessing'
+  ];
+  target.hidden=false;
+  target.innerHTML=[
+    '<div class="val-observer-document-receipts-head">',
+      '<span>Board reading receipts</span>',
+      '<strong>' + escapeHtml(title) + '</strong>',
+      '<small>' + completedByName.size + ' of 14 complete</small>',
+    '</div>',
+    '<div class="val-observer-document-receipts-list">',
+      observerNames.map(name=>{
+        const run=completedByName.get(name);
+        const output=run?.outputJson||run?.output_json||{};
+        const review=output.document_review||output.documentReview||{};
+        const evidence=(output.evidence||[])[0];
+        const complete=!!run;
+        const noSignal=review.status==='no_signal';
+        return [
+          '<article class="' + (complete?'complete':'reading') + '">',
+            '<span>' + escapeHtml(name) + '</span>',
+            '<strong>' + escapeHtml(complete?(noSignal?'No meaningful signal from my lens.':output.observation||'Source-backed context found.'):'Reading...') + '</strong>',
+            evidence?.quote_or_summary ? '<blockquote>' + escapeHtml(evidence.quote_or_summary) + '</blockquote>' : '',
+            complete ? '<small>' + escapeHtml(String(review.charactersRead||0)) + ' characters read</small>' : '',
+          '</article>'
+        ].join('');
+      }).join(''),
+    '</div>'
+  ].join('');
+}
+
+async function pollValObserverDocumentReceipts(sourceId,category,attempt=0){
+  if(!sourceId)return;
+  const target=workspaceInputPanel.querySelector('[data-val-observer-document-receipts="' + category + '"]');
+  if(!target)return;
+  try{
+    const payload=await getJson('/api/val/observers/runs?limit=200');
+    const runs=valObserverDocumentRunsForSource(payload.runs||[],sourceId);
+    renderValObserverDocumentReceipts(target,runs,sourceId);
+    if(runs.length<14&&attempt<90){
+      window.setTimeout(()=>pollValObserverDocumentReceipts(sourceId,category,attempt+1),2000);
+    }
+  }catch(error){
+    target.hidden=false;
+    target.innerHTML='<p>Observer reading receipts need attention: ' + escapeHtml(error.message||'Could not load receipts.') + '</p>';
+  }
 }
 
 async function copyValWitnessingImportPrompt(){
@@ -14864,7 +14953,7 @@ function valWorkspaceCopy(action){
       meaning: 'This is where VAL begins the partnership by learning who it is partnering with before it tries to optimize the work.',
       understanding: ['VAL asks one meaningful question at a time.', 'Every reflection should show evidence, name what changed in VAL understanding, and invite correction.', 'No account connection, external action, or durable memory promotion happens from this first slice.'],
       recommendation: 'Start with Meeting VAL, then move through story, mission, and principles only after each reflection feels accurate.',
-      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
+      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Revisit Documents', workflow:'valWitnessingDocuments'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
     },
     working_agreements: {
       title: 'Set VAL working agreements.',
@@ -15214,9 +15303,16 @@ function valWitnessingContextTools(card){
   if(card.id === 'documents_templates'){
     return [
       '<div class="val-witnessing-tool-row">',
-        '<button type="button" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload document or template</button>',
+        '<label class="val-witnessing-document-category">',
+          '<span>Category</span>',
+          '<select data-val-witnessing-document-category="' + escapeHtml(card.category) + '">',
+            valWitnessingDocumentCategories.map(category=>'<option value="' + escapeHtml(category.value) + '">' + escapeHtml(category.label) + '</option>').join(''),
+          '</select>',
+        '</label>',
+        '<button type="button" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload files</button>',
         '<input type="file" data-val-witnessing-file-input="' + escapeHtml(card.category) + '" multiple hidden>',
-      '</div>'
+      '</div>',
+      '<section class="val-observer-document-receipts" data-val-observer-document-receipts="' + escapeHtml(card.category) + '" hidden></section>'
     ].join('');
   }
   if(card.id === 'import_context'){
@@ -15686,6 +15782,22 @@ async function resumeValWitnessingSession(){
   activeValWitnessingSessionId = result.session?.id || result.id || '';
   restoreValWitnessingStateFromOnboarding(result);
   return {sessionId: activeValWitnessingSessionId, target: valWitnessingResumeTarget(result), onboarding: result};
+}
+
+async function reopenValWitnessingDocuments(){
+  if(!canUseApi){
+    await openValWitnessingSession('documents_templates');
+    return;
+  }
+  const resumed=await resumeValWitnessingSession();
+  const sessionId=resumed.sessionId;
+  if(!sessionId)throw new Error('VAL could not find your saved Witnessing Session.');
+  const result=await postJson(
+    '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/reopen-witnessing-card/documents_templates',
+    {}
+  );
+  restoreValWitnessingStateFromOnboarding(result);
+  await openValWitnessingSession('documents_templates');
 }
 
 async function startFreshValWitnessingSession(){
@@ -17670,7 +17782,7 @@ function openObserverBoard(){
     '</section>',
     '<section class="observer-board-grid" aria-label="Observer packet readiness">',
       observerBoardState.observers.map((observer) => [
-        '<article class="observer-truth-card">',
+        '<article class="observer-truth-card" data-observer-name="' + escapeHtml(observer.name) + '">',
           '<div>',
             '<span>' + escapeHtml(observer.stance) + '</span>',
             '<strong>' + escapeHtml(observer.name) + '</strong>',
@@ -17682,9 +17794,55 @@ function openObserverBoard(){
     '</section>',
     '<p class="observer-board-note">If this view claims certainty without a packet, that is a bug. Teach VAL or open the source drawer before trusting the Board.</p>'
   ].join('');
+  hydrateObserverBoardLiveContext();
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
+}
+
+async function hydrateObserverBoardLiveContext(){
+  if(!canUseApi||mockScrapers)return;
+  try{
+    const [board,runsPayload]=await Promise.all([
+      getJson('/api/val/board/context?limit=100'),
+      getJson('/api/val/observers/runs?limit=200')
+    ]);
+    const packets=Array.isArray(board.packets)?board.packets:[];
+    const runs=Array.isArray(runsPayload.runs)?runsPayload.runs:[];
+    const latestByObserver=new Map();
+    runs.forEach(run=>{
+      const name=run.observerName||run.observer_name;
+      if(name&&!latestByObserver.has(name))latestByObserver.set(name,run);
+    });
+    observerBoardState.observers.forEach(observer=>{
+      const card=workspaceInputPanel.querySelector('[data-observer-name="' + CSS.escape(observer.name) + '"]');
+      if(!card)return;
+      const run=latestByObserver.get(observer.name);
+      const output=run?.outputJson||run?.output_json||{};
+      const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||null;
+      const relevantPackets=packets.filter(packet=>
+        (packet.routeObserversJson||packet.route_observers_json||[]).some(route=>route.observerName===observer.name)
+      );
+      const statement=output.observation||review?.observation||review?.seeing||'No completed evidence-backed observation yet.';
+      const evidence=(output.evidence||review?.evidence||[])[0];
+      card.querySelector('p').textContent=statement;
+      card.querySelector('small').textContent=evidence?.quote_or_summary
+        ? 'Evidence: “' + evidence.quote_or_summary + '”'
+        : 'Evidence: ' + relevantPackets.length + ' source packet' + (relevantPackets.length===1?'':'s') + ' available; no supported claim stored yet.';
+    });
+    const chiefCard=workspaceInputPanel.querySelector('.observer-chief-card');
+    if(chiefCard){
+      chiefCard.querySelector('strong').textContent=packets.length
+        ? packets.length + ' live source packet' + (packets.length===1?' is':'s are') + ' available to all 14 Observers.'
+        : 'Holding space for Analytical and Relational Context.';
+      chiefCard.querySelector('p').textContent=packets.length
+        ? 'Each Observer must either store an evidence-backed observation or explicitly return no meaningful signal from its lens.'
+        : 'No Observer activity is being claimed because no live source packets are present.';
+    }
+  }catch(error){
+    const note=workspaceInputPanel.querySelector('.observer-board-note');
+    if(note)note.textContent='Live Board evidence could not load: ' + (error.message||'unknown error');
+  }
 }
 
 function orientHomeCoworkFromInput(){
@@ -17927,6 +18085,10 @@ async function handleValDetailWorkflowClick(event){
   }
   if(action === 'valWitnessingFresh'){
     await openValWitnessingSession('meeting_val', {fresh:true});
+    return true;
+  }
+  if(action === 'valWitnessingDocuments'){
+    await reopenValWitnessingDocuments();
     return true;
   }
   await handleWorkflowAction(action, workflowButton);
@@ -19166,6 +19328,13 @@ if(location.hash === '#valWitnessingResume'){
   setTimeout(() => {
     openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
       valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
+    });
+  }, 120);
+}
+if(location.hash === '#valWitnessingDocuments'){
+  setTimeout(() => {
+    reopenValWitnessingDocuments().catch((error) => {
+      valLiveStatus.textContent = 'Could not reopen Documents: ' + error.message;
     });
   }, 120);
 }
