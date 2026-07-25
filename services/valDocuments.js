@@ -2,6 +2,7 @@ function safeArray(value){return Array.isArray(value)?value:[];}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function compactText(value='',limit=600){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180)||'document';}
+const {documentLooksLikeCalendarInvite}=require('./valDocumentEvidenceFilters');
 
 const DOCUMENT_KIND_RE=/document|proposal|agreement|sow|scope|copy|html_page|report|brief|spec|documentation|contract|file|attachment|google_doc|knowledge_document|manuscript|chapter/i;
 
@@ -38,6 +39,7 @@ function documentRecord(input={}){
     id:firstText(input.id,stableKey([sourceType,title,input.sourceId,input.url].join(':'))),
     title,
     type,
+    category:firstText(input.category,input.documentCategory,input.document_category,'other'),
     status:firstText(input.status,'reference'),
     source:firstText(input.sourceLabel,input.source,sourceType),
     sourceType,
@@ -126,6 +128,7 @@ function preparedArtifactDocuments(runs=[]){
 function memoryDocuments(memoryItems=[]){
   return safeArray(memoryItems).filter(item=>{
     const meta=jsonValue(item.metadata||item.metadataJson||item.metadata_json,{});
+    if(documentLooksLikeCalendarInvite({...item,...meta}))return false;
     return DOCUMENT_KIND_RE.test([item.kind,item.type,item.title,item.summary,meta.source,meta.docType,meta.uploadedVia,meta.fileName].join(' '));
   }).map(item=>{
     const meta=jsonValue(item.metadata||item.metadataJson||item.metadata_json,{});
@@ -134,6 +137,7 @@ function memoryDocuments(memoryItems=[]){
       sourceId:item.id,
       title:firstText(meta.title,meta.fileName,item.title,item.summary,'Uploaded document'),
       type:firstText(meta.docType,item.kind,item.type,'document'),
+      documentCategory:firstText(meta.documentCategory,meta.document_category,'other'),
       status:'reference',
       source:firstText(meta.source,meta.uploadedVia,'VAL memory'),
       sourceType:firstText(meta.source,meta.uploadedVia,'val_memory_document'),
@@ -159,6 +163,7 @@ function projectProfileDocuments(projectProfiles=[]){
     const intake=meta.intake||{};
     const rows=[];
     for(const file of safeArray(meta.uploadedFiles)){
+      if(documentLooksLikeCalendarInvite(file))continue;
       rows.push(documentRecord({
         id:`project-file:${projectId}:${file.id||file.fileName}`,
         sourceId:file.id||file.fileName,
@@ -203,8 +208,22 @@ function projectProfileDocuments(projectProfiles=[]){
 function emailAttachmentDocuments(messages=[]){
   return safeArray(messages).flatMap(message=>{
     const payload=jsonValue(message.payloadJson||message.payload_json||message.payload,{});
-    const attachments=safeArray(message.attachments||message.attachmentsJson||message.attachments_json||payload.attachments);
-    return attachments.map((attachment,index)=>documentRecord({
+    const raw=jsonValue(message.rawJson||message.raw_json||message.raw,{});
+    const rawPayload=jsonValue(raw.payloadJson||raw.payload_json||raw.payload,{});
+    const attachments=safeArray(message.attachments)
+      .concat(safeArray(message.attachmentsJson||message.attachments_json))
+      .concat(safeArray(payload.attachments))
+      .concat(safeArray(raw.attachments))
+      .concat(safeArray(raw.attachmentsJson||raw.attachments_json))
+      .concat(safeArray(rawPayload.attachments));
+    const seen=new Set();
+    return attachments.filter(attachment=>{
+      if(documentLooksLikeCalendarInvite(attachment))return false;
+      const key=firstText(attachment.id,attachment.attachmentId,attachment.filename,attachment.name,attachment.title);
+      if(!key||seen.has(key))return false;
+      seen.add(key);
+      return true;
+    }).map((attachment,index)=>documentRecord({
       id:`email-attachment:${message.messageId||message.message_id||message.id}:${attachment.id||attachment.filename||index}`,
       sourceId:message.messageId||message.message_id||message.id,
       title:attachment.filename||attachment.name||'Email attachment',
@@ -212,8 +231,8 @@ function emailAttachmentDocuments(messages=[]){
       status:'needs_review',
       source:'Email attachment',
       sourceType:'email_attachment',
-      relationship:firstText(message.fromName,message.from?.name,message.fromEmail,message.from?.email),
-      sourceUrl:attachment.url||attachment.webUrl||'',
+      relationship:firstText(message.fromName,message.from?.name,message.senderJson?.name,message.sender_json?.name,message.fromEmail,message.from?.email,message.senderJson?.email,message.sender_json?.email),
+      sourceUrl:attachment.url||attachment.webUrl||message.webLink||message.web_link||'',
       body:firstText(attachment.text,attachment.summary,message.subject),
       createdAt:message.receivedAt||message.createdAt||message.created_at,
       updatedAt:message.updatedAt||message.updated_at,
@@ -242,10 +261,61 @@ function googleDocDocuments(files=[]){
   }));
 }
 
+function sourceProcessingRecordDocuments(records=[]){
+  return safeArray(records).flatMap(record=>{
+    const sourceReceipt=jsonValue(record.sourceReceiptJson||record.source_receipt_json,{});
+    const witnessObservations=safeArray(jsonValue(record.witnessObservationsJson||record.witness_observations_json,[]));
+    const metadata=jsonValue(record.metadataJson||record.metadata_json,{});
+    const relationship=sourceReceipt.relationship||metadata.relationship||{};
+    const relationshipName=firstText(relationship.name,relationship.displayName,relationship.email);
+    const sourceType=firstText(record.sourceType,record.source_type,sourceReceipt.sourceType,sourceReceipt.source_type,'source_processing_record');
+    const sourceId=firstText(record.sourceId,record.source_id,sourceReceipt.sourceId,sourceReceipt.source_id,record.id);
+    const sourceTitle=firstText(record.sourceTitle,record.source_title,sourceReceipt.sourceTitle,sourceReceipt.source_title,'Relationship document email');
+    const status=firstText(record.status,'processed');
+    const projectName=firstText(metadata.projectName,metadata.project_name,metadata.project?.name,metadata.whatValDidReceipt?.source?.projectName);
+    const documents=witnessObservations.flatMap(obs=>safeArray(obs.documents))
+      .concat(safeArray(sourceReceipt.documents))
+      .concat(safeArray(metadata.documents));
+    const seen=new Set();
+    return documents.filter(doc=>{
+      if(documentLooksLikeCalendarInvite(doc))return false;
+      const key=firstText(doc.sourceId,doc.source_id,doc.id,doc.title,doc.filename,doc.name);
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    }).map((doc,index)=>documentRecord({
+      id:`source-processing:${record.id}:${firstText(doc.sourceId,doc.source_id,doc.id,doc.title,index)}`,
+      sourceId:firstText(doc.sourceId,doc.source_id,doc.id,sourceId),
+      title:firstText(doc.title,doc.filename,doc.fileName,doc.name,sourceTitle),
+      type:firstText(doc.type,doc.kind,doc.mimeType,doc.contentType,'source_processing_document'),
+      status:status==='no_action'?'source_only':'needs_review',
+      source:'Source-processing document',
+      sourceType:firstText(doc.sourceType,doc.source_type,'source_processing_document'),
+      relationship:relationshipName,
+      relationshipLinks:relationshipName?[{
+        id:firstText(relationship.id,relationship.profileKey,relationship.email,relationshipName),
+        name:relationshipName,
+        email:firstText(relationship.email)
+      }]:[],
+      project:projectName,
+      projectLinks:projectName?[{id:stableKey(projectName),name:projectName}]:[],
+      sourceUrl:firstText(doc.sourceUrl,doc.url,doc.webUrl,doc.webViewLink,sourceReceipt.webLink,sourceReceipt.sourceUrl),
+      body:firstText(doc.text,doc.rawText,doc.summary,sourceTitle),
+      summary:firstText(doc.summary,sourceTitle),
+      createdAt:firstText(record.createdAt,record.created_at,sourceReceipt.receivedAt,sourceReceipt.received_at),
+      updatedAt:firstText(record.updatedAt,record.updated_at,record.createdAt,record.created_at),
+      referenceUse:'Use this document as source evidence for the linked relationship, project suggestion, or project dossier.',
+      needs:'Review the document context before approving a project, extracting obligations, or taking external action.',
+      sourceRefs:[{source_type:sourceType,source_id:sourceId,quote_or_summary:sourceTitle,confidence:0.82}],
+      raw:{sourceProcessingRecordId:record.id,document:doc,whatValDidReceipt:metadata.whatValDidReceipt||metadata.sourceProcessingReceipt||null}
+    }));
+  });
+}
+
 function dedupeDocuments(rows=[]){
   const byId=new Map();
   for(const row of rows){
     if(!row||!row.id)continue;
+    if(documentLooksLikeCalendarInvite(row))continue;
     if(!byId.has(row.id))byId.set(row.id,row);
   }
   return [...byId.values()].sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||a.title.localeCompare(b.title));
@@ -273,6 +343,8 @@ function summaryFor(documents=[]){
 }
 
 function createValDocumentsService({
+  dbQuery=null,
+  hasPg=()=>false,
   getStore=()=>({}),
   listDrafts=null,
   listTranscriptRuns=null,
@@ -284,7 +356,7 @@ function createValDocumentsService({
 }={}){
   function store(){
     const s=getStore()||{};
-    for(const key of ['drafts','transcriptIntelligenceRuns','memoryItems','emailMessages','relationshipProfiles'])if(!Array.isArray(s[key]))s[key]=[];
+    for(const key of ['drafts','transcriptIntelligenceRuns','memoryItems','emailMessages','relationshipProfiles','sourceProcessingRecords'])if(!Array.isArray(s[key]))s[key]=[];
     return s;
   }
   async function loadDrafts(){
@@ -303,9 +375,65 @@ function createValDocumentsService({
     if(typeof listProjectProfiles==='function')return listProjectProfiles({limit:200}).catch(()=>[]);
     return store().relationshipProfiles.filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
+  async function loadSourceProcessingRecords(unknowns=[]){
+    if(hasPg()&&typeof dbQuery==='function'){
+      const result=await dbQuery('select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit 200',[tenantId(),userId()]).catch(error=>{
+        unknowns.push({source:'source_processing_records',scope:'current_user',reason:error.message});
+        return {rows:[]};
+      });
+      if((result.rows||[]).length)return result.rows||[];
+      const tenantResult=await dbQuery('select * from source_processing_records where tenant_id=$1 order by created_at desc limit 200',[tenantId()]).catch(error=>{
+        unknowns.push({source:'source_processing_records',scope:'tenant',reason:error.message});
+        return {rows:[]};
+      });
+      return tenantResult.rows||[];
+    }
+    return store().sourceProcessingRecords.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
+  }
+  async function loadEmailMessages(unknowns=[]){
+    if(hasPg()&&typeof dbQuery==='function'){
+      const sql = `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
+           from email_messages
+          where tenant_id=$1
+          order by coalesce(received_at,sent_at,created_at) desc
+          limit 200`;
+      const mapRow = row => ({
+        id:row.id,
+        provider:row.provider,
+        messageId:row.message_id,
+        threadId:row.thread_id,
+        senderJson:jsonValue(row.sender_json,{}),
+        subject:row.subject||'',
+        bodyPreview:row.body_preview||row.snippet||'',
+        hasAttachments:!!row.has_attachments,
+        webLink:row.web_link||'',
+        receivedAt:row.received_at?.toISOString?.()||row.received_at||'',
+        sentAt:row.sent_at?.toISOString?.()||row.sent_at||'',
+        rawJson:jsonValue(row.raw_json,{})
+      });
+      const result=await dbQuery(
+        `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
+           from email_messages
+          where tenant_id=$1 and user_id=$2
+          order by coalesce(received_at,sent_at,created_at) desc
+          limit 200`,
+        [tenantId(),userId()]
+      ).catch(error=>{
+        unknowns.push({source:'email_messages',scope:'current_user',reason:error.message});
+        return {rows:[]};
+      });
+      if((result.rows||[]).length)return (result.rows||[]).map(mapRow);
+      const tenantResult=await dbQuery(sql,[tenantId()]).catch(error=>{
+        unknowns.push({source:'email_messages',scope:'tenant',reason:error.message});
+        return {rows:[]};
+      });
+      return (tenantResult.rows||[]).map(mapRow);
+    }
+    return store().emailMessages.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
+  }
   async function list({q='',relationship='',project='',limit=120,includeGoogle=false}={}){
     const unknowns=[];
-    const [drafts,runs,memory,projects] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects()]);
+    const [drafts,runs,memory,projects,sourceProcessingRecords,emailMessages] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords(unknowns),loadEmailMessages(unknowns)]);
     let google=[];
     if(includeGoogle&&typeof searchGoogleDocs==='function'&&(q||relationship||project)){
       try{google=await searchGoogleDocs(q||relationship||project,8);}catch(e){unknowns.push({source:'google_docs',reason:e.message});}
@@ -317,12 +445,13 @@ function createValDocumentsService({
         .concat(preparedArtifactDocuments(runs))
         .concat(memoryDocuments(memory))
         .concat(projectProfileDocuments(projects))
-        .concat(emailAttachmentDocuments(store().emailMessages))
+        .concat(emailAttachmentDocuments(emailMessages))
+        .concat(sourceProcessingRecordDocuments(sourceProcessingRecords))
         .concat(googleDocDocuments(google))
     );
     const filtered=rows.filter(doc=>documentMatches(doc,{q,relationship,project}));
     const capped=filtered.slice(0,Math.max(1,Math.min(Number(limit)||120,240)));
-    return {ok:true,documents:capped,summary:summaryFor(filtered),count:capped.length,totalMatches:filtered.length,source:'val_documents_index',unknowns,empty:capped.length===0};
+    return {ok:true,documents:capped,summary:summaryFor(filtered),count:capped.length,totalMatches:filtered.length,source:'val_documents_index',sourceCounts:{drafts:drafts.length,runs:runs.length,memory:memory.length,projects:projects.length,sourceProcessingRecords:sourceProcessingRecords.length,emailMessages:emailMessages.length,google:google.length},unknowns,empty:capped.length===0};
   }
   async function get(id){
     return (await list({limit:240})).documents.find(doc=>String(doc.id)===String(id))||null;
@@ -331,7 +460,7 @@ function createValDocumentsService({
     const result=await list({relationship,project,limit});
     return {...result,referenceRule:'VAL must use linked documents as source evidence for relationship and project judgment.'};
   }
-  return {list,get,referenceFor,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments};
+  return {list,get,referenceFor,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments};
 }
 
-module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,documentMatches,summaryFor};
+module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments,documentMatches,summaryFor,documentLooksLikeCalendarInvite};

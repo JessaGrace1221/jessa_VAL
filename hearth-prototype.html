@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=home-witness-evidence-20260710">
+<link rel="stylesheet" href="./hearth-prototype.css?v=transcript-ready-send-20260713">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -184,7 +184,7 @@
           <small>Network value and introductions</small>
         </button>
         <button type="button" class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail">
-          <span>Projects</span>
+          <span>Project Managers</span>
           <small>Dossiers, momentum, decisions</small>
         </button>
         <button type="button" class="drawer-link timeline-drawer-link" data-drawer-tone="olive-blush" aria-expanded="false" aria-controls="timeline-detail">
@@ -263,7 +263,10 @@
           <section class="document-library" aria-label="Documents list">
             <div class="timeline-status-header">
               <span>Library</span>
-              <strong data-document-count>Checking documents</strong>
+              <div class="document-library-controls">
+                <strong data-document-count>Checking documents</strong>
+                <button type="button" data-document-intake-scan>Scan Gmail</button>
+              </div>
             </div>
             <div class="document-search-grid" aria-label="Document search">
               <label>
@@ -317,104 +320,77 @@
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">Stewardship</p>
-            <h3 data-relationship-field="name">Aric Soyring</h3>
-            <p>Your network is one of your greatest assets. Stewardship is how you care for it. VAL looks for ways to create value, strengthen relationships, prepare meaningful follow-ups, and connect people who can genuinely help one another.</p>
+            <h3>Who should I introduce, and why?</h3>
+            <p>Stewardship helps you make the right introductions by understanding what people need, what they can offer, and whether the reason is strong enough to draft.</p>
           </div>
           <button type="button" class="close-relationship-detail">Close</button>
         </div>
         <div class="relationship-folder-rail" aria-label="Pinned relationships" hidden></div>
-        <div class="relationship-index-tools" aria-label="Relationship index tools">
-          <label>
-            <span>Find</span>
-            <input type="search" data-relationship-search placeholder="Name, company, signal" autocomplete="off">
-          </label>
-          <label>
-            <span>Sort</span>
-            <select data-relationship-sort>
-              <option value="attention">Attention first</option>
-              <option value="warmest">Warmest</option>
-              <option value="changed">Recently changed</option>
-              <option value="alpha">A-Z</option>
-            </select>
-          </label>
-          <div class="relationship-state-filters" aria-label="Relationship state filters">
-            <button type="button" class="active" data-relationship-state-filter="all">All</button>
-            <button type="button" data-relationship-state-filter="needs_attention">Needs attention</button>
-            <button type="button" data-relationship-state-filter="warm">Warm</button>
-            <button type="button" data-relationship-state-filter="strategic">Strategic</button>
-            <button type="button" data-relationship-state-filter="new">New</button>
-            <button type="button" data-relationship-state-filter="waiting">Waiting</button>
-          </div>
-          <p class="relationship-index-source" data-relationship-index-source>Local preview · canonical index will appear when available</p>
+        <div class="relationship-intro-tabs" aria-label="Stewardship introduction areas">
+          <button type="button" class="active" data-stewardship-view="suggested">Suggested Introductions</button>
+          <button type="button" data-stewardship-view="create">Create Introduction</button>
+          <button type="button" data-stewardship-view="network">Network</button>
         </div>
-        <div class="relationship-rolodex" data-relationship-rolodex aria-label="All people"></div>
-        <div class="relationship-file relationship-dossier">
-          <section class="relationship-identity relationship-dossier-layer">
-            <div class="relationship-portrait" aria-hidden="true" data-relationship-field="initials">AS</div>
-            <div class="relationship-identity-main">
-              <span>Identity</span>
-              <strong data-relationship-field="role">Strategic Partner</strong>
-              <p data-relationship-field="identity">Entrepreneur · Strategist · Idea to momentum</p>
-              <small data-relationship-field="contact">Acme Ventures · Minneapolis, MN · aric@acmeventures.com</small>
-              <div class="relationship-section-actions" data-relationship-section-actions="identity"></div>
-            </div>
-            <aside class="relationship-identity-card">
-              <span>Quick Facts</span>
-              <ul data-relationship-list="keyFacts"></ul>
-            </aside>
-          </section>
-          <section class="relationship-dossier-layer stewardship-network-map" aria-label="Stewardship network map">
+        <p class="relationship-index-source" data-relationship-index-source>Network will appear when relationship context is available.</p>
+        <div class="relationship-v1-panel active" data-stewardship-panel="suggested">
+          <section class="relationship-dossier-layer stewardship-intro-section">
             <div class="relationship-layer-heading">
-              <span>Network Stewardship</span>
-              <h4>Who needs to meet whom, and why</h4>
+              <span>Suggested Introductions</span>
+              <h4>Introductions worth reviewing</h4>
             </div>
-            <div class="stewardship-network-grid">
-              <article class="stewardship-network-card">
-                <span data-relationship-field="stewardshipAboutLabel">Who this person is</span>
-                <strong data-relationship-field="stewardshipAboutTitle">What they do</strong>
-                <p data-relationship-field="stewardshipAbout">VAL will show the simplest useful context here.</p>
-              </article>
-              <article class="stewardship-network-card">
-                <span data-relationship-field="stewardshipValueLabel">Who needs this person</span>
-                <strong data-relationship-field="stewardshipValueTitle">They have what these people need</strong>
-                <ul data-relationship-list="peopleWhoNeedThem"></ul>
-              </article>
-              <article class="stewardship-network-card">
-                <span data-relationship-field="stewardshipNeedLabel">Who this person should meet</span>
-                <strong data-relationship-field="stewardshipNeedTitle">These people have what they need</strong>
-                <ul data-relationship-list="peopleTheyShouldMeet"></ul>
+            <div class="stewardship-suggested-list" data-stewardship-suggestions></div>
+          </section>
+        </div>
+        <div class="relationship-v1-panel" data-stewardship-panel="create" hidden>
+          <section class="relationship-dossier-layer stewardship-intro-section">
+            <div class="relationship-layer-heading">
+              <span>Create Introduction</span>
+              <h4>Pick two people and let VAL compare the packets</h4>
+            </div>
+            <div class="stewardship-create-grid">
+              <label>
+                <span>Person A</span>
+                <select data-stewardship-person-a></select>
+              </label>
+              <label>
+                <span>Person B</span>
+                <select data-stewardship-person-b></select>
+              </label>
+            </div>
+            <div class="stewardship-comparison" data-stewardship-comparison></div>
+          </section>
+        </div>
+        <div class="relationship-v1-panel" data-stewardship-panel="network" hidden>
+          <section class="relationship-dossier-layer stewardship-network-map" aria-label="Network introduction discovery">
+            <div class="relationship-layer-heading">
+              <span>Network</span>
+              <h4>Search, select, and see best matches</h4>
+            </div>
+            <label class="stewardship-network-search">
+              <span>Search Network</span>
+              <input type="search" data-relationship-search placeholder="Name, organization, need, offer" autocomplete="off">
+            </label>
+            <div class="stewardship-network-layout">
+              <div class="relationship-rolodex" data-relationship-rolodex aria-label="Network"></div>
+              <article class="stewardship-network-detail" data-stewardship-network-detail>
+                <span>Select a person</span>
+                <p>VAL will show needs, offers, evidence, and best matches when you choose someone from the Network.</p>
               </article>
             </div>
           </section>
-          <div class="relationship-actions" aria-label="Executive relationship actions">
-            <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
-          </div>
-          <div class="relationship-project-panel" aria-label="Linked projects">
-            <div class="relationship-project-panel-header">
-              <span>Linked Projects</span>
-              <strong data-relationship-project-count>No linked projects yet</strong>
-            </div>
-            <div class="relationship-project-grid" data-relationship-project-panel></div>
-          </div>
-          <div class="relationship-document-panel" aria-label="Linked documents">
-            <div class="relationship-project-panel-header">
-              <span>Linked Documents</span>
-              <strong data-relationship-document-count>No linked documents yet</strong>
-            </div>
-            <div class="relationship-document-grid" data-relationship-document-panel></div>
-          </div>
         </div>
       </div>
       <div class="source-detail project-detail" id="project-detail" aria-hidden="true">
         <div class="source-detail-header">
           <div>
-            <p class="drawer-kicker">Project Dossiers</p>
-            <h3 data-project-title>Projects</h3>
-            <p data-project-subtitle>Projects will appear here when there is enough connected work to manage clearly.</p>
+            <p class="drawer-kicker">Project Managers</p>
+            <h3 data-project-title>Project Managers</h3>
+            <p data-project-subtitle>Project Managers will appear here when there is enough connected work to manage clearly.</p>
           </div>
           <button type="button" class="close-project-detail">Close</button>
         </div>
         <p class="project-index-source" data-project-index-source>No active projects yet.</p>
+        <section class="project-suggestions" data-project-suggestions aria-label="Suggested projects from relationship documents" hidden></section>
         <button type="button" class="project-create-toggle" data-project-create-toggle aria-expanded="false">New project</button>
         <form class="project-create-form" data-project-create-form enctype="multipart/form-data" hidden>
           <label>
@@ -462,7 +438,7 @@
           </div>
           <p class="project-create-status" data-project-create-status></p>
         </form>
-        <div class="project-rolodex" data-project-rolodex aria-label="Projects"></div>
+        <div class="project-rolodex" data-project-rolodex aria-label="Project Managers"></div>
         <div class="project-file project-manager-dossier" data-project-manager-profile aria-live="polite"></div>
       </div>
       <div class="source-detail timeline-detail" id="timeline-detail" aria-hidden="true">
@@ -478,15 +454,9 @@
           <section class="transcript-index" aria-label="Transcript list">
             <div class="timeline-status-header">
               <span>Conversations</span>
-              <strong data-transcript-count>Loading transcripts</strong>
-            </div>
-            <div class="transcript-import-actions" aria-label="VAL transcript import">
-              <button type="button" class="transcript-import-krisp" data-transcript-import-krisp>Import recent VAL meetings</button>
-              <div class="transcript-import-direct" aria-label="Import one VAL transcript">
-                <input type="text" data-transcript-import-krisp-id placeholder="Paste VAL transcript link or ID" autocomplete="off" spellcheck="false">
-                <button type="button" data-transcript-import-krisp-direct>Import</button>
-              </div>
-              <p data-transcript-import-status></p>
+              <button type="button" class="timeline-action-index-link" data-transcript-action-index>
+                <strong data-transcript-count>Loading transcripts</strong>
+              </button>
             </div>
             <div class="transcript-list" data-transcript-list></div>
           </section>
@@ -720,6 +690,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=home-witness-evidence-20260710"></script>
+<script src="./hearth-prototype.js?v=transcript-ready-send-20260713"></script>
 </body>
 </html>

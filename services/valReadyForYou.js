@@ -179,7 +179,17 @@ function internalDraftCandidate(draft,uuid,scope){
     approvalPolicy:'approval_required',
     representationRisk:'medium',
     actionsJson:[],
-    metadataJson:{source:sourceName,draftId:draft.id,noExternalAction:true},
+    metadataJson:{
+      source:sourceName,
+      draftId:draft.id,
+      noExternalAction:true,
+      preparedArtifactKind:source.preparedArtifactKind||source.prepared_artifact_kind||source.preparedArtifact?.kind||source.prepared_artifact?.kind||'',
+      preparedArtifact:source.preparedArtifact||source.prepared_artifact||{},
+      canValAct:source.canValAct||source.can_val_act||'',
+      executionPath:source.executionPath||source.execution_path||'',
+      recipientEmail:source.recipientEmail||source.recipient_email||'',
+      transcriptId:source.transcriptId||source.transcript_id||''
+    },
     decisionJson:{},
     createdAt:draft.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString(),
@@ -475,6 +485,7 @@ function createValReadyForYouService({
     listItems,
     listItemsWithReceipts,
     buildQueue,
+    saveItem,
     approve:(id,decision={})=>updateState(id,{status:'approved',decision:{...decision,external_action:false}}),
     reject:(id,decision={})=>updateState(id,{status:'rejected',decision:{...decision,external_action:false}}),
     snooze:(id,{until='',minutes=60,reason=''}={})=>{

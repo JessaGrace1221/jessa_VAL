@@ -6,6 +6,10 @@ The Stewardship drawer replaces the user-facing name "Relationships." Internal c
 
 This document applies the constitutional reasoning architecture in [VAL_EXECUTIVE_REASONING_ARCHITECTURE.md](./VAL_EXECUTIVE_REASONING_ARCHITECTURE.md) to Stewardship.
 
+For the practical packet admission, maturity, sorting, and executive display contract, read [VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md](./VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md).
+
+For the current decision-engine authority, read [VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md](./VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md). For the implementation audit that must be resolved before more runtime work, read [VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md](./VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md).
+
 ## Core Thesis
 
 VAL users are relationship builders.
@@ -41,14 +45,164 @@ No approval gate, no external action.
 Source evidence
   -> Witness
   -> Executive relevance
+  -> Person packet intake / update
   -> Stewardship Round Table
-  -> Stewardship Packet
+  -> Stewardship match packet
   -> Stewardship custom fields
   -> Stewardship drawer
   -> Prepared introduction / follow-up packet
   -> Leverage card
   -> User approval
 ```
+
+## Person Packets First
+
+Stewardship starts with packets, packets, packets.
+
+Every real relationship should have a living person packet. The packet is not a CRM profile and it is not the final Stewardship recommendation. It is the durable, source-backed understanding VAL uses later when deciding who should meet whom.
+
+A person packet answers three primary questions:
+
+1. Who is this person?
+2. What does this person need?
+3. What does this person offer?
+
+It should not permanently decide "who needs this person" or "who this person needs." Those are Stewardship matching decisions made later by comparing many person packets against each other, current projects, transcripts, email context, calendar context, documents, and CRM context.
+
+### Onboarding Packet Creation
+
+During VAL onboarding, when the user connects Gmail or Outlook, VAL should review roughly 90 days of inbox, sent, and CC'd email as relationship evidence.
+
+That scan should:
+
+- identify important people already in the user's world
+- create initial person packets for real relationships
+- preserve why each person was noticed
+- mark thin packets as incomplete instead of discarding them
+- distinguish active Executive Inbox material from broader VAL context
+
+Read/replied-to emails do not belong in the active Executive Inbox queue, but they are essential relationship evidence for onboarding and Stewardship.
+
+### Ongoing Packet Creation
+
+VAL must continue creating packets after onboarding.
+
+The user may build dozens of new relationships each month. A new relationship should not be treated as less important simply because it appeared after the first onboarding scan.
+
+Create or update a person packet when VAL sees a meaningful new relationship signal:
+
+- a new email thread with a real person
+- a sent email to a new person
+- a person CC'd into a meaningful conversation
+- a calendar meeting with an external attendee
+- a transcript participant or repeated transcript mention
+- a CRM contact or opportunity link
+- an introduction email
+- a document, project, or task connected to a person
+- a user correction, VIP mark, or "watch this person" instruction
+
+Thin packets are allowed. Early packets should hold name, email/domain, source, first meaningful signal, possible role/company, relationship origin, inferred relevance, confidence, and unknown needs/offers. Importance can emerge over time.
+
+The rule is:
+
+```text
+Not every new contact is urgent.
+Every new relationship deserves a place to accumulate meaning.
+```
+
+## Person Packet
+
+The person packet is the reusable relationship understanding layer. It should be boring, traceable, and append-friendly.
+
+```json
+{
+  "packet_type": "person_packet",
+  "person": {
+    "person_id": "",
+    "name": "",
+    "email_addresses": [],
+    "role": "",
+    "company_or_context": "",
+    "crm_contact_id": "",
+    "identity_status": "linked|needs_review|duplicate|unknown"
+  },
+  "relationship_origin": {
+    "first_seen_at": "",
+    "first_meaningful_signal": "",
+    "source_receipts": []
+  },
+  "who_this_person_is": {
+    "summary": "",
+    "relationship_to_user": "",
+    "current_context": "",
+    "source_receipts": [],
+    "confidence": "high|medium|low"
+  },
+  "what_this_person_needs": [
+    {
+      "need": "",
+      "why_it_matters": "",
+      "timing": "current|emerging|stale|unknown",
+      "source_receipts": [],
+      "confidence": "high|medium|low"
+    }
+  ],
+  "what_this_person_offers": [
+    {
+      "offer": "",
+      "why_it_matters": "",
+      "source_receipts": [],
+      "confidence": "high|medium|low"
+    }
+  ],
+  "relationship_state": {
+    "status": "new|active|building_trust|strategic|dormant|needs_care|unknown",
+    "last_meaningful_signal_at": "",
+    "open_loops": [],
+    "source_receipts": []
+  },
+  "evidence": {
+    "email_receipts": [],
+    "sent_email_receipts": [],
+    "cc_receipts": [],
+    "transcript_receipts": [],
+    "calendar_receipts": [],
+    "project_receipts": [],
+    "document_receipts": [],
+    "crm_receipts": [],
+    "user_confirmed_receipts": []
+  },
+  "packet_state": {
+    "maturity": "thin|developing|usable|strong",
+    "needs_review": false,
+    "missing_variables": [],
+    "updated_at": ""
+  }
+}
+```
+
+## Stewardship Matching Layer
+
+The Stewardship Round Table compares person packets. It does not treat a single person packet as the whole answer.
+
+For each possible match, VAL asks:
+
+1. Does Person A need something Person B offers?
+2. Does Person B need something Person A offers?
+3. Is there recent evidence that makes the match timely?
+4. Is the relationship permission and trust level appropriate?
+5. Would the proposed move create real value for the relationship?
+6. Is the confidence high enough to draft, or should VAL only watch/ask?
+
+The output of this layer is a stewardship match packet or stewardship move packet, not a mutation of the person packet into fixed truth.
+
+Stewardship should be able to say:
+
+- who needs this person because this person offers something useful
+- who this person should meet because that person offers something they need
+- why the match matters now
+- whether VAL should prepare a draft, ask a clarifying question, watch quietly, or do nothing
+- Prepared introduction drafts feed the Home Leverage card only when the stewardship move type is introduction
 
 ## Stewardship Round Table
 
@@ -116,6 +270,7 @@ Answers:
 - Why is the match useful now?
 - Is there enough evidence and relationship permission to prepare an introduction?
 - Is this only a person-to-person match, or is an ecosystem/network cluster forming?
+- If the best stewardship move is not an introduction, what is it?
 
 Network clusters are a future-facing layer. VAL should leave room to notice them without forcing a complex visualization today.
 
@@ -138,18 +293,18 @@ Answers:
 
 ## Stewardship Packet
 
-The packet is the structured output of the round table. It should be boring, traceable, and machine-readable.
+Legacy note: older Hearth contracts use `Stewardship Packet` as the umbrella term. In the current architecture, the umbrella contains many `person_packet` records plus stewardship commitment, opportunity, and move records. Do not collapse those layers.
+
+## Stewardship Move Packet
+
+The move packet is the structured output of the Stewardship Round Table. It should be boring, traceable, and machine-readable.
 
 ```json
 {
-  "packet_type": "stewardship_packet",
-  "person": {
-    "name": "",
-    "role": "",
-    "company_or_context": "",
-    "crm_contact_id": "",
-    "identity_status": "linked|needs_review|duplicate|unknown"
-  },
+  "packet_type": "stewardship_move_packet",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
+  "focus_person_packet_id": "",
+  "compared_person_packet_ids": [],
   "stewardship_status": {
     "status": "healthy|drifting|unbalanced|strengthening|reconnect_now|needs_care|unknown",
     "narrative": "",
@@ -171,17 +326,17 @@ The packet is the structured output of the round table. It should be boring, tra
   ],
   "connected_work": [],
   "recent_touchpoints": [],
-  "ways_they_create_value": [
+  "what_this_person_offers": [
     {
-      "value": "",
+      "offer": "",
       "why_it_matters": "",
       "source_receipts": [],
       "confidence": "high|medium|low"
     }
   ],
-  "opportunities_to_help": [
+  "what_this_person_needs": [
     {
-      "opportunity": "",
+      "need": "",
       "why_it_matters": "",
       "source_receipts": [],
       "confidence": "high|medium|low"
@@ -229,8 +384,8 @@ The packet is the structured output of the round table. It should be boring, tra
     "why_it_matters_now": "",
     "overview": "",
     "relationship_history": [],
-    "ways_they_create_value": [],
-    "opportunities_to_help": [],
+    "what_this_person_offers": [],
+    "what_this_person_needs": [],
     "matches": [],
     "prepared_work": []
   },
@@ -256,8 +411,12 @@ These fields are the durable shape every future VAL should follow, even if the C
 - `stewardship_relationship_history`
 - `stewardship_connected_work`
 - `stewardship_recent_touchpoints`
-- `stewardship_ways_they_create_value`
-- `stewardship_opportunities_to_help`
+- `stewardship_person_packet_id`
+- `stewardship_who_this_person_is`
+- `stewardship_what_this_person_needs`
+- `stewardship_what_this_person_offers`
+- `stewardship_packet_maturity`
+- `stewardship_packet_last_meaningful_signal_at`
 - `stewardship_people_they_should_meet`
 - `stewardship_people_who_need_them`
 - `stewardship_network_clusters`
@@ -288,11 +447,17 @@ Who Mark is, what he owns/leads, and why he is in VAL.
 Relationship History
 The major chapters of the relationship, not every email or transcript.
 
-Ways Mark Creates Value
+What Mark Offers
 Specific relationship value Mark can bring to others.
 
-Opportunities to Help
-Explicit asks, hidden friction, or useful support VAL notices before it becomes urgent.
+What Mark Needs
+Explicit asks, hidden friction, current gaps, or useful support VAL notices before it becomes urgent.
+
+Legacy copy mapping:
+
+- `Ways They Create Value` now maps to `What They Offer`.
+- `Opportunities to Help` now maps to `What They Need`.
+- A `network cluster` is still valid behind the scenes when several person packets point to an emerging ecosystem.
 
 Mark Should Meet
 People in the user's network who may help Mark.
@@ -319,17 +484,19 @@ The user should not see:
 - repetitive transcript snippets
 - internal phrases like "observed trajectory" or "identity unresolved" unless paired with a clear action
 
-## Introduction Opportunity Packet
+## Stewardship Opportunity Packet
 
-When VAL finds that one person needs what another person can offer, VAL may prepare an introduction packet.
+When VAL finds a source-backed relationship move worth reviewing, VAL may prepare a stewardship opportunity packet. Introduction is one subtype, not the whole product.
 
 ```json
 {
-  "packet_type": "introduction_opportunity_packet",
+  "packet_type": "stewardship_opportunity_packet",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
   "match_direction": "person_needs_mark|mark_needs_person",
   "recipient": "",
   "introduced_person": "",
-  "why_this_match_matters": "",
+  "recommended_move": "",
+  "why_this_move_matters": "",
   "need": "",
   "offer": "",
   "source_receipts": [],
@@ -340,7 +507,7 @@ When VAL finds that one person needs what another person can offer, VAL may prep
 }
 ```
 
-Prepared introduction drafts feed the Home Leverage card because they are work VAL prepared for review.
+Prepared stewardship drafts and review artifacts feed the Home Leverage card because they are work VAL prepared for review.
 
 Nothing sends without explicit user approval.
 
@@ -354,8 +521,8 @@ Use executive-facing language:
 - "Current Understanding"
 - "Why It Matters Now"
 - "Relationship History"
-- "Ways They Create Value"
-- "Opportunities to Help"
+- "What They Offer"
+- "What They Need"
 - "Should Meet"
 - "People Who Need Them"
 - "Prepared Draft"

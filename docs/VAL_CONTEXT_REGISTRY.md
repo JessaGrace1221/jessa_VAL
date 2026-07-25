@@ -60,6 +60,7 @@ Every Intelligence Pass output that updates context should use this shape:
 | `teach_val` | Root durable profile from Teach VAL. | existing/derived |
 | `user` | Identity, preferences, capacity, energy, decision rules. | existing/new |
 | `important_people` | People the user or VAL has identified as important. | derived/new |
+| `person_packets` | Living source-backed packets for every meaningful person or new relationship VAL notices. | new |
 | `projects` | Active projects, blockers, current truth, momentum. | derived/new |
 | `relationships` | Person/org/project relationship memory and status. | existing/derived |
 | `emails` | Current email, thread, sent mail, inbox classification. | existing |
@@ -179,6 +180,8 @@ Dedicated onboarding prompt suite:
 | Relief signals | `{{user.relief_signals}}` | new | array | user feedback, chat, transcript signals | Notice what creates calm or frisson. |
 | Priority rules | `{{user.priority_rules}}` | new/derived | array | Teach VAL, corrections, decisions | Define what counts as high priority. |
 | Approval preferences | `{{user.approval_preferences}}` | new/derived | object | rules, user decisions | Know what can be prepared vs executed. |
+| Calendar booking link | `{{user.calendar_booking_link}}` | new | string | Teach VAL onboarding, user settings, scheduling draft correction | Include as fallback in scheduling replies when suggested times do not work. |
+| Calendar booking confirmation owner | `{{user.calendar_booking_confirmation_owner}}` | new | enum | Teach VAL onboarding, user settings | V1 default: CRM/calendar system sends booking confirmations; VAL should not send duplicate personal confirmation emails for calendar-link bookings. |
 
 ## Important People Variables
 
@@ -195,6 +198,8 @@ The system should store each person separately, expose lists for matching, and e
 | VIP people | `{{important_people.vip}}` | derived/new | array | rules, relationship preferences | Priority boost. |
 | Watched people | `{{important_people.watched}}` | new/derived | array | user/VAL OS | Relationship radar. |
 | Ignored people | `{{important_people.ignored}}` | derived/new | array | rules, user decisions | Lower priority. |
+| User-important people | `{{important_people.user_marked_important}}` | new/derived | array | user decision | Manual promotion into important relationship context. |
+| Suppressed senders | `{{important_people.suppressed_senders}}` | new/derived | array | user decision | Never show emails from these senders unless reversed. |
 
 Person object shape:
 
@@ -213,6 +218,41 @@ Person object shape:
 }
 ```
 
+## Person Packet Variables
+
+Person packets are the durable relationship intake layer for Stewardship. They are created during onboarding from connected source review and updated continuously as new relationships appear.
+
+A person packet should hold who the person is, what they need, and what they offer. It should not permanently decide who needs them or who they need. Those are Stewardship matching decisions made by comparing packets later.
+
+Dedicated Stewardship packet spec:
+
+- [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md)
+
+| Label | Variable | Status | Type | Updated by | Recommended use |
+|---|---|---|---|---|---|
+| Person packet list | `{{person_packets.list}}` | new | array | onboarding scan, relationship intake, source indexer | Broad matching across the network. |
+| By person ID | `{{person_packets.by_person_id}}` | new | object | context indexer | Direct packet lookup. |
+| By email | `{{person_packets.by_email}}` | new | object | email/contact resolver | Create or update packets from inbox, sent, and CC'd mail. |
+| Current person packet | `{{person_packets.current}}` | new/derived | object | event resolver | Focused Stewardship and meeting prep context. |
+| Who this person is | `{{person_packets.current.who_this_person_is}}` | new | object | person packet builder | Identity, role, relationship to user, current context. |
+| What this person needs | `{{person_packets.current.what_this_person_needs}}` | new | array | person packet builder, source review | Needs, gaps, asks, open loops, and current support opportunities. |
+| What this person offers | `{{person_packets.current.what_this_person_offers}}` | new | array | person packet builder, source review | Expertise, access, credibility, network, services, perspective, resources. |
+| Relationship origin | `{{person_packets.current.relationship_origin}}` | new | object | onboarding scan, event intake | First meaningful signal and provenance. |
+| Packet maturity | `{{person_packets.current.packet_state.maturity}}` | new | enum | packet builder | `thin`, `developing`, `usable`, or `strong`. Thin packets are allowed. |
+| Last meaningful signal | `{{person_packets.current.relationship_state.last_meaningful_signal_at}}` | new | datetime | source intake | Freshness for Stewardship timing. |
+| Missing variables | `{{person_packets.current.packet_state.missing_variables}}` | new | array | packet builder | What VAL does not know yet. |
+| Packet evidence | `{{person_packets.current.evidence}}` | new | object | evidence linker | Source receipts from email, sent mail, CCs, transcripts, calendar, projects, documents, CRM, and user confirmations. |
+| New relationship candidates | `{{person_packets.new_relationship_candidates}}` | new | array | email/calendar/transcript/contact intake | People who may need a new packet or identity review. |
+| Stewardship match candidates | `{{person_packets.match_candidates}}` | new/derived | array | Stewardship Round Table | Candidate comparisons between needs and offers. |
+
+Person packet creation rules:
+
+1. Create packets during onboarding from roughly 90 days of inbox, sent, and CC'd email when source access is connected.
+2. Continue creating packets after onboarding whenever a meaningful new relationship signal appears.
+3. Do not discard thin packets. Mark them as thin, source them, and let meaning accumulate.
+4. Do not confuse active Executive Inbox eligibility with relationship evidence eligibility.
+5. Do not make importance final too early. New relationships often become important after more context arrives.
+
 ## Project Variables
 
 Dedicated understanding prompt suite:
@@ -229,9 +269,18 @@ Dedicated understanding prompt suite:
 | Project current truth | `{{projects.current.current_truth}}` | new | string | Intelligence Pass | Best current statement of reality. |
 | Project blockers | `{{projects.current.blockers}}` | new/derived | array | transcripts, email, tasks, CRM | Highest leverage and meeting prep. |
 | Project momentum | `{{projects.current.momentum}}` | new/derived | array | transcripts, email, CRM | Identify leverage. |
+| Project movement items | `{{projects.current.movement_items}}` | new/derived | array | Project Movement Observer | Forward/backward movement, one-line source proof, open-loop status, and follow-up action. |
+| Project movement direction | `{{projects.current.movement.current.direction}}` | new/derived | enum | Project Movement Observer | `forward`, `backward`, or `neutral`. |
+| Project movement source proof | `{{projects.current.movement.current.one_line_source_proof}}` | new/derived | object | source receipt linker | Brief clickable proof for movement, never a long explanation. |
+| Project movement follow-up action | `{{projects.current.movement.current.follow_up_action}}` | new/derived | object | Project Movement Observer | Primary action VAL believes is needed, often `Follow up`. |
+| Project movement receipt | `{{projects.current.movement.current.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL logs or acts on movement. |
+| Source-processing action receipt | `{{source_processing.current.what_val_did_receipt}}` | new/derived | object | source processing spine | Plain-language receipt for what VAL did from an email, document, transcript, calendar event, or no-action source-only decision. |
 | Project risks | `{{projects.current.risks}}` | existing/derived | array | relationship profiles/evidence | Escalation. |
 | Project opportunities | `{{projects.current.opportunities}}` | existing/derived | array | relationship profiles/evidence/CRM | Opportunity detection. |
 | Project open loops | `{{projects.current.open_loops}}` | existing/derived | array | tasks/evidence | Task prioritization. |
+| Project Alignment open loop | `{{projects.current.alignment_open_loop}}` | new/derived | object | Project Manager Round Table | The unresolved loop, if any, that should surface in Home Alignment. |
+| Project Alignment why now | `{{projects.current.alignment_open_loop.why_now}}` | new/derived | string/object | Project Manager Round Table | Why this open loop needs executive attention now. |
+| Project Alignment close action | `{{projects.current.alignment_open_loop.close_action}}` | new/derived | object | Project click contract | The next action VAL believes can close or advance the loop. |
 | Related people | `{{projects.current.people}}` | derived/new | array | evidence/CRM/Teach VAL | Relationship-aware drafting. |
 | Project thirty-second truth | `{{projects.current.thirty_second_truth}}` | new/derived | string | Understanding prompts | Fast re-entry into what matters. |
 | Project one-sentence understanding | `{{projects.current.one_sentence_understanding}}` | new/derived | string | Understanding prompts | Current project truth in one sentence. |
@@ -309,6 +358,8 @@ Dedicated classification prompt suite:
 | From | `{{emails.current.from}}` | existing | object | Gmail/Outlook | Sender matching. |
 | To | `{{emails.current.to}}` | existing | array | Gmail/Outlook | Recipient awareness. |
 | CC | `{{emails.current.cc}}` | existing | array | Gmail/Outlook | Stakeholders. |
+| BCC | `{{emails.current.bcc}}` | new/derived | array | Gmail/Outlook sent mail | Relationship evidence when user sent to a human/contact-like recipient; system/archive destinations should be filtered. |
+| Recipient channels | `{{emails.current.recipient_channels}}` | new/derived | object | email recipient resolver | Normalized To/CC/BCC participants and whether each is human, system, CRM/archive, alias, or unknown. |
 | Date | `{{emails.current.date}}` | existing | datetime | Gmail/Outlook | Freshness. |
 | Snippet | `{{emails.current.snippet}}` | existing | string | Gmail/Outlook | Fast preview. |
 | Body preview | `{{emails.current.body_preview}}` | existing | string | Gmail/Outlook | Classification. |
@@ -332,6 +383,16 @@ Dedicated classification prompt suite:
 | Communication classification | `{{emails.current.communication_classification}}` | new/derived | object | Executive Inbox classification | Conversation-first routing. |
 | Executive meaning | `{{emails.current.executive_meaning}}` | new/derived | array | Executive Inbox classification | Explain why surfaced. |
 | If delayed | `{{emails.current.if_delayed}}` | new/derived | string | Executive Inbox classification | Timing consequence. |
+| Notice lane | `{{emails.current.notice_lane}}` | new/derived | enum | email classifier | Quiet Notices, Executive Inbox, Alignment candidate, Documents, Projects, or suppress. |
+| Notice surface posture | `{{emails.current.notice_surface_posture}}` | new/derived | enum | email classifier | Quiet lower-right control, Alignment escalation, Executive Inbox escalation, or hidden/source-only. |
+| Operational alert type | `{{emails.current.operational_alert_type}}` | new/derived | enum | email classifier | Receipt, invoice, shipping, login_security, two_factor, automated_notification, payment_issue, deadline, service_risk, other. |
+| Payment issue alignment copy | `{{emails.current.payment_issue_alignment_copy}}` | new/derived | object | project manager observer | Project-manager-framed Alignment copy for payment issues. |
+| Finance/project document signal | `{{emails.current.finance_project_document_signal}}` | new/derived | object | document/project observer | Receipt/invoice attachment handling, project finance evidence, suggested project creation. |
+| Project assignment action | `{{emails.current.project_assignment_action}}` | new/derived | object | document/project observer | "Assign this to a project" action with existing project options or new project creation when match is unclear. |
+| Quiet action receipt | `{{emails.current.quiet_action_receipt}}` | new/derived | object | source processing spine | Quiet receipts such as "VAL linked this to Project X" for Notices or email detail. |
+| Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to/CC/BCC, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
+| Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
+| Suppression override evidence | `{{emails.current.suppression_override_evidence}}` | new/derived | array | relationship resolver | Calendar, transcript, sent/replied email, or manual important evidence that can override unsubscribe/bulk suppression. |
 
 ## Email Thread Variables
 
@@ -340,6 +401,9 @@ Dedicated classification prompt suite:
 | Current thread | `{{emails.thread.current}}` | derived/new | object | email event | Focused thread context. |
 | Thread messages | `{{emails.thread.current.messages}}` | new | array | thread fetch | Stop drafting from one snippet. |
 | Thread summary | `{{emails.thread.current.summary}}` | new | string | thread summarizer | Compact prompt context. |
+| Thread participants | `{{emails.thread.current.participants}}` | new/derived | array | thread fetch | Resolve everyone included in the thread, not only the latest sender. |
+| User replied in thread | `{{emails.thread.current.user_replied_in_thread}}` | new/derived | boolean | thread analyzer | Reciprocal relationship evidence for human participants. |
+| Introduction participants | `{{emails.thread.current.introduction_participants}}` | new/derived | array | introduction observer | Three-way introduction relationship admission and context. |
 | Conversation state | `{{emails.thread.current.conversation_state}}` | new | enum | Conversation Context Builder | Know whether waiting/progressing/blocked/complete. |
 | Relationship temperature | `{{emails.thread.current.relationship_temperature}}` | new | enum | Conversation Observer | Warm/cooling/waiting/repairing/sensitive context. |
 | Conversation trajectory | `{{emails.thread.current.conversation_trajectory}}` | new | enum | Conversation Observer | Decision/trust/sale/repair/scheduling/closure. |
@@ -369,6 +433,9 @@ Dedicated prompt suite:
 | Key decisions | `{{transcripts.current.key_decisions}}` | existing | array | transcript summaries | Decision tracking. |
 | Open questions | `{{transcripts.current.open_questions}}` | existing | array | transcript summaries | Follow-up. |
 | Relationship updates | `{{transcripts.current.relationship_updates}}` | existing | array | transcript summaries | Context updates. |
+| Attendee relationship candidates | `{{transcripts.current.attendee_relationship_candidates}}` | new/derived | array | Transcript attendee resolver | Gold-standard relationship packet admission for real human attendees. |
+| Named person candidates | `{{transcripts.current.named_person_candidates}}` | new/derived | array | Transcript entity resolver | Packet update, candidate record, or identity review for named people. |
+| Explicit introduction mentions | `{{transcripts.current.explicit_introduction_mentions}}` | new/derived | array | Transcript introduction observer | Create Leverage/Stewardship introduction opportunities from explicit user intent. |
 | Action items | `{{transcripts.current.action_items}}` | existing/derived | array | transcript tasks/metadata | Task creation. |
 | Capacity and tone context | `{{transcripts.current.capacity_and_tone_context}}` | new/derived | array | Transcript intake | Safer capacity, tone, and relationship judgment. |
 | Emotional context legacy alias | `{{transcripts.current.emotional_context}}` | legacy/new-derived | array | Intelligence Pass | Use `capacity_and_tone_context` in new prompts. |
@@ -392,9 +459,11 @@ Dedicated prompt suite:
 | Recovery time | `{{calendar.recovery_time}}` | new/derived | object | calendar analyzer | Energy planning. |
 | Relevant events | `{{calendar.relevant_events}}` | derived | array | resolver | Email/chat/relationship context. |
 | Attendees today | `{{calendar.today.attendees}}` | derived | array | calendar APIs | Important people matching. |
+| Human attendee candidates | `{{calendar.current_event.human_attendee_candidates}}` | new/derived | array | Attendee Resolver | Create or update relationship packets for real human attendees. |
 | Meeting context | `{{calendar.current_event.meeting_context}}` | new/derived | object | Meeting Context Builder | Purpose, timing, and likely reason for the meeting. |
 | Attendee resolution | `{{calendar.current_event.attendee_resolution}}` | new/derived | object | Attendee Resolver | Match attendees to contacts, CRM, prior emails, transcripts, projects, and enrichment identifiers. |
 | Internal meeting context | `{{calendar.current_event.internal_context}}` | new/derived | object | Internal Context Gatherer | Known relationship, project, CRM, transcript, and email context. |
+| Recurring meeting continuity | `{{calendar.current_event.recurring_meeting_continuity}}` | new/derived | object | Meeting Context Builder | Last meeting, this meeting, open loops, relevant changes, and attendee/project continuity. |
 | External research plan | `{{calendar.current_event.external_research_plan}}` | new/derived | object | External Research Planner | Plan public/API research only when it improves meeting judgment. |
 | Enrichment summary | `{{calendar.current_event.enrichment_summary}}` | new/derived | object | Apollo/Outscraper enrichment planner/summarizer | API-enriched attendee or company context. |
 | Public signals | `{{calendar.current_event.public_signals}}` | new/derived | array | Public Signal Summarizer | Recent public or enriched signals relevant to the meeting. |
@@ -454,6 +523,56 @@ Dedicated prompt suite:
 | CRM task sync plan | `{{crm.task_sync_plan}}` | new/derived | object | CRM Task Sync Planner | Link/create/update/keep task sync recommendation. |
 | CRM opportunity resolution | `{{crm.opportunity.resolution}}` | new/derived | object | CRM Opportunity Resolver | Relationship value, opportunity value, lifecycle/stage candidates. |
 | CRM proposal/invoice plan | `{{crm.document_plan}}` | new/derived | object | Proposal / Invoice Planner | Proposal, invoice, estimate, quote, or contract prep plan. |
+| Project Manager page | `{{projects.current.project_manager_page}}` | new/derived | object | Project Manager Round Table | Full-page project experience: header, charter, constraints, phase, workstreams, stakeholders, risk, actions, prepared work, activity, next actions, finance summary. |
+| Project Manager current focus | `{{projects.current.project_manager_current_focus}}` | new/derived | object | Project Manager Round Table | Dynamic top module that shows what the Project Manager is handling right now. |
+| Project Manager focus module | `{{projects.current.project_manager_focus_module}}` | new/derived | enum/object | Project Manager Round Table | Critical Project Issue, Needs Your Judgment, Prepared For You, Today's Reprioritization, Project Movement, Execution Adjustment, Project Reset, or Quietly Watching. |
+| Project Manager focus receipt | `{{projects.current.project_manager_focus_receipt}}` | new/derived | object | source processing spine | Receipt proving what VAL handled, where it was written, and what changed. |
+| Critical project issue | `{{projects.current.critical_project_issue}}` | new/derived | object | Project Manager Round Table | Payment, deadline, dependency, owner, stakeholder tension, relationship health, service/access, launch, legal/contract, or trade-off issue. |
+| Critical issue source proof | `{{projects.current.critical_project_issue.source_proof}}` | new/derived | object | source receipt linker | One-sentence clickable source proof, never a long source dump. |
+| Critical issue recommended move | `{{projects.current.critical_project_issue.recommended_move}}` | new/derived | object | Project Manager Round Table | Next recommended move, draft if useful, owner suggestion requiring approval when applicable. |
+| Critical issue handled receipt | `{{projects.current.critical_project_issue.handled_receipt}}` | new/derived | object | source processing spine | Home welcome/context receipt shown when the issue is actually handled. |
+| Needs judgment item | `{{projects.current.needs_judgment_item}}` | new/derived | object | Project Manager Round Table | Decision item requiring user judgment before safe progress. |
+| Needs judgment options | `{{projects.current.needs_judgment_item.options}}` | new/derived | array | Project Manager Round Table | Clear options when the user needs to choose between paths. |
+| Needs judgment recommendation | `{{projects.current.needs_judgment_item.recommendation}}` | new/derived | object | Project Manager Round Table | VAL's recommended path with brief source proof and consequence if delayed. |
+| One-answer blocker | `{{projects.current.needs_judgment_item.one_answer_blocker}}` | new/derived | object | Project Manager Round Table | "I need one answer before I can prepare this" item for Alignment when blocking movement or prepared work. |
+| Judgment decision receipt | `{{projects.current.needs_judgment_item.decision_receipt}}` | new/derived | object | source processing spine | One-line receipt after the user decides or puts a pin in it. |
+| Project prepared work item | `{{projects.current.prepared_work_item}}` | new/derived | object | Project Prepared Work Observer | One drafted/prepared item ready for review and approval. |
+| Project prepared work proof | `{{projects.current.prepared_work_item.proof}}` | new/derived | object | Project Prepared Work Observer | Why prepared, what prepared, where visible, what is needed, approval requirement, and what happens if approved. |
+| Project prepared work actions | `{{projects.current.prepared_work_item.allowed_actions}}` | new/derived | array | Project click contract | Review, refine, approve, ask scoped question, add context, execute after approval, put a pin in it. |
+| Project prepared work receipt | `{{projects.current.prepared_work_item.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL creates, sends, saves, adds, schedules, publishes, or otherwise acts. |
+| Project reprioritization item | `{{projects.current.reprioritization_item}}` | new/derived | object | Project Manager Round Table | Dynamic reprioritization after any project-related source/event or user project-page open. |
+| Project priority order | `{{projects.current.priority_order}}` | new/derived | array | Project Manager Round Table | Ordered project priorities with top recommendation, reason, risk, clarity needs, and handled work. |
+| Project priority recommendation | `{{projects.current.priority_recommendation}}` | new/derived | object | Project Manager Round Table | What VAL recommends first after re-scanning project evidence. |
+| Project pin until | `{{projects.current.pin_until}}` | new/derived | datetime/object | user action | Date/time chosen after "Put a pin in it"; VAL keeps watching until then or until critical evidence appears. |
+| Project reprioritization receipt | `{{projects.current.reprioritization_receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL reprioritizes the project. |
+| Project execution adjustment | `{{projects.current.execution_adjustment}}` | new/derived | object | Project Manager Round Table | Trade-off packet when scope, time, cost, quality, resources, expectations, dependency, launch pressure, or risk changes. |
+| Execution adjustment trade-off | `{{projects.current.execution_adjustment.trade_off}}` | new/derived | object/string | Project Manager Round Table | The explicit trade-off VAL identified against the current project plan. |
+| Execution adjustment options | `{{projects.current.execution_adjustment.options}}` | new/derived | array | Project Manager Round Table | Clear options the executive can choose between. |
+| Execution adjustment recommendation | `{{projects.current.execution_adjustment.recommendation}}` | new/derived | object | Project Manager Round Table | VAL's least-risk recommended adjustment with source proof and consequence if delayed. |
+| Execution adjustment receipt | `{{projects.current.execution_adjustment.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL updates the plan, prepares work, or records the chosen trade-off. |
+| Project reset packet | `{{projects.current.reset_packet}}` | new/derived | object | Project Manager Round Table | Residue-clearing reset after end of day, meetings, major actions, open-loop changes, morning open, or stale loops. |
+| Project reset movement | `{{projects.current.reset_packet.what_moved}}` | new/derived | array/string | Project Reset Observer | What moved since the previous reset. |
+| Project reset closed loops | `{{projects.current.reset_packet.closed_loops}}` | new/derived | array | Project Reset Observer | Loops that closed during the reset period. |
+| Project reset opened loops | `{{projects.current.reset_packet.opened_loops}}` | new/derived | array | Project Reset Observer | Loops that opened or reopened during the reset period. |
+| Project reset unresolved items | `{{projects.current.reset_packet.unresolved_items}}` | new/derived | array | Project Reset Observer | What is still unresolved and may need Alignment if executive attention is required. |
+| Project reset tomorrow move | `{{projects.current.reset_packet.tomorrow_first_move}}` | new/derived | object/string | Project Manager Round Table | VAL's likely first move for tomorrow. |
+| Project reset receipt | `{{projects.current.reset_packet.receipt}}` | new/derived | object | source processing spine | One-line reset receipt, e.g. loops closed and decisions still needed. |
+| Project watch items | `{{projects.current.watch_items}}` | new/derived | array | Board of Observers / Project Manager Round Table | Quiet monitoring items for this project that do not need user action yet. |
+| Project watch trigger | `{{projects.current.watch_items.current.trigger_condition}}` | new/derived | object/string | Board of Observers | What would make the watched item actionable or escalated. |
+| Project watch source proof | `{{projects.current.watch_items.current.source_proof}}` | new/derived | object | source receipt linker | Last checked or source proof for what VAL is observing. |
+| Project watch actions | `{{projects.current.watch_items.current.allowed_actions}}` | new/derived | array | Project click contract | Open source, change rule, add context, prepare next move, put a pin in it, stop watching. |
+| Board of Observers project summaries | `{{observers.board.project_summaries}}` | new/derived | array | Board of Observers | Alphabetical project-by-project summary of what VAL is observing across projects. |
+| Board of Observers lower details | `{{observers.board.lower_details}}` | existing/derived | object/array | observer system | Existing observer details, diagnostics, and observer-specific information below the project summaries. |
+| Project charter | `{{projects.current.charter}}` | new/derived | object | Project Manager Round Table, project interview | Business case, purpose, goals, scope, timeline, stakeholders, risks. |
+| Project constraints | `{{projects.current.constraints}}` | new/derived | object | Project Manager Round Table | Scope, time, cost, quality trade-offs and impacts. |
+| Project lifecycle phase | `{{projects.current.lifecycle_phase}}` | new/derived | enum/object | Project Manager Round Table | Initiation, planning, execution, monitor/control, closure, plus current phase evidence. |
+| Project work breakdown | `{{projects.current.work_breakdown}}` | new/derived | object | Project Manager Round Table | Objectives, activities, tasks, owners, dependencies, milestones. |
+| Project communication rhythm | `{{projects.current.communication_rhythm}}` | new/derived | object | Project Manager Round Table | Recurring meetings, stakeholder updates, transparency/status cadence, progress celebration. |
+| Project manager operating signals | `{{projects.current.pm_operating_signals}}` | new/derived | object | Project Manager Round Table | Blockers, hidden dependencies, trade-offs, ownership clarity, decision fatigue, loop closure, tomorrow risks. |
+| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Quiet lower Project-drawer-only summary with Receipts, Invoices, Payment Issues, Important Documents, and Open Finance Follow-ups. |
+| Project Manager action | `{{projects.current.project_manager_action}}` | new/derived | object | Project Manager Round Table | One specific action VAL did, prepared, noticed, linked, blocked, monitored, or needs context for. |
+| Project Manager action list | `{{projects.current.project_manager_actions}}` | new/derived | array | Project Manager Round Table | Action layer for the Project drawer; each row must have its own scoped packet. |
+| Project Manager action Co-Work scope | `{{projects.current.project_manager_action.cowork_scope}}` | new/derived | object | Project click contract | Current project, selected action, attached source receipts, affected artifact/object only. |
 | CRM send plan | `{{crm.send_plan}}` | new/derived | object | SMS / Email Send Planner | CRM-routed SMS/email preparation and permission requirements. |
 | CRM calendar invite plan | `{{crm.calendar_invite_plan}}` | new/derived | object | CRM Calendar Invite Planner | Prepared invite candidate and missing confirmations. |
 | CRM action permission | `{{crm.action_permission}}` | new/derived | object | CRM Action Permission Classifier | Whether action is prepare-only, auto-safe, approval-required, never-auto, or refused. |

@@ -57,6 +57,8 @@ test('converts a Krisp document into a real transcript payload',()=>{
   assert.equal(payload.source,'krisp_mcp');
   assert.equal(payload.type,'meeting_transcript');
   assert.equal(payload.metadata.krispActionItems.length,1);
+  assert.deepEqual(payload.metadata.krispSourceSections.actionItems,document.actionItems);
+  assert.deepEqual(payload.metadata.krispSourceSections.keyPoints,document.summary);
   assert.equal(payload.metadata.importedVia,'krisp_mcp');
   assert.match(payload.transcript,/Friday/);
 });

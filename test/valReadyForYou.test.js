@@ -267,3 +267,38 @@ test('transcript prepared artifacts stay visible in Ready For You',async()=>{
   assert.ok(item.actionsJson.some(action=>action.key==='review_prepared_work'));
   assert.match(item.whatValPrepared,/Nothing was sent/);
 });
+
+test('meeting overview drafts preserve their reviewable email artifact for Leverage',async()=>{
+  const state={drafts:[{
+    id:'meeting-overview-draft',
+    draftType:'meeting_recap',
+    provider:'internal',
+    subject:'Meeting overview: Forever Freedom follow up',
+    body:'Action Items\n- Send the website link\n\nKey Points\n- CRM ownership is confirmed.',
+    status:'ready_for_review',
+    sourceContext:{
+      source:'transcript_meeting_overview',
+      transcriptId:'transcript-1',
+      preparedArtifactKind:'email_draft',
+      preparedArtifact:{kind:'email_draft',body:'Action Items'},
+      canValAct:'approval_required',
+      executionPath:'create_provider_draft_then_human_send',
+      noExternalAction:true
+    },
+    createdAt:'2026-07-13T12:00:00Z'
+  }],readyForYouItems:[]};
+  const ready=createValReadyForYouService({
+    getStore:()=>state,
+    saveStore:()=>{},
+    uuid:(prefix)=>prefix+'-id',
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    listDrafts:async()=>state.drafts
+  });
+  const built=await ready.buildQueue({limit:5});
+  const item=built.allBuilt.find(row=>row.metadataJson?.draftId==='meeting-overview-draft');
+  assert.equal(item.metadataJson.preparedArtifactKind,'email_draft');
+  assert.equal(item.metadataJson.preparedArtifact.kind,'email_draft');
+  assert.equal(item.metadataJson.canValAct,'approval_required');
+  assert.equal(item.metadataJson.executionPath,'create_provider_draft_then_human_send');
+});

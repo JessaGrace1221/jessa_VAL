@@ -345,6 +345,10 @@ function normalizeKrispDocument(doc={},fallback={}){
   const transcriptText=extractText(source.transcript||source.fullTranscript||source.full_transcript||source.transcriptText||source.transcript_text||source.content||source);
   const summary=extractText(source.summary||source.notes||source.keyPoints||source.key_points||'');
   const actionItems=safeArray(source.actionItems||source.action_items||source.tasks);
+  const sourceSections={
+    actionItems:jsonClone(source.actionItems||source.action_items||source.tasks||[]),
+    keyPoints:jsonClone(source.keyPoints||source.key_points||source.summary||source.notes||'')
+  };
   const participants=normalizeParticipants(source.participants,source.attendees,source.users,fallback.participants);
   const title=compactText(source.title||source.name||source.meetingTitle||source.meeting_title||fallback.title||'Krisp meeting',220);
   return {
@@ -353,6 +357,7 @@ function normalizeKrispDocument(doc={},fallback={}){
     transcriptText,
     summary,
     actionItems,
+    sourceSections,
     participants,
     startedAt:source.startedAt||source.started_at||source.startTime||source.start_time||source.date||source.createdAt||source.created_at||fallback.startedAt||fallback.started_at||'',
     duration:source.duration||source.durationText||source.duration_text||fallback.duration||'',
@@ -380,6 +385,7 @@ function krispTranscriptPayloadFromDocument(document={}){
       duration:normalized.duration,
       krispSummary:normalized.summary,
       krispActionItems:normalized.actionItems,
+      krispSourceSections:normalized.sourceSections,
       participants:normalized.participants,
       importedVia:'krisp_mcp',
       rawKrispDocument:normalized.raw

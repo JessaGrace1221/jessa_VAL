@@ -15,6 +15,10 @@ const {createGhlMcpService} = require('./services/ghlMcpService');
 const {createKrispMcpService} = require('./services/krispMcpService');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
+const {DEFAULT_OBSERVERS,OBSERVER_PACKET_LENSES} = require('./services/valIntelligenceSpine');
+const {createAboutMeObserverReasoner} = require('./services/valAboutMeObserverReview');
+const {ensureValBoardPacketTables} = require('./services/valBoardPacketsSchema');
+const {registerValBoardPacketsRoutes} = require('./services/valBoardPacketsRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
@@ -27,12 +31,19 @@ const {registerValCommitmentsRoutes} = require('./services/valCommitmentsRoutes'
 const {registerValDocumentsRoutes} = require('./services/valDocumentsRoutes');
 const {ensureValReviewUpdatesTables} = require('./services/valReviewUpdatesSchema');
 const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRoutes');
+const {ensureValSourceProcessingTables} = require('./services/valSourceProcessingSchema');
+const {registerValSourceProcessingRoutes} = require('./services/valSourceProcessingRoutes');
+const {ensureValProjectPinsTables} = require('./services/valProjectPinsSchema');
+const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes');
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
+const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
+const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
+const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
-const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft} = require('./services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
 const {
   normalizeEmailAddress,
   normalizePhoneNumber,
@@ -42,6 +53,8 @@ const {
 } = require('./services/leadContactValidation');
 const app     = express();
 const execFileAsync = promisify(execFile);
+let valBoardPackets = null;
+let valIntelligenceSpine = null;
 
 app.use(cors());
 app.use(express.json({limit:'50mb'}));
@@ -746,6 +759,11 @@ const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.
   .split(',')
   .map(e=>e.trim().toLowerCase())
   .filter(Boolean));
+const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
+  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
+  'miken@goallprogram.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'},
+  'mikenonhof.wealth@gmail.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'}
+};
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -3036,7 +3054,7 @@ const TEACH_VAL_KNOWLEDGE_CARDS = [
   {category:'witness_your_story',title:'Witnessing Session: Your Story',prompt:'Extract source-grounded themes from the user story. Preserve emotionally meaningful language. Identify identity foundations, motivations, repeated themes, uncertainty, and questions for correction. Do not flatten the story into a resume.'},
   {category:'witness_your_mission',title:'Witnessing Session: Your Mission',prompt:'Extract source-grounded purpose and long-term direction from the user mission. Identify what the user is trying to change, why it matters, who or what is served, and what VAL should protect from distraction. Do not overstate certainty.'},
   {category:'witness_never_compromised',title:'Witnessing Session: What Must Never Be Compromised',prompt:'Extract source-grounded principles and boundaries. Identify what must be protected, what should require review, what VAL must never assume, and future guardrails. Do not treat this as permission to act autonomously.'},
-  {category:'current_projects',title:'Current Projects',prompt:'Based on everything you know from our conversations, list my current active projects. For each project, include what it is, why it matters, current status, key people involved, open loops, frustrations, and what seems most important next.'},
+  {category:'current_projects',title:'Current Projects',prompt:'Based on everything you know from our conversations, list my current active projects. For each project, include what it is, why it matters, current status, key people involved, open loops, frustrations, and what seems most important next. Also answer the Project Manager page questions exactly when evidence exists: What should this project be called, and what outcome should it create? Who owns this project, what is the next move, and what should VAL monitor? What are the main workstreams VAL should track for this project? What milestones prove this project is moving? How should VAL help protect and grow the relationships connected to this project? What should VAL prepare, organize, or ask about next for this project? If evidence is missing, write Unknown - ask user. Mark each possible project as yes_create_project, no_not_project, or unsure_ask_user.'},
   {category:'important_people',title:'Important People',prompt:'Based on everything you know from our conversations, list the people, clients, partners, collaborators, mentors, team members, and important relationships I talk about most often. For each person, include who they are, how they are connected to me, what matters about the relationship, any opportunities, any concerns, and what a future executive assistant should remember.'},
   {category:'lessons_learned',title:'Lessons Learned',prompt:'Based on everything you know from our conversations, list the lessons I have learned the hard way. Include the story or situation behind each lesson, what I learned, and what rule or reminder my future AI should remember.'},
   {category:'work_preferences',title:'Work Preferences',prompt:'Based on everything you know from our conversations, describe how I prefer to work, communicate, make decisions, manage time, receive reminders, handle meetings, write, delegate, and use AI.'},
@@ -3330,7 +3348,9 @@ async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
     'Return strict JSON only.',
     'Do not invent facts. Use short summaries. Preserve source attribution.',
     'Required JSON shape: {"summary":{}, "items":[{"title":"","summary":"","category":"","source":"external_ai_import","confidence":0.0,"include_in_val":true,"data":{}}]}',
-    'Categories should stay close to: projects, relationships, lessons, preferences, frustrations, process_gaps, opportunities, things_to_remember.'
+    'Categories should stay close to: projects, current_projects, relationships, lessons, preferences, frustrations, process_gaps, opportunities, things_to_remember.',
+    'If the source includes Project Manager page-ready project candidates, keep each candidate as a current_projects item and preserve the exact Project Manager answers in data.project_manager_import_packet.',
+    'Project Manager candidate actions must stay one of: yes_create_project, no_not_project, unsure_ask_user.'
   ].join('\n');
   const user=`Knowledge card: ${card.title||category}\nInternal extraction guidance:\n${promptUsed||card.prompt||''}\n\nUser-supplied context:\n${String(rawResponse).slice(0,30000)}`;
   const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
@@ -3474,7 +3494,7 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     category:'witness_documents_templates',
     title:'Documents and Templates',
     visibleQuestion:'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
-    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Classify each artifact as Document or Template; for Documents, identify the relationship or project; for Templates, identify what it is used for.',
+    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Preserve the selected document category. Independently identify any relationship or project the artifact belongs to and, for Templates, what it is used for.',
     whyThisCardExistsNow:'VAL needs to classify artifacts as documents or templates before interpreting or reusing them.',
     permanenceProfile:'mixed',
     creates:['uploaded_documents','uploaded_templates','document_relationship_links','document_project_links','template_use_cases','template_preservation_rules'],
@@ -3729,6 +3749,57 @@ async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[
       throw new Error('Live observation model unavailable. VAL will not use canned observer frames.');
     }
   }
+}
+
+function witnessingUploadIds(rawResponse=''){
+  return [...String(rawResponse||'').matchAll(/\bVAL file id:\s*([a-z0-9:_-]+)/ig)]
+    .map(match=>String(match[1]||'').trim())
+    .filter(Boolean)
+    .slice(0,8);
+}
+
+async function witnessingUploadedDocumentContext(rawResponse=''){
+  const ids=witnessingUploadIds(rawResponse);
+  if(!ids.length)return {documents:[],modelContext:''};
+  await valDbReady;
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(
+      `select id,type,title,raw_text,metadata,created_at
+       from val_transcripts
+       where user_id=$1 and id=any($2::text[])`,
+      [VAL_USER_ID,ids]
+    );
+    rows=(result.rows||[]).map(row=>({
+      id:row.id,
+      type:row.type,
+      title:row.title||'Uploaded document',
+      rawText:row.raw_text||'',
+      metadata:row.metadata||{},
+      createdAt:row.created_at?.toISOString?.()||row.created_at||''
+    }));
+  }else{
+    rows=(valStore().transcripts||[]).filter(row=>ids.includes(String(row.id||'')));
+  }
+  const byId=new Map(rows.map(row=>[String(row.id||''),row]));
+  const documents=ids.map(id=>byId.get(id)).filter(Boolean).filter(row=>{
+    const metadata=row.metadata||{};
+    return String(row.type||'')==='knowledge_document'
+      && String(metadata.uploadedVia||metadata.uploaded_via||'')==='val_witnessing_session';
+  }).map(row=>({
+    id:String(row.id||''),
+    title:String(row.title||row.metadata?.fileName||'Uploaded document'),
+    docType:String(row.metadata?.docType||row.metadata?.doc_type||'knowledge_document'),
+    rawText:String(row.rawText||row.raw_text||'').trim()
+  })).filter(row=>row.rawText);
+  const modelContext=documents.map((document,index)=>[
+    `Attached Witnessing document ${index+1}: ${document.title}`,
+    `VAL file id: ${document.id}`,
+    `Document type: ${document.docType}`,
+    'Document text:',
+    document.rawText
+  ].join('\n')).join('\n\n');
+  return {documents,modelContext};
 }
 function userFacingWitnessLine(line=''){
   return String(line||'')
@@ -6662,10 +6733,13 @@ async function initValDb(){
     create index if not exists hearth_packet_receipts_packet_idx on hearth_packet_receipts(tenant_id,user_id,packet_name,status,created_at desc);
   `);
   await ensureValIntelligenceSpineTables({dbQuery,logger:console});
+  await ensureValBoardPacketTables({dbQuery,logger:console});
   await ensureValConversationIdentityTables({dbQuery,logger:console});
   await ensureValMeetingPrepTables({dbQuery,logger:console});
   await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
   await ensureValReviewUpdatesTables({dbQuery,logger:console});
+  await ensureValSourceProcessingTables({dbQuery,logger:console});
+  await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
@@ -7216,6 +7290,27 @@ app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/teach-val/onboarding/:id/reopen-witnessing-card/:cardId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Witnessing Session not found.'});
+    const card=partnershipProtocolCardFor(req.params.cardId);
+    if(!card)return res.status(404).json({ok:false,error:'Witnessing card not found.'});
+    if(card.id!=='documents_templates'){
+      return res.status(400).json({ok:false,error:'Only the Documents and Templates step can be reopened from this action.'});
+    }
+    const state=normalizeTeachValState(session.state);
+    state.reopenedWitnessingCard={
+      cardId:card.id,
+      category:card.category,
+      reopenedAt:new Date().toISOString(),
+      preservesCompletedSession:true
+    };
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({...await teachValStateResponse(session.id),reopenedCard:card});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
   try{
     const session=await getTeachValSession(req.params.id);
@@ -7312,14 +7407,18 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
-    const graph=await observePartnershipProtocolAnswer({card,rawResponse,priorImports});
-    const witness=await witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports});
+    const uploadedDocumentContext=await witnessingUploadedDocumentContext(rawResponse);
+    const observedResponse=uploadedDocumentContext.modelContext
+      ? `${rawResponse}\n\n${uploadedDocumentContext.modelContext}`
+      : rawResponse;
+    const graph=await observePartnershipProtocolAnswer({card,rawResponse:observedResponse,priorImports});
+    const witness=await witnessPartnershipProtocolAnswer({card,rawResponse:observedResponse,graph,priorImports});
     const nextCard=nextPartnershipProtocolCard(card);
-    const contextualNextQuestion=await composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse,graph,priorImports});
+    const contextualNextQuestion=await composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse:observedResponse,graph,priorImports});
     if(contextualNextQuestion) witness.next_question=contextualNextQuestion;
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
-    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph});
+    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse:observedResponse,graph});
     const evidenceChain=priorEvidenceChain.concat([integrityChain]);
     const currentState=partnershipCurrentState(evidenceChain,nextCard);
     const existing=priorImports.find(i=>i.category===card.category);
@@ -7340,6 +7439,13 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       card:{id:card.id,category:card.category,title:card.title},
       livingExecutiveGraph:graph,
       witness,
+      uploadedDocuments:uploadedDocumentContext.documents.map(document=>({
+        id:document.id,
+        title:document.title,
+        docType:document.docType,
+        characters:document.rawText.length,
+        readByVal:true
+      })),
       integrityChain,
       evidenceChain:compactPartnershipEvidenceChain(evidenceChain),
       currentState,
@@ -8094,10 +8200,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
     }
     const recentQuery=`in:inbox newer_than:${activeDays}d`;
     const unreadQuery=`in:inbox is:unread newer_than:${activeDays}d`;
-    const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
+    const documentQuery=`in:anywhere has:attachment newer_than:${activeDays}d`;
+    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
       fetchGmailMessages({query:`in:sent newer_than:${activeDays}d`,maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:documentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:documentQuery})),
       fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
@@ -8115,14 +8223,34 @@ async function emailIntelligencePayload(req,{force=false}={}){
       if(draft)email.preparedDraft=draft;
       return draft;
     }));
+    const durableEmailMap=new Map();
+    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+      const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
+      if(key&&!durableEmailMap.has(key))durableEmailMap.set(key,email);
+    });
+    const durableEmailResults=await Promise.all(Array.from(durableEmailMap.values()).map(email=>valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message})))).catch(()=>[]);
     const evidenceResults=await saveEmailEvidenceBatch(emails);
+    const relationshipIntake=evidenceResults.reduce((acc,result)=>{
+      const intake=result?.relationshipIntake||{};
+      acc.relationshipProfiles+=Number(intake.relationshipProfiles||0);
+      acc.personPackets+=Number(intake.personPackets||0);
+      acc.personPacketIds.push(...(Array.isArray(intake.personPacketIds)?intake.personPacketIds:[]));
+      return acc;
+    },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
+    relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,80);
+    const sourceProcessingEmailMap=new Map();
+    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+      const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
+      if(key&&!sourceProcessingEmailMap.has(key))sourceProcessingEmailMap.set(key,email);
+    });
+    const projectManagerIntake=await processEmailDocumentSourceProcessing(Array.from(sourceProcessingEmailMap.values()),{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[error.message],noExternalAction:true}));
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=preparedDraftResults.filter(Boolean).length;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
-    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error].filter(Boolean);
+    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
     return {
@@ -8134,10 +8262,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
+      relationshipIntake,
+      sourceProcessing:{projectManagers:projectManagerIntake},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerDocumentEmails:projectManagerIntake.eligible||0,projectManagerSuggestions:projectManagerIntake.suggestions||0,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
       rules
     };
   }catch(e){
@@ -9156,6 +9286,27 @@ function extractGmailBody(payload){
   }
   return '';
 }
+function extractGmailAttachments(payload,acc=[]){
+  if(!payload)return acc;
+  const filename=String(payload.filename||'').trim();
+  if(filename){
+    const headers=payload.headers||[];
+    const header=name=>headers.find(h=>String(h.name||'').toLowerCase()===name.toLowerCase())?.value||'';
+    acc.push({
+      id:payload.body?.attachmentId||filename,
+      attachmentId:payload.body?.attachmentId||'',
+      filename,
+      name:filename,
+      mimeType:payload.mimeType||'',
+      contentType:payload.mimeType||'',
+      size:Number(payload.body?.size)||0,
+      disposition:header('Content-Disposition')||'',
+      source:'gmail_payload'
+    });
+  }
+  for(const part of payload.parts||[])extractGmailAttachments(part,acc);
+  return acc;
+}
 function normalizeGmailMessage(md){
   const headers=md.payload?.headers||[];
   const header=name=>headers.find(h=>String(h.name||'').toLowerCase()===name.toLowerCase())?.value||'';
@@ -9163,7 +9314,7 @@ function normalizeGmailMessage(md){
   const bodyText=extractGmailBody(md.payload)||md.snippet||'';
   const to=String(header('To')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
   const cc=String(header('Cc')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
-  const attachments=JSON.stringify(md.payload||{}).includes('"filename"');
+  const attachments=extractGmailAttachments(md.payload);
   const parsedDate=header('Date') ? new Date(header('Date')) : null;
   const internalDate=md.internalDate ? new Date(Number(md.internalDate)) : null;
   const date=parsedDate&&!isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : (internalDate&&!isNaN(internalDate.getTime()) ? internalDate.toISOString() : '');
@@ -9180,8 +9331,16 @@ function normalizeGmailMessage(md){
     snippet:md.snippet||'',
     bodyPreview:String(bodyText||'').slice(0,700),
     bodyText:String(bodyText||''),
+    headers:{
+      listUnsubscribe:header('List-Unsubscribe'),
+      listId:header('List-Id'),
+      precedence:header('Precedence'),
+      xCampaign:header('X-Campaign')||header('X-Mailchimp-Campaign-Id')||header('X-SES-Outgoing')
+    },
     labels:md.labelIds||[],
-    hasAttachments:attachments,
+    attachments,
+    attachmentsJson:attachments,
+    hasAttachments:attachments.length>0,
     webLink:`https://mail.google.com/mail/u/0/#inbox/${md.threadId||md.id}`,
     classification:'',
     recommendedAction:'',
@@ -9254,6 +9413,86 @@ function emailLooksTransactionalOrBulk(email={}){
   if(/\b(auto-confirm|shipment-tracking)@amazon\.com\b/.test(text))return true;
   if(/\b(mastercard|new loan inquiry|loan offer|lending offer|prequalified|apply now)\b/.test(text)&&!emailHasRelationshipEvidence(email))return true;
   return false;
+}
+function relationshipRoleMailboxLocalPart(email=''){
+  const normalized=normalizeExecutiveEmailAddress(email);
+  return normalized ? normalized.split('@')[0] || '' : '';
+}
+function relationshipEmailIsGenericMailbox(email=''){
+  const local=relationshipRoleMailboxLocalPart(email);
+  return /^(info|support|hello|sales|admin|team|contact|office|newsletter|marketing|events?|webinars?|community|billing|invoice|payments?|orders?|receipts?|security|alerts?|updates?|notifications?|notify|no.?reply|donotreply|do.?not.?reply|mailer-daemon|postmaster|comments-noreply|workspace-noreply|drive-shares|azure-noreply)$/i.test(local);
+}
+function relationshipEmailLooksHumanNamed(name='',email=''){
+  const cleanName=String(name||'').replace(/["<>]/g,'').trim();
+  const local=relationshipRoleMailboxLocalPart(email);
+  if(cleanName&&/\s/.test(cleanName)&&!/(team|support|sales|newsletter|notification|billing|admin|community|events?|webinar|marketing|no.?reply)/i.test(cleanName))return true;
+  if(local&&/^[a-z]+[._-][a-z]+$/.test(local)&&!relationshipEmailIsGenericMailbox(email))return true;
+  return false;
+}
+function relationshipEmailHasUnsubscribeSignal(email={}){
+  const headers=email.headers||{};
+  const text=[
+    headers.listUnsubscribe,
+    headers['list-unsubscribe'],
+    headers.listId,
+    headers['list-id'],
+    email.subject,
+    email.snippet,
+    email.bodyPreview,
+    email.bodyText
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /\b(list-unsubscribe|unsubscribe|manage preferences|email preferences|update your preferences|view in browser|why am i receiving this|you are receiving this|opt out)\b/.test(text);
+}
+function relationshipEmailHasBulkSignal(email={}){
+  const headers=email.headers||{};
+  const text=[
+    headers.precedence,
+    headers.xCampaign,
+    headers['x-campaign'],
+    headers['x-mailchimp-campaign-id'],
+    headers['x-ses-outgoing'],
+    email.subject,
+    email.snippet,
+    email.bodyPreview,
+    email.bodyText,
+    email.from?.email,
+    email.from?.name
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /\b(precedence:\s*bulk|bulk|x-campaign|mailchimp|constant contact|convertkit|substack|beehiiv|sendgrid|campaign|newsletter|digest|roundup|webinar|recommended jobs|job picks|promotion|promotional)\b/.test(text);
+}
+function relationshipContactQuality({email={},participant={},role=''}={}){
+  const address=normalizeExecutiveEmailAddress(participant.email||participant.address||'');
+  const display=String(participant.name||participant.displayName||'').trim();
+  const reasons=[];
+  if(!address&&!display)reasons.push('missing_person_identity');
+  if(address&&relationshipEmailIsGenericMailbox(address))reasons.push('generic_or_role_mailbox');
+  if(address&&/^(no.?reply|donotreply|mailer-daemon|postmaster)@/i.test(address))reasons.push('no_reply_or_system_mailbox');
+  if(relationshipEmailHasUnsubscribeSignal(email))reasons.push('unsubscribe_or_list_mail');
+  if(relationshipEmailHasBulkSignal(email))reasons.push('bulk_or_campaign_mail');
+  if(emailLooksAutomatedSystemNotice(email))reasons.push('automated_system_notice');
+  if(emailLooksTransactionalOrBulk(email))reasons.push('transactional_or_bulk_mail');
+  if(address&&!display&&!relationshipEmailLooksHumanNamed('',address))reasons.push('no_plausible_human_name');
+  const trustedSignals=[];
+  if(knownRelationshipEmailAlias(address))trustedSignals.push('known_alias');
+  if(participant.contactId||participant.crmContactId||participant.matchedContactId)trustedSignals.push('confirmed_contact');
+  if(emailWasSentByOwner(email)&&['to','cc','bcc'].includes(role))trustedSignals.push('recent_sent_recipient');
+  const metrics=email.senderMetrics||{};
+  if(role==='from'&&Number(metrics.outboundToSenderCount||metrics.sentToSenderCount||0)>0)trustedSignals.push('reciprocal_email');
+  const hardRejected=reasons.some(reason=>[
+    'generic_or_role_mailbox',
+    'no_reply_or_system_mailbox',
+    'unsubscribe_or_list_mail',
+    'bulk_or_campaign_mail',
+    'automated_system_notice',
+    'transactional_or_bulk_mail'
+  ].includes(reason))&&!trustedSignals.includes('confirmed_contact')&&!trustedSignals.includes('known_alias');
+  const identityRejected=reasons.includes('no_plausible_human_name')&&!trustedSignals.length;
+  return {
+    accepted:!hardRejected&&!identityRejected,
+    hardRejected:hardRejected||identityRejected,
+    reasons:[...new Set(reasons)],
+    trustedSignals:[...new Set(trustedSignals)]
+  };
 }
 function emailHasRelationshipEvidence(email={}){
   const metrics=email.senderMetrics||{};
@@ -9394,11 +9633,42 @@ function emailConfidenceNumber(confidence){
   if(c==='low')return 0.45;
   return 0.65;
 }
+function emailWasSentByOwner(email={}){
+  const labels=(email.labels||[]).map(label=>String(label||'').toUpperCase());
+  return String(email.direction||'').toLowerCase()==='outbound' || labels.includes('SENT') || !!email.sentAt;
+}
+function emailParticipantIntakeEligible(email={},role='',participant={}){
+  const quality=relationshipContactQuality({email,role,participant});
+  if(!quality.accepted)return false;
+  if(['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(String(email.classification||'').toLowerCase()))return false;
+  if(participant.contactId||participant.crmContactId||participant.matchedContactId)return true;
+  if(knownRelationshipEmailAlias(participant.email))return true;
+  if(emailWasSentByOwner(email)&&['to','cc','bcc'].includes(role))return true;
+  const metrics=email.senderMetrics||{};
+  if(role==='from'&&Number(metrics.outboundToSenderCount||metrics.sentToSenderCount||0)>0)return true;
+  return false;
+}
 function emailParticipantsJson(email){
+  const participant=(role,p={})=>{
+    const alias=knownRelationshipEmailAlias(p.email);
+    const quality=relationshipContactQuality({email,role,participant:p});
+    const eligible=emailParticipantIntakeEligible(email,role,p);
+    return {
+      role,
+      name:alias?.name||p.name||'',
+      email:p.email||'',
+      contactId:p.contactId||p.crmContactId||p.matchedContactId||'',
+      source:'email_relationship_intake',
+      relationshipIntake:eligible,
+      relationshipIntakeReason:eligible?(alias?.source||quality.trustedSignals[0]||'reciprocal_or_linked_email_signal'):(quality.reasons[0]||'inbound_or_unconfirmed_email_only'),
+      relationshipContactQuality:quality
+    };
+  };
+  const matched=email.matchedContact||{};
   return [
-    email.from?{role:'from',name:email.from.name||'',email:email.from.email||''}:null,
-    ...(email.to||[]).map(p=>({role:'to',name:p.name||'',email:p.email||''})),
-    ...(email.cc||[]).map(p=>({role:'cc',name:p.name||'',email:p.email||''}))
+    email.from?participant('from',{...email.from,contactId:matched.email&&String(matched.email).toLowerCase()===String(email.from.email||'').toLowerCase()?(matched.contactId||matched.id||''):''}):null,
+    ...(email.to||[]).map(p=>participant('to',p)),
+    ...(email.cc||[]).map(p=>participant('cc',p))
   ].filter(p=>p&&(p.name||p.email));
 }
 function emailSourceText(email){
@@ -9429,11 +9699,306 @@ async function saveEmailEvidence(email){
   const status=emailEvidenceStatus(email);
   const evidence=await saveEvidenceItem({sourceType,sourceId:email.messageId,sourceUrl:email.webLink||'',occurredAt:email.date||email.receivedAt||'',capturedAt:new Date().toISOString(),title:email.subject||'(No subject)',rawText:emailSourceText(email),summary:email.reason||email.snippet||email.bodyPreview||'',participantsJson:emailParticipantsJson(email),entitiesJson:{threadId:email.threadId||'',provider:email.provider||'',classification:email.classification||'',recommendedAction:email.recommendedAction||'',from:email.from||{},hasAttachments:!!email.hasAttachments},confidence:emailConfidenceNumber(email.confidence),status,metadataJson:{provider:email.provider||'',messageId:email.messageId||'',threadId:email.threadId||'',labels:email.labels||[],requiresApproval:!!email.requiresApproval,matchedRuleId:email.matchedRuleId||''}}).catch(()=>null);
   if(!evidence?.id)return null;
-  await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(()=>null);
-  return evidence;
+  const observationResult=await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(e=>({ok:false,error:e.message,relationshipEngine:{profiles:[]}}));
+  const relationshipProfiles=observationResult?.relationshipEngine?.profiles||[];
+  const personPackets=relationshipProfiles.map(profile=>publicRelationshipProfile(profile)?.personPacket).filter(Boolean);
+  return {
+    evidence,
+    observationResult,
+    relationshipIntake:{
+      source:'email_evidence',
+      relationshipProfiles:relationshipProfiles.length,
+      personPackets:personPackets.length,
+      personPacketIds:personPackets.map(packet=>packet.packet_id).filter(Boolean),
+      noExternalAction:true
+    }
+  };
 }
 async function saveEmailEvidenceBatch(emails=[]){
   return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
+}
+function sourceProcessingAttachmentLooksLikeDocument(attachment={}){
+  if(documentLooksLikeCalendarInvite(attachment))return false;
+  const filename=String(attachment.filename||attachment.fileName||attachment.name||attachment.title||'').trim();
+  const type=String(attachment.mimeType||attachment.contentType||attachment.type||'').toLowerCase();
+  if(!filename)return false;
+  if(/\.(ics|vcf|png|jpe?g|gif|webp|svg)$/i.test(filename)&&!/\b(proposal|agreement|contract|scope|deck|brief|sow|statement.of.work|worksheet|plan)\b/i.test(filename))return false;
+  return /\.(pdf|docx?|pptx?|key|pages|rtf|txt|md|xlsx?|csv)$/i.test(filename)
+    || /\b(pdf|msword|wordprocessingml|presentationml|spreadsheetml|powerpoint|excel|csv|plain|rtf)\b/i.test(type)
+    || /\b(proposal|agreement|contract|scope|deck|brief|sow|statement.of.work|worksheet|plan)\b/i.test(filename);
+}
+function sourceProcessingEmailText(email={}){
+  return [email.subject,email.snippet,email.bodyPreview,email.bodyText,email.text,email.html]
+    .filter(Boolean)
+    .join('\n')
+    .replace(/&amp;/g,'&')
+    .replace(/&quot;/g,'"')
+    .replace(/&#39;/g,"'");
+}
+function sourceProcessingCleanUrl(value=''){
+  return String(value||'').trim().replace(/[)\].,;!?]+$/,'');
+}
+function sourceProcessingGoogleDriveFileId(url=''){
+  const text=String(url||'');
+  const match=text.match(/\/(?:d|file\/d|folders)\/([a-zA-Z0-9_-]+)/)
+    || text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match?match[1]:'';
+}
+function sourceProcessingGoogleDriveDocumentType(url=''){
+  const text=String(url||'').toLowerCase();
+  if(/docs\.google\.com\/document\//.test(text))return 'google_doc';
+  if(/docs\.google\.com\/spreadsheets?\//.test(text))return 'google_sheet';
+  if(/docs\.google\.com\/presentation\//.test(text))return 'google_slide';
+  if(/docs\.google\.com\/forms?\//.test(text))return 'google_form';
+  if(/docs\.google\.com\/drawings?\//.test(text))return 'google_drawing';
+  if(/drive\.google\.com\/drive\/folders\//.test(text))return 'google_drive_folder';
+  return 'google_drive_file';
+}
+function sourceProcessingDriveDocumentTitle(email={},url='',index=0){
+  const subject=String(email.subject||'').replace(/^(re|fw|fwd):\s*/i,'').trim();
+  const quoted=subject.match(/["“]([^"”]{3,160})["”]/);
+  if(quoted)return quoted[1].trim();
+  const shared=subject.match(/shared\s+(?:a|an|the)?\s*(?:document|doc|file|folder|spreadsheet|presentation|deck|sheet)?\s*:?\s*(.+)$/i);
+  if(shared&&shared[1]&&!/with you$/i.test(shared[1].trim()))return shared[1].trim().slice(0,160);
+  const kind=sourceProcessingGoogleDriveDocumentType(url).replace(/_/g,' ');
+  const sender=email.from?.name||email.from?.email||'relationship sender';
+  return `${kind.replace(/\b\w/g,c=>c.toUpperCase())} from ${sender}${index?` ${index+1}`:''}`;
+}
+function sourceProcessingDriveDocumentsFromEmail(email={}){
+  const text=sourceProcessingEmailText(email);
+  const structured=[
+    ...(Array.isArray(email.links)?email.links:[]),
+    ...(Array.isArray(email.urls)?email.urls:[]),
+    ...(Array.isArray(email.driveLinks)?email.driveLinks:[]),
+    ...(Array.isArray(email.drive_links)?email.drive_links:[])
+  ].map(item=>typeof item==='string'?item:(item?.url||item?.webUrl||item?.webViewLink||item?.link||'')).filter(Boolean);
+  const rawLinks=[
+    ...structured,
+    ...(text.match(/https?:\/\/(?:docs|drive)\.google\.com\/[^\s<>"')]+/ig)||[])
+  ].map(sourceProcessingCleanUrl).filter(Boolean);
+  const seen=new Set();
+  return rawLinks
+    .filter(url=>/https?:\/\/(?:docs|drive)\.google\.com\//i.test(url))
+    .filter(url=>{
+      const key=sourceProcessingGoogleDriveFileId(url)||url.toLowerCase();
+      if(seen.has(key))return false;
+      seen.add(key);return true;
+    })
+    .map((url,index)=>{
+      const fileId=sourceProcessingGoogleDriveFileId(url);
+      const type=sourceProcessingGoogleDriveDocumentType(url);
+      const title=sourceProcessingDriveDocumentTitle(email,url,index);
+      return {
+        id:fileId||crypto.createHash('sha1').update(url).digest('hex').slice(0,16),
+        title,
+        filename:title,
+        type,
+        mimeType:type,
+        sourceType:'google_drive_share',
+        sourceId:[email.messageId||email.id||email.threadId||'email','google_drive',fileId||index].join(':'),
+        sourceUrl:url,
+        summary:`Google Drive document shared in "${email.subject||'email'}".`
+      };
+    });
+}
+function sourceProcessingDocumentsFromEmail(email={}){
+  const attachments=[
+    ...(Array.isArray(email.attachments)?email.attachments:[]),
+    ...(Array.isArray(email.attachmentsJson)?email.attachmentsJson:[]),
+    ...(Array.isArray(email.attachments_json)?email.attachments_json:[])
+  ];
+  const seen=new Set();
+  const attachmentDocuments=attachments
+    .filter(sourceProcessingAttachmentLooksLikeDocument)
+    .filter(attachment=>{
+      const key=[attachment.id,attachment.attachmentId,attachment.filename,attachment.name].filter(Boolean).join(':');
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    })
+    .map((attachment,index)=>{
+      const filename=String(attachment.filename||attachment.fileName||attachment.name||attachment.title||`Document ${index+1}`).trim();
+      return {
+        id:attachment.id||attachment.attachmentId||`${email.messageId||email.threadId||'email'}:${filename}`,
+        title:filename,
+        filename,
+        type:attachment.mimeType||attachment.contentType||attachment.type||'email_attachment',
+        mimeType:attachment.mimeType||attachment.contentType||'',
+        sourceType:`${email.provider||'email'}_attachment`,
+        sourceId:[email.messageId||email.id||email.threadId||'email',attachment.id||attachment.attachmentId||filename].join(':'),
+        sourceUrl:email.webLink||'',
+        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`
+      };
+    });
+  const driveDocuments=sourceProcessingDriveDocumentsFromEmail(email)
+    .filter(doc=>{
+      const key=[doc.sourceUrl,doc.sourceId,doc.id].filter(Boolean).join(':').toLowerCase();
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    });
+  return attachmentDocuments.concat(driveDocuments);
+}
+function sourceProcessingEmailSourceType(email={}){
+  if(email.provider==='outlook')return 'outlook_email';
+  if(email.provider==='gmail')return 'gmail_email';
+  return 'email_message';
+}
+function relationshipProfileMatchesEmail(profile={},email=''){
+  const normalized=normalizeContextEmail(email);
+  if(!normalized)return false;
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return [
+    relationshipProfilePrimaryEmail(profile),
+    metadata.email,
+    metadata.targetMetadata?.email,
+    packet.person?.email_addresses?.[0]
+  ].some(value=>normalizeContextEmail(value)===normalized);
+}
+function relationshipProfileMatchesName(profile={},name=''){
+  const needle=String(name||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+  if(!needle)return false;
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return [
+    profile.displayName,
+    profile.display_name,
+    profile.name,
+    metadata.name,
+    metadata.targetMetadata?.name,
+    packet.person?.name
+  ].some(value=>String(value||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase()===needle);
+}
+function sourceProcessingProjectOwnerFromProfile(profile={},email='',name=''){
+  if(profile.profileType!=='project'&&profile.profile_type!=='project')return null;
+  const metadata=profile.metadata||profile.metadataJson||profile.metadata_json||{};
+  const candidates=[
+    metadata.owner,
+    metadata.relationship,
+    profile.owner,
+    profile.projectOwner,
+    profile.project_owner
+  ].filter(Boolean);
+  const normalizedEmail=normalizeContextEmail(email);
+  const normalizedName=String(name||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+  const match=candidates.find(candidate=>{
+    const candidateEmail=normalizeContextEmail(candidate.email||candidate.contactEmail||candidate.relationshipEmail||'');
+    const candidateName=String(candidate.name||candidate.relationshipName||candidate.displayName||candidate.email||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+    return (normalizedEmail&&candidateEmail===normalizedEmail) || (normalizedName&&candidateName===normalizedName);
+  });
+  if(!match)return null;
+  return {
+    id:match.id||match.relationshipId||match.contactId||match.email||match.name,
+    name:match.name||match.relationshipName||match.displayName||match.email||name,
+    displayName:match.name||match.relationshipName||match.displayName||match.email||name,
+    email:normalizeContextEmail(match.email||match.contactEmail||match.relationshipEmail||email),
+    source:'project_owner',
+    projectId:profile.projectId||profile.project_id||profile.id||'',
+    projectName:profile.displayName||profile.display_name||profile.name||metadata.projectName||''
+  };
+}
+function sourceProcessingEmailIsGoogleDriveNotice(email={}){
+  const from=normalizeContextEmail(email.from?.email||'');
+  const local=from.split('@')[0]||'';
+  const domain=from.split('@')[1]||'';
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].filter(Boolean).join(' ');
+  return /^(drive-shares|workspace-noreply|docs-noreply)$/i.test(local)
+    || (/google\.com$/i.test(domain)&&/\b(shared|invited|google drive|google docs|google sheets|google slides|drive\.google\.com|docs\.google\.com)\b/i.test(text));
+}
+function sourceProcessingDriveSharerFromEmail(email={}){
+  if(!sourceProcessingEmailIsGoogleDriveNotice(email))return null;
+  const text=sourceProcessingEmailText(email);
+  const emails=(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[])
+    .map(normalizeContextEmail)
+    .filter(address=>address&&!/(@google\.com$|^drive-shares|^workspace-noreply|^docs-noreply|^no.?reply|^donotreply)/i.test(address));
+  const emailAddress=emails[0]||'';
+  const subject=String(email.subject||'');
+  let name='';
+  const namedEmail=text.match(/([A-Z][A-Za-z.' -]{1,80})\s*\(([^)]+@[^\s)]+)\)\s+(?:shared|has shared|invited)/);
+  if(namedEmail&&normalizeContextEmail(namedEmail[2])===emailAddress)name=namedEmail[1].trim();
+  if(!name){
+    const subjectName=subject.match(/^(.{2,90}?)\s+(?:shared|has shared|invited you|added you)/i);
+    if(subjectName&&!/^(google|drive|docs|workspace)$/i.test(subjectName[1].trim()))name=subjectName[1].trim().replace(/^"|"$/g,'');
+  }
+  return emailAddress||name?{name,email:emailAddress,source:'google_drive_share_notice'}:null;
+}
+async function sourceProcessingRelationshipFromEmail(email={},profiles=[]){
+  const driveSharer=sourceProcessingDriveSharerFromEmail(email);
+  const candidateEmail=normalizeContextEmail(driveSharer?.email||email.from?.email||'');
+  const candidateName=driveSharer?.name||email.from?.name||'';
+  const profile=(profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesEmail(item,candidateEmail))
+    || (candidateName ? (profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesName(item,candidateName)) : null);
+  const projectOwnerMatch=(profiles||[]).map(item=>sourceProcessingProjectOwnerFromProfile(item,candidateEmail,candidateName)).find(Boolean);
+  const senderEmail=normalizeContextEmail(driveSharer?.email||relationshipProfilePrimaryEmail(profile)||projectOwnerMatch?.email||email.from?.email||'');
+  const alias=knownRelationshipEmailAlias(senderEmail);
+  const admission=profile?await stewardshipRelationshipAdmissionForProfile(profile).catch(()=>stewardshipRelationshipAdmission(profile)):null;
+  const admitted=!!alias||admission?.admitted===true||!!projectOwnerMatch;
+  const displayName=alias?.name||profile?.displayName||projectOwnerMatch?.name||driveSharer?.name||email.from?.name||senderEmail||'Relationship';
+  return {
+    id:profile?.id||profile?.personId||profile?.profileKey||projectOwnerMatch?.id||senderEmail,
+    profileKey:profile?.profileKey||'',
+    name:displayName,
+    displayName,
+    email:senderEmail,
+    relationshipStatus:alias?.relationshipStatus||profile?.relationshipStatus||(projectOwnerMatch?'project_owner':''),
+    admitted,
+    admissionStatus:admitted?'admitted':'not_admitted',
+    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':(projectOwnerMatch?'matched_existing_project_owner':(driveSharer?'google_drive_sharer_not_admitted_relationship':'sender_not_admitted_relationship')),email:senderEmail,alias:alias||null,driveSharer:driveSharer||null,projectOwner:projectOwnerMatch||null}
+  };
+}
+async function processEmailDocumentSourceProcessing(emails=[],{origin='email_intelligence'}={}){
+  if(!valSourceProcessing?.processRelationshipDocumentEmail)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,errors:[],noExternalAction:true};
+  const candidates=(emails||[])
+    .filter(email=>!emailWasSentByOwner(email))
+    .map(email=>({email,documents:sourceProcessingDocumentsFromEmail(email)}))
+    .filter(item=>item.documents.length>0);
+  const documentCandidates=candidates.reduce((sum,item)=>sum+item.documents.length,0);
+  if(!candidates.length)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[],noExternalAction:true};
+  const profiles=await listRelationshipProfiles({limit:260}).catch(()=>[]);
+  const results=await mapWithConcurrency(candidates,3,async({email,documents})=>{
+    const relationship=await sourceProcessingRelationshipFromEmail(email,profiles);
+    const result=await valSourceProcessing.processRelationshipDocumentEmail({
+      relationship,
+      source:{
+        provider:email.provider||'email',
+        sourceType:sourceProcessingEmailSourceType(email),
+        sourceId:email.messageId||email.id||email.threadId||'',
+        messageId:email.messageId||'',
+        threadId:email.threadId||'',
+        subject:email.subject||'Relationship document email',
+        receivedAt:email.receivedAt||email.date||'',
+        webLink:email.webLink||'',
+        attachments:documents,
+        origin
+      },
+      documents,
+      confidence:0.74
+    });
+    return {
+      ok:result.ok!==false,
+      skipped:!relationship.admitted,
+      reason:relationship.admitted?'':(relationship.relationshipAdmission?.reason||'sender_not_admitted_relationship'),
+      messageId:email.messageId||'',
+      sourceProcessingRecordId:result.sourceProcessingRecord?.id||'',
+      projectSuggestionId:result.projectSuggestion?.id||'',
+      existingProjectId:result.existingProject?.projectId||result.existingProject?.id||'',
+      whatValDidReceipt:result.whatValDidReceipt||result.what_val_did_receipt||result.sourceProcessingRecord?.whatValDidReceipt||null,
+      documentCount:documents.length,
+      noExternalAction:true
+    };
+  }).catch(error=>[{ok:false,error:error.message,noExternalAction:true}]);
+  return {
+    ok:!results.some(result=>result.ok===false),
+    origin,
+    processed:results.filter(result=>!result.skipped&&!result.error).length,
+    eligible:candidates.length,
+    documentCandidates,
+    suggestions:results.filter(result=>result.projectSuggestionId).length,
+    existingProjects:results.filter(result=>result.existingProjectId).length,
+    skipped:results.filter(result=>result.skipped).length,
+    errors:results.filter(result=>result.error).map(result=>result.error),
+    records:results.filter(result=>result.sourceProcessingRecordId).map(result=>({id:result.sourceProcessingRecordId,projectSuggestionId:result.projectSuggestionId||'',messageId:result.messageId||'',documentCount:result.documentCount||0,whatValDidReceipt:result.whatValDidReceipt||null})),
+    noExternalAction:true
+  };
 }
 function emailNeedsResponseSignal(email){
   return /\b(proposal|contract|pricing|introduction|intro|please confirm|let me know|waiting on|can you review|next steps|following up|recap|circle back|review this|thoughts|approve|approval)\b/i.test([email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' '));
@@ -9561,11 +10126,26 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
 async function fetchUnifiedGmailEmails(limit=20){
   return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
 }
-function normalizeOutlookMessage(m){
+function normalizeOutlookAttachment(attachment={}){
+  const filename=String(attachment.name||attachment.filename||'').trim();
+  return {
+    id:attachment.id||filename,
+    attachmentId:attachment.id||'',
+    filename,
+    name:filename,
+    mimeType:attachment.contentType||attachment.mimeType||'',
+    contentType:attachment.contentType||attachment.mimeType||'',
+    size:Number(attachment.size)||0,
+    isInline:!!attachment.isInline,
+    source:'microsoft_graph'
+  };
+}
+function normalizeOutlookMessage(m,attachments=[]){
   const from=m.from?.emailAddress||{};
   const to=(m.toRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
   const cc=(m.ccRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
   const bodyText=String(m.bodyPreview||m.body?.content||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  const normalizedAttachments=(attachments.length?attachments:(m.attachments||[])).map(normalizeOutlookAttachment).filter(a=>a.filename&&!a.isInline);
   return {
     provider:'outlook',
     messageId:m.id||'',
@@ -9577,7 +10157,9 @@ function normalizeOutlookMessage(m){
     snippet:m.bodyPreview||'',
     bodyPreview:bodyText.slice(0,700),
     bodyText,
-    hasAttachments:!!m.hasAttachments,
+    attachments:normalizedAttachments,
+    attachmentsJson:normalizedAttachments,
+    hasAttachments:!!m.hasAttachments||normalizedAttachments.length>0,
     webLink:m.webLink||'',
     classification:'',
     recommendedAction:'',
@@ -9587,6 +10169,18 @@ function normalizeOutlookMessage(m){
     confidence:'medium'
   };
 }
+async function fetchOutlookMessageAttachments(token,messageId){
+  if(!token||!messageId)return [];
+  try{
+    const url=`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`;
+    const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+    const d=await readJsonResponse(r);
+    if(!r.ok)return [];
+    return (d.value||[]).map(normalizeOutlookAttachment).filter(a=>a.filename&&!a.isInline);
+  }catch(e){
+    return [];
+  }
+}
 async function fetchUnifiedOutlookEmails(limit=20){
   const token=await getMicrosoftToken();
   if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
@@ -9594,7 +10188,9 @@ async function fetchUnifiedOutlookEmails(limit=20){
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
-  return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
+  const rows=d.value||[];
+  const attachmentLists=await mapWithConcurrency(rows,4,async message=>message.hasAttachments?fetchOutlookMessageAttachments(token,message.id):[]);
+  return {emails:rows.map((message,index)=>normalizeOutlookMessage(message,attachmentLists[index]||[])),needsAuth:false,provider:'outlook'};
 }
 
 function inboxCommandIntent(text=''){
@@ -9773,6 +10369,17 @@ function normalizeContextEmail(value){
   const email=String(value||'').trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
 }
+function knownRelationshipEmailAlias(email){
+  const normalized=normalizeContextEmail(email);
+  return normalized ? KNOWN_RELATIONSHIP_EMAIL_ALIASES[normalized] || null : null;
+}
+function syntheticRelationshipContactId(value=''){
+  return /^(email|name|person:email):/i.test(String(value||'').trim());
+}
+function realRelationshipContactId(value=''){
+  const clean=String(value||'').trim();
+  return clean&&!syntheticRelationshipContactId(clean)?clean:'';
+}
 function normalizeContextPhone(value){
   const digits=String(value||'').replace(/\D/g,'');
   if(digits.length<7) return '';
@@ -9894,7 +10501,8 @@ async function resolveContactFromContext(input={}){
 }
 function resolvedCrmContactId(contact={}){
   contact = contact || {};
-  if(contact.contactId)return String(contact.contactId);
+  if(realRelationshipContactId(contact.contactId))return String(contact.contactId);
+  if(realRelationshipContactId(contact.crmContactId||contact.crm_contact_id))return String(contact.crmContactId||contact.crm_contact_id);
   if(contact.source==='ghl_contact'&&contact.id)return String(contact.id);
   return '';
 }
@@ -10182,6 +10790,8 @@ async function buildRelationshipReview({windowDays=7}={}){
     const cleanName=cleanPersonName(name,email),cleanEmail=normalizeContextEmail(email);
     if(isOwnerRelationship({name:cleanName,email:cleanEmail},owner)||(!cleanEmail&&(!cleanName||cleanName==='Unknown'))) return null;
     if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(cleanEmail)) return null;
+    const quality=relationshipContactQuality({email:{from:{name:cleanName,email:cleanEmail}},participant:{name:cleanName,email:cleanEmail},role:'from'});
+    if(quality.hardRejected) return null;
     const normalizedName=normalizeContextName(cleanName),normalizedCompany=normalizeContextName(company);
     let p=[...new Set(people.values())].find(existing=>(cleanEmail&&existing.email===cleanEmail)||(normalizedName&&normalizeContextName(existing.name)===normalizedName)||(normalizedName&&normalizedCompany&&normalizeContextName(existing.company)===normalizedCompany&&looseNameScore(existing.name,cleanName)>=0.5));
     const key=personKey(cleanName,cleanEmail);
@@ -10228,7 +10838,10 @@ async function buildRelationshipReview({windowDays=7}={}){
     if(!email) continue;
     if(!isMeaningfulRelationshipEmail(email)) continue;
     const evidence=relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt||email.date,'high',email.messageId);
-    relationshipEmailParticipants(email).filter(person=>!isOwnerRelationship(person,owner)).forEach(person=>addEvidence(touch(person),evidence));
+    relationshipEmailParticipants(email)
+      .filter(person=>!isOwnerRelationship(person,owner))
+      .filter(person=>relationshipContactQuality({email,participant:person,role:normalizeContextEmail(person.email)===normalizeContextEmail(email.from?.email)?'from':'to'}).accepted)
+      .forEach(person=>addEvidence(touch(person),evidence));
   }
   for(const ev of ghlEvents.concat(googleEvents)){
     if(!ev) continue;
@@ -10536,7 +11149,16 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
     return {...withMetrics,...classifyExecutiveEmail(withMetrics,rules)};
   });
   const saved=await saveEmailEvidenceBatch(emails);
-  return {processed:emails.length,saved:saved.filter(Boolean).length,providerErrors};
+  const relationshipIntake=saved.reduce((acc,result)=>{
+    const intake=result?.relationshipIntake||{};
+    acc.relationshipProfiles+=Number(intake.relationshipProfiles||0);
+    acc.personPackets+=Number(intake.personPackets||0);
+    acc.personPacketIds.push(...(Array.isArray(intake.personPacketIds)?intake.personPacketIds:[]));
+    return acc;
+  },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
+  relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,120);
+  const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_backfill'}).catch(error=>({ok:false,origin:'email_backfill',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
+  return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,sourceProcessing:{projectManagers:projectManagerIntake},providerErrors};
 }
 async function backfillValIntelligence(options={}){
   if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
@@ -12814,11 +13436,42 @@ async function renderMeetingRecapTemplate({transcriptId,title,summary,participan
   };
   return {template,subject:renderTemplateString(template.subjectTemplate,vars).trim()||`Recap: ${title||'Meeting'}`,htmlBody:renderTemplateString(template.htmlTemplate,vars),textBody:renderTemplateString(template.textTemplate,vars),vars};
 }
-async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText}){
-  const rendered=await renderMeetingRecapTemplate({transcriptId,title,summary,participants,tasks,sourceQuote:transcriptSupportingQuote(transcriptText,'')});
+async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText,sourcePayloadMetadata,metadata,sourceReceipt}){
+  const transcript={id:transcriptId,title,summary,transcriptText,attendees:participants,participants,sourcePayloadMetadata,metadata};
+  const overview=sourceReceipt||transcriptOverviewSections(transcript,tasks);
+  const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  const invitees=transcriptOverviewInvitees(transcript,calendarEvent);
+  const recipients=invitees.map(person=>person.email).filter(Boolean);
   const existing=(await listDrafts()).find(d=>d.draftType==='meeting_recap'&&d.sourceContext?.transcriptId===transcriptId);
-  const recipients=(participants||[]).map(p=>p.matchedEmail||p.email||p.matchedContactName||p.speakerNameRaw||'').filter(Boolean);
-  return saveInternalDraft({id:existing?.id,draftType:'meeting_recap',provider:'internal',subject:rendered.subject,body:rendered.textBody,status:'draft',sourceContext:{...(existing?.sourceContext||{}),source:'transcript_intelligence',transcriptId,transcriptTitle:title,meetingTitle:title,recipients,templateKey:MEETING_RECAP_TEMPLATE_KEY,templateId:rendered.template.id,htmlBody:rendered.htmlBody,plainTextBody:rendered.textBody}});
+  const subject=`Meeting overview: ${title||'Meeting'}`;
+  const body=transcriptOverviewEmailBody(transcript,overview);
+  return saveInternalDraft({
+    id:existing?.id,
+    draftType:'meeting_recap',
+    provider:'internal',
+    subject,
+    body,
+    status:overview.ready?'ready_for_review':'needs_context',
+    sourceContext:{
+      ...(existing?.sourceContext||{}),
+      source:'transcript_meeting_overview',
+      transcriptId,
+      transcriptTitle:title,
+      meetingTitle:title,
+      calendarEventId:calendarEvent.id||'',
+      recipients,
+      recipientEmail:recipients.join(', '),
+      invitees,
+      overview,
+      sourceReceipt:overview,
+      preparedArtifactKind:'email_draft',
+      preparedArtifact:{kind:'email_draft',subject,body},
+      canValAct:'approval_required',
+      executionPath:'create_provider_draft_then_human_send',
+      noExternalAction:true,
+      plainTextBody:body
+    }
+  });
 }
 app.get('/api/val/templates/:templateKey',async(req,res)=>{
   try{const template=await getActiveTemplate(req.params.templateKey);if(!template)return res.status(404).json({ok:false,error:'Template not found'});res.json({ok:true,template});}
@@ -15501,6 +16154,165 @@ function relationshipProfileKeyForTarget(target={}){
   if(target.profileType==='project')return target.projectId?`project:${target.projectId}`:`project:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
   return '';
 }
+const STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS=14;
+function relationshipTimelineMetadata(row={}){
+  return evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{})||{};
+}
+function relationshipTimelineSourceType(row={}){
+  const metadata=relationshipTimelineMetadata(row);
+  return String(metadata.sourceType||metadata.source_type||row.sourceType||row.source_type||'').toLowerCase();
+}
+function relationshipTimelineText(row={}){
+  const metadata=relationshipTimelineMetadata(row);
+  return [
+    row.observationType||row.observation_type,
+    row.content,
+    row.exactQuote||row.exact_quote,
+    metadata.sourceType||metadata.source_type,
+    metadata.evidenceTitle||metadata.evidence_title,
+    metadata.sourceId||metadata.source_id
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function relationshipEvidenceSourceBucket(row={}){
+  const source=relationshipTimelineSourceType(row);
+  const text=relationshipTimelineText(row);
+  if(/calendar|meeting|invite|zoom|gcal/.test(source)||/\b(calendar|meeting|attendee|invite|zoom)\b/.test(text))return 'calendar';
+  if(/transcript|conversation|call/.test(source)||/\b(transcript|speaker|said|told)\b/.test(text))return 'transcript';
+  if(/gmail|outlook|email|sent/.test(source)||/\b(email|sent|replied|reply|inbox|outbound)\b/.test(text))return 'email';
+  if(/crm|ghl|contact/.test(source)||/\b(crm|contact)\b/.test(text))return 'crm';
+  if(/outscraper|apollo|linkedin|public|enrichment/.test(source)||/\b(outscraper|apollo|linkedin|public enrichment)\b/.test(text))return 'public';
+  return 'other';
+}
+function relationshipTimelineAdmissionSource(row={}){
+  const text=relationshipTimelineText(row);
+  const bucket=relationshipEvidenceSourceBucket(row);
+  if(bucket==='calendar')return 'calendar_attendee';
+  if(bucket==='transcript')return 'transcript_attendee_or_named_person';
+  if(bucket==='email'&&/\b(sent email|outbound|user sent|jessa sent|direct email|sent_email)\b/.test(text))return 'recent_sent_email';
+  if(bucket==='email'&&/\b(user replied|you replied|jessa replied|reply from user|person replied|replied to user|inbound reply|responded to)\b/.test(text))return 'recent_reply';
+  if(bucket==='crm')return 'confirmed_crm_context';
+  if(/\b(user teaching|teach_val|user confirmed|important|vip)\b/.test(text))return 'user_marked_important';
+  if(bucket==='public')return 'public_enrichment_only';
+  return bucket+'_evidence';
+}
+function relationshipTimelineDirectCommunicationSource(row={}){
+  const text=relationshipTimelineText(row);
+  const bucket=relationshipEvidenceSourceBucket(row);
+  if(bucket==='email'&&/\b(sent email|outbound|user sent|jessa sent|direct email|sent_email)\b/.test(text))return 'user_sent_email';
+  if(bucket==='email'&&/\b(user replied|you replied|jessa replied|reply from user)\b/.test(text))return 'user_replied';
+  if(bucket==='email'&&/\b(person replied|replied to user|inbound reply|responded to)\b/.test(text))return 'person_replied';
+  if(bucket==='calendar')return 'meeting_with_user';
+  if(bucket==='transcript')return 'transcript_conversation_with_user';
+  return '';
+}
+function relationshipTimelineOccurredAt(row={}){
+  return row.occurredAt||row.occurred_at||row.createdAt||row.created_at||'';
+}
+function relationshipDateWithinDays(value='',days=STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS){
+  const time=interactionDate(value);
+  if(!time)return false;
+  const diff=Date.now()-time;
+  return diff>=0&&diff<=days*24*60*60*1000;
+}
+function relationshipEvidenceMapFromRows(rows=[],target={},buckets={}){
+  const sourceCounts={email:0,calendar:0,transcript:0,crm:0,public:0,other:0};
+  const admissionSources=new Set();
+  const directCommunicationSources=new Set();
+  const introductionEvidence=[];
+  let lastDirectCommunicationAt='';
+  let lastDirectCommunicationSource='';
+  for(const row of Array.isArray(rows)?rows:[]){
+    const bucket=relationshipEvidenceSourceBucket(row);
+    sourceCounts[bucket]=(sourceCounts[bucket]||0)+1;
+    const admissionSource=relationshipTimelineAdmissionSource(row);
+    if(admissionSource&&admissionSource!=='public_enrichment_only')admissionSources.add(admissionSource);
+    const directSource=relationshipTimelineDirectCommunicationSource(row);
+    const occurredAt=relationshipTimelineOccurredAt(row);
+    if(directSource){
+      directCommunicationSources.add(directSource);
+      if(!lastDirectCommunicationAt||interactionDate(occurredAt)>interactionDate(lastDirectCommunicationAt)){
+        lastDirectCommunicationAt=occurredAt;
+        lastDirectCommunicationSource=directSource;
+      }
+    }
+    const text=relationshipTimelineText(row);
+    if(/\b(introduce|intro|connect|should meet|should talk|want to introduce|want to connect|make that introduction)\b/.test(text)){
+      introductionEvidence.push({
+        source_type:bucket,
+        source_id:relationshipTimelineMetadata(row).sourceId||relationshipTimelineMetadata(row).source_id||row.evidenceItemId||row.evidence_item_id||'',
+        summary:String(row.content||row.exactQuote||row.exact_quote||'').slice(0,360),
+        occurred_at:occurredAt
+      });
+    }
+  }
+  const metadata=evidenceJsonValue(target.metadataJson||target.metadata_json||target.metadata,{})||{};
+  const existing=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||{};
+  const existingAdmission=Array.isArray(existing.admissionSources)?existing.admissionSources:(Array.isArray(existing.admission_sources)?existing.admission_sources:[]);
+  const existingDirect=Array.isArray(existing.directCommunicationSources)?existing.directCommunicationSources:(Array.isArray(existing.direct_communication_sources)?existing.direct_communication_sources:[]);
+  existingAdmission.forEach(source=>source&&admissionSources.add(source));
+  existingDirect.forEach(source=>source&&directCommunicationSources.add(source));
+  if(!lastDirectCommunicationAt)lastDirectCommunicationAt=existing.lastDirectCommunicationAt||existing.last_direct_communication_at||'';
+  if(!lastDirectCommunicationSource)lastDirectCommunicationSource=existing.lastDirectCommunicationSource||existing.last_direct_communication_source||'';
+  return {
+    version:'stewardship_relationship_evidence_map_v1',
+    admissionSources:[...admissionSources],
+    directCommunicationSources:[...directCommunicationSources],
+    sourceCounts,
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    recentDirectCommunicationWindowDays:STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS,
+    freshForSuggestedIntroductions:relationshipDateWithinDays(lastDirectCommunicationAt),
+    introductionEvidence:introductionEvidence.slice(0,8),
+    packetRefreshOrder:['load_durable_person_packet','load_source_bound_evidence','scan_transcripts','scan_sent_or_replied_email','scan_calendar_attendees','scan_crm_project_document_context','enrich_admitted_person_only','update_packet','compare_for_introductions'],
+    updatedAt:new Date().toISOString()
+  };
+}
+function relationshipProfilePersonPacketMetadata(target={},buckets={}){
+  const metadata={...(target.metadataJson||target.metadata||{})};
+  if((target.profileType||target.profile_type)!=='person')return metadata;
+  const contentList=(items=[])=>Array.isArray(items)?items.map(item=>typeof item==='string'?item:(item.content||item.summary||item.text||item.exactQuote||'')).filter(Boolean):[];
+  const profileKey=target.profileKey||target.profile_key||relationshipProfileKeyForTarget(target);
+  const email=target.email||(String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'');
+  const alias=knownRelationshipEmailAlias(email);
+  const contactId=realRelationshipContactId(target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'');
+  const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||relationshipEvidenceMapFromRows([],target,buckets);
+  const packet=personPacketFromContact({
+    contactId,
+    crmContactId:realRelationshipContactId(metadata.crmContactId)||contactId,
+    knownIdentity:!!alias,
+    name:alias?.name||target.displayName||target.display_name||target.name||email||'Unknown',
+    email,
+    company:metadata.company||metadata.organization||'',
+    role:metadata.role||metadata.title||'',
+    relationshipStatus:alias?.relationshipStatus||target.relationshipStatus||target.relationship_status||'observed',
+    summary:target.summary||'',
+    firstSeenAt:target.createdAt||target.created_at||target.lastObservedAt||target.last_observed_at||'',
+    lastMeaningfulSignalAt:target.lastObservedAt||target.last_observed_at||target.updatedAt||target.updated_at||'',
+    lastDirectCommunicationAt:relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'',
+    lastDirectCommunicationSource:relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'',
+    relationshipEvidenceMap,
+    firstMeaningfulSignal:target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
+    openLoops:contentList(buckets.openLoops||target.openLoops||target.open_loops),
+    risks:contentList(buckets.risks||target.risks),
+    opportunities:contentList(buckets.opportunities||target.opportunities),
+    tags:contentList(buckets.relationshipSignals||target.relationshipSignals||target.relationship_signals),
+    evidence:[
+      ...contentList(buckets.openLoops).map(summary=>({type:'relationship_open_loop',summary})),
+      ...contentList(buckets.risks).map(summary=>({type:'relationship_risk',summary})),
+      ...contentList(buckets.opportunities).map(summary=>({type:'relationship_opportunity',summary})),
+      ...contentList(buckets.relationshipSignals).map(summary=>({type:'relationship_signal',summary}))
+    ]
+  });
+  return {
+    ...metadata,
+    email:metadata.email||email,
+    knownAlias:metadata.knownAlias||alias||null,
+    relationshipEvidenceMap,
+    personPacket:packet,
+    personPacketUpdatedAt:new Date().toISOString(),
+    personPacketSource:'relationship_profile'
+  };
+}
 function relationshipTargetsForObservation(evidenceItem={},observation={}){
   if(relationshipObservationIsNoise(observation))return [];
   const targets=[],seen=new Set(),owner=relationshipOwnerIdentity();
@@ -15513,6 +16325,12 @@ function relationshipTargetsForObservation(evidenceItem={},observation={}){
     if(!clean.profileKey||seen.has(`${clean.profileType}:${clean.profileKey}`))return;
     if(clean.profileType==='person'&&isOwnerRelationship({name:clean.displayName,email:clean.email},owner))return;
     if(clean.profileType==='person'&&/^(no.?reply|notifications?|mailer-daemon)@/i.test(clean.email||''))return;
+    if(clean.profileType==='person'){
+      const metadata=clean.metadata||{};
+      const quality=metadata.relationshipContactQuality||metadata.contactQuality||null;
+      if(quality?.hardRejected||quality?.accepted===false)return;
+      if(metadata.relationshipIntakeReason&&/unsubscribe|bulk|campaign|generic|role_mailbox|system|transactional|inbound_or_unconfirmed/i.test(String(metadata.relationshipIntakeReason)))return;
+    }
     seen.add(`${clean.profileType}:${clean.profileKey}`);
     targets.push(clean);
   };
@@ -15520,9 +16338,11 @@ function relationshipTargetsForObservation(evidenceItem={},observation={}){
   if(observation.organizationId||observation.organization_id)add({profileType:'organization',organizationId:observation.organizationId||observation.organization_id,displayName:observation.organizationName||observation.organization_name||observation.organizationId||observation.organization_id});
   if(observation.projectId||observation.project_id)add({profileType:'project',projectId:observation.projectId||observation.project_id,displayName:observation.projectName||observation.project_name||observation.projectId||observation.project_id});
   for(const p of Array.isArray(participants)?participants:[]){
+    if(p.relationshipIntake===false)continue;
     const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',p.email||p.matchedEmail||'');
     const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
-    if(name||email)add({profileType:'person',personId:p.personId||p.contactId||p.matchedContactId||'',displayName:name||email,email,metadata:{participantRole:p.role||'',source:'evidence_participant'}});
+    const alias=knownRelationshipEmailAlias(email);
+    if(name||email)add({profileType:'person',personId:p.personId||realRelationshipContactId(p.contactId||p.matchedContactId)||'',displayName:alias?.name||name||email,email,relationshipStatus:alias?.relationshipStatus||undefined,metadata:{participantRole:p.role||'',source:'evidence_participant',email,knownAlias:alias||null,relationshipIntakeReason:p.relationshipIntakeReason||'',relationshipContactQuality:p.relationshipContactQuality||null}});
     const company=p.company||p.matchedCompany||p.organization||p.organizationName||'';
     if(company)add({profileType:'organization',displayName:company,metadata:{source:'evidence_participant'}});
   }
@@ -15544,6 +16364,7 @@ function relationshipObservationBucket(type){
 async function saveRelationshipProfile(target={}){
   const now=new Date().toISOString();
   const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
+  row.metadataJson=relationshipProfilePersonPacketMetadata(row);
   if(!row.profileType||!row.profileKey)return null;
   if(DEMO_MODE){
     const rows=transcriptDemoArray('relationshipProfiles');if(!rows)return row;
@@ -15578,19 +16399,35 @@ async function relationshipTimelineRows(profileType,profileKey){
 async function recalculateRelationshipProfile(profileType,profileKey){
   const rows=(await relationshipTimelineRows(profileType,profileKey)).sort((a,b)=>interactionDate(b.occurredAt||b.createdAt)-interactionDate(a.occurredAt||a.createdAt));
   const storeForProfile=(!DEMO_MODE&&!pgPool)?valStore():null;
-  const profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  let profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  if(pgPool){
+    const existing=await dbQuery('select * from relationship_profiles where tenant_id=$1 and profile_type=$2 and profile_key=$3 limit 1',[tenantId(),profileType,profileKey]).catch(()=>({rows:[]}));
+    profile=transcriptPgRow(existing.rows?.[0]||{})||null;
+  }
   const buckets={openLoops:[],risks:[],opportunities:[],preferences:[],emotionalContext:[],relationshipSignals:[]};
   for(const event of rows){
     const bucket=relationshipObservationBucket(event.observationType);
     if(bucket)buckets[bucket].push({content:event.content,exactQuote:event.exactQuote||'',confidence:event.confidence||0,dueAt:event.dueAt||'',occurredAt:event.occurredAt||event.createdAt||'',observationType:event.observationType});
   }
   const payload={summary:rows[0]?.content?`Latest observation: ${String(rows[0].content).slice(0,220)}`:'',relationshipStatus:rows.length?'observed':'quiet',confidence:rows.reduce((m,r)=>Math.max(m,Number(r.confidence)||0),0),lastObservedAt:rows[0]?.occurredAt||rows[0]?.createdAt||null,observationCount:rows.length,openLoopCount:buckets.openLoops.length,promiseCount:rows.filter(r=>['promise','commitment'].includes(r.observationType)).length,riskCount:buckets.risks.length,opportunityCount:buckets.opportunities.length,preferenceCount:buckets.preferences.length,emotionalContextJson:buckets.emotionalContext.slice(0,12),relationshipSignalsJson:buckets.relationshipSignals.slice(0,12),risksJson:buckets.risks.slice(0,12),opportunitiesJson:buckets.opportunities.slice(0,12),preferencesJson:buckets.preferences.slice(0,12),openLoopsJson:buckets.openLoops.slice(0,12)};
+  const existingMetadata=evidenceJsonValue(profile?.metadataJson||profile?.metadata_json||profile?.metadata,{});
+  const relationshipEvidenceMap=relationshipEvidenceMapFromRows(rows,{...(profile||{}),metadataJson:existingMetadata},buckets);
+  const packetMetadata=relationshipProfilePersonPacketMetadata({
+    ...(profile||{}),
+    profileType,
+    profileKey,
+    displayName:profile?.displayName||profile?.display_name||profileKey,
+    summary:payload.summary,
+    relationshipStatus:payload.relationshipStatus,
+    lastObservedAt:payload.lastObservedAt,
+    metadataJson:{...existingMetadata,relationshipEvidenceMap}
+  },buckets);
   if(DEMO_MODE||!pgPool){
-    if(profile)Object.assign(profile,payload,{updatedAt:new Date().toISOString()});
+    if(profile)Object.assign(profile,payload,{metadataJson:packetMetadata,updatedAt:new Date().toISOString()});
     if(storeForProfile)saveValStore(storeForProfile);
     return profile||payload;
   }
-  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey]);
+  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,metadata_json=relationship_profiles.metadata_json||$20::jsonb,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey,JSON.stringify(packetMetadata)]);
   return transcriptPgRow(r.rows[0]);
 }
 async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
@@ -15842,6 +16679,7 @@ async function listAgencyMoves({limit=80}={}){
 }
 function publicRelationshipProfile(row={}){
   if(!row)return null;
+  const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
@@ -15866,7 +16704,8 @@ function publicRelationshipProfile(row={}){
     opportunities:evidenceJsonValue(row.opportunitiesJson||row.opportunities_json,[]),
     preferences:evidenceJsonValue(row.preferencesJson||row.preferences_json,[]),
     openLoops:evidenceJsonValue(row.openLoopsJson||row.open_loops_json,[]),
-    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    metadata,
+    personPacket:metadata.personPacket||null,
     updatedAt:row.updatedAt||row.updated_at||''
   };
 }
@@ -15879,9 +16718,231 @@ async function listRelationshipProfiles({limit=80}={}){
   }
   return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
 }
+function calendarAttendeeLooksLikeResource(attendee={}){
+  const email=normalizeContextEmail(attendee.email||attendee.address||'');
+  const name=String(attendee.name||attendee.displayName||'').toLowerCase();
+  const local=email.split('@')[0]||'';
+  return /\b(room|conference|calendar|resource|zoom|meet|teams|webex|no.?reply|donotreply|notification|booking|appointments?)\b/i.test([local,name].join(' '));
+}
+function calendarAttendeeProfileFromEvent(attendee={},event={}){
+  const email=normalizeContextEmail(attendee.email||attendee.address||'');
+  const name=cleanPersonName(attendee.name||attendee.displayName||'',email);
+  if((!email&&!name)||calendarAttendeeLooksLikeResource({name,email}))return null;
+  const quality=relationshipContactQuality({
+    email:{subject:event.title||event.summary||'',snippet:event.description||'',from:{name,email}},
+    participant:{name,email},
+    role:'calendar_attendee'
+  });
+  if(quality.hardRejected)return null;
+  const title=event.title||event.summary||'Calendar meeting';
+  const occurredAt=event.startTime||event.start||event.date||event.createdAt||new Date().toISOString();
+  const eventDate=occurredAt&&!Number.isNaN(new Date(occurredAt).getTime())?new Date(occurredAt).toLocaleDateString('en-US'):'recently';
+  const displayName=name&&name!=='Unknown'?name:(email||'Calendar attendee');
+  const summary=`Direct meeting participant from ${title}${eventDate?' on '+eventDate:''}.`;
+  const evidence=relationshipEvidence('calendar_meeting',summary,occurredAt,'high',event.id||event.eventId||'');
+  return {
+    id:`calendar:${crypto.createHash('sha1').update([tenantId(),email||displayName,event.id||event.eventId||title].join('|')).digest('hex').slice(0,24)}`,
+    profileType:'person',
+    profileKey:relationshipProfileKeyForTarget({profileType:'person',displayName,email}),
+    personId:'',
+    displayName,
+    summary,
+    relationshipStatus:'meeting participant',
+    confidence:0.82,
+    lastObservedAt:occurredAt,
+    observationCount:1,
+    openLoopCount:0,
+    promiseCount:0,
+    riskCount:0,
+    opportunityCount:0,
+    preferenceCount:0,
+    emotionalContext:[],
+    relationshipSignals:[{content:'Direct meeting participant',summary,sourceType:'calendar',sourceId:event.id||event.eventId||''}],
+    risks:[],
+    opportunities:[],
+    preferences:[],
+    openLoops:[],
+    evidence:[evidence],
+    metadata:{
+      source:'calendar_attendee',
+      email,
+      calendarEventId:event.id||event.eventId||'',
+      calendarTitle:title,
+      calendarStart:occurredAt,
+      calendarSource:event.source||event.calendarName||'calendar',
+      relationshipAdmissionSignals:['meeting_participant'],
+      relationshipIntakeReason:'meeting_participant',
+      relationshipContactQuality:{...quality,accepted:true,trustedSignals:[...new Set([...(quality.trustedSignals||[]),'meeting_participant'])]}
+    },
+    updatedAt:new Date().toISOString()
+  };
+}
+async function calendarRelationshipProfiles({limit=120,days=90}={}){
+  const now=new Date();
+  const start=new Date(now);start.setDate(start.getDate()-Math.max(Number(days)||90,1));
+  const end=new Date(now);end.setDate(end.getDate()+Math.max(Math.min(Number(days)||90,90),14));
+  const {events}=await loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
+  const owner=relationshipOwnerIdentity();
+  const profiles=[];
+  const seen=new Set();
+  for(const event of events||[]){
+    if(!event||String(event.status||'').toLowerCase()==='cancelled')continue;
+    if(sidebarCalendarEventLooksPrivateBlock(event))continue;
+    for(const attendee of inferAttendeesFromEvent(event)){
+      if(isOwnerRelationship(attendee,owner))continue;
+      const profile=calendarAttendeeProfileFromEvent(attendee,event);
+      if(!profile)continue;
+      const key=profile.profileKey||profile.metadata?.email||profile.displayName;
+      if(!key||seen.has(key))continue;
+      seen.add(key);
+      profiles.push(profile);
+      if(profiles.length>=limit)return profiles;
+    }
+  }
+  return profiles;
+}
 async function listProjectProfiles({limit=80}={}){
   const capped=Math.max(1,Math.min(Number(limit)||80,200));
   return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
+}
+function projectProfileMatchesIdentifier(row={},identifier=''){
+  const needle=String(identifier||'').trim().toLowerCase();
+  if(!needle)return false;
+  const identifierVariants=new Set([needle,needle.startsWith('project:')?needle.replace(/^project:/,''):`project:${needle}`]);
+  const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+  return [
+    row.id,
+    row.profileKey,
+    row.profile_key,
+    row.projectId,
+    row.project_id,
+    row.displayName,
+    row.display_name,
+    row.name,
+    metadata.projectId,
+    metadata.project_id,
+    metadata.projectName,
+    metadata.project,
+    metadata.intake?.projectId,
+    metadata.intake?.project_id,
+    metadata.intake?.projectName
+  ].filter(Boolean).some(value=>identifierVariants.has(String(value).trim().toLowerCase()));
+}
+function projectUpdateListValue(value){
+  if(Array.isArray(value))return value.map(item=>String(item||'').trim()).filter(Boolean);
+  return String(value||'').split(/\n|,|;/).map(item=>item.trim()).filter(Boolean);
+}
+function projectUpdatePayload(body={}){
+  const hasNeedsProjectOnboarding=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')||Object.prototype.hasOwnProperty.call(body,'needs_project_onboarding');
+  const needsProjectOnboardingValue=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')?body.needsProjectOnboarding:body.needs_project_onboarding;
+  return {
+    name:String(body.name||body.projectName||body.displayName||'').replace(/\s+/g,' ').trim(),
+    summary:String(body.summary||body.description||body.currentReality||'').trim(),
+    documents:String(body.documents||body.documentNotes||body.documentsAndContracts||'').trim(),
+    relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
+    rawContext:String(body.rawContext||body.notes||'').trim(),
+    status:String(body.status||body.relationshipStatus||'').trim(),
+    desiredOutcome:String(body.desiredOutcome||body.desired_outcome||body.outcome||'').trim(),
+    nextMove:String(body.nextMove||body.next_move||body.recommendedAction||'').trim(),
+    nextStepOwner:String(body.nextStepOwner||body.next_step_owner||body.ownerName||body.owner_name||'').trim(),
+    projectPhase:String(body.projectPhase||body.project_phase||'').trim(),
+    projectInterviewNotes:String(body.projectInterviewNotes||body.project_interview_notes||'').trim(),
+    whatValNowKnows:String(body.whatValNowKnows||body.what_val_now_knows||'').trim(),
+    ownerMonitoringNotes:String(body.ownerMonitoringNotes||body.owner_monitoring_notes||'').trim(),
+    monitoringRules:projectUpdateListValue(body.monitoringRules||body.monitoring_rules),
+    workstreams:projectUpdateListValue(body.workstreams||body.work_streams),
+    milestones:projectUpdateListValue(body.milestones),
+    relationshipNurtureRules:projectUpdateListValue(body.relationshipNurtureRules||body.relationship_nurture_rules),
+    preparedWork:projectUpdateListValue(body.preparedWork||body.prepared_work),
+    hasNeedsProjectOnboarding,
+    needsProjectOnboarding:String(needsProjectOnboardingValue||'').toLowerCase()==='true',
+    projectOnboardingStatus:String(body.projectOnboardingStatus||body.project_onboarding_status||'').trim(),
+    projectOnboardingFirstQuestion:String(body.projectOnboardingFirstQuestion||body.project_onboarding_first_question||'').trim(),
+    projectOnboardingFirstAnswer:String(body.projectOnboardingFirstAnswer||body.project_onboarding_first_answer||'').trim(),
+    projectOnboardingOwnerMonitoringAnswer:String(body.projectOnboardingOwnerMonitoringAnswer||body.project_onboarding_owner_monitoring_answer||'').trim()
+  };
+}
+async function updateProjectProfileLocal(projectId='',patch={}){
+  const identifier=String(projectId||'').trim();
+  if(!identifier)return null;
+  const now=new Date().toISOString();
+  const projectProfileKey=identifier.startsWith('project:')?identifier:`project:${identifier}`;
+  const applyPatch=(row={})=>{
+    const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+    const intake={...(metadata.intake||{})};
+    if(Object.prototype.hasOwnProperty.call(patch,'documents'))intake.documents=patch.documents;
+    if(patch.relationships)intake.relationships=patch.relationships;
+    if(patch.rawContext)intake.rawContext=patch.rawContext;
+    const displayName=patch.name||row.displayName||row.display_name||row.name||metadata.projectName||'Project';
+    const summary=Object.prototype.hasOwnProperty.call(patch,'summary')?patch.summary:(row.summary||'');
+    const relationshipStatus=patch.status||row.relationshipStatus||row.relationship_status||'intake';
+    const projectOnboarding=patch.projectOnboardingStatus ? {
+      ...(metadata.projectOnboarding||{}),
+      status:patch.projectOnboardingStatus,
+      firstQuestion:patch.projectOnboardingFirstQuestion||metadata.projectOnboarding?.firstQuestion||'',
+      firstAnswer:patch.projectOnboardingFirstAnswer||metadata.projectOnboarding?.firstAnswer||'',
+      ownerMonitoringAnswer:patch.projectOnboardingOwnerMonitoringAnswer||metadata.projectOnboarding?.ownerMonitoringAnswer||'',
+      updatedAt:now
+    } : metadata.projectOnboarding;
+    const previousOwner=metadata.owner&&typeof metadata.owner==='object'?metadata.owner:{};
+    const nextMetadata={
+      ...metadata,
+      ...(patch.desiredOutcome?{desiredOutcome:patch.desiredOutcome}:{}),
+      ...(patch.nextMove?{nextMove:patch.nextMove}:{}),
+      ...(patch.nextStepOwner?{nextStepOwner:patch.nextStepOwner}:{}),
+      ...(patch.projectPhase?{projectPhase:patch.projectPhase}:{}),
+      ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
+      ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
+      ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
+      ...(patch.monitoringRules.length?{monitoringRules:patch.monitoringRules}:{}),
+      ...(patch.workstreams.length?{workstreams:patch.workstreams}:{}),
+      ...(patch.milestones.length?{milestones:patch.milestones}:{}),
+      ...(patch.relationshipNurtureRules.length?{relationshipNurtureRules:patch.relationshipNurtureRules}:{}),
+      ...(patch.preparedWork.length?{preparedWork:patch.preparedWork.map(item=>({title:item,summary:item}))}:{}),
+      ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
+    };
+    return {
+      ...row,
+      displayName,
+      summary,
+      relationshipStatus,
+      metadataJson:{
+        ...nextMetadata,
+        intake,
+        projectName:displayName,
+        ...(patch.hasNeedsProjectOnboarding?{needsProjectOnboarding:patch.needsProjectOnboarding}:{}),
+        ...(projectOnboarding?{projectOnboarding}:{}),
+        updatedFrom:'hearth_project_edit',
+        noExternalAction:true
+      },
+      updatedAt:now
+    };
+  };
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles')||[];
+    const index=rows.findIndex(row=>row.tenantId===tenantId()&&String(row.profileType||row.profile_type||'')==='project'&&projectProfileMatchesIdentifier(row,identifier));
+    if(index<0)return null;
+    rows[index]=applyPatch(rows[index]);
+    return publicRelationshipProfile(rows[index]);
+  }
+  await valDbReady;
+  if(pgPool){
+    const found=await dbQuery(`select * from relationship_profiles where tenant_id=$1 and profile_type='project' and (id=$2 or profile_key=$2 or project_id=$2 or display_name=$2 or profile_key=$3) limit 1`,[tenantId(),identifier,projectProfileKey]);
+    if(!found.rows?.length)return null;
+    const next=applyPatch(transcriptPgRow(found.rows[0]));
+    const updated=await dbQuery(`update relationship_profiles
+      set display_name=$3, summary=$4, relationship_status=$5, metadata_json=$6, updated_at=now()
+      where tenant_id=$1 and profile_type='project' and (id=$2 or profile_key=$2 or project_id=$2 or display_name=$2 or profile_key=$7)
+      returning *`,[tenantId(),identifier,next.displayName,next.summary,next.relationshipStatus,JSON.stringify(next.metadataJson),projectProfileKey]);
+    return publicRelationshipProfile(transcriptPgRow(updated.rows[0]));
+  }
+  const store=valStore();
+  const rows=transcriptFileArray(store,'relationshipProfiles');
+  const index=rows.findIndex(row=>row.tenantId===tenantId()&&String(row.profileType||row.profile_type||'')==='project'&&projectProfileMatchesIdentifier(row,identifier));
+  if(index<0)return null;
+  rows[index]=applyPatch(rows[index]);
+  saveValStore(store);
+  return publicRelationshipProfile(rows[index]);
 }
 const RELATIONSHIP_INDEX_TEMPERATURE_MODEL = {
   needs_attention: {
@@ -15975,18 +17036,331 @@ function relationshipIndexTemperature(profile={}){
 function relationshipIndexTemperatureContract(state='warm'){
   return RELATIONSHIP_INDEX_TEMPERATURE_MODEL[state]||RELATIONSHIP_INDEX_TEMPERATURE_MODEL.warm;
 }
+function relationshipIndexPrimarySignal(profile={},state='warm'){
+  const count=(key)=>Number(profile[key]||profile[String(key).replace(/[A-Z]/g,m=>'_'+m.toLowerCase())]||0);
+  if(state==='waiting'){
+    const loops=count('openLoopCount');
+    return loops?`Waiting: ${loops} open loop${loops===1?'':'s'} need source review.`:'Waiting: VAL sees a pending loop, but the source needs review.';
+  }
+  if(state==='needs_attention'){
+    const risks=count('riskCount');
+    return risks?`Needs attention: ${risks} risk signal${risks===1?'':'s'} need review.`:'Needs attention: relationship context needs review before action.';
+  }
+  if(state==='strategic'){
+    const opportunities=count('opportunityCount');
+    return opportunities?`Strategic: ${opportunities} opportunity signal${opportunities===1?'':'s'} in this relationship file.`:'Strategic: VAL sees possible leverage, but review the source before acting.';
+  }
+  if(state==='new')return 'New: identity is known, but VAL needs more evidence.';
+  return 'Warm: no urgent risk or waiting loop is currently surfaced.';
+}
+function stewardshipExecutiveVisibilityForIndex(packetItem={},profile={}){
+  const visibility=packetItem.executiveVisibility||packetItem.packet?.executive_visibility||{};
+  const raw=visibility.visibility||'hidden';
+  const mapped=raw==='active_queue'?'active_stewardship':raw;
+  const openLoops=(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const opportunities=(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const packet=packetItem.packet||{};
+  const maturity=packetItem.packetMaturity||packet.packet_maturity||{};
+  const admission=packetItem.relationshipAdmission||packet.relationship_admission||profile.relationshipAdmission||{};
+  const canEvaluate=!!(packetItem.canEvaluateMoves||packet.packet_state?.can_evaluate_moves);
+  const sourceSummary=packet.who_this_person_is?.source_receipts?.[0]?.summary||profile.summary||packet.relationship_origin?.first_meaningful_signal||'Source-backed relationship context is attached.';
+  const openMatter=openLoops[0]||packet.relationship_state?.open_loops?.[0]||opportunities[0]||'No current open matter is ready.';
+  let status='No move right now';
+  let nextMove='No action is needed right now.';
+  let whyNow='No source-backed timing trigger is active.';
+  let state='hidden';
+  if(admission.admission_status==='blocked_by_identity'||maturity.maturity==='blocked_by_identity'||mapped==='identity_review'){
+    state='identity_review';
+    status='Needs identity review';
+    nextMove='Review the contact match before VAL uses this relationship.';
+    whyNow='Meaningful context exists, but the person is not safely resolved.';
+  }else if(mapped==='active_stewardship'||(canEvaluate&&(openLoops.length||opportunities.length))){
+    state='active_stewardship';
+    status=openLoops.length||opportunities.length?'Move suggested: Review next stewardship move':'Move suggested: Review relationship context';
+    nextMove=openLoops.length?'Review the open relationship matter.':(opportunities.length?'Review the suggested stewardship move.':'Review the next stewardship move.');
+    whyNow=openLoops[0]||opportunities[0]||visibility.attention_reason||'VAL has enough source-backed context to ask for executive judgment.';
+  }else if(mapped==='people_to_watch'){
+    state='people_to_watch';
+    status='Understanding developing';
+    nextMove='VAL is watching for a named trigger before asking for action.';
+    whyNow=visibility.attention_reason||maturity.why||'VAL recognizes the relationship but does not yet have a responsible move.';
+  }
+  return {
+    state,
+    status,
+    statusMeaning:maturity.why||visibility.why_visible_or_hidden||'VAL is sorting this relationship by current Stewardship posture.',
+    whyThisMatters:profile.summary||packet.who_this_person_is?.summary||sourceSummary,
+    whatIsOpen:state==='identity_review'?'Contact identity needs review.':openMatter,
+    nextMove,
+    whyNow,
+    evidencePosture:sourceSummary,
+    collapsedByDefault:state==='people_to_watch',
+    watchTrigger:state==='people_to_watch'?(visibility.attention_reason||maturity.missing_variables?.[0]||'new source-backed context'):'',
+    canEvaluateMoves:canEvaluate,
+    hidden:state==='hidden'
+  };
+}
+function relationshipProfilePrimaryEmail(profile={}){
+  const metadata=profile.metadata||{};
+  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
+  const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
+  return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
+}
+function relationshipProfileKnownAlias(profile={}){
+  return knownRelationshipEmailAlias(relationshipProfilePrimaryEmail(profile));
+}
+function relationshipProfileHasRealIdentity(profile={}){
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return !!(
+    resolvedCrmContactId(profile) ||
+    realRelationshipContactId(profile.personId||profile.person_id) ||
+    realRelationshipContactId(metadata.contactId||metadata.crmContactId) ||
+    realRelationshipContactId(packet.person?.crm_contact_id)
+  );
+}
+function relationshipDisplayNameLooksLikeRawHandle(name='',email=''){
+  const clean=String(name||'').trim().toLowerCase();
+  if(!clean)return true;
+  if(clean==='unknown')return true;
+  if(clean.includes('@'))return true;
+  if(email&&clean===String(email).split('@')[0].toLowerCase())return true;
+  return /^[a-z0-9._-]+$/.test(clean)&&!/\s/.test(clean);
+}
+function relationshipEmailLooksGeneric(email=''){
+  return relationshipEmailIsGenericMailbox(email);
+}
+function relationshipProfileContactQuality(profile={}){
+  const metadata=profile.metadata||{};
+  const email=relationshipProfilePrimaryEmail(profile);
+  const name=profile.displayName||profile.display_name||profile.name||'';
+  const stored=metadata.relationshipContactQuality||metadata.contactQuality||metadata.targetMetadata?.relationshipContactQuality||null;
+  const admissionSignals=Array.isArray(metadata.relationshipAdmissionSignals)?metadata.relationshipAdmissionSignals:[];
+  const reasons=[];
+  const trustedSignals=[];
+  if(stored){
+    reasons.push(...(stored.reasons||[]));
+    trustedSignals.push(...(stored.trustedSignals||[]));
+    if(stored.hardRejected||stored.accepted===false)reasons.push('stored_contact_quality_rejected');
+  }
+  const intakeReason=String(metadata.relationshipIntakeReason||metadata.targetMetadata?.relationshipIntakeReason||'');
+  if(/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_plausible_human|inbound_or_unconfirmed/i.test(intakeReason))reasons.push(intakeReason);
+  if(email&&relationshipEmailIsGenericMailbox(email))reasons.push('generic_or_role_mailbox');
+  if(email&&/^(no.?reply|donotreply|mailer-daemon|postmaster)@/i.test(email))reasons.push('no_reply_or_system_mailbox');
+  if(email&&!name&&!relationshipEmailLooksHumanNamed('',email))reasons.push('no_plausible_human_name');
+  if(knownRelationshipEmailAlias(email))trustedSignals.push('known_alias');
+  if(relationshipProfileHasRealIdentity(profile))trustedSignals.push('confirmed_contact');
+  if(admissionSignals.includes('meeting_participant'))trustedSignals.push('meeting_participant');
+  if(admissionSignals.includes('recent_sent_email'))trustedSignals.push('recent_sent_email');
+  if(admissionSignals.includes('recent_reply'))trustedSignals.push('recent_reply');
+  const trustedIdentitySource=trustedSignals.some(signal=>['confirmed_contact','known_alias','meeting_participant','recent_sent_email','recent_reply'].includes(signal));
+  const trustedOverride=trustedSignals.some(signal=>['confirmed_contact','known_alias'].includes(signal));
+  const nonRescuableNoise=reasons.some(reason=>/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_reply|stored_contact_quality_rejected/i.test(String(reason)));
+  const identityGap=reasons.some(reason=>/no_plausible_human|inbound_or_unconfirmed/i.test(String(reason)));
+  const hardRejected=(nonRescuableNoise&&!trustedOverride)||(identityGap&&!trustedIdentitySource);
+  return {
+    accepted:!hardRejected,
+    hardRejected,
+    reasons:[...new Set(reasons.filter(Boolean).map(String))],
+    trustedSignals:[...new Set(trustedSignals)]
+  };
+}
+function stewardshipRelationshipAdmission(profile={}){
+  const email=relationshipProfilePrimaryEmail(profile);
+  const alias=knownRelationshipEmailAlias(email);
+  const rawHandle=relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email);
+  const genericMailbox=relationshipEmailLooksGeneric(email);
+  const metadata=profile.metadata||{};
+  const contactQuality=relationshipProfileContactQuality(profile);
+  const admissionSignals=Array.isArray(metadata.relationshipAdmissionSignals)?metadata.relationshipAdmissionSignals:[];
+  if(contactQuality.hardRejected){
+    return {
+      admission_status:'rejected',
+      admitted:false,
+      reason:contactQuality.reasons[0]||'contact_quality_rejected',
+      relationship_signals:contactQuality.trustedSignals,
+      email,
+      alias:alias||null,
+      rawHandle,
+      genericMailbox,
+      contactQuality
+    };
+  }
+  if(admissionSignals.includes('meeting_participant')){
+    return {
+      admission_status:'admitted',
+      admitted:true,
+      reason:'direct_meeting_participant',
+      relationship_signals:['meeting_participant'],
+      source_receipts:(Array.isArray(profile.evidence)?profile.evidence:[]).slice(0,8),
+      identity_confidence:relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email)?'medium':'high',
+      rejection_signals:[],
+      review_required:false,
+      email,
+      alias:alias||null,
+      rawHandle,
+      genericMailbox,
+      contactQuality
+    };
+  }
+  const decision=relationshipAdmissionDecision({
+    contact:{
+      contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'')||resolvedCrmContactId(profile)||'',
+      crmContactId:resolvedCrmContactId(profile)||metadata.crmContactId||'',
+      knownIdentity:!!alias||relationshipProfileHasRealIdentity(profile),
+      name:alias?.name||profile.displayName||profile.display_name||profile.name||'',
+      email,
+      company:metadata.company||profile.organizationId||'',
+      relationshipStatus:profile.relationshipStatus||profile.relationship_status||'',
+      summary:profile.summary||'',
+      reason:profile.summary||'',
+      openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      needs:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      offers:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      evidence:[
+        profile.summary&&{type:'relationship_profile',summary:profile.summary},
+        ...(Array.isArray(profile.evidence)?profile.evidence:[])
+      ].filter(Boolean)
+    }
+  });
+  const admitted=decision.admission_status==='admitted';
+  return {
+    ...decision,
+    admitted,
+    reason: admitted
+      ? (alias?'known_email_alias':decision.reason||'linked_identity')
+      : decision.reason||'email_only_or_unconfirmed_observation',
+    email,
+    alias: alias||null,
+    rawHandle,
+    genericMailbox,
+    contactQuality
+  };
+}
+function relationshipTimelineHasOutboundOrReply(rows=[]){
+  return (Array.isArray(rows)?rows:[]).some(row=>{
+    const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+    const text=[
+      row.content,
+      row.exactQuote||row.exact_quote,
+      metadata.sourceType||metadata.source_type,
+      metadata.evidenceTitle||metadata.evidence_title
+    ].join(' ').toLowerCase();
+    return /\b(sent email|outbound|user replied|you replied|jessa replied|jessa sent|replied to|responded to|waiting on response)\b/.test(text);
+  });
+}
+async function stewardshipRelationshipAdmissionForProfile(profile={}){
+  const base=stewardshipRelationshipAdmission(profile);
+  if(base.admitted)return base;
+  const rows=await relationshipTimelineRows(profile.profileType||profile.profile_type||'person',profile.profileKey||profile.profile_key||'').catch(()=>[]);
+  if(!base.rawHandle&&!base.genericMailbox&&relationshipTimelineHasOutboundOrReply(rows)){
+    return {...base,admitted:true,admission_status:'admitted',reason:'outbound_or_replied_email_evidence',relationship_signals:[...(base.relationship_signals||[]),'user_replied']};
+  }
+  return base;
+}
+function stewardshipRelationshipDedupeKey(profile={}){
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+  if(admission.alias?.name)return `alias:${stableKey(admission.alias.name)}`;
+  return admission.email||profile.profileKey||profile.profile_key||profile.id||profile.displayName||profile.name||'';
+}
+function dedupeStewardshipProfiles(profiles=[]){
+  const byKey=new Map();
+  for(const profile of Array.isArray(profiles)?profiles:[]){
+    const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+    const key=stewardshipRelationshipDedupeKey(profile);
+    if(!key)continue;
+    const existing=byKey.get(key);
+    if(!existing){
+      byKey.set(key,profile);
+      continue;
+    }
+    const existingAdmission=existing.relationshipAdmission||stewardshipRelationshipAdmission(existing);
+    const existingScore=(existingAdmission.reason==='known_email_alias'?3:0)+(relationshipProfileHasRealIdentity(existing)?2:0)+(Number(existing.observationCount||existing.observation_count||0)>0?1:0);
+    const nextScore=(admission.reason==='known_email_alias'?3:0)+(relationshipProfileHasRealIdentity(profile)?2:0)+(Number(profile.observationCount||profile.observation_count||0)>0?1:0);
+    if(nextScore>existingScore)byKey.set(key,profile);
+  }
+  return [...byKey.values()];
+}
+function relationshipTranscriptIntroTokens(profile={}){
+  const metadata=profile.metadata||{};
+  const values=[
+    profile.displayName||profile.display_name||profile.name,
+    relationshipProfilePrimaryEmail(profile),
+    metadata.company,
+    metadata.organization,
+    profile.organizationId||profile.organization_id
+  ].filter(Boolean).join(' ').toLowerCase();
+  const tokens=values.split(/[^a-z0-9]+/).filter(word=>word.length>=5&&!['gmail','email','group','relationship','observed'].includes(word));
+  for(const word of [...tokens]){
+    if(word.includes('adaptive'))tokens.push('adaptive');
+    if(word.includes('climb'))tokens.push('climbing','climbers');
+  }
+  return [...new Set(tokens)].slice(0,12);
+}
+function relationshipTranscriptIntroEvidence(profile={},transcripts=[]){
+  const tokens=relationshipTranscriptIntroTokens(profile);
+  if(!tokens.length)return null;
+  for(const transcript of Array.isArray(transcripts)?transcripts:[]){
+    const raw=String(transcript.rawTranscript||transcript.raw_transcript||transcript.transcriptText||'');
+    const lower=raw.toLowerCase();
+    const token=tokens.find(word=>lower.includes(word));
+    if(!token)continue;
+    const idx=lower.indexOf(token);
+    const window=raw.slice(Math.max(0,idx-700),idx+1400);
+    if(!/\b(introduce|connect|meet|should talk|want to send|want to connect|make that introduction)\b/i.test(window))continue;
+    const windowOffset=Math.max(0,idx-700);
+    const verbMatch=window.match(/\b(introduce|connect|meet|should talk|want to send|want to connect|make that introduction)\b/i);
+    const snippetCenter=verbMatch?windowOffset+(verbMatch.index||0):idx;
+    const snippet=raw.slice(Math.max(0,snippetCenter-180),snippetCenter+520);
+    const title=transcript.meetingTitle||transcript.meeting_title||transcript.title||'Transcript';
+    const sourceId=transcript.transcriptId||transcript.transcript_id||transcript.id||'';
+    return {
+      type:'transcript_intro_evidence',
+      sourceType:'transcript',
+      sourceId,
+      title,
+      summary:dashboardShortText(snippet,`${title}: transcript mentions an introduction or connection around ${token}.`,520),
+      confidence:'medium',
+      occurredAt:transcript.meetingDatetime||transcript.meeting_datetime||transcript.createdAt||transcript.created_at||''
+    };
+  }
+  return null;
+}
+function enrichRelationshipProfileWithTranscriptIntroEvidence(profile={},transcripts=[]){
+  const introEvidence=relationshipTranscriptIntroEvidence(profile,transcripts);
+  if(!introEvidence)return profile;
+  const existingEvidence=Array.isArray(profile.evidence)?profile.evidence:[];
+  const existingOpportunities=Array.isArray(profile.opportunities)?profile.opportunities:[];
+  const existingSignals=Array.isArray(profile.relationshipSignals)?profile.relationshipSignals:[];
+  return {
+    ...profile,
+    evidence:[introEvidence,...existingEvidence],
+    opportunityCount:Math.max(Number(profile.opportunityCount||0),existingOpportunities.length+1),
+    opportunities:[{content:'Transcript-derived introduction opportunity: review the source snippet before preparing any introduction.',summary:introEvidence.summary,sourceType:'transcript',sourceId:introEvidence.sourceId},...existingOpportunities],
+    relationshipSignals:[{content:'Transcript source mentions a possible introduction connected to this relationship context.',summary:introEvidence.summary,sourceType:'transcript',sourceId:introEvidence.sourceId},...existingSignals]
+  };
+}
 function relationshipIndexItemFromProfile(profile={}){
   const temperatureEvidence=relationshipIndexTemperatureEvidence(profile);
   const state=relationshipIndexStateFromEvidence(temperatureEvidence);
   const temperatureConflict=relationshipIndexTemperatureConflict(temperatureEvidence,state);
   const temperatureContract=relationshipIndexTemperatureContract(state);
   const metadata=profile.metadata||{};
-  const signal=(profile.risks?.[0]?.content)||(profile.openLoops?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.relationshipSignals?.[0]?.content)||profile.summary||'Relationship context is available for review.';
-  const name=profile.displayName||profile.name||'Unnamed relationship';
-  const contactId=profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id||resolvedCrmContactId(profile)||'';
-  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^email:/,''):'';
-  const email=metadata.email||profile.email||profileKeyEmail||'';
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+  const alias=admission.alias||relationshipProfileKnownAlias(profile);
+  const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
+  const contactId=realRelationshipContactId(profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id)||resolvedCrmContactId(profile)||'';
+  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
+  const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
+  const packetItem=relationshipPersonPacketItemFromProfile(profile);
+  const executiveUi=stewardshipExecutiveVisibilityForIndex(packetItem,profile);
+  const relationshipEvidenceMap=packetItem.relationshipEvidenceMap||metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||packetItem.packet?.relationship_evidence_map||{};
+  const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
+  const lastDirectCommunicationSource=relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'';
+  const freshForSuggestedIntroductions=relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipEvidenceMap.fresh_for_suggested_introductions===true||relationshipDateWithinDays(lastDirectCommunicationAt);
   return {
     id:String(id),
     query:{name,email,targetId:id,contactId},
@@ -16007,17 +17381,99 @@ function relationshipIndexItemFromProfile(profile={}){
     sourceEvidence:profile.summary||'Canonical relationship profile from VAL relationship index.',
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
-    signal:dashboardShortText(signal,'Relationship signal available.',120),
+    signal:relationshipIndexPrimarySignal(profile,state),
     identity:name,
     contact:[email,metadata.phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
     wisdom:profile.summary||'Review the relationship file before acting.',
-    evidence:dashboardShortText(signal,profile.summary||'',220),
-    patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||signal,profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
-    meaning:profile.summary||dashboardShortText(signal,'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
+    evidence:profile.summary||relationshipIndexPrimarySignal(profile,state),
+    patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||relationshipIndexPrimarySignal(profile,state),profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
+    meaning:profile.summary||dashboardShortText(relationshipIndexPrimarySignal(profile,state),'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
     certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
+    personPacket:packetItem.packet||metadata.personPacket||null,
+    packetMaturity:packetItem.packetMaturity||null,
+    evidenceBindings:packetItem.evidenceBindings||[],
+    executiveVisibility:packetItem.executiveVisibility||null,
+    canEvaluateMoves:packetItem.canEvaluateMoves||false,
+    relationshipEvidenceMap,
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    freshForSuggestedIntroductions,
+    stewardshipUi:executiveUi,
+    stewardshipStatus:executiveUi.status,
+    stewardshipState:executiveUi.state,
+    whyThisPersonMatters:executiveUi.whyThisMatters,
+    whatIsOpen:executiveUi.whatIsOpen,
+    nextStewardshipMove:executiveUi.nextMove,
+    whyNow:executiveUi.whyNow,
+    evidencePosture:executiveUi.evidencePosture,
+    relationshipAdmission:admission,
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
+  };
+}
+function relationshipPersonPacketItemFromProfile(profile={}){
+  const metadata=profile.metadata||{};
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+  const alias=admission.alias||relationshipProfileKnownAlias(profile);
+  const email=admission.email||metadata.email||'';
+  const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||profile.relationshipEvidenceMap||profile.relationship_evidence_map||{};
+  const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
+  const lastDirectCommunicationSource=relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'';
+  const rawPacket=profile.personPacket||metadata.personPacket||personPacketFromContact({
+    contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||''),
+    knownIdentity:!!alias,
+    name:alias?.name||profile.displayName||profile.display_name||profile.name||'Relationship',
+    email,
+    company:metadata.company||profile.organizationId||'',
+    role:metadata.role||'',
+    relationshipStatus:alias?.relationshipStatus||profile.relationshipStatus||profile.relationship_status||'observed',
+    summary:profile.summary||'',
+    lastObservedAt:profile.lastObservedAt||profile.last_observed_at||'',
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    relationshipEvidenceMap,
+    openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    risks:(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    evidence:[
+      profile.summary&&{type:'relationship_profile',summary:profile.summary},
+      ...(Array.isArray(profile.evidence)?profile.evidence:[])
+    ].filter(Boolean)
+  });
+  const packet={
+    ...rawPacket,
+    relationship_evidence_map:rawPacket.relationship_evidence_map||relationshipEvidenceMap,
+    relationship_state:{
+      ...(rawPacket.relationship_state||{}),
+      last_direct_communication_at:rawPacket.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt,
+      last_direct_communication_source:rawPacket.relationship_state?.last_direct_communication_source||lastDirectCommunicationSource
+    },
+    packet_state:{
+      ...(rawPacket.packet_state||{}),
+      fresh_for_suggested_introductions:rawPacket.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(rawPacket.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt)
+    }
+  };
+  return {
+    profileId:profile.id||'',
+    profileKey:profile.profileKey||profile.profile_key||'',
+    displayName:alias?.name||profile.displayName||profile.display_name||profile.name||packet.person?.name||'Relationship',
+    packet,
+    maturity:packet.packet_state?.maturity||'thin',
+    packetMaturity:packet.packet_maturity||null,
+    evidenceBindings:packet.evidence_bindings||[],
+    executiveVisibility:packet.executive_visibility||null,
+    canEvaluateMoves:!!packet.packet_state?.can_evaluate_moves,
+    needsReview:!!packet.packet_state?.needs_review,
+    missingVariables:packet.packet_state?.missing_variables||[],
+    lastMeaningfulSignalAt:packet.relationship_state?.last_meaningful_signal_at||profile.lastObservedAt||profile.last_observed_at||'',
+    lastDirectCommunicationAt:packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt,
+    lastDirectCommunicationSource:packet.relationship_state?.last_direct_communication_source||lastDirectCommunicationSource,
+    relationshipEvidenceMap:packet.relationship_evidence_map||relationshipEvidenceMap,
+    freshForSuggestedIntroductions:packet.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt),
+    relationshipAdmission:admission,
+    noExternalAction:true
   };
 }
 function projectIndexItemFromProfile(profile={}){
@@ -16033,7 +17489,7 @@ function projectIndexItemFromProfile(profile={}){
   const status=profile.relationshipStatus||metadata.status||profile.status||'Observed';
   const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
-  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
+  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||metadata.nextMove||profile.summary||'Review the project file.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
     files:uploadedFiles,
@@ -16067,6 +17523,21 @@ function projectIndexItemFromProfile(profile={}){
     ].filter(Boolean).join(' · '),
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
+    owner:metadata.owner||null,
+    assignedProjectManager:metadata.assignedProjectManager||null,
+    desiredOutcome:metadata.desiredOutcome||metadata.outcome||'',
+    outcome:metadata.outcome||metadata.desiredOutcome||'',
+    nextStepOwner:metadata.nextStepOwner||metadata.owner?.name||'',
+    projectPhase:metadata.projectPhase||'',
+    projectInterviewNotes:metadata.projectInterviewNotes||'',
+    whatValNowKnows:metadata.whatValNowKnows||'',
+    ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
+    monitoringRules:Array.isArray(metadata.monitoringRules)?metadata.monitoringRules:[],
+    workstreams:Array.isArray(metadata.workstreams)?metadata.workstreams:[],
+    milestones:Array.isArray(metadata.milestones)?metadata.milestones:[],
+    relationshipNurtureRules:Array.isArray(metadata.relationshipNurtureRules)?metadata.relationshipNurtureRules:[],
+    preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
+    metadataJson:metadata,
     sourceDetails,
     sopId:metadata.sopId||intake.sopId||'',
     sopName:metadata.sopName||'',
@@ -16146,10 +17617,15 @@ async function projectPreparedWorkForDossier(item={}){
     createdAt:task.createdAt||''
   }));
 }
+const PROJECT_DOCUMENT_ASSIGNMENT_SOURCE='hearth_project_document_assignment';
+
 function projectCreatePayload(body={}, files=[]){
   const name=String(body.name||body.projectName||'').replace(/\s+/g,' ').trim();
   const summary=String(body.summary||body.description||body.currentReality||'').trim();
   const projectId=String(body.projectId||stableKey(name)).replace(/[^a-z0-9:_-]/gi,'-').toLowerCase();
+  const createdFrom=String(body.createdFrom||body.created_from||'hearth_projects_drawer').trim();
+  const needsProjectOnboarding=String(body.needsProjectOnboarding||body.needs_project_onboarding||'').toLowerCase()==='true'||createdFrom===PROJECT_DOCUMENT_ASSIGNMENT_SOURCE;
+  const onboardingQuestion=String(body.onboardingQuestion||body.onboarding_question||'').trim();
   const intake={
     sopId:String(body.sopId||body.sop_id||'').trim(),
     websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
@@ -16162,7 +17638,7 @@ function projectCreatePayload(body={}, files=[]){
   if(projectFiles.length&&!sourceTypes.includes('documents'))sourceTypes.push('documents');
   if(projectFiles.length&&!sourceTypes.includes('documentFiles'))sourceTypes.push('documentFiles');
   intake.documentFiles=projectFiles.map(file=>({fileName:file.originalname||'project-source-file',mimeType:file.mimetype||'',size:file.size||0}));
-  return {name,summary,projectId,intake,sourceTypes,projectFiles};
+  return {name,summary,projectId,intake,sourceTypes,projectFiles,needsProjectOnboarding,createdFrom,onboardingQuestion};
 }
 async function saveProjectSourceFiles({files=[],payload={},profileKey=''}={}){
   const savedFiles=[];
@@ -16989,8 +18465,7 @@ async function saveRelationshipProjectLink(input={}){
   const relationshipId=String(input.relationshipId||input.relationship_id||input.contactId||input.contact_id||input.personId||input.person_id||input.email||input.name||'').trim();
   if(!projectId||!relationshipId)return null;
   const existing=(await listEvidenceLinks({sourceType:'relationship_profile',sourceId:relationshipId,targetType:'project_profile',targetId:projectId,relationship:'linked_to_project',limit:1}).catch(()=>[]))[0];
-  if(existing)return existing;
-  return saveEvidenceLink({
+  const link=existing||await saveEvidenceLink({
     sourceType:'relationship_profile',
     sourceId:relationshipId,
     sourceLabel:input.relationshipName||input.name||input.email||relationshipId,
@@ -17008,6 +18483,64 @@ async function saveRelationshipProjectLink(input={}){
       noExternalAction:true
     }
   });
+  if(input.assignAsOwner||input.projectOwner||input.relationshipRole==='owner'){
+    const owner=await updateProjectOwnerMetadata({
+      projectId,
+      projectName:input.projectName||'',
+      owner:{
+        type:'relationship',
+        id:relationshipId,
+        name:input.relationshipName||input.name||relationshipId,
+        email:input.email||'',
+        contactId:input.contactId||input.contact_id||'',
+        source:'user_reassigned',
+        reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+      }
+    }).catch(()=>null);
+    if(owner)link.projectOwner=owner;
+  }
+  return link;
+}
+
+async function updateProjectOwnerMetadata({projectId='',projectName='',owner={}}={}){
+  const cleanProjectId=String(projectId||'').trim();
+  const cleanOwnerName=String(owner.name||owner.relationshipName||owner.email||owner.id||'').trim();
+  if(!cleanProjectId||!cleanOwnerName)return null;
+  const nextOwner={
+    type:'relationship',
+    id:String(owner.id||owner.relationshipId||owner.contactId||owner.email||cleanOwnerName),
+    name:cleanOwnerName,
+    email:owner.email||'',
+    contactId:owner.contactId||owner.contact_id||'',
+    source:owner.source||'user_reassigned',
+    reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+  };
+  const patch={owner:nextOwner,ownerReassignedAt:new Date().toISOString(),noExternalAction:true};
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles')||[];
+    const row=rows.find(item=>item.tenantId===tenantId()&&item.profileType==='project'&&[item.projectId,item.profileKey,item.id,item.displayName].filter(Boolean).map(String).includes(cleanProjectId));
+    if(row){
+      row.metadataJson={...evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),...patch};
+      row.updatedAt=new Date().toISOString();
+      return nextOwner;
+    }
+    return nextOwner;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`update relationship_profiles set metadata_json=metadata_json || $1::jsonb, updated_at=now() where tenant_id=$2 and profile_type='project' and (project_id=$3 or profile_key=$3 or id=$3 or display_name=$4) returning *`,[JSON.stringify(patch),tenantId(),cleanProjectId,projectName||cleanProjectId]);
+    return r.rows?.[0]?nextOwner:null;
+  }
+  const store=valStore();
+  const rows=transcriptFileArray(store,'relationshipProfiles');
+  const row=rows.find(item=>item.tenantId===tenantId()&&item.profileType==='project'&&[item.projectId,item.profileKey,item.id,item.displayName].filter(Boolean).map(String).includes(cleanProjectId));
+  if(row){
+    row.metadataJson={...evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),...patch};
+    row.updatedAt=new Date().toISOString();
+    saveValStore(store);
+    return nextOwner;
+  }
+  return null;
 }
 
 async function saveCalendarProjectLink(input={}){
@@ -17261,7 +18794,14 @@ async function transcriptIndexData(transcriptId=''){
     const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow).filter(isUsableTranscriptIndexRow);
     const ids=transcripts.map(row=>row.transcriptId);if(!ids.length)return {transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]};
     const fetch=async table=>(await dbQuery(`select * from ${table} where transcript_id=any($1::text[]) order by created_at asc`,[ids])).rows.map(transcriptPgRow);
-    return {transcripts,participants:await fetch('transcript_participants'),summaries:await fetch('transcript_summaries'),tasks:await fetch('transcript_tasks'),contactUpdates:await fetch('transcript_contact_updates'),actionLog:await fetch('transcript_action_log')};
+    const [participants,summaries,tasks,contactUpdates,actionLog]=await Promise.all([
+      fetch('transcript_participants'),
+      fetch('transcript_summaries'),
+      fetch('transcript_tasks'),
+      fetch('transcript_contact_updates'),
+      fetch('transcript_action_log')
+    ]);
+    return {transcripts,participants,summaries,tasks,contactUpdates,actionLog};
   }
   const store=valStore(),get=key=>transcriptFileArray(store,key).filter(row=>!transcriptId||row.transcriptId===transcriptId);
   return {transcripts:get('transcriptIndex').filter(isUsableTranscriptIndexRow),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
@@ -17284,13 +18824,242 @@ function transcriptDetailFromIndex(data,transcript){
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
   const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
   const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
-  return cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+  const detail=cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+  return {...detail,sourceReceipt:transcriptSourceReceipt(detail)};
 }
 function transcriptKrispNativeMetadata(metadata={}){
   const nativeSummary=String(metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'').trim();
   const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:(Array.isArray(metadata.krisp_action_items)?metadata.krisp_action_items:[]);
   const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test(String(metadata.provider||metadata.source||metadata.importedVia||'')));
   return {krispNative,nativeSummary,nativeActionItems};
+}
+function transcriptSourceItemText(item){
+  if(typeof item==='string')return item;
+  if(!item||typeof item!=='object')return '';
+  return item.text||item.title||item.taskTitle||item.action||item.summary||item.point||item.name||item.description||'';
+}
+function transcriptSourceLines(value){
+  if(Array.isArray(value))return value.map(transcriptSourceItemText).filter(item=>String(item||'').trim());
+  if(typeof value!=='string')return [];
+  const lines=value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  if(lines.length>1)return lines;
+  const checklist=value.match(/(?:^|\s)((?:[-*]\s*)?\[[ x]\]\s+.*?)(?=(?:\s+(?:[-*]\s*)?\[[ x]\]\s+)|$)/gi)||[];
+  return checklist.length?checklist.map(item=>item.trim()):lines;
+}
+function transcriptSourceSectionText(text='',names=[]){
+  const source=String(text||'');
+  if(!source.trim())return null;
+  const supported=['Action Items?','Key Points','Meeting Overview'];
+  const labels=[...new Set([...supported,...names])].join('|');
+  const wanted=new RegExp(`^(?:${names.join('|')})$`,'i');
+  const sections=[];
+  const seen=new Set();
+  const addMatches=pattern=>{
+    for(const match of source.matchAll(pattern)){
+      const headingStart=match.index+match[0].indexOf(String(match[1]||''));
+      if(seen.has(headingStart))continue;
+      seen.add(headingStart);
+      sections.push({
+        heading:String(match[1]||'').trim(),
+        start:headingStart,
+        contentStart:match.index+match[0].length
+      });
+    }
+  };
+  // Krisp normally uses line headings. The inline fallback covers legacy reports
+  // that arrived as one line with checkbox markers between the source sections.
+  addMatches(new RegExp(`(?:^|\\n)[\\t ]*(?:#{1,3}\\s*)?(${labels})\\s*:?[\\t ]*`,'gim'));
+  addMatches(new RegExp(`\\b(${labels})\\s*:?[\\t ]*(?=(?:\\[[ x]\\]|[-*]\\s|\\d+[.)]\\s|[A-Z]))`,'gi'));
+  sections.sort((left,right)=>left.start-right.start);
+  const index=sections.findIndex(section=>wanted.test(section.heading));
+  if(index<0)return null;
+  const section=sections[index];
+  const next=sections[index+1];
+  const end=next?next.start:source.length;
+  const raw=source.slice(section.start,end).trim();
+  const content=source.slice(section.contentStart,end).trim();
+  return {heading:section.heading,raw,lines:transcriptSourceLines(content)};
+}
+function transcriptSourceReceipt(transcript={}){
+  const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
+  const rawDocument=metadata.rawKrispDocument&&typeof metadata.rawKrispDocument==='object'?metadata.rawKrispDocument:{};
+  const sourceSections=metadata.krispSourceSections||metadata.sourceSections||metadata.data?.sections||metadata.sections||{};
+  const actionSource=sourceSections.actionItems||sourceSections.action_items||sourceSections.actions||metadata.krispActionItems||metadata.krisp_action_items||rawDocument.actionItems||rawDocument.action_items||rawDocument.tasks||[];
+  const keyPointSource=sourceSections.keyPoints||sourceSections.key_points||sourceSections.points||sourceSections.summary_points||rawDocument.keyPoints||rawDocument.key_points||'';
+  const sourceText=[
+    metadata.krispMeetingOverview,
+    metadata.meetingOverview,
+    metadata.krispSummary,
+    metadata.summaryFromKrisp,
+    metadata.krisp_summary,
+    metadata.data?.meetingOverview,
+    metadata.data?.summary,
+    transcript.nativeSummary,
+    rawDocument.meetingOverview,
+    rawDocument.summary,
+    rawDocument.notes,
+    transcript.transcriptText,
+    transcript.rawTranscript,
+    transcript.rawText
+  ].find(value=>typeof value==='string'&&value.trim())||'';
+  const actionSection=transcriptSourceSectionText(sourceText,['Action Items?']);
+  const keyPointsSection=transcriptSourceSectionText(sourceText,['Key Points','Meeting Overview']);
+  const actionItems=actionSection?.lines?.length?actionSection.lines:transcriptSourceLines(actionSource);
+  const keyPoints=keyPointsSection?.lines?.length?keyPointsSection.lines:transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'');
+  const sections=[];
+  if(actionSection)sections.push({kind:'action_items',...actionSection});
+  else if(actionItems.length)sections.push({kind:'action_items',heading:'Action Items',raw:['Action Items',...actionItems].join('\n'),lines:actionItems});
+  if(keyPointsSection)sections.push({kind:'key_points',...keyPointsSection});
+  else if(keyPoints.length)sections.push({kind:'key_points',heading:'Key Points',raw:['Key Points',...keyPoints].join('\n'),lines:keyPoints});
+  const firstHeading=sourceText.search(/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i);
+  const body=firstHeading>=0?sourceText.slice(firstHeading).trim():sections.map(section=>section.raw).join('\n\n').trim();
+  return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
+}
+function transcriptDrawerRecordTime(record={}){
+  const value=record.createdAt||record.meetingDatetime||record.receivedAt||'';
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?parsed:0;
+}
+function transcriptDrawerRecordSignature(record={}){
+  const source=String(record.source||record.metadata?.source||'unknown').trim().toLowerCase();
+  const title=String(record.title||record.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  return source+'|'+title;
+}
+function transcriptSourceReceiptQuality(record={}){
+  const receipt=record.sourceReceipt||transcriptSourceReceipt(record);
+  const actionCount=Array.isArray(receipt.actionItems)?receipt.actionItems.length:0;
+  const keyPointCount=Array.isArray(receipt.keyPoints)?receipt.keyPoints.length:0;
+  return (keyPointCount?10000:0)
+    +(actionCount?2000:0)
+    +Math.min(actionCount,50)*20
+    +Math.min(String(receipt.body||'').length,3000)/100
+    -Math.max(0,actionCount-50)*50;
+}
+function dedupeTranscriptDrawerRecords(records=[]){
+  const groups=[];
+  for(const record of records||[]){
+    const signature=transcriptDrawerRecordSignature(record);
+    const observedAt=transcriptDrawerRecordTime(record);
+    const group=groups.find(candidate=>candidate.signature===signature&&observedAt&&candidate.observedAt&&Math.abs(candidate.observedAt-observedAt)<=5*60*1000);
+    if(!group){
+      groups.push({signature,observedAt,sortTime:observedAt,record});
+      continue;
+    }
+    group.sortTime=Math.max(group.sortTime,observedAt);
+    if(transcriptSourceReceiptQuality(record)>transcriptSourceReceiptQuality(group.record))group.record=record;
+  }
+  return groups.sort((left,right)=>right.sortTime-left.sortTime).map(group=>group.record);
+}
+function transcriptOverviewItemText(item){
+  if(typeof item==='string')return item;
+  if(!item||typeof item!=='object')return '';
+  return item.taskTitle||item.title||item.text||item.summary||item.point||item.action||item.name||item.taskDescription||'';
+}
+function transcriptOverviewLineItems(value){
+  if(Array.isArray(value)){
+    return value.map(transcriptOverviewItemText)
+      .map(item=>String(item||'').replace(/^[-*]\s*/,'').replace(/^\[[ x]\]\s*/i,'').replace(/^\d+[.)]\s*/,'').trim())
+      .filter(Boolean)
+      .filter(item=>!/^(Action Items?|Key Points|Meeting Overview|Summary|Overview)\s*:?\s*$/i.test(item));
+  }
+  const text=String(value||'').trim();
+  if(!text)return [];
+  if((text.startsWith('[')||text.startsWith('{'))&&text.length<50000){
+    try{
+      const parsed=JSON.parse(text);
+      const values=Array.isArray(parsed)?parsed:Object.values(parsed||{});
+      const parsedItems=transcriptOverviewLineItems(values);
+      if(parsedItems.length)return parsedItems;
+    }catch(_){}
+  }
+  return text.split(/\n+|(?=\s*[-*]\s+)|(?=\s*\[[ x]\]\s+)/i)
+    .map(item=>item.replace(/^[-*]\s*/,'').replace(/^\[[ x]\]\s*/i,'').replace(/^\d+[.)]\s*/,'').trim())
+    .filter(Boolean)
+    .filter(item=>!/^(Action Items?|Key Points|Meeting Overview|Summary|Overview)\s*:?\s*$/i.test(item));
+}
+function transcriptKrispSourceSectionsForOverview(transcript={}){
+  return transcript.sourcePayloadMetadata?.data?.sections
+    || transcript.sourcePayloadMetadata?.sections
+    || transcript.metadata?.data?.sections
+    || transcript.metadata?.sections
+    || {};
+}
+function transcriptOverviewSections(transcript={},tasks=[]){
+  return transcriptSourceReceipt(transcript);
+}
+function transcriptOverviewInvitees(transcript={},calendarEvent={}){
+  const buckets=[
+    calendarEvent.attendees,
+    transcript.attendees,
+    transcript.invitees,
+    transcript.calendarEvent?.attendees,
+    transcript.calendar_event?.attendees,
+    transcript.event?.attendees,
+    transcript.meetingContextJson?.attendees,
+    transcript.calendarEventJson?.attendees,
+    transcript.metadata?.attendees,
+    transcript.metadata?.calendarEvent?.attendees,
+    transcript.metadata?.calendar_event?.attendees,
+    transcript.metadata?.meetingMatch?.attendees,
+    transcript.sourcePayloadMetadata?.attendees,
+    transcript.sourcePayloadMetadata?.data?.attendees,
+    transcript.sourcePayloadMetadata?.calendarEvent?.attendees,
+    transcript.sourcePayloadMetadata?.calendar_event?.attendees,
+    transcript.sourcePayloadMetadata?.meetingMatch?.attendees
+  ];
+  const seen=new Set();
+  return buckets.flatMap(bucket=>Array.isArray(bucket)?bucket:[])
+    .map(person=>{
+      if(typeof person==='string'){
+        const match=person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        return match?{name:person.replace(/<.*?>/g,'').replace(match[0],'').trim(),email:normalizeEmailAddress(match[0])}:null;
+      }
+      if(!person||typeof person!=='object')return null;
+      const email=normalizeEmailAddress(person.email||person.address||person.mail||person.contactEmail||person.matchedEmail||person.emailAddress?.address||'');
+      const name=String(person.name||person.displayName||person.contactName||person.matchedContactName||person.emailAddress?.name||'').trim();
+      return email?{name,email}:null;
+    })
+    .filter(Boolean)
+    .filter(person=>{
+      if(!validEmail(person.email)||OWNER_EMAILS.has(person.email)||seen.has(person.email))return false;
+      seen.add(person.email);
+      return true;
+    });
+}
+async function transcriptCalendarEventForOverview(transcript={}){
+  const nested=[transcript.calendarEvent,transcript.calendar_event,transcript.event,transcript.metadata?.calendarEvent,transcript.metadata?.calendar_event,transcript.metadata?.meetingMatch,transcript.sourcePayloadMetadata?.calendarEvent,transcript.sourcePayloadMetadata?.calendar_event,transcript.sourcePayloadMetadata?.meetingMatch].find(event=>event&&typeof event==='object'&&Array.isArray(event.attendees));
+  if(nested)return nested;
+  const id=String(transcript.calendarEventId||transcript.calendar_event_id||transcript.meetingId||transcript.meeting_id||transcript.metadata?.calendarEventId||transcript.metadata?.calendar_event_id||transcript.sourcePayloadMetadata?.calendarEventId||transcript.sourcePayloadMetadata?.calendar_event_id||'').trim();
+  if(!id)return {};
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
+    const row=r.rows[0];
+    return row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+  }
+  return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+}
+function transcriptOverviewEmailBody(transcript={},overview={}){
+  return String(overview.body||transcriptSourceReceipt(transcript).body||'').trim();
+}
+async function prepareTranscriptMeetingOverviewDraft(transcript={},tasks=[]){
+  const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  const overview=transcriptOverviewSections(transcript,tasks);
+  const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
+  if(!overview.ready)throw Object.assign(new Error('The meeting overview is not ready because this transcript has no source Action Items or Key Points yet.'),{statusCode:400});
+  const draft=await saveMeetingRecapDraft({
+    transcriptId:transcript.id||transcript.transcriptId||'',
+    title:transcript.title||transcript.meetingTitle||'Meeting',
+    summary:transcript.summary||{},
+    participants:[...(Array.isArray(transcript.participants)?transcript.participants:[]),...(Array.isArray(transcript.attendees)?transcript.attendees:[])],
+    tasks,
+    transcriptText:transcript.transcriptText||transcript.rawTranscript||transcript.rawText||'',
+    sourcePayloadMetadata:transcript.sourcePayloadMetadata,
+    metadata:transcript.metadata,
+    sourceReceipt:overview
+  });
+  await logTranscriptAction(transcript.id||transcript.transcriptId,'meeting_overview_draft_ready',draft.id||'','completed').catch(()=>{});
+  return {draft,recipientCount:recipients.length,overview,noExternalAction:true};
 }
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
@@ -18110,6 +19879,62 @@ async function ghlPlatformContext(query,dashboard,opts={}){
 }
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
   return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
+}
+function aboutMeDocumentCategory(value=''){
+  return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')==='about_me';
+}
+const reasonAboutMeDocumentForObserver=createAboutMeObserverReasoner({
+  callModel:callValModel,
+  observerLenses:OBSERVER_PACKET_LENSES
+});
+async function queueKnowledgeDocumentObserverDelivery({input={},result={}}={}){
+  const document=input.document||input.source||input;
+  const sourceRecord=result.sourceProcessingRecord||{};
+  const sourceReceipt=sourceRecord.sourceReceiptJson||sourceRecord.source_receipt_json||{};
+  const category=document.documentCategory||document.document_category||sourceReceipt.documentCategory||sourceReceipt.document_category||'other';
+  const sourceId=String(document.sourceId||document.source_id||document.id||sourceRecord.sourceId||sourceRecord.source_id||'');
+  const title=String(document.title||document.fileName||document.filename||sourceRecord.sourceTitle||sourceRecord.source_title||'Uploaded document');
+  const rawText=String(document.rawText||document.raw_text||document.text||document.content||input.rawText||input.raw_text||'');
+  const packet=await valBoardPackets?.recordSourceEvent('document',{
+    id:sourceId,
+    sourceId,
+    title,
+    summary:rawText.slice(0,1400),
+    documentCategory:category,
+    sourceRefs:[{
+      sourceType:'knowledge_document',
+      sourceId,
+      quoteOrSummary:rawText.slice(0,900),
+      confidence:1
+    }],
+    payload:{
+      documentCategory:category,
+      sourceProcessingRecordId:sourceRecord.id||'',
+      characterCount:rawText.length,
+      noExternalAction:true
+    }
+  });
+  if(!aboutMeDocumentCategory(category)){
+    return {status:'delivered',packetId:packet?.id||'',observerCount:14,modelBacked:false};
+  }
+  const event={
+    type:'about_me_document',
+    sourceType:'document',
+    sourceId,
+    packetIds:packet?.id?[packet.id]:[],
+    document:{id:sourceId,title,rawText,documentCategory:category}
+  };
+  Promise.resolve().then(async()=>{
+    if(!valIntelligenceSpine)throw new Error('VAL Intelligence Spine is not ready.');
+    await valIntelligenceSpine.runIntelligencePass({event,observerSuite:DEFAULT_OBSERVERS});
+  }).catch(error=>console.warn('[val-board] About Me Observer review failed:',error.message));
+  return {
+    status:'processing',
+    packetId:packet?.id||'',
+    observerCount:DEFAULT_OBSERVERS.length,
+    modelBacked:true,
+    message:'All 14 Observers are reading this About Me document.'
+  };
 }
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
@@ -21986,7 +23811,7 @@ async function processTranscriptPayload(payload){
     const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
     await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
-  const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
+  const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript,sourcePayloadMetadata:payload.metadata||payload,metadata:payload.metadata||payload}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
   if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
   for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){
     const body=draft.body||draft.message||'';
@@ -22024,6 +23849,75 @@ function transcriptUiRecord(record,{includeText=false}={}){
     keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,nativeActionItems:native.nativeActionItems,nativeSummary:native.nativeSummary,krispNative:native.krispNative,sourceTruthLabel:native.krispNative?'Krisp':'VAL',
     openActionCount:openActions.length,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
     people,sourcePayloadMetadata:metadata,metadata,...(includeText?{transcriptText:rawText}:{})
+  };
+}
+function transcriptIndexContextMetadata(metadata={}){
+  const payload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
+  const event=metadata.calendarEvent||metadata.calendar_event||payload.calendarEvent||payload.calendar_event||metadata.meetingMatch||payload.meetingMatch||{};
+  const sections=metadata.sections||payload.sections||metadata.data?.sections||payload.data?.sections||{};
+  const attendees=metadata.attendees||payload.attendees||metadata.data?.attendees||payload.data?.attendees||event.attendees||[];
+  return {
+    source:metadata.source||payload.source||'',
+    provider:metadata.provider||payload.provider||'',
+    platform:metadata.platform||payload.platform||'',
+    attendees,
+    calendarEventId:metadata.calendarEventId||metadata.calendar_event_id||payload.calendarEventId||payload.calendar_event_id||event.id||'',
+    calendarEvent:event&&typeof event==='object'?{id:event.id||'',title:event.title||'',attendees:event.attendees||attendees}:undefined,
+    sections,
+    data:{sections,attendees}
+  };
+}
+function transcriptIndexUiRecord(record){
+  const detail=record?.detail&&typeof record.detail==='object'?record.detail:{};
+  const transcript=cleanTranscriptForUi({
+    ...transcriptUiRecord(record),
+    ...detail,
+    id:detail.id||detail.transcriptId||record?.id||record?.transcriptId||'',
+    transcriptId:detail.transcriptId||record?.transcriptId||record?.id||'',
+    source:detail.source||record?.metadata?.source||record?.type||'webhook',
+    createdAt:detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
+    receivedAt:detail.receivedAt||detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
+    title:detail.title||detail.meetingTitle||record?.title||'',
+    meetingTitle:detail.meetingTitle||detail.title||record?.title||'',
+    summary:detail.summary||detail.summaryPreview||record?.metadata?.summary||record?.metadata?.analysis?.summary||'',
+    actionItems:detail.actionItems||detail.nativeActionItems||[],
+    tasks:detail.tasks||[],
+    nativeActionItems:detail.nativeActionItems||[],
+    nativeSummary:detail.nativeSummary||'',
+    krispNative:detail.krispNative||false,
+    processingStatus:detail.processingStatus||record?.metadata?.processingStatus||'',
+    summaryStatus:detail.summaryStatus||record?.metadata?.summaryStatus||''
+  });
+  const metadata=transcriptIndexContextMetadata(transcript.sourcePayloadMetadata||transcript.metadata||{});
+  const sourceReceipt=transcriptSourceReceipt(transcript);
+  const sourceActions=(sourceReceipt.actionItems.length?sourceReceipt.actionItems:(Array.isArray(transcript.actionItems)?transcript.actionItems:[]))
+    .slice(0,30)
+    .map(item=>{
+      if(typeof item==='string')return item.slice(0,900);
+      if(!item||typeof item!=='object')return null;
+      return {
+        taskTitle:String(item.taskTitle||item.title||item.text||item.action||item.summary||item.name||'').slice(0,600),
+        assignedToName:String(item.assignedToName||item.assignee||item.owner||item.person||'').slice(0,220)
+      };
+    })
+    .filter(item=>typeof item==='string'||item?.taskTitle);
+  const summaryText=String(transcript.nativeSummary||transcript.summaryPreview||transcript.summary?.executiveSummary||transcript.summary||'').slice(0,420);
+  return {
+    id:transcript.id||transcript.transcriptId||'',
+    transcriptId:transcript.transcriptId||transcript.id||'',
+    source:transcript.source||metadata.source||'webhook',
+    title:transcript.title||transcript.meetingTitle||'Transcript',
+    meetingTitle:transcript.meetingTitle||transcript.title||'Transcript',
+    createdAt:transcript.createdAt||'',
+    receivedAt:transcript.receivedAt||transcript.createdAt||'',
+    processingStatus:transcript.processingStatus||'',
+    summaryStatus:transcript.summaryStatus||'',
+    reviewStatus:transcript.reviewStatus||transcript.status||'',
+    summary:{executiveSummary:summaryText},
+    actionItems:sourceActions,
+    taskCount:sourceActions.length,
+    openActionCount:sourceActions.length,
+    reviewCount:Number(transcript.reviewCount||0)
   };
 }
 function transcriptNestedObject(root,...keys){
@@ -22148,16 +24042,14 @@ function normalizedTranscriptWebhookPayload(body={}){
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
-    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    const archive=await transcriptArchiveRecords(days,limit);
-    const transcripts=mergeTranscriptMigrationRecords(archive,data).slice(0,limit).map(record=>{
-      if(record.detail){const detail=cleanTranscriptForUi({...record.detail});delete detail.transcriptText;return detail;}
-      return cleanTranscriptForUi(transcriptUiRecord(record));
-    });
+    const indexedRecords=transcriptMigrationRecordsFromIndex(data);
+    const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(days,limit);
+    const transcripts=dedupeTranscriptDrawerRecords(records.map(transcriptIndexUiRecord)).slice(0,limit);
     res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(isHardTranscriptProcessingFailure).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -22250,16 +24142,14 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
-    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){
-      const archiveRecord=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-      const archiveUi=archiveRecord?cleanTranscriptForUi(transcriptUiRecord(archiveRecord,{includeText:true})):null;
-      const transcript=await attachCanonicalTranscriptDetail({...transcriptDetailFromIndex(data,data.transcripts[0]),...(archiveUi?{nativeSummary:archiveUi.nativeSummary,nativeActionItems:archiveUi.nativeActionItems,krispNative:archiveUi.krispNative,sourceTruthLabel:archiveUi.sourceTruthLabel,actionItems:archiveUi.actionItems,summary:archiveUi.summary,summaryPreview:archiveUi.summaryPreview,sourcePayloadMetadata:archiveUi.sourcePayloadMetadata,metadata:archiveUi.metadata}:{} )});
+      const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);
       transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
+    const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
@@ -22345,24 +24235,32 @@ app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)
 });
 app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
-    const id=decodeURIComponent(req.params.transcriptId),record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-    if(!record)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=transcriptUiRecord(record,{includeText:true}),action=String(req.body.action||'');
+    const id=decodeURIComponent(req.params.transcriptId),action=String(req.body.action||'');
+    const data=await transcriptIndexData(id);
+    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
+    if(!transcript){
+      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      if(record){
+        transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
+        transcript.sourceReceipt=transcriptSourceReceipt(transcript);
+      }
+    }
+    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(action==='create_task'){
-      const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
-      const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
+      const candidates=(transcript.sourceReceipt?.actionItems||[]).map(item=>({title:item,description:'',assignedToName:'',dueDate:'',sourceQuote:item})).filter(item=>item.title);
+      const requestedTitle=String(req.body.title||'').trim();
+      const selected=requestedTitle?candidates.find(item=>String(item.title).trim().toLowerCase()===requestedTitle.toLowerCase()):candidates[0];
+      if(!selected)throw Object.assign(new Error(requestedTitle?'That action item is no longer present in this transcript.':'This transcript has no source action item to turn into a task.'),{statusCode:400});
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:req.body.assignedToName||selected.assignedToName||transcript.contactName||'',taskTitle:selected.title,taskDescription:req.body.description||selected.description||'',dueDate:req.body.dueDate||selected.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:String(req.body.sourceQuote||selected.sourceQuote||selected.title).trim(),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
-    if(action==='draft_followup'){
-      const summary=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.preview||''};
-      const existingTasks=(transcript.tasks||[]).length?transcript.tasks:transcript.actionItems||[];
-      const draft=await saveMeetingRecapDraft({transcriptId:transcript.id,title:transcript.title,summary,participants:transcript.participants||[],tasks:existingTasks,transcriptText:transcript.transcriptText||''});
-      await logTranscriptAction(transcript.id,'email_draft_created',draft.id||'','completed');return res.json({ok:true,draft});
+    if(action==='prepare_overview'){
+      const prepared=await prepareTranscriptMeetingOverviewDraft(transcript,transcript.sourceReceipt?.actionItems||[]);
+      return res.json({ok:true,...prepared});
     }
     if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
-  }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
+  }catch(e){console.error('[transcripts] action failed',e);res.status(e.statusCode||500).json({ok:false,error:e.message,sent:e.sent});}
 });
 async function processExistingTranscriptRecord(record){
   const rawText=String(record.rawTranscript||record.raw_text||record.rawText||record.transcriptText||'').trim();
@@ -22868,6 +24766,8 @@ const valCommitments = registerValCommitmentsRoutes(app,{
   logger:console
 });
 const valDocuments = registerValDocumentsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
   getStore:valStore,
   listDrafts,
   listTranscriptRuns:async()=>valTranscriptIntelligence.listReadyForYouCandidates({limit:120}).then(rows=>rows.map(row=>row.run).filter(Boolean)),
@@ -22898,6 +24798,48 @@ const valReadyForYou = registerValReadyForYouRoutes(app,{
   logger:console
 });
 const valReviewUpdates = registerValReviewUpdatesRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+valBoardPackets = registerValBoardPacketsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valSourceProcessing = registerValSourceProcessingRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  reviewUpdatesService:valReviewUpdates,
+  readyForYouService:valReadyForYou,
+  listProjectProfiles,
+  allowRelationshipDocumentEmailPost:()=>!requestContext.getStore()?.publicHearthTest,
+  allowKnowledgeDocumentPost:()=>!requestContext.getStore()?.publicHearthTest,
+  afterKnowledgeDocument:queueKnowledgeDocumentObserverDelivery,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valProjectPins = registerValProjectPinsRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
   getStore:valStore,
@@ -23026,7 +24968,7 @@ registerValExecutiveInstructionRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog
 });
-const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
+valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
   getStore:valStore,
@@ -23037,6 +24979,7 @@ const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console,
+  observerReasoner:reasonAboutMeDocumentForObserver,
   loaders:{
     loadTasks,
     listTeachValCoreMemory,
@@ -23045,7 +24988,8 @@ const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
     buildConversationContext:valConversationIdentity.buildConversationContext,
     resolveIdentity:valConversationIdentity.resolveIdentity,
     listHighSignalClassifications:valExecutiveInbox.listHighSignalClassifications,
-    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates
+    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates,
+    listBoardPackets:({limit=60}={})=>valBoardPackets?.listPackets({limit})||[]
   }
 });
 
@@ -23784,11 +25728,78 @@ app.get('/api/relationships/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
     if(DEMO_MODE){
-      const profiles=(await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').slice(0,limit);
+      const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
     }
-    const profiles=await listRelationshipProfiles({limit});
+    const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
+    const calendarProfiles=await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
+    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
+      .filter(profile=>profile.profileType==='person')
+      .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
+      .filter(profile=>profile.relationshipAdmission.admitted))
+      .slice(0,limit);
     res.json({ok:true,source:'relationship_profiles',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/create',async(req,res)=>{
+  try{
+    const name=String(req.body.name||req.body.displayName||'').trim();
+    const email=String(req.body.email||'').trim();
+    const summary=String(req.body.summary||req.body.detail||'Created from Project Managers.').trim();
+    if(!name&&!email)return res.status(400).json({ok:false,error:'Relationship name or email is required.'});
+    const displayName=name||email;
+    const row=await saveRelationshipProfile({
+      profileType:'person',
+      displayName,
+      email,
+      summary,
+      relationshipStatus:'created locally',
+      confidence:0.58,
+      metadataJson:{
+        source:req.body.source||'project_owner_reassignment',
+        email,
+        role:req.body.role||req.body.detail||'',
+        noExternalAction:true
+      }
+    });
+    const relationship=relationshipIndexItemFromProfile(publicRelationshipProfile(row));
+    res.json({ok:true,relationship,message:'Relationship created locally for project ownership. No CRM update, message, task, calendar change, or external action happened.',noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/relationships/person-packets',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
+    const includeThin=String(req.query.includeThin||'1')!=='0';
+    const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
+    const calendarProfiles=DEMO_MODE?[]:await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
+    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
+      .filter(profile=>profile.profileType==='person')
+      .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
+      .filter(profile=>profile.relationshipAdmission.admitted))
+      .slice(0,limit);
+    const transcripts=await recentTranscriptIndexRowsRaw(3650,120).catch(()=>[]);
+    const packets=profiles
+      .map(profile=>enrichRelationshipProfileWithTranscriptIntroEvidence(profile,transcripts))
+      .map(relationshipPersonPacketItemFromProfile)
+      .filter(item=>includeThin||item.maturity!=='thin');
+    const maturityCounts=packets.reduce((acc,item)=>{
+      acc[item.maturity]=(acc[item.maturity]||0)+1;
+      return acc;
+    },{blocked_by_identity:0,thin:0,developing:0,usable:0,strong:0});
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_relationship_profiles':'relationship_profiles',
+      generatedAt:new Date().toISOString(),
+      count:packets.length,
+      maturityCounts,
+      needsReviewCount:packets.filter(item=>item.needsReview).length,
+      packets,
+      noExternalAction:true
+    });
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }
@@ -23831,6 +25842,27 @@ app.get('/api/projects/dossier',async(req,res)=>{
       ok:true,
       source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
       dossier
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/projects/update',async(req,res)=>{
+  try{
+    const projectId=String(req.body?.projectId||req.body?.projectProfileId||req.body?.id||req.body?.profileKey||'').trim();
+    const patch=projectUpdatePayload(req.body||{});
+    if(!projectId)return res.status(400).json({ok:false,error:'Project identifier is required.'});
+    if(!patch.name)return res.status(400).json({ok:false,error:'Project name is required.'});
+    const profile=await updateProjectProfileLocal(projectId,patch);
+    if(!profile)return res.status(404).json({ok:false,error:'project_profile_not_found',projectId});
+    const project=projectIndexItemFromProfile(profile);
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
+      project,
+      dossier:projectDossierFromProfile(profile),
+      message:'Project updated locally. No CRM update, task, calendar change, message, document write, or external action happened.',
+      noExternalAction:true
     });
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
@@ -23891,7 +25923,7 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
       profileKey,
       projectId:payload.projectId,
       displayName:payload.name,
-      summary:payload.summary||'New project created from Hearth intake.',
+      summary:payload.needsProjectOnboarding?payload.summary:(payload.summary||'New project created from Hearth intake.'),
       relationshipStatus:'intake',
       confidence:0.55,
       lastObservedAt:new Date().toISOString(),
@@ -23901,7 +25933,9 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
         sopId:payload.intake.sopId||'',
         uploadedFiles,
         sourceTypes:payload.sourceTypes,
-        createdFrom:'hearth_projects_drawer',
+        createdFrom:payload.createdFrom||'hearth_projects_drawer',
+        needsProjectOnboarding:payload.needsProjectOnboarding,
+        ...(payload.needsProjectOnboarding?{projectOnboarding:{status:'needs_interview',currentQuestion:payload.onboardingQuestion||'What should this project be called, and what outcome should it create?'}}:{}),
         noExternalAction:true
       }
     });
@@ -24167,6 +26201,7 @@ app.post('/api/relationships/actions',async(req,res)=>{
         offers:[...(Array.isArray(interpretation.opportunities)?interpretation.opportunities:[]),...(Array.isArray(contact.opportunitySignals)?contact.opportunitySignals:[]),meaning.whyItMatters,meaning.executiveValue,contact.reason,contact.summary].filter(Boolean),
         evidence:[...(Array.isArray(observation.evidence)?observation.evidence:[]),...(Array.isArray(contact.evidence)?contact.evidence:[])]
       };
+      const currentPersonPacket=personPacketFromContact(currentContact);
       let crmContacts=Array.isArray(req.body.crmContacts)?req.body.crmContacts:[];
       if(!crmContacts.length&&DEMO_MODE){
         const demo=demoState(req,res);
@@ -24176,20 +26211,25 @@ app.post('/api/relationships/actions',async(req,res)=>{
         const briefing=await buildExecutiveBriefing().catch(()=>({}));
         crmContacts=Array.isArray(briefing.people)?briefing.people:[];
       }
-      const introResult=relationshipIntroCandidates({currentContact,crmContacts,limit:req.body.limit||6});
+      const introResult=relationshipIntroCandidates({currentContact:currentPersonPacket,crmContacts,limit:req.body.limit||6});
       const directional=(introResult.candidates||[]).reduce((out,candidate)=>{
         const direction=candidate.direction||{};
         if(direction.whoNeedsThisPerson>0||direction.primary==='who_needs_this_person') out.whoNeedsThisPerson.push(candidate);
         if(direction.whoThisPersonNeeds>0||direction.primary==='who_this_person_needs') out.whoThisPersonNeeds.push(candidate);
         return out;
       },{whoNeedsThisPerson:[],whoThisPersonNeeds:[]});
-      const reviewSurface=relationshipIntroReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
+      const reviewSurface=relationshipStewardshipReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
+      const stewardshipMatchPackets=(introResult.candidates||[]).map(candidate=>candidate.stewardshipMatchPacket).filter(Boolean);
+      const stewardshipMovePackets=(introResult.candidates||[]).map(candidate=>candidate.stewardshipMovePacket||candidate.stewardshipMatchPacket?.stewardship_move_packet).filter(Boolean);
       return res.json({
         ok:true,
         action,
-        status:'relationship_introductions_ready',
-        message:'VAL prepared introduction candidates in both directions. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
+        status:'relationship_stewardship_moves_ready',
+        message:'VAL prepared review-only relationship moves from person packets. Introductions are one possible move. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
         contactId:crmContactId,
+        currentPersonPacket,
+        stewardshipMovePackets,
+        stewardshipMatchPackets,
         whoNeedsThisPerson:directional.whoNeedsThisPerson,
         whoThisPersonNeeds:directional.whoThisPersonNeeds,
         candidates:introResult.candidates||[],
@@ -24617,6 +26657,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         project:req.body.project||CLIENT_CONFIG.projectName||CLIENT_CONFIG.brandName||'',
         client:req.body.client||CLIENT_CONFIG.clientName||'',
         docType:inferredDocType,
+        documentCategory:req.body.documentCategory||'other',
         chapterNumber:req.body.chapterNumber||'',
         chapterTitle:req.body.chapterTitle||'',
         canonicalManuscript:inferredDocType==='manuscript',
@@ -24633,7 +26674,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         importance:isBookEditorProject()?4:3,
         metadata
       });
-      let processed=null,processingError='';
+      let processed=null,processingError='',observerDelivery=null;
       if(isTranscriptUpload&&String(req.body.processTranscript||'true')!=='false'){
         try{
           processed=await processTranscriptPayload({
@@ -24649,9 +26690,34 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
           processingError=e.message||String(e);
           await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});
         }
+      }else if(!isTranscriptUpload){
+        try{
+          const knowledgeDocumentInput={
+            document:{
+              id:saved.id,
+              sourceId:saved.id,
+              sourceType:'knowledge_document',
+              title:req.body.title||file.originalname,
+              fileName:file.originalname,
+              mimeType:file.mimetype,
+              rawText:text,
+              docType:inferredDocType,
+              documentCategory:metadata.documentCategory,
+              uploadedVia:metadata.uploadedVia,
+              createdAt:new Date().toISOString()
+            }
+          };
+          processed=await valSourceProcessing.processKnowledgeDocument(knowledgeDocumentInput);
+          observerDelivery=await queueKnowledgeDocumentObserverDelivery({
+            input:knowledgeDocumentInput,
+            result:processed
+          });
+        }catch(e){
+          processingError=e.message||String(e);
+        }
       }
-      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,processingError},success:!processingError}).catch(()=>{});
-      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,processingError,counts:processed?.counts||null});
+      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',processingError},success:!processingError}).catch(()=>{});
+      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',whatValDidReceipt:processed?.whatValDidReceipt||null,observerDelivery,processingError,counts:processed?.counts||null});
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
   }catch(e){res.status(500).json({error:e.message});}

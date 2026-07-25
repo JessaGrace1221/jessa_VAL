@@ -34,11 +34,11 @@ Projects may only show an active project when all of these are true:
 4. The project can route back to the exact source or source-of-source behind each displayed claim.
 5. The project can feed downstream observers without blending unrelated relationship, inbox, transcript, calendar, document, or commitment context.
 
-If any of these are missing, the item stays as quiet evidence, a conversation, or a candidate project. It does not become an active Projects drawer item.
+If any of these are missing, the item stays as quiet evidence, a conversation, or a candidate project. It does not become an active Project Managers drawer item.
 
 ## Executive Questions
 
-The Projects drawer must answer the questions a user is already asking:
+The Project Managers drawer must answer the questions a user is already asking:
 
 | Layer | Executive question |
 |---|---|
@@ -226,7 +226,7 @@ Must not:
 
 ## Project Admission Rules
 
-Project admission happens after Witness and Executive Relevance, before the Projects drawer, Home, Meeting Prep, Co-Work, Relationships, or Leverage may use project context.
+Project admission happens after Witness and Executive Relevance, before the Project Managers drawer, Home, Meeting Prep, Co-Work, Relationships, or Leverage may use project context.
 
 ### Active Project Eligibility
 
@@ -271,7 +271,7 @@ Every project must carry exactly one state.
 |---|---|---|
 | `quiet_evidence` | True, stored, not project-worthy yet. | Source search or audit only |
 | `candidate_project` | Possible project, needs confirmation or more evidence. | Project review surface only |
-| `active_project` | Ongoing work with enough evidence to coordinate. | Projects drawer, related drawers |
+| `active_project` | Ongoing work with enough evidence to coordinate. | Project Managers drawer, related drawers |
 | `strategic_project` | Active work with high consequence, leverage, risk, or priority. | Projects, Home when admitted, Meeting Prep |
 | `blocked_project` | Work cannot move until a decision, owner, data, approval, or external action happens. | Projects, Alignment when Why Now is complete |
 | `prepared_project_work` | VAL has prepared work tied to the project. | Projects, Leverage when Can VAL Act is complete |
@@ -337,7 +337,7 @@ The Round Table must produce exactly one primary outcome:
 
 | Outcome | Meaning | Surface |
 |---|---|---|
-| `active_project_update` | Project changed and dossier should update. | Projects drawer |
+| `active_project_update` | Project changed and dossier should update. | Project Managers drawer |
 | `needs_executive_decision` | User judgment is required before work can move. | Alignment or Projects |
 | `prepared_work_ready` | VAL prepared work requiring review/approval. | Leverage and Projects |
 | `blocked_needs_context` | Missing data prevents safe progress. | Projects or Co-Work |
@@ -400,6 +400,7 @@ Required variables:
 - `current_state`
 - `strategic_importance`
 - `project_season`
+- `assigned_project_manager`
 - `created_by`
 - `created_from_source`
 - `source_receipts`
@@ -419,27 +420,30 @@ Required variables:
 
 - `project_id`
 - `what_changed`
+- `movement_direction`
+- `open_loop_created_or_closed`
 - `source_type`
 - `source_id`
 - `timestamp`
-- `why_it_may_matter`
-- `affected_relationships`
-- `affected_commitments`
-- `affected_documents`
-- `affected_deadlines`
+- `one_line_source_proof`
+- `follow_up_action`
+- `pin_until`
 - `source_receipt`
 - `source_of_source`
 
 Feeds:
 
-- Projects drawer change history
-- Velocity only when passed by the Velocity Round Table
+- Project Managers drawer change history
+- Home welcome/context message
+- Velocity
+- Project action layer
 - Relationship dossier when a relationship role changes
 
 Must not:
 
 - say `Something changed`
 - show movement without the exact source it opens
+- clutter the main movement display with why-it-matters, affected people, priority analysis, or broad impact analysis
 
 ### 4. Project Manager Judgment Packet
 
@@ -605,6 +609,8 @@ Required variables:
 
 - `project_admission_packet`
 - `project_identity_packet`
+- `project_manager_assignment_packet`
+- `project_owner_packet`
 - `project_movement_packets`
 - `project_manager_judgment_packet`
 - `project_relationships_packet`
@@ -620,7 +626,7 @@ Required variables:
 
 Feeds:
 
-- Projects drawer
+- Project Managers drawer
 - Relationship Dossiers
 - Meeting Prep
 - Executive Inbox
@@ -750,7 +756,7 @@ Feeds:
 
 ### Project Index
 
-The index shows admitted projects only.
+The index shows admitted projects only. It may appear as a drawer, side list, card, or navigation entry.
 
 Each row should show:
 
@@ -765,7 +771,924 @@ Each row should show:
 
 Do not show candidate projects, quiet evidence, unrelated source counts, raw context, or audit language in the main index.
 
-### Project Dossier
+### Full Project Manager Page
+
+Opening a project should lead to a full-page Project Manager experience, not a cramped drawer card.
+
+The Project Managers drawer/card is the entry point. The active project page is the working surface.
+
+Purpose:
+
+```text
+Give the executive a project manager who can show what is happening, what matters, what VAL is doing, what needs judgment, and what can be acted on now.
+```
+
+This page should feel like a competent Project Manager has every base covered, not like a database view.
+
+Core trust promise:
+
+```text
+This page is how the user knows things are being handled.
+```
+
+The first screen must not be a static project profile. It must be dynamic around the Project Manager's current operating moment.
+
+The top of the page should answer:
+
+```text
+What is the Project Manager handling right now?
+What has VAL already handled?
+What needs executive judgment?
+What can safely wait because VAL is watching it?
+```
+
+If VAL shows that something is being handled, the page must also show the path that proves it:
+
+- what source triggered the project-manager work
+- what VAL did, noticed, prepared, linked, or monitored
+- what packet/artifact changed
+- where the result now lives
+- what the user can do next
+- what receipt proves it happened
+
+The full page should include:
+
+- project navigation/sidebar or project list
+- project breadcrumb
+- project identity header
+- project snapshot
+- key facts
+- recent activity
+- next best actions
+- main Project Manager reasoning sections
+- project-manager action layer
+- scoped action buttons
+- bottom action rail
+- lower Project finance/document summary
+
+Recommended page architecture:
+
+```text
+Left rail
+  -> Projects navigation and recent projects
+
+Header
+  -> project name, type, owner, stage/phase, dates, team, health
+
+Main column
+  -> Identity
+  -> Observation
+  -> Interpretation
+  -> Meaning
+  -> Wisdom
+  -> Project Manager actions
+  -> Finance/document summary near bottom
+
+Right rail
+  -> Project Snapshot
+  -> Key Facts
+  -> Recent Activity
+  -> Next Best Actions
+
+Bottom action rail
+  -> Message Project / Co-Work
+  -> Create Task
+  -> Log Note
+  -> Schedule
+  -> More
+```
+
+The screenshot reference `projects card.png` points in the right direction: a full-page, calm executive project workspace with a navigation rail, strong project identity, main reasoning stack, right-side project facts/actions, and an action rail.
+
+### Dynamic Project Manager Focus
+
+The top module of the Project Manager page is selected dynamically.
+
+It should not always be Identity, Snapshot, or Project Charter. Those are stable context. The top module should reflect what the Project Manager is doing at that point in the project/day.
+
+Priority order:
+
+1. Critical blocker, payment issue, deadline, owner gap, or executive-risk item.
+2. User decision needed.
+3. Prepared work ready for approval.
+4. Today's reprioritization.
+5. Active project movement.
+6. End-of-day reset / tomorrow preparation.
+7. Quiet monitoring if nothing needs attention.
+
+The top module must be backed by a Project Manager Action Packet or Project Manager Focus Packet. It must not be generated as decorative summary copy.
+
+### Alignment Is Open Loops
+
+Alignment is the open-loop command center.
+
+It is not a general priority list, a project feed, or a place for every interesting risk. A project item routes to Alignment only when there is an unresolved loop that needs executive attention, judgment, escalation, an answer, or approval before the loop can close.
+
+An Alignment-bound project packet must answer:
+
+```text
+What loop is open?
+What is needed to close it?
+Why now?
+What can VAL do next?
+```
+
+Examples:
+
+- `Critical Project Issue` routes to Alignment when the issue creates an unresolved loop.
+- `Needs Your Judgment` routes to Alignment when the user's answer is the blocker.
+- `Prepared For You` routes to Alignment only when approval or missing context blocks closure; otherwise it belongs in Leverage.
+- `Project Movement` routes to Alignment only when movement opens, reopens, or blocks a loop; closed-loop movement belongs in Velocity and receipts.
+- `Put a pin in it` creates a timed open loop that returns to Alignment when the unpin time arrives.
+
+Closed loops should leave Alignment and produce a simple receipt.
+
+### Dynamic Focus Modules
+
+| Module | Trigger | What VAL must do | Visible surface | User action | Receipt |
+|---|---|---|---|---|---|
+| `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, angry stakeholder, relationship tension, high-risk trade-off | Create risk/next-action packet, notify Alignment, update project status, prepare next recommended move | Top module, Alignment, Project action layer | Approve recommendation, approve draft, answer scoped question, add context, approve owner assignment | Issue receipt + updated project packet + handled Home receipt when resolved |
+| `Needs Your Judgment` | PM cannot safely move without user judgment, especially option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action, or one missing answer | Create decision packet with options, recommendation, brief source proof, consequence if delayed, and action/prepared-work packet when possible | Top module, Alignment, Project action layer, Leverage if VAL prepared something | Choose option, approve recommendation, add context, ask scoped question, ask VAL to prepare draft, approve external action, put a pin in it | One-line decision receipt |
+| `Prepared For You` | VAL drafted or prepared something ready for user review and approval | Persist artifact, link to project/source, prove why/what/where/what is needed, register in Project and Leverage | Project top module or action layer, and Leverage | Review, edit/refine, approve, ask scoped question, add context, send/publish/schedule/create after approval, put a pin in it | Simple action receipt |
+| `Today's Reprioritization` | Any new project-related source or event, start of day, user opens project page, or changed priority/risk | Re-scan project emails, transcripts, calendar, documents, commitments, payment/project issues, and relationship tension; set new priority order | Top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare something, create task if needed, message stakeholder only when identity/context are safe, put a pin in it until date/time | Reprioritization receipt |
+| `Project Movement` | Forward or backward movement: task/document/payment/question/clarification/meeting/dependency/status/open-loop change | Create movement packet with direction, update current reality, update open loops, feed Velocity and Project | Home welcome/context, Project top module or recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, ask VAL to prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
+| `Execution Adjustment` | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Make the trade-off explicit, show options, recommend the least-risk path, and prepare plan/draft updates when useful | Project top module; Alignment only when the trade-off creates an open loop needing judgment; Velocity if it reflects movement; Leverage if VAL prepared work | Accept VAL's adjustment, choose another option, ask for alternatives, add context, ask VAL to update the project plan, ask VAL to draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
+| `Project Reset` | End of day, after meetings, after major actions, after open loops change, and when the user opens VAL the next morning | Summarize what moved, what closed, what opened, what remains unresolved, and tomorrow's likely first move | Project page always; Home welcome/context only when something shifted or needs attention; Velocity when reset records meaningful movement; Alignment only if an unresolved loop needs the user | Confirm, add context, ask VAL to prepare tomorrow's first move, create task, put a pin in it until date/time | Reset receipt |
+| `Quietly Watching` | Nothing needs user attention but project monitoring rules exist | Write project watch items to the Board of Observers and show what VAL is watching without creating a task | Board of Observers project-by-project top section; Project page lower/quiet section or top module only when no higher module exists; Home only if a watch condition changes | Open watcher, change rule, add context, ask VAL to prepare next move, put a pin in it, stop watching | Watching receipt |
+
+### Module Path Completeness
+
+Every dynamic focus module must pass this path:
+
+```text
+Source or time trigger
+  -> Witness observation
+  -> Project Manager Round Table
+  -> Focus module selection
+  -> Project Manager Focus/Action Packet
+  -> Project page top module
+  -> item-scoped user action
+  -> receipt
+  -> updated project memory
+```
+
+If any step is missing, the page must not imply that VAL handled the item.
+
+### Critical Project Issue Contract
+
+Critical project issues include:
+
+- payment issue
+- missed or threatened deadline
+- failed dependency
+- blocked owner
+- unclear owner
+- angry stakeholder
+- relationship tension discovered in transcript or email
+- service or account access risk
+- launch risk
+- legal, contract, or compliance risk
+- high-risk scope/time/cost/quality trade-off
+
+Relationship health is part of project health. If a transcript or email reveals tension, frustration, distrust, conflict, or an angry stakeholder, that can be a critical project issue even when the project tasks still look on track.
+
+Required behavior before showing the issue:
+
+```text
+Critical issue detected
+  -> identify the issue
+  -> attach brief clickable source proof
+  -> prepare the recommended next move
+  -> prepare draft message when appropriate
+  -> ask before assigning an owner
+  -> route to Alignment
+  -> place at top of Project Manager page
+```
+
+Source proof must be brief.
+
+Example:
+
+```text
+Source proof: There was tension in this morning's call during the partner timeline discussion.
+```
+
+The source proof sentence should be clickable so the user can inspect the email, transcript, meeting, document, or source receipt.
+
+Allowed user actions:
+
+- approve VAL's recommendation
+- approve or refine a prepared draft
+- answer scoped questions
+- add additional context
+- approve suggested owner assignment
+- ask a scoped question about this issue
+
+Not allowed:
+
+- vague `dismiss`
+- vague `hold`
+- silent owner assignment
+- broad generic project chat
+- long source dumps
+
+Scoped question rule:
+
+```text
+If VAL has multiple questions:
+  -> say how many questions there are
+  -> ask one question at a time
+  -> allow additional context after the required questions
+  -> then continue preparing or resolving the issue
+```
+
+Resolution behavior:
+
+The user should not have to manually mark the issue resolved as the primary path. VAL should show resolution when the issue is actually handled.
+
+Resolved/handled items should surface in the Home welcome message or equivalent morning/context greeting.
+
+Example:
+
+```text
+I handled the payment issue for Project XYZ. VAL linked the invoice, prepared the follow-up, and updated the project manager packet. Yay, go us. Let's see what's next.
+```
+
+### Needs Your Judgment Contract
+
+Needs Your Judgment is the decision layer. It appears when the Project Manager cannot safely move the project without the user's judgment.
+
+Counts as needing judgment:
+
+- choosing between options
+- unclear owner
+- strategic trade-off
+- sensitive relationship decision
+- approving scope change
+- deciding whether to escalate
+- approving external action
+- confirming whether VAL should create, send, schedule, assign, or update something
+- one missing answer before VAL can prepare the work
+
+Where it appears:
+
+```text
+Needs judgment
+  -> top of Project Manager page
+  -> Home Alignment card
+  -> Leverage if VAL prepared a reviewable draft/artifact/action packet
+```
+
+Anything consequential belongs in Alignment.
+
+Before asking the user, VAL should prepare:
+
+- clear options when there are options
+- VAL's recommendation
+- brief clickable source proof
+- consequence if delayed
+- action packet when an action may follow
+- draft/prepared artifact when useful, then place it in Leverage
+
+Owner handling:
+
+VAL should know who the work appears to belong to when the evidence is clear. If assigning ownership creates consequence or ambiguity, VAL should ask before assignment.
+
+One-answer blocker:
+
+```text
+I need one answer before I can prepare this.
+```
+
+This should appear in Alignment when the missing answer blocks meaningful project movement or prepared work.
+
+Allowed actions:
+
+- choose option
+- approve VAL's recommendation
+- add context
+- ask scoped question
+- ask VAL to prepare a draft
+- approve external action
+- put a pin in it
+
+Use executive language:
+
+```text
+Put a pin in it.
+```
+
+Do not use `not now` as the primary user-facing action label.
+
+Receipt rule:
+
+After the user decides, the receipt should be one simple line:
+
+```text
+VAL just updated the project plan.
+```
+
+or:
+
+```text
+VAL just prepared the follow-up for review.
+```
+
+or:
+
+```text
+VAL just put a pin in this and will keep watching it.
+```
+
+### Prepared For You Contract
+
+Prepared For You means VAL drafted or prepared something that is ready for the user to review, refine, approve, and make real.
+
+Prepared work includes anything VAL has drafted or prepared, such as:
+
+- email draft
+- stakeholder message
+- SOP draft
+- workflow draft
+- project plan update
+- note
+- schedule or calendar proposal
+- document
+- task list
+- status update
+- proposal
+- invoice/payment follow-up
+- meeting agenda
+- project manager recommendation/action packet
+
+Where it appears:
+
+```text
+Prepared work
+  -> Project Manager page
+  -> Leverage
+  -> relevant drawer or surface when applicable
+```
+
+Prepared work must show in both the project page and Leverage when it is tied to a project.
+
+Before VAL may say it prepared something, it must prove:
+
+- why VAL prepared it
+- what VAL prepared
+- source that triggered it
+- where it is saved or visible
+- what it is waiting for
+- approval needed
+- what happens if the user approves it
+
+Required proof shape:
+
+```text
+Why I prepared this:
+What I prepared:
+Where it is:
+What I need from you:
+What happens if approved:
+```
+
+Allowed actions:
+
+- review
+- edit/refine
+- approve
+- ask scoped question
+- add context
+- send after approval
+- publish after approval
+- schedule after approval
+- create after approval
+- put a pin in it
+
+Questions and context:
+
+If VAL needs answers before the prepared work can move forward, it should ask one question at a time and leave space for additional context after the required questions.
+
+This ask/add-context pattern should be available throughout VAL wherever prepared work appears.
+
+Receipt rule:
+
+After the action, the receipt should be one simple line:
+
+```text
+VAL just created the project task list.
+VAL just sent the approved stakeholder update.
+VAL just saved the SOP draft.
+VAL just added the invoice follow-up to Project X.
+```
+
+### Today's Reprioritization Contract
+
+The day-in-the-life project manager source says strong PMs reprioritize before reacting. They ask what changed, what is at risk, and who may need clarity before they ask.
+
+VAL should make this stronger than a human project manager by reorienting whenever something new happens in the project.
+
+Triggers:
+
+- start of day
+- user opens project page
+- new project email
+- transcript processed
+- calendar attendee/event change
+- missed task or commitment
+- stakeholder tension
+- payment issue
+- new document
+- project-related receipt/invoice
+- dependency changes
+- prepared work changes
+- any source/event tied to the project
+
+Required behavior:
+
+```text
+Project-related change arrives
+  -> re-scan project emails
+  -> re-scan project transcripts
+  -> re-scan project calendar
+  -> re-scan documents
+  -> re-scan commitments/tasks
+  -> re-scan payment/project issues
+  -> re-scan relationship tension/stakeholder health
+  -> update priority order
+  -> recommend what should happen first
+  -> show reprioritized module at top if priority changed
+```
+
+Top module should show, in order:
+
+1. what VAL recommends first
+2. what changed
+3. what is at risk
+4. who needs clarity
+5. what VAL already handled
+
+The top recommendation changes dynamically based on the latest admitted project evidence.
+
+Priority list behavior:
+
+The user should be able to see the priority list and click a different item to make it the top priority.
+
+Allowed actions:
+
+- accept priority
+- choose a different priority
+- ask why
+- add context
+- ask VAL to prepare something
+- create task if needed
+- message stakeholder only when stakeholder identity and context are safe
+- put a pin in it
+
+Stakeholder message caution:
+
+VAL may prepare stakeholder messaging only when it is attached to the right stakeholder and has enough project context. If not, it should ask for context first.
+
+Put a pin in it rule:
+
+```text
+User clicks "Put a pin in it"
+  -> VAL asks "Until when?"
+  -> user can pick date and time
+  -> VAL stores pin-until timestamp
+  -> VAL keeps watching but removes it from the top until the chosen time or new critical evidence appears
+```
+
+Receipt:
+
+```text
+VAL just reprioritized Project X for today and is watching the partner timeline.
+```
+
+### Project Movement Contract
+
+Project movement is directional. Movement can move the project forward or backward.
+
+Open-loop principle:
+
+```text
+If something was presented and has not been done, it is an open loop.
+```
+
+Closing loops is one of VAL's project-manager superpowers. VAL should notice when loops open, move, close, stall, or reverse without making the surface overly granular.
+
+Forward movement examples:
+
+- invoice paid
+- document opened
+- question asked
+- clarification made
+- document sent that the user had been asking for
+- meeting held
+- task completed
+- dependency resolved
+- decision made
+- SOP/workflow updated
+- stakeholder replied constructively
+
+Backward movement examples:
+
+- payment not received
+- important meeting canceled
+- task slipped
+- dependency failed
+- stakeholder tension worsened
+- document still missing
+- client reversed direction
+- owner went unclear
+
+Required visible display:
+
+```text
+What changed
+Movement direction: forward/backward
+One-line source proof
+Follow up action
+```
+
+Do not add visible clutter such as:
+
+- why this matters
+- affected people
+- broad priority analysis
+- affected document/task/deadline lists
+- generic follow-up explanation
+
+The executive understands why movement matters. Keep the movement surface clean.
+
+Where movement appears:
+
+```text
+Project movement
+  -> Home welcome/context message
+  -> Project Manager page
+  -> Velocity card
+  -> Project action layer
+```
+
+Source proof:
+
+Use one brief line. Make it clickable when possible.
+
+Examples:
+
+```text
+Source proof: Anthony sent the requested invoice PDF.
+Source proof: The client canceled tomorrow's launch meeting.
+```
+
+Allowed actions:
+
+- open source
+- follow up
+- ask what changed
+- add context
+- ask VAL to prepare next step
+- create task
+- update project plan
+- message stakeholder only when identity/context are safe
+- put a pin in it
+
+The primary action should be the action VAL believes is needed, such as `Follow up`.
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just logged the website draft as completed and updated the launch project.
+```
+
+### Execution Adjustment Contract
+
+Execution Adjustment is the trade-off module.
+
+It appears when the project plan cannot responsibly stay exactly the same because a constraint, expectation, dependency, or risk changed.
+
+This module is grounded in the PM constraint model:
+
+```text
+scope
+time
+cost
+quality
+resources
+stakeholder expectations
+risk
+```
+
+Execution Adjustment should not create drama. It should make the trade-off visible before it quietly damages the project.
+
+Trigger examples:
+
+- scope creep
+- timeline slipping
+- budget pressure
+- quality risk
+- resource overload
+- stakeholder asks for something bigger, faster, or cheaper
+- dependency failure
+- launch pressure
+- sponsor or client expectation changes
+- requested deliverable changes
+- workstream no longer matching the project plan
+- a risk becomes active enough that the old plan is no longer responsible
+
+Required processing path:
+
+```text
+Project-related change
+  -> detect changed constraint
+  -> compare against current project plan
+  -> identify the trade-off
+  -> prepare options
+  -> recommend least-risk path
+  -> determine whether an open loop needs executive judgment
+  -> update Project Manager page
+  -> route to Alignment, Velocity, or Leverage only when the relevant gate is met
+```
+
+Required visible display:
+
+```text
+What changed
+The trade-off
+VAL's recommendation
+Consequence if delayed
+One-line source proof
+Available actions
+```
+
+What VAL should prepare before asking:
+
+- what changed
+- the trade-off
+- clear options
+- recommended path
+- consequence if delayed
+- one-line clickable source proof
+- what VAL can adjust automatically
+- project plan update when useful
+- stakeholder message draft when identity and context are safe
+
+Alignment rule:
+
+```text
+Execution Adjustment appears in Alignment only when it creates an open loop that needs executive judgment.
+```
+
+Examples:
+
+- user must choose between scope and timeline
+- VAL needs approval before changing a deadline
+- a stakeholder message should be approved before sending
+- the project cannot move until the executive chooses a path
+- a pinned trade-off reaches its unpin date/time
+
+Velocity rule:
+
+```text
+Execution Adjustment appears in Velocity when the trade-off represents meaningful movement in project reality.
+```
+
+Leverage rule:
+
+```text
+Execution Adjustment appears in Leverage when VAL prepared a reviewable artifact.
+```
+
+Allowed actions:
+
+- accept VAL's adjustment
+- choose another option
+- ask for alternatives
+- add context
+- ask VAL to update the project plan
+- ask VAL to draft a stakeholder message
+- approve prepared plan update
+- approve prepared stakeholder message
+- put a pin in it
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just updated the launch plan to protect quality and moved the content deadline to Friday.
+```
+
+### Project Reset Contract
+
+Project Reset is the residue-clearing module.
+
+It exists so the executive does not have to keep the state of the project in their head after meetings, actions, movement, or the end of the day.
+
+Automatic triggers:
+
+- end of day
+- after meetings
+- after major actions
+- after open loops change
+- when the user opens VAL the next morning
+- when stale open loops need a clean restatement
+
+Required processing path:
+
+```text
+Reset trigger
+  -> scan project movement
+  -> scan open loops
+  -> scan prepared work
+  -> scan decisions made
+  -> scan unresolved issues
+  -> create Project Reset Packet
+  -> update Project Manager page
+  -> route to Home, Velocity, Alignment, or Leverage only when the relevant gate is met
+```
+
+Required summary:
+
+```text
+What moved
+What closed
+What opened
+What is still unresolved
+Tomorrow's likely first move
+```
+
+Home rule:
+
+```text
+Project Reset appears in Home welcome/context only when something shifted, closed, opened, or needs attention.
+```
+
+Do not show every project reset on Home. Multiple projects will make Home crowded if reset becomes a generic daily digest.
+
+Surface routing:
+
+```text
+Project page: always stores the reset
+Home welcome/context: only when something changed or needs attention
+Velocity: when reset records meaningful movement
+Alignment: only when reset identifies an unresolved open loop needing the user
+Leverage: only when VAL prepared something reviewable during reset
+```
+
+Allowed actions:
+
+- confirm
+- add context
+- ask VAL to prepare tomorrow's first move
+- create task
+- put a pin in it
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just reset this project for tomorrow: two loops closed, one decision still needs you.
+```
+
+### Quietly Watching / Board Of Observers Contract
+
+Quietly Watching is the monitoring layer.
+
+It should make the Board of Observers more powerful by showing what VAL is actively watching across projects without turning every watched item into a task, alert, or Alignment item.
+
+Primary surface:
+
+```text
+Board of Observers
+```
+
+The top portion of the Board of Observers page should be project-by-project.
+
+Default ordering:
+
+```text
+Projects listed alphabetically for now.
+```
+
+Each project row/section should answer:
+
+```text
+Project name
+What VAL is observing on this project
+What would trigger action
+Last checked or last source proof
+Whether anything needs the user
+Available actions
+```
+
+Examples of watched items:
+
+- waiting for a reply
+- waiting for payment
+- waiting for a document
+- watching a launch dependency
+- watching stakeholder tension
+- watching until a pinned date/time
+- watching a project handoff
+- watching whether a promised action happens
+- watching whether a relationship or team dynamic improves/worsens
+
+Required actions should always be available from the Board of Observers watch item:
+
+- change a rule
+- add context
+- ask VAL to prepare something
+- open source
+- put a pin in it
+- stop watching
+
+The Board of Observers layout should be:
+
+```text
+Top: project-by-project watching summary
+Below: existing Board of Observers details, diagnostics, and observer-specific information
+```
+
+Do not remove the lower existing observer details. The project-by-project watching summary should sit above them.
+
+Project page rule:
+
+```text
+Project pages may show Quietly Watching in a lower/quiet section, or as the top module only when no higher-priority module exists.
+```
+
+Home rule:
+
+```text
+Home should not show quiet watching by default.
+Home may show it only when a watch condition changes, a watched item becomes actionable, or the user explicitly opens a "what are you watching?" surface.
+```
+
+Alignment rule:
+
+```text
+Quietly Watching becomes Alignment only when a watched item becomes an open loop needing executive attention.
+```
+
+Receipt:
+
+```text
+VAL is watching for Anthony's signed agreement. No action is needed right now.
+```
+
+### Handled Work Copy Rule
+
+Allowed:
+
+```text
+VAL linked this invoice to Project X.
+VAL prepared the follow-up email for review.
+VAL found a payment issue from this project.
+VAL is watching the launch workflow dependency.
+Nothing needs your attention right now; VAL is watching the open loops.
+```
+
+Not allowed:
+
+```text
+Project updated.
+Insight generated.
+Context found.
+Things are moving.
+```
+
+The user should always understand what was handled, why it matters, and what VAL will do next.
+
+### Project Dossier Sections
 
 The dossier should be organized by user need:
 
@@ -778,6 +1701,34 @@ The dossier should be organized by user need:
 7. Story: living narrative and timeline by meaning.
 8. Related context: recent activity, related work, quick facts.
 
+The PM 101 source material adds required operational sections:
+
+- Project Charter: business case, purpose, goals, scope, timeline, stakeholders, risks.
+- Constraints: scope, time, cost, and quality trade-offs.
+- Lifecycle Phase: initiation, planning, execution, monitor/control, closure.
+- Work Breakdown Structure: objectives, activities, tasks.
+- Stakeholders and Sponsors: executive sponsor, project leadership, teams, support areas.
+- Communication: recurring meetings, stakeholder management, status transparency, progress celebration.
+- Project Plan: timelines, budget, task tracking, issue resolution, risk management.
+- Lessons Learned: closure, reporting, customer sign-off, what VAL learned.
+
+The day-in-the-life source material adds required operating behaviors:
+
+- reprioritize before reacting
+- scan for blockers, updates, and noise
+- detect early warning signs
+- clarify misunderstandings
+- resolve small conflicts before they grow
+- make trade-offs explicit
+- protect momentum while managing risk
+- align stakeholders to reality
+- document decisions immediately
+- close loops the same day
+- summarize meeting outcomes
+- reduce ambiguity
+- review what actually moved the project forward
+- capture unresolved risks and tomorrow's likely trade-offs
+
 For projects with an SOP, the dossier must also show:
 
 - selected SOP
@@ -789,6 +1740,119 @@ For projects with an SOP, the dossier must also show:
 - what VAL is watching after launch
 
 This section should feel like a project manager has every base covered.
+
+### Project Manager Action Layer
+
+The Project Dossier must not merely describe the project. It must show what the dedicated Project Manager is doing, preparing, monitoring, updating, or asking for.
+
+Every displayed Project Manager action must be intensely actionable and scoped.
+
+Examples:
+
+- `VAL built the SOP draft for this project.`
+- `VAL linked Anthony's invoice to this project.`
+- `VAL found a payment issue.`
+- `VAL prepared the follow-up email.`
+- `VAL updated the relationship role for Michelle.`
+- `VAL noticed the launch workflow is blocked.`
+- `VAL created a project finance/document summary.`
+
+Each displayed action must have:
+
+- a plain-English action statement
+- source proof
+- affected packet or artifact
+- current status
+- next available user action
+- scoped Co-Work entry
+- receipt or pending receipt
+
+The action row is not a generic note. It is a doorway into one specific piece of project-manager work.
+
+### Project Manager Scoped Co-Work
+
+When the user clicks a Project Manager action, Co-Work must open with only:
+
+1. the active project packet,
+2. the selected Project Manager action packet,
+3. the source receipts directly attached to that action,
+4. the specific artifact/document/SOP/workflow/commitment/relationship object involved.
+
+It must not pull in the entire project history, unrelated project actions, unrelated documents, unrelated people, unrelated emails, or global memory.
+
+Example:
+
+```text
+Displayed action:
+VAL built the onboarding SOP draft.
+
+Click:
+Ask VAL / Add context / Review this
+
+Co-Work context:
+  -> current project
+  -> selected SOP draft action
+  -> SOP draft artifact
+  -> source receipts that caused the SOP draft
+  -> no unrelated project context
+```
+
+Required Co-Work opening posture:
+
+```text
+We are looking only at this project item.
+```
+
+Allowed user actions:
+
+- add context to this item
+- ask a question about this item
+- refine the prepared artifact
+- approve, reject, or hold the item when applicable
+- link the item to a document, relationship, commitment, SOP, or project phase when applicable
+
+Forbidden:
+
+- blend another project into this item
+- answer from unrelated source memory
+- expose raw packet/debug context
+- mutate the project broadly when the user only clicked one action
+- treat the whole Project Dossier as the Co-Work scope
+
+### Project Manager Action Packet
+
+Every displayed Project Manager action must have a packet.
+
+Required variables:
+
+- `project_id`
+- `project_manager_action_id`
+- `action_statement`
+- `action_type`
+- `what_val_did_or_noticed`
+- `affected_artifact_type`
+- `affected_artifact_id`
+- `source_receipts`
+- `status`
+- `next_user_action`
+- `allowed_actions`
+- `forbidden_actions`
+- `cowork_scope`
+- `receipt_expected`
+
+Feeds:
+
+- Project Dossier action layer
+- scoped Project Co-Work
+- Leverage when the action includes reviewable prepared work
+- Alignment when the action is a priority/risk/payment issue
+- Documents/Commitments/Relationships when the action updates those packets
+
+Must not:
+
+- render without source proof
+- open generic project chat
+- use the action as permission to change unrelated project fields
 
 ### Co-Work From Projects
 
@@ -829,7 +1893,7 @@ Source
   -> Project Admission Packet
   -> Project Manager Round Table
   -> Project Manager Packet
-  -> Projects drawer
+  -> Project Managers drawer
   -> Related drawers and Home only through their own admission gates
 ```
 

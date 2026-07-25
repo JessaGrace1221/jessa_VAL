@@ -119,6 +119,36 @@ It should become:
 - question for confirmation
 - low-confidence memory candidate
 
+## Relationship Packet Intake During Onboarding
+
+When the user connects Gmail or Outlook, onboarding should include a relationship packet intake pass across roughly 90 days of inbox, sent, and CC'd email.
+
+This is not the Executive Inbox queue. Read and replied-to messages may be inappropriate for active Executive Inbox, but they are often essential context for understanding the user's relationships.
+
+The intake pass should:
+
+- identify real people who appear important, emerging, or repeatedly connected to meaningful work
+- create or update `person_packet` records for those people
+- capture who the person is, what they appear to need, and what they appear to offer
+- preserve source receipts and confidence
+- mark thin packets as thin instead of discarding them
+- create confirmation questions when the person appears important but evidence is incomplete
+
+The intake pass should not:
+
+- turn every sender into an important relationship
+- treat newsletters, system mail, spam, invoices, or transactional notices as relationships
+- permanently decide who needs whom
+- send messages, update CRM records, or create introductions without user approval
+- confuse inferred importance with user-confirmed importance
+
+The packet creation rule is:
+
+```text
+Onboarding starts the relationship map.
+Ongoing source intake keeps it alive.
+```
+
 ## Stage 1: Evidence Source Readiness Prompt
 
 Question:

@@ -25,6 +25,35 @@ function normalizeSourceRef(ref={}){
 function stableKey(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180);
 }
+const PROJECT_MANAGER_COLORS=[
+  {name:'Frost',hex:'#e7f7f7',family:'white'},
+  {name:'Pearl',hex:'#f8f8f5',family:'white'},
+  {name:'Alabaster',hex:'#f3efe5',family:'white'},
+  {name:'Snow',hex:'#edf8f8',family:'white'},
+  {name:'Ivory',hex:'#f7f1df',family:'white'},
+  {name:'Cotton',hex:'#fbfbf4',family:'white'},
+  {name:'Lace',hex:'#f7eee8',family:'white'},
+  {name:'Porcelain',hex:'#fbfbf8',family:'white'},
+  {name:'Rose',hex:'#f48aa8',family:'rose'},
+  {name:'Blush',hex:'#f7b6d5',family:'rose'},
+  {name:'Coral',hex:'#ff735f',family:'rose'},
+  {name:'Peach',hex:'#fa8f7f',family:'rose'},
+  {name:'Taffy',hex:'#ee78bf',family:'rose'},
+  {name:'Ballet Slipper',hex:'#e99abc',family:'rose'},
+  {name:'Sage',hex:'#78916f',family:'green'},
+  {name:'Fern',hex:'#5eb866',family:'green'},
+  {name:'Olive',hex:'#9abc6a',family:'green'},
+  {name:'Moss',hex:'#3e6d1f',family:'green'},
+  {name:'Seafoam',hex:'#41dfa7',family:'green'},
+  {name:'Mint',hex:'#94e3bb',family:'green'},
+  {name:'Basil',hex:'#2d6332',family:'green'},
+  {name:'Pistachio',hex:'#bad8c7',family:'green'}
+];
+function projectManagerColorFor(value=''){
+  const key=stableKey(value||'project');
+  const total=[...key].reduce((sum,ch)=>sum+ch.charCodeAt(0),0);
+  return PROJECT_MANAGER_COLORS[total%PROJECT_MANAGER_COLORS.length];
+}
 function sensitivityOf(text=''){
   return /\b(therapy|trauma|medical|legal|lawsuit|divorce|abuse|diagnos|mental health|family|child|financial hardship|confidential|private)\b/i.test(String(text||''))?'sensitive':'normal';
 }
@@ -307,6 +336,81 @@ function projectSourceCandidatesFromEvidenceLinks(rows=[],uuid,scope){
       confidence:row.confidence||0.66
     },uuid,scope);
   }).filter(Boolean);
+}
+
+function normalizeDocumentEvidence(doc={},index=0){
+  const title=compactText(doc.title||doc.fileName||doc.filename||doc.name||`Document ${index+1}`,220);
+  const sourceId=compactText(doc.sourceId||doc.source_id||doc.id||doc.messageId||title,220);
+  const type=compactText(doc.type||doc.kind||doc.mimeType||doc.contentType||'document',120);
+  return {
+    id:sourceId||stableKey(title),
+    title,
+    type,
+    summary:compactText(doc.summary||doc.bodyPreview||doc.text||doc.description||title,700),
+    sourceType:compactText(doc.sourceType||doc.source_type||'relationship_document',120),
+    sourceId,
+    sourceUrl:compactText(doc.sourceUrl||doc.url||doc.webUrl||'',500)
+  };
+}
+function relationshipDocumentProjectSuggestionCandidate(input={},uuid,scope){
+  const relationship=input.relationship||{};
+  const admitted=relationship.admitted===true||relationship.relationshipAdmitted===true||relationship.status==='admitted'||relationship.relationshipAdmission?.admitted===true;
+  if(!admitted)throw new Error('Suggested projects require an admitted relationship sender.');
+  const docs=safeArray(input.documents).map(normalizeDocumentEvidence).filter(doc=>doc.title||doc.sourceId);
+  if(!docs.length)throw new Error('Suggested projects require document evidence.');
+  const relationshipName=compactText(relationship.name||relationship.displayName||relationship.email||'Relationship',180);
+  const relationshipId=compactText(relationship.id||relationship.contactId||relationship.contact_id||relationship.profileKey||relationship.email||relationshipName,220);
+  const source=input.source||input.email||{};
+  const sourceType=compactText(source.sourceType||source.source_type||source.provider||'email_message',120);
+  const sourceId=compactText(source.sourceId||source.source_id||source.messageId||source.message_id||source.id||docs[0]?.sourceId||relationshipId,220);
+  const sourceTitle=compactText(source.subject||source.title||input.subject||docs[0]?.title||'Relationship sent documents',220);
+  const firstDocTitle=docs[0]?.title||'Documents';
+  const projectName=compactText(input.projectName||input.name||sourceTitle.replace(/^(re|fw|fwd):\s*/i,'')||`${relationshipName} ${firstDocTitle}`,180);
+  const projectId=stableKey(input.projectId||projectName);
+  const assignedManager=projectManagerColorFor(`${relationshipId}:${projectName}`);
+  const owner={
+    type:'relationship',
+    id:relationshipId,
+    name:relationshipName,
+    email:compactText(relationship.email||'',220),
+    source:'document_sender',
+    reassignment_options:['choose_existing_relationship','create_new_relationship']
+  };
+  const summary=compactText(`${relationshipName} sent ${docs.length} document${docs.length===1?'':'s'} that may define a project: ${docs.map(doc=>doc.title).join(', ')}.`,900);
+  const evidence=[
+    normalizeSourceRef({sourceType,sourceId,quoteOrSummary:sourceTitle,confidence:input.confidence||0.75}),
+    ...docs.map(doc=>normalizeSourceRef({sourceType:doc.sourceType||'relationship_document',sourceId:doc.sourceId||doc.id,quoteOrSummary:doc.summary||doc.title,confidence:input.confidence||0.74}))
+  ];
+  return {
+    id:updateId(uuid,scope,'relationship_document','suggested_project',projectId,`${relationshipId}:${sourceId}:${docs.map(d=>d.id).join('|')}`),
+    targetType:'suggested_project',
+    targetKey:projectId,
+    updateType:'create_project_from_relationship_documents',
+    title:`Suggested project: ${projectName}`,
+    summary,
+    proposedValueJson:{
+      projectId,
+      projectName,
+      relationship:{id:relationshipId,name:relationshipName,email:owner.email},
+      owner,
+      assignedProjectManager:assignedManager,
+      documents:docs,
+      source:{sourceType,sourceId,sourceTitle},
+      reviewActions:[
+        {key:'approve_create_project',label:'Yes, create this project and assign it a manager'},
+        {key:'reject_not_project',label:'No, this is not a project'}
+      ],
+      documentPlacement:['documents_drawer','project_manager_page'],
+      boundary:'Approval creates a local project shell with one owner and assigned color-named Project Manager. It does not send messages, write CRM, parse contracts into obligations, schedule work, or take external action.',
+      noExternalAction:true
+    },
+    sourceRefsJson:evidence,
+    evidenceRefsJson:evidence,
+    approvalPolicy:'approval_required',
+    sensitivity:sensitivityOf(summary),
+    confidence:Math.max(0.5,Math.min(1,Number(input.confidence||0.76))),
+    metadataJson:{source:'source_processing_spine',subtype:'relationship_document_project_suggestion',relationshipId,sourceProcessingRecordId:input.sourceProcessingRecordId||'',surfaces:['project_managers','home_leverage'],noExternalAction:true}
+  };
 }
 
 function relationshipTemperatureCorrectionCandidate(input={},uuid,scope){
@@ -633,6 +737,56 @@ function createValReviewUpdatesService({
       });
       saveStore(s);return id;
     }
+    if(update.updateType==='create_project_from_relationship_documents'){
+      const projectId=stableKey(value.projectId||value.projectName||update.targetKey||update.title);
+      const projectName=compactText(value.projectName||update.title||projectId,180);
+      const profileKey=`project:${projectId}`;
+      const documents=safeArray(value.documents).map((doc,index)=>({
+        id:doc.id||doc.sourceId||`relationship-doc-${index+1}`,
+        fileName:doc.title||`Document ${index+1}`,
+        docType:doc.type||'relationship_document',
+        source:doc.sourceType||'relationship_document',
+        sourceId:doc.sourceId||doc.id||'',
+        sourceUrl:doc.sourceUrl||'',
+        chars:String(doc.summary||'').length,
+        summary:doc.summary||''
+      }));
+      const metadata={
+        source:'source_processing_spine',
+        createdFrom:'relationship_document_project_suggestion',
+        reviewUpdateId:update.id,
+        assignedProjectManager:value.assignedProjectManager||projectManagerColorFor(projectName),
+        owner:value.owner||{},
+        relationship:value.relationship||{},
+        intake:{
+          documents:documents.map(doc=>doc.fileName).filter(Boolean).join(', '),
+          relationships:value.relationship?.name||value.owner?.name||'',
+          rawContext:update.summary||'',
+          sourceReceipt:value.source||{}
+        },
+        uploadedFiles:documents,
+        sourceRefs:update.sourceRefsJson,
+        evidenceRefs:update.evidenceRefsJson,
+        documentPlacement:['documents_drawer','project_manager_page'],
+        noExternalAction:true
+      };
+      if(hasPg()){
+        const profileId=`profile_${stableKey(profileKey)}`;
+        await dbQuery(`insert into relationship_profiles (id,tenant_id,profile_type,profile_key,project_id,display_name,summary,relationship_status,confidence,last_observed_at,metadata_json,created_at,updated_at)
+          values ($1,$2,'project',$3,$4,$5,$6,'intake',$7,now(),$8,now(),now())
+          on conflict (tenant_id,profile_type,profile_key) do update set project_id=excluded.project_id, display_name=excluded.display_name, summary=coalesce(nullif(excluded.summary,''),relationship_profiles.summary), relationship_status='intake', confidence=greatest(relationship_profiles.confidence,excluded.confidence), metadata_json=relationship_profiles.metadata_json || excluded.metadata_json, updated_at=now()`,
+          [profileId,tenantId(),profileKey,projectId,projectName,update.summary||'',update.confidence||0.76,JSON.stringify(metadata)]);
+        return profileId;
+      }
+      const s=store();const id=`profile_${stableKey(profileKey)}`;
+      const existing=s.relationshipProfiles.find(p=>p.tenantId===tenantId()&&p.profileType==='project'&&p.profileKey===profileKey);
+      if(existing){
+        Object.assign(existing,{projectId,displayName:projectName,summary:update.summary||existing.summary,relationshipStatus:'intake',confidence:Math.max(Number(existing.confidence||0),Number(update.confidence||0.76)),metadataJson:{...(existing.metadataJson||{}),...metadata},updatedAt:new Date().toISOString()});
+        saveStore(s);return existing.id;
+      }
+      s.relationshipProfiles.unshift({id,tenantId:tenantId(),userId:userId(),profileType:'project',profileKey,projectId,displayName:projectName,summary:update.summary||'',relationshipStatus:'intake',confidence:update.confidence||0.76,lastObservedAt:new Date().toISOString(),metadataJson:metadata,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+      saveStore(s);return id;
+    }
     if(update.targetType==='relationship_profile'||update.targetType==='project_understanding'){
       const profileType=update.targetType==='project_understanding'?'project':'person';
       const profileKey=`${profileType}:${stableKey(update.targetKey||update.title)}`;
@@ -688,7 +842,12 @@ function createValReviewUpdatesService({
     await audit(id,'edited',before,after,changes.note||'');
     return after;
   }
-  return {build,list,approve,reject,edit,collectCandidates,createRelationshipTemperatureCorrection,createProjectSourceInterpretation,createTranscriptProposalReview};
+  async function createRelationshipDocumentProjectSuggestion(input={}){
+    const candidate=relationshipDocumentProjectSuggestionCandidate(input,uuid,scope());
+    const update=await upsertCandidate(candidate);
+    return {ok:true,update,no_external_action:true};
+  }
+  return {build,list,approve,reject,edit,collectCandidates,createRelationshipTemperatureCorrection,createProjectSourceInterpretation,createTranscriptProposalReview,createRelationshipDocumentProjectSuggestion};
 }
 
-module.exports={createValReviewUpdatesService,approvalPolicyFor,sensitivityOf,relationshipTemperatureCorrectionCandidate,projectSourceInterpretationCandidate,transcriptProposalReviewCandidate};
+module.exports={createValReviewUpdatesService,approvalPolicyFor,sensitivityOf,relationshipTemperatureCorrectionCandidate,projectSourceInterpretationCandidate,transcriptProposalReviewCandidate,relationshipDocumentProjectSuggestionCandidate,projectManagerColorFor,PROJECT_MANAGER_COLORS};

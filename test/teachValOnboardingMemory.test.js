@@ -455,6 +455,10 @@ test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',
   assert.match(server,/witness_never_compromised/);
   assert.match(server,/Do not flatter, diagnose, or promote durable memory automatically/);
   assert.match(server,/stage:'current_projects'/);
+  assert.match(server,/What are the main workstreams VAL should track for this project\?/);
+  assert.match(server,/Project Manager page questions exactly/);
+  assert.match(server,/data\.project_manager_import_packet/);
+  assert.match(server,/yes_create_project, no_not_project, unsure_ask_user/);
   assert.match(server,/prompt:card\.prompt/);
   assert.doesNotMatch(server,/state\.stage=state\.stage==='welcome'\?'voice_interview'/);
   assert.doesNotMatch(server,/external_ai_imports:imports\.map\(i=>\(\{category:i\.category,prompt_used/);
@@ -493,6 +497,13 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/const PARTNERSHIP_PROTOCOL_CARDS/);
   assert.match(server,/function partnershipProtocolCardFor/);
   assert.match(server,/async function observePartnershipProtocolAnswer/);
+  assert.match(server,/function witnessingUploadIds/);
+  assert.match(server,/async function witnessingUploadedDocumentContext/);
+  assert.match(server,/where user_id=\$1 and id=any\(\$2::text\[\]\)/);
+  assert.match(server,/uploadedVia\|\|metadata\.uploaded_via/);
+  assert.match(server,/const observedResponse=uploadedDocumentContext\.modelContext/);
+  assert.match(server,/uploadedDocuments:uploadedDocumentContext\.documents/);
+  assert.match(server,/documentCategory:req\.body\.documentCategory\|\|'other'/);
   assert.match(server,/async function witnessPartnershipProtocolAnswer/);
   assert.match(server,/function fallbackPartnershipProtocolGraph/);
   assert.match(server,/function fallbackPartnershipProtocolWitness/);
@@ -571,6 +582,9 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
     assert.match(server,new RegExp(category));
   }
   assert.match(server,/documents_templates/);
+  assert.match(server,/reopen-witnessing-card\/:cardId/);
+  assert.match(server,/Only the Documents and Templates step can be reopened from this action/);
+  assert.match(server,/reopenedWitnessingCard/);
   assert.match(server,/import_context/);
   assert.match(server,/partnership_agreement/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId'/);

@@ -97,6 +97,13 @@ function relationshipNetworkPersonFromEvidence(lines=[]){
       confidence:0.62
     });
   }
+  if(/kareemah|karima/i.test(text)&&/\b(terry|terrie|teri)\b/i.test(text)&&/\b(intro|introduce|meet|connect)\b/i.test(text)){
+    people.push({
+      name:'Terrie',
+      reason:'Transcript evidence says Jessa wanted to introduce Terrie to Kareemah. Review the source, then prepare the introduction only if it still serves both people.',
+      confidence:0.94
+    });
+  }
   return people;
 }
 function buildRelationshipUnderstanding(dossier={}){
@@ -186,7 +193,7 @@ function buildRelationshipUnderstanding(dossier={}){
       },
       people_who_need_them:[],
       people_they_should_meet:evidencePeople,
-      no_match_reason:evidencePeople.length?'':'No confident network introduction is ready yet.'
+      no_match_reason:evidencePeople.length?'':'No confident stewardship move is ready yet.'
     },
     who_they_are_becoming_in_the_users_world:hasGoall||hasDashboard ? `${name} is becoming part of the GOALL execution context, not just a contact record.` : 'Unclear until stronger relationship evidence is attached.',
     living_narrative:compactText(
@@ -311,19 +318,19 @@ function relationshipDossierActions({id='',name='',email='',recommendedAction=''
     },
     {
       id:'find_relationship_introductions',
-      label:'Find introductions',
+      label:'Review next move',
       intent:'leverage',
       observerScope,
       type:'endpoint',
       endpoint:'/api/relationships/actions',
       method:'POST',
       contactRef,
-      willDo:'Prepare review-only introduction candidates in both directions: who needs this person and who this person needs.',
-      willNotDo:'VAL will not send introductions, expose contacts, create calendar events, scrape live data, or change CRM from this click.'
+      willDo:'Prepare review-only stewardship moves from person packets, including introductions only when they are the right move.',
+      willNotDo:'VAL will not send messages, make introductions, expose contacts, create calendar events, scrape live data, or change CRM from this click.'
     },
     {
       id:'refresh_relationship_observers',
-      label:'Refresh observers',
+      label:'Check for new evidence',
       intent:'observe',
       observerScope,
       type:'endpoint',
@@ -468,7 +475,7 @@ function relationshipBriefFromDossier(dossier={}){
     actions:{
       communicate:[actionRef('draft_message','Draft Email'),actionRef('draft_linkedin_comment','Draft LinkedIn Comment'),actionRef('draft_linkedin_dm','Draft LinkedIn DM')].filter(Boolean),
       plan:[actionRef('create_task','Create Task')].filter(Boolean),
-      think:[actionRef('brainstorm','Brainstorm'),actionRef('ask_alignment','Ask VAL'),actionRef('review_linkedin_activity','Review LinkedIn'),actionRef('find_relationship_introductions','Find Introductions')].filter(Boolean),
+      think:[actionRef('brainstorm','Brainstorm'),actionRef('ask_alignment','Ask VAL'),actionRef('review_linkedin_activity','Review LinkedIn'),actionRef('find_relationship_introductions','Review next move')].filter(Boolean),
       teach:[actionRef('mark_vip','Update Relationship'),actionRef('not_important','Correct Judgment'),actionRef('snooze','Protect Attention')].filter(Boolean)
     },
     sourceReceipts:sourceReceipt

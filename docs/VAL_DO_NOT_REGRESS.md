@@ -119,6 +119,12 @@ Never expose Round Table, packet, observer, or canonical-index machinery in the 
 
 Stewardship should answer who needs to meet whom and why.
 
+Never collapse person packets and Stewardship match decisions into the same layer. Person packets should store who a person is, what they need, and what they offer. Stewardship should compare packets to decide who needs whom and why.
+
+Never treat the first onboarding scan as the only relationship map. VAL must keep creating and updating person packets as new meaningful contacts, introductions, email threads, CCs, meetings, transcripts, CRM links, projects, and documents appear.
+
+Never discard a new relationship because it is thin or not obviously important yet. Mark it as thin, preserve source receipts, and let importance emerge with evidence.
+
 ## Project Regressions
 
 Never let Projects become project management.
