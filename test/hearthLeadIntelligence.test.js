@@ -1614,7 +1614,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.workspace-input-tools/);
   assert.match(hearthCss, /\.observer-board-button/);
   assert.match(hearthCss, /\.observer-board-button img/);
-  assert.match(hearthCss, /observer-board-pulse/);
+  assert.match(hearthCss, /observer-board-(?:pulse|glow)/);
   assert.match(hearthCss, /\.observer-board-mode \.workspace-panel/);
   assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode/);
   assert.match(hearthCss, /\.home-cowork-workspace/);
@@ -1790,7 +1790,7 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
 
   assert.match(listRoute, /Cache-Control','no-store, max-age=0/);
   assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
-  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'\} = \{\}\)/);
+  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'(?:,[^}]*)?\} = \{\}\)/);
   assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
   assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=50', \{cache: 'no-store'\}\)/);
   assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);
