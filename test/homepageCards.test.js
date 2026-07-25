@@ -174,7 +174,8 @@ test('Home commitments only shows work that needs the user',()=>{
   assert.match(hearthPrototype,/Open your commitments/);
   assert.match(hearthPrototype,/open commitments that need you/);
   assert.match(hearthPrototype,/Your commitments/);
-  assert.match(hearthPrototype,/Only the promises and follow-through that need you appear here/);
+  assert.match(hearthPrototype,/Showing the cleanest commitments first/);
+  assert.match(hearthPrototype,/lower-signal extracted item/);
   assert.match(hearthPrototype,/\/api\/val\/commitments\?limit=120&ownerType=user/);
   assert.doesNotMatch(hearthPrototype,/\/api\/val\/commitments\?limit=200/);
 });
@@ -197,7 +198,8 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
   assert.match(hearthPrototype,/function homeBriefingEvidenceSources/);
   assert.match(hearthPrototype,/function homeChiefOfStaffSubject/);
   assert.match(hearthPrototype,/I would keep ' \+ subject \+ ' in view today/);
-  assert.match(hearthPrototype,/has the source context behind/);
+  assert.match(hearthPrototype,/selectedName \+ ' is watching '/);
+  assert.doesNotMatch(hearthPrototype,/has the source context behind/);
   assert.match(hearthPrototype,/function homeObserverProofReviews/);
   assert.match(hearthPrototype,/function homeObserverContextPatch/);
   assert.match(hearthPrototype,/chiefOfStaffRead/);
@@ -261,8 +263,8 @@ test('Observer Co-Work UI opens with loaded evidence instead of backend disclaim
   assert.match(hearthPrototype,/function normalizedObserverProofReviews/);
   assert.match(hearthPrototype,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews/);
   assert.match(hearthPrototype,/hasInspectableReviews && \(asksEvidence \|\| asksRelationshipRepair \|\| asksContext\)/);
-  assert.match(hearthPrototype,/Relationship would look first at/);
-  assert.match(hearthPrototype,/Source trail:/);
+  assert.match(hearthPrototype,/I would start with/);
+  assert.match(hearthPrototype,/Evidence I can point to:/);
   assert.match(hearthPrototype,/This Observer is loaded with the evidence behind the card/);
   assert.match(hearthPrototype,/context\.openingAnswer/);
   assert.doesNotMatch(hearthPrototype,/Scoped observer conversation\. Nothing external happens from here\./);

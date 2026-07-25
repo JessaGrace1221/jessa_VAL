@@ -76,6 +76,10 @@ const valRouteCopyFields = {
   connections: document.querySelector('[data-val-route-copy="connections"]')
 };
 
+function safeArray(value){
+  return Array.isArray(value) ? value : [];
+}
+
 function initCoworkChatbarFocus(){
   document.addEventListener('click', (event) => {
     const chatbar = event.target.closest?.('.home-cowork-chatbar');
@@ -5397,6 +5401,23 @@ function renderProjectManagerLoadingState(){
   ].join('');
 }
 
+function renderProjectManagerUnavailableState(message = ''){
+  activeProjectProfile = null;
+  if(projectTitle) projectTitle.textContent = 'Project Managers';
+  if(projectSubtitle) projectSubtitle.textContent = 'Project Managers could not load the live project index.';
+  if(!projectManagerProfile) return;
+  projectManagerProfile.dataset.projectProfileId = '';
+  projectManagerProfile.innerHTML = [
+    '<section class="project-manager-hero project-manager-empty">',
+      '<div>',
+        '<p class="project-manager-eyebrow">Project Managers</p>',
+        '<h4>Project context is not available yet.</h4>',
+        '<p>' + escapeHtml(message || 'VAL could not load connected project packets. No project claims are being shown without source context.') + '</p>',
+      '</div>',
+    '</section>'
+  ].join('');
+}
+
 function projectCoworkWorkstreamSuggestions(project = activeProjectProfile){
   return Array.isArray(project?.workstreams) ? project.workstreams : [];
 }
@@ -8449,6 +8470,7 @@ async function hydrateProjectIndex(){
     .catch((error) => {
       projectIndexSourceLabel = 'Local project preview';
       updateProjectIndexSourceLabel();
+      renderProjectManagerUnavailableState(error.message || 'Project index could not load.');
       console.warn('[hearth] project index unavailable', error.message);
     })
     .finally(() => {
@@ -11003,7 +11025,10 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const inbox = await getJson('/api/val/executive-inbox/queue?days=90&limit=150');
+    const inbox = await getJson('/api/val/executive-inbox/queue?days=90&limit=150', {
+      timeoutMs:16000,
+      timeoutMessage:'Executive Inbox is taking too long to load connected email context.'
+    });
     const merged = correspondenceItemsFromEmailIntelligence(inbox);
     const byId = new Map();
     merged.forEach((item) => {
@@ -17735,8 +17760,20 @@ async function patchJson(url, payload){
   return data;
 }
 
-async function getJson(url, {cache = 'default'} = {}){
-  const response = await fetch(url, {credentials: 'same-origin', cache});
+async function getJson(url, {cache = 'default', timeoutMs = 0, timeoutMessage = ''} = {}){
+  const controller = timeoutMs && window.AbortController ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  try{
+    response = await fetch(url, {credentials: 'same-origin', cache, signal: controller?.signal});
+  }catch(error){
+    if(error.name === 'AbortError'){
+      throw new Error(timeoutMessage || 'VAL took too long to return a usable response.');
+    }
+    throw error;
+  }finally{
+    if(timeoutId) window.clearTimeout(timeoutId);
+  }
   const text = await response.text();
   let data = {};
   try{ data = text ? JSON.parse(text) : {}; }
@@ -18755,6 +18792,21 @@ function selectHomeObserverSignal(briefing = {}){
 function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const daily = briefing.dailyWitness || {};
   const name = homePerspectiveUserName();
+  const preparedLines = safeArray(daily.greeting_lines || daily.greetingLines)
+    .concat(String(daily.display_greeting || '').split(/\n+/))
+    .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 160))
+    .filter(Boolean)
+    .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index)
+    .filter((line) => !/\bverified\b.*\bsource\b/i.test(line));
+  if(preparedLines.length >= 2){
+    const permissionLine = cleanVelocityPerspectiveLine(daily.permission_line, 150);
+    return {
+      headline: 'Good morning, ' + name + '.',
+      witness: preparedLines[0],
+      orientation: preparedLines[1],
+      permission: preparedLines[2] || permissionLine || 'Nothing sends, imports, or changes externally unless you approve it.'
+    };
+  }
   const observer = selectHomeObserverSignal(briefing);
   const subject = homeChiefOfStaffSubject(briefing);
   const reason = homeChiefOfStaffReason(briefing);
@@ -18770,7 +18822,8 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const selectedName = observer?.name || 'Meaning';
   const observerLine = reason || observer?.currentlySeeing || observer?.truth || 'one source-backed pattern is asking for discernment.';
   const witnessLine = lines.find((line) => !/\b\d+\s+risk signals?\b/i.test(line));
-  const observerContextLine = selectedName + ' has the source context behind ' + subject + (observerLine ? ': ' + cleanVelocityPerspectiveLine(observerLine, 140).replace(/[.!?]+$/, '') + '.' : '.');
+  const watchedPattern = cleanVelocityPerspectiveLine(observerLine, 140).replace(/[.!?]+$/, '') || subject;
+  const observerContextLine = selectedName + ' is watching ' + watchedPattern + ' for you.';
   return {
     headline: 'Good morning, ' + name + '.',
     witness: witnessLine || ('I would keep ' + subject + ' in view today' + (reason ? ': ' + reason.replace(/[.!?]+$/, '') + '.' : '.')),
@@ -25801,6 +25854,19 @@ function taskWorkspaceDisplayNotes(task = {}){
   return 'Source-backed context is attached. Open the source transcript when you need the full evidence.';
 }
 
+function taskWorkspaceExecutiveScore(task = {}){
+  const text = [task.title,task.notes,task.rawCommitment?.evidence_quote,task.rawCommitment?.evidence_summary].filter(Boolean).join(' ');
+  let score = 0;
+  if(task.rawCommitment?.workingBrief || task.workingBrief) score += 8;
+  if(task.relatedTranscriptId || task.relatedEmailId || task.sourceId) score += 4;
+  if(task.dueDate) score += 3;
+  if(/\b(proposal|dashboard|handoff|email|reply|intro|introduction|schedule|calendar|meeting|call|client|approval|send|finish|review|prepare|draft)\b/i.test(text)) score += 5;
+  if(/\bGOALL|Mike|Michele|Michelle|Greg|Ed|Aric|Mark|client|agency\b/i.test(text)) score += 4;
+  if(String(task.schedulingStatus || '').toLowerCase().includes('needs')) score -= 3;
+  if(String(text).length > 700) score -= 4;
+  return score;
+}
+
 function normalizeTaskWorkspaceItem(item = {}){
   if(item.__workspaceKind === 'commitment') return item;
   if(item.source_type || item.owner_type || item.evidence_quote){
@@ -25976,19 +26042,23 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
   currentTaskWorkspaceReadyItems = Array.isArray(readyItems) ? readyItems : [];
   currentTaskWorkspacePreparedByTask = {};
   const openTasks = tasks.filter((task) => !task.completed).sort((a,b) => {
+    const scoreDelta = taskWorkspaceExecutiveScore(b) - taskWorkspaceExecutiveScore(a);
+    if(scoreDelta) return scoreDelta;
     if(!a.dueDate && !b.dueDate) return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
     if(!a.dueDate) return 1;
     if(!b.dueDate) return -1;
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
   });
+  const visibleOpenTasks = openTasks.slice(0, 20);
+  const hiddenCount = Math.max(0, openTasks.length - visibleOpenTasks.length);
   setTaskCompanionOpenCount(openTasks.length);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
   scraperPreviewList.innerHTML = [
     '<section class="task-workspace" aria-label="Your open commitments">',
-      '<header class="task-workspace-header"><div><span>Your commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Only the promises and follow-through that need you appear here. Check off what is done; co-work only when you need help.</p></header>',
-      openTasks.length ? '<div class="task-workspace-list">' + openTasks.map((task) => {
+      '<header class="task-workspace-header"><div><span>Your commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Showing the cleanest commitments first. Check off what is done; co-work only when you need help.</p></header>',
+      openTasks.length ? '<div class="task-workspace-list">' + visibleOpenTasks.map((task) => {
         const transcriptId = taskWorkspaceTranscriptId(task);
         const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
         if(task.id) currentTaskWorkspacePreparedByTask[String(task.id)] = attachments;
@@ -26014,6 +26084,7 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
           '</article>'
         ].join('');
       }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>No open commitments.</strong><p>VAL will place promises, follow-through, and source-backed open loops here when they need attention.</p></div>',
+      hiddenCount ? '<p class="task-workspace-held-back">' + escapeHtml(hiddenCount) + ' lower-signal extracted item' + (hiddenCount === 1 ? ' is' : 's are') + ' held back from this view until VAL can attach a clearer next action.</p>' : '',
     '</section>'
   ].join('');
 }
@@ -26046,7 +26117,7 @@ async function openTaskWorkspace(){
   openWorkspaceShell('Commitments',{returnTarget:'home'});
   try{
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/commitments?limit=120&ownerType=user',{cache:'no-store'}),
+      getJson('/api/val/commitments?limit=120&ownerType=user',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Commitments are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
       getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
     ]);
@@ -26058,7 +26129,7 @@ async function openTaskWorkspace(){
       });
     }
   }catch(error){
-    scraperPreviewList.innerHTML = '<section class="task-workspace-empty"><strong>Commitments could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
+    scraperPreviewList.innerHTML = '<section class="task-workspace task-workspace-empty" aria-label="Commitments unavailable"><strong>Commitments could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
   }
 }
 
@@ -26323,21 +26394,24 @@ function observerConversationContext(observer = null, role = 'observer'){
     title:item.title || item.sourceItem?.title || '',
     summary:item.summary || item.meaning || item.sourceItem?.summary || ''
   }))]));
+  const selectedObserverLiveReviews = observer ? observerLiveReviews(observer.name, 10) : [];
+  const selectedObserverMeaningfulReviews = observer ? observerMeaningfulLiveReviews(observer.name, 6) : [];
+  const hasSelectedObserverProof = Boolean(selectedObserverLiveReviews.length || selectedObserverMeaningfulReviews.length);
   const selectedObserver = observer ? {
     name:observer.name,
     stance:observer.stance,
     truth:observer.truth,
-    evidence:observer.evidence,
-    evidenceItems:observer.evidenceItems || [],
-    currentlySeeing:observer.currentlySeeing,
-    watching:observer.watching,
-    concern:observer.concern,
-    explore:observer.explore,
+    evidence:hasSelectedObserverProof ? observer.evidence : 'No source-backed evidence is loaded for this Observer yet.',
+    evidenceItems:hasSelectedObserverProof ? (observer.evidenceItems || []) : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'],
+    currentlySeeing:hasSelectedObserverProof ? observer.currentlySeeing : 'No source-backed signal is loaded for this lens yet.',
+    watching:hasSelectedObserverProof ? observer.watching : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.',
+    concern:hasSelectedObserverProof ? observer.concern : 'No concern should be claimed until a source-backed review exists.',
+    explore:hasSelectedObserverProof ? observer.explore : 'Open or ingest a source packet, then ask this Observer what it noticed.',
     perspective:observer.perspective,
-    packetFrom:observer.packetFrom,
-    incomingObservation:observer.incomingObservation,
-    liveReviews:observerLiveReviews(observer.name, 10),
-    meaningfulReviews:observerMeaningfulLiveReviews(observer.name, 6)
+    packetFrom:hasSelectedObserverProof ? observer.packetFrom : 'No live source',
+    incomingObservation:hasSelectedObserverProof ? observer.incomingObservation : 'This card is waiting for proof before it makes a claim.',
+    liveReviews:selectedObserverLiveReviews,
+    meaningfulReviews:selectedObserverMeaningfulReviews
   } : null;
   return {
     title:role === 'chief' ? 'Chat with Your Chief of Staff' : 'Talk with the ' + (observer?.name || 'Selected') + ' Observer',
@@ -26493,8 +26567,7 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
   const meaningfulReviews = (safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews.length ? proofReviews : observerMeaningfulLiveReviews(observer.name, 6))
     .filter((review) => review.status === 'observed')
     .slice(0, 6);
-  const cardReview = observerCardReviewFromVisibleContext(observer, context);
-  const effectiveMeaningfulReviews = meaningfulReviews.length ? meaningfulReviews : (cardReview ? [cardReview] : []);
+  const effectiveMeaningfulReviews = meaningfulReviews;
   const checkedReviews = safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : (proofReviews.length ? proofReviews : observerLiveReviews(observer.name, 8));
   const hasInspectableReviews = Boolean(effectiveMeaningfulReviews.length || checkedReviews.length || livePackets.length);
   if(hasInspectableReviews && (asksEvidence || asksRelationshipRepair || asksContext)){
@@ -26515,17 +26588,18 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
         .slice(0, 5);
       return [
         named.length
-          ? 'Relationship would look first at ' + named.map((item) => item.person).join(', ') + '.'
-          : 'Relationship is not naming a specific person from the packet yet.',
+          ? 'I would start with ' + named.map((item) => item.person).join(', ') + '.'
+          : 'I do not have a named relationship attached yet, so I will stay at the source level.',
         '',
+        'What I actually observed:',
         ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
-        safeArray(context.sourceTrail).length ? '\nSource trail:\n' + safeArray(context.sourceTrail).slice(0, 4).map((item) => '- ' + (item.line || item.title || item.summary || 'Supporting source')).join('\n') : '',
+        safeArray(context.sourceTrail).length ? '\nEvidence I can point to:\n' + safeArray(context.sourceTrail).slice(0, 4).map((item) => '- ' + (item.line || item.title || item.summary || 'Supporting source')).join('\n') : '',
         '',
-        'That is the proof line: if the packet names the person, I name the person. If it only names the source, I stay at the source level.'
+        observer.explore ? 'What I would explore next: ' + observer.explore : 'What I would explore next: what changed, who is affected, and what protects trust without adding noise.'
       ].filter(Boolean).join('\n');
     }
     return [
-      observer.name + ' is answering from live Board packet reviews:',
+      observer.name + ' is answering from packet reviews, not from a generic guess:',
       '',
       ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
       '',
@@ -26533,36 +26607,14 @@ function observerCoworkCardAnswer(prompt = '', context = {}){
       ...effectiveMeaningfulReviews.slice(0, 3).map((review) => '- ' + observerReviewEvidenceLine(review))
     ].join('\n');
   }
-  const evidence = Array.isArray(observer.evidenceItems) ? observer.evidenceItems : [];
-  const lines = [
-    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
-    observer.watching ? 'Watching: ' + observer.watching : '',
-    evidence.length ? 'Evidence: ' + evidence.join(', ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
-    observer.concern ? 'Concern: ' + observer.concern : '',
-    observer.explore ? 'Question: ' + observer.explore : '',
-    observer.incomingObservation ? 'Newest packet: ' + observer.incomingObservation : ''
-  ].filter(Boolean);
-  if(asksRelationshipRepair && observer.name === 'Relationship'){
-    return [
-      'Relationship is not naming a specific person to repair from this card yet. That matters.',
-      '',
-      'What this card actually proves is narrower:',
-      '',
-      evidence.length ? '- ' + evidence.join('\n- ') : '- Relationship evidence is present, but the named people are not attached to this card.',
-      '',
-      observer.currentlySeeing ? 'Current read: ' + observer.currentlySeeing : '',
-      observer.watching ? 'What I am watching: ' + observer.watching : '',
-      observer.concern ? 'Concern: ' + observer.concern : '',
-      '',
-      'So my honest answer is: I can see that Relationship is watching trust, warmth, tone, distance, and open loops. I cannot responsibly name which relationship needs repair until the underlying conversation/person records are attached here. That is the context gap to fix.'
-    ].filter(Boolean).join('\n');
-  }
   return [
-    observer.name + ' is holding this card context:',
+    observer.name + ' does not have a source-backed answer attached to this card yet.',
     '',
-    ...lines.map((line) => '- ' + line),
+    'What is loaded right now is the Observer lens, not the proof behind this specific question.',
     '',
-    'The useful question is: ' + (observer.explore || 'What should this Observer inspect next?')
+    'To answer this with integrity, VAL needs the packet reviews that name the source, quote, person, project, and why this Observer responded.',
+    '',
+    'No external action was taken.'
   ].join('\n');
 }
 
@@ -26586,29 +26638,30 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const role = isChief ? 'chief' : 'observer';
   const meaningfulReviews = isChief ? [] : observerMeaningfulLiveReviews(name, 4);
   const checkedReviews = isChief ? [] : observerLiveReviews(name, 5);
+  const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
   const currentlySeeing = isChief
     ? 'The full Board is active.'
-    : meaningfulReviews[0]?.observation || observer.currentlySeeing || observer.truth;
+    : meaningfulReviews[0]?.observation || (hasLiveReviews ? observer.currentlySeeing : 'No source-backed signal is loaded for this lens yet.');
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
-    : meaningfulReviews.length ? 'Live packets through this lens, with no claim made unless evidence is attached.' : observer.watching || observer.evidence;
+    : meaningfulReviews.length ? 'Live packets through this lens, with no claim made unless evidence is attached.' : hasLiveReviews ? observer.watching || observer.evidence : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
   const evidenceItems = isChief
     ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
     : meaningfulReviews.length
       ? meaningfulReviews.map(observerReviewEvidenceLine)
       : checkedReviews.length
         ? checkedReviews.slice(0, 3).map((review) => 'Checked: ' + observerReviewEvidenceLine(review))
-        : observer.evidenceItems || [position.signals || observer.evidence];
+        : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
-    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : observer.concern || observer.truth;
+    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : hasLiveReviews ? observer.concern || observer.truth : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
-    : observer.explore || observer.stance;
-  const packetFrom = isChief ? 'Board' : String(meaningfulReviews[0]?.evidence?.sourceType || observer.packetFrom || 'Chief of Staff').replace(/_/g, ' ');
+    : hasLiveReviews ? observer.explore || observer.stance : 'Open or ingest a source packet, then ask this Observer what it noticed.';
+  const packetFrom = isChief ? 'Board' : String(meaningfulReviews[0]?.evidence?.sourceType || (hasLiveReviews ? observer.packetFrom : 'No live source')).replace(/_/g, ' ');
   const packetObservation = isChief
     ? 'Several perspectives are converging around the same decision.'
-    : meaningfulReviews[0]?.observation || observer.incomingObservation || observer.stance;
+    : meaningfulReviews[0]?.observation || (hasLiveReviews ? observer.incomingObservation || observer.stance : 'This card is waiting for proof before it makes a claim.');
   const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
   return [
     '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
@@ -26772,7 +26825,7 @@ async function openObserverCowork(observerId = '', role = 'observer', options = 
   };
   closeCalendarPanel();
   if(!deskWorkspace.classList.contains('observer-board-mode') || !workspaceInputPanel.querySelector('.observer-live-board')){
-    openObserverBoard();
+    await openObserverBoard();
   }
   workspaceReturnTarget = 'board';
   updateWorkspaceReturnButton();
@@ -26786,7 +26839,9 @@ async function openObserverCowork(observerId = '', role = 'observer', options = 
     placeholder:options.placeholder || (isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...'),
     initialMessage:options.initialMessage || context.openingAnswer || (isChief
       ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
-      : observer.name + ' is loaded with the evidence behind this card. What do you want to examine first?'),
+      : (safeArray(context.selectedObserver?.meaningfulReviews).length || safeArray(context.selectedObserver?.liveReviews).length)
+        ? observer.name + ' is loaded with the evidence behind this card. What do you want to examine first?'
+        : observer.name + ' is available as a lens, but live packet proof has not loaded for this card yet. I will not invent evidence.'),
     historyMessage:'This conversation is saved and will be here when you return.',
     context
   });
@@ -27416,6 +27471,7 @@ executiveCompassAxisNodes?.addEventListener('click', (event) => {
 });
 
 valDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   relationshipDrawerLink.setAttribute('aria-expanded', 'false');
@@ -27490,6 +27546,7 @@ async function handleValDetailWorkflowClick(event){
 valDetail?.addEventListener('click', handleValDetailWorkflowClick);
 
 sourceDrawerLink.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -27521,6 +27578,7 @@ sourceDrawerLink.addEventListener('click', () => {
 });
 
 relationshipDrawerLink.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'source-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -27555,6 +27613,7 @@ projectDrawerLink.addEventListener('click', () => {
     showFeatureComingSoon('Project Managers');
     return;
   }
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -27585,6 +27644,7 @@ projectDrawerLink.addEventListener('click', () => {
 });
 
 timelineDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -27615,6 +27675,7 @@ timelineDrawerLink?.addEventListener('click', () => {
 });
 
 correspondenceDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   const willOpen = !drawerTray.classList.contains('correspondence-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
