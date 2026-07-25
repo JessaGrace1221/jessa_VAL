@@ -4217,7 +4217,7 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     id:'partnership_agreement',
     category:'witness_partnership_agreement',
     title:'Partnership Promise',
-    visibleQuestion:'Here is what VAL learned, what VAL will support, and what VAL will protect.',
+    visibleQuestion:'What would make the first 30 days with VAL feel genuinely supportive?',
     questionGoal:'Provide a warm, encouraging final overview of what VAL learned, how VAL will support the user, what VAL will protect, and what VAL will keep asking before assuming.',
     whyThisCardExistsNow:'The final step should leave the user feeling accompanied, protected, and encouraged, not merely finished with setup.',
     permanenceProfile:'constitution',

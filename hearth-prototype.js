@@ -21303,9 +21303,9 @@ const valWitnessingCards = [
     category: 'witness_partnership_agreement',
     movement: 'Movement 13',
     title: 'Partnership Promise',
-    question: 'Here is what VAL learned, what VAL will support, and what VAL will protect.',
-    placeholder: 'VAL will create a warm partnership summary here. You can add anything you want included in the first 30 days.',
-    helper: 'This should feel encouraging, protective, and clear.',
+    question: 'What would make the first 30 days with VAL feel genuinely supportive?',
+    placeholder: 'Tell VAL what support, protection, or follow-through would matter most in your first 30 days together.',
+    helper: 'Your earlier answers are already part of this step.',
     writesTo: 'partnership summary, protection priorities, support commitments, open questions, and first 30 day focus',
     next: ''
   }
