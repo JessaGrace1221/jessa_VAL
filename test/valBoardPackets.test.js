@@ -544,9 +544,9 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(server,/const session=await getTeachValWitnessingResumeSession\(\)/);
   assert.doesNotMatch(server,/const session=await getTeachValWitnessingSession\(\)/);
   assert.match(server,/Prepare and confirm your First Look/);
-  assert.match(frontend,/data-val-witnessing-action="true" data-workflow-action="valWitnessingResume"/);
+  assert.match(frontend,/data-workflow-action="valWitnessingResume"/);
   assert.match(frontend,/function wireWitnessingResumeButtons/);
-  assert.match(frontend,/handleWorkflowAction\(button\.dataset\.workflowAction, button\)/);
+  assert.match(frontend,/openValWitnessingSession\('meeting_val', \{resume:true\}\)/);
   assert.match(frontend,/wireWitnessingResumeButtons\(evidence\)/);
   assert.match(frontend,/wireWitnessingResumeButtons\(workspaceInputPanel\)/);
   assert.match(frontend,/function observerLiveReviews/);

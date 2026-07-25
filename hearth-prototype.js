@@ -18962,7 +18962,7 @@ function wireWitnessingResumeButtons(root = document){
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void handleWorkflowAction(button.dataset.workflowAction, button).catch((error) => {
+      void openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
         if(valLiveStatus) valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
         console.error('Witnessing resume failed', error);
       });
@@ -18983,7 +18983,7 @@ function renderWitnessingPendingEvidence(status = observerBoardState){
         '<li>Observer conclusions remain hidden until the Partnership Promise is committed.</li>',
       '</ul>',
       '<div class="hearth-evidence-actions">',
-        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+        '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
       '</div>',
     '</div>',
     '<div>',
@@ -27388,7 +27388,7 @@ async function openObserverBoard(options = {}){
         '<div class="observer-holding-space" role="status">',
           '<strong>Your Witnessing Session is paused.</strong>',
           '<span>' + escapeHtml(observerBoardState.witnessingNextStep || 'Continue Witnessing before the Board presents conclusions.') + '.</span>',
-          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+          '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
         '</div>'
       ].join('')
     : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>';
