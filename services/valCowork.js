@@ -260,7 +260,14 @@ function observerConversationDirectReply({entrypointId='',workingBrief={},answer
       'That is a real answer: this lens checked the packet and did not find enough signal to make a claim.'
     ].join('\n');
   }
-  if(!cardLines.length)return '';
+  if(!cardLines.length){
+    return [
+      `${observerName} does not have a source-backed signal to claim from the currently loaded packets.`,
+      '',
+      'That is not a dead end. It means this lens checked the available evidence and found nothing strong enough to put in front of you.',
+      'If there is a specific person, project, or source you are worried about, name it and I will stay inside this lens while we examine it.'
+    ].join('\n');
+  }
   return [
     observerName + ' is answering from the loaded Observer card, not a fresh search:',
     '',

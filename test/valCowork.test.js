@@ -635,6 +635,22 @@ test('Observer Co-Work rejects a legacy calendar review manufactured from routin
   assert.doesNotMatch(answered.message,/I would start with Fix/i);
 });
 
+test('Observer Co-Work gives an immediate human no-signal answer without a model call',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async()=>{modelCalls+=1;return 'model should not be needed';}});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'capacity',sectionId:'observer'},
+    title:'Talk with the Capacity Observer',
+    context:{selectedObserver:{name:'Capacity'}}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What are you seeing, and why?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/does not have a source-backed signal to claim/i);
+  assert.match(answered.message,/found nothing strong enough/i);
+  assert.match(answered.message,/specific person, project, or source/i);
+});
+
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
   const pg=postgresCoworkDb();
   const {service}=serviceFor({hasPg:true,dbQuery:pg.dbQuery});
