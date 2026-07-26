@@ -2759,8 +2759,24 @@ async function testTenantApiKey(req,provider){
   let ok=false, message='';
   try{
     if(p.testType==='openai_models'){
-      const r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${key}`}});
-      ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
+      const model=await resolveOpenAIModel();
+      const body={
+        model,
+        instructions:'Return strict JSON only.',
+        input:[{role:'user',content:'Return {"ok":true} and nothing else.'}],
+        max_output_tokens:32,
+        text:{format:{type:'json_object'}}
+      };
+      const r=await fetch('https://api.openai.com/v1/responses',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},
+        body:JSON.stringify(body)
+      });
+      const payload=await readJsonResponse(r);
+      ok=r.ok&&!payload.error;
+      message=ok
+        ?'Connected'
+        :(payload.error?.message||`Your ${p.displayName} key could not generate a response. Please check its quota and billing. (${r.status})`);
     }else if(p.testType==='anthropic_models'){
       const r=await fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01'}});
       ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
@@ -26727,7 +26743,7 @@ function responseText(payload){
 }
 
 async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
-  const openAiKey=await resolveOpenAIKey();
+  let openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const preparedMessages=messages.map(m=>{
@@ -26768,6 +26784,27 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
     body.text={format:{type:'json_object'}};
     d=await request();
+  }
+  const platformKey=String(OPENAI_KEY||'').trim();
+  const canUsePlatformFallback=platformKey
+    &&platformKey!==openAiKey
+    &&platformKeyFallbackAllowed('openai');
+  if(
+    d.error
+    &&canUsePlatformFallback
+    &&/(quota|billing|rate.?limit|authentication|api key|unauthorized|forbidden)/i.test(String(d.error.message||''))
+  ){
+    console.warn('[VAL model] Tenant OpenAI key could not generate a response; using the approved platform fallback.');
+    openAiKey=platformKey;
+    d=await request();
+    if(d.error && /temperature/i.test(d.error.message||'')){
+      delete body.temperature;
+      d=await request();
+    }
+    if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+      body.text={format:{type:'json_object'}};
+      d=await request();
+    }
   }
   if(d.error) throw new Error(d.error.message);
   if(d.status==='incomplete'){

@@ -41,7 +41,7 @@ test('tenant API key routes support list save delete test requirements and appro
   assert.match(server,/This connection requires approval before it can be added to your VAL/);
 });
 
-test('runtime resolver prefers tenant vault and blocks silent platform fallback',()=>{
+test('runtime resolver prefers tenant vault and permits an explicit platform fallback',()=>{
   assert.match(server,/function platformKeyFallbackAllowed/);
   assert.match(server,/VAL_ALLOW_PLATFORM_KEY_FALLBACK/);
   assert.match(server,/async function resolveTenantApiKey/);
@@ -53,6 +53,15 @@ test('runtime resolver prefers tenant vault and blocks silent platform fallback'
   assert.match(server,/platformKeyFallbackAllowed\(\) \? \(fallback \|\| ''\) : ''/);
   assert.match(server,/async function resolveOpenAIKey\(\)\{ return RUNTIME_OPENAI_KEY \|\| resolveIntegrationSecret\('openai','api_key',OPENAI_KEY\); \}/);
   assert.match(server,/async function resolveAnthropicKey\(\)\{ return resolveIntegrationSecret\('anthropic','api_key',ANTHROPIC_KEY\); \}/);
+  assert.match(server,/Tenant OpenAI key could not generate a response; using the approved platform fallback/);
+  assert.match(server,/platformKeyFallbackAllowed\('openai'\)/);
+});
+
+test('OpenAI tenant key validation proves that the key can generate a response',()=>{
+  const testBlock=server.match(/async function testTenantApiKey[\s\S]*?\n}\nfunction platformKeyFallbackAllowed/)?.[0]||'';
+  assert.match(testBlock,/https:\/\/api\.openai\.com\/v1\/responses/);
+  assert.match(testBlock,/could not generate a response/);
+  assert.doesNotMatch(testBlock,/https:\/\/api\.openai\.com\/v1\/models/);
 });
 
 test('API Keys & Connections UI is exposed under settings navigation',()=>{

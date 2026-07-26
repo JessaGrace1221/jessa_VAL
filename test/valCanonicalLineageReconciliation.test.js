@@ -58,3 +58,22 @@ test('classification reconciliation restores commitments and source refs from st
   assert.deepEqual(context.commitments,[{text:'I will send the scope.'}]);
   assert.equal(context.source_refs[0].source_id,'message_1');
 });
+
+test('historical reconciliation fails closed when the Observer batch does not complete',async()=>{
+  const service=createValCanonicalLineageReconciliation({
+    listTranscripts:async()=>[{id:'tr_1'}],
+    reconcileTranscript:async()=>({
+      source_processing_record:{id:'source_1'},
+      canonical_work_items:[]
+    }),
+    createSourcePacket:async()=>({id:'packet_1'}),
+    runObserverBatch:async()=>({
+      ok:false,
+      eventRun:{status:'review_failed'}
+    })
+  });
+  const result=await service.reconcile({transcriptLimit:1,emailLimit:1});
+  assert.equal(result.ok,false);
+  assert.equal(result.observerBatches,0);
+  assert.match(result.errors[0].error,/Observer batch did not complete: review_failed/);
+});

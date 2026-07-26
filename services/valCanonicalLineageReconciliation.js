@@ -95,11 +95,24 @@ function createValCanonicalLineageReconciliation({
       for(let index=0;index<packetList.length;index+=observerBatchSize){
         const batch=packetList.slice(index,index+observerBatchSize);
         try{
-          await runObserverBatch(batch,{
+          const observerResult=await runObserverBatch(batch,{
             type:'canonical_lineage_reconciliation',
             sourceType:'canonical_reconciliation',
             sourceId:`batch_${observerBatches+1}`
           });
+          const observerStatus=String(
+            observerResult?.eventRun?.status
+            ||observerResult?.event_run?.status
+            ||observerResult?.status
+            ||''
+          ).toLowerCase();
+          if(
+            !observerResult
+            ||observerResult.ok===false
+            ||(observerStatus&&observerStatus!=='completed')
+          ){
+            throw new Error(`Observer batch did not complete${observerStatus?`: ${observerStatus}`:''}.`);
+          }
           observerBatches+=1;
         }catch(error){
           errors.push({sourceType:'observer_batch',sourceId:`batch_${observerBatches+1}`,error:error.message});

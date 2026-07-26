@@ -250,12 +250,13 @@ function createValSourceProcessingService({
     return s;
   }
   async function pgUpsert(table,row,columns){
-    const values=columns.map(c=>row[c]);
+    const values=columns.map(c=>c.endsWith('Json')?JSON.stringify(row[c]??(Array.isArray(row[c])?[]:{})):row[c]);
     const names=columns.map(toSnake);
     const params=columns.map((_,i)=>`$${i+1}`).join(',');
     const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
     const r=await dbQuery(`insert into ${table} (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
-    return rowToCamel(r.rows?.[0]||row);
+    if(!r?.rows?.[0])throw new Error(`${table} did not persist to Postgres.`);
+    return rowToCamel(r.rows[0]);
   }
   async function saveRecord(row){
     const withReceipt=withWhatValDidReceipt(row);

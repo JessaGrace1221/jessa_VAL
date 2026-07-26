@@ -36,6 +36,74 @@ test('source processing schema creates source, artifact, and surface tables',()=
   }
 });
 
+test('Postgres source processing serializes JSON fields and requires a returned row',async()=>{
+  const queries=[];
+  const service=createValSourceProcessingService({
+    dbQuery:async(sql,values)=>{
+      queries.push({sql,values});
+      if(/^select /i.test(sql.trim()))return {rows:[]};
+      return {rows:[{
+        id:'source_pg',
+        tenant_id:'tenant',
+        user_id:'user',
+        source_type:'transcript',
+        source_id:'tr_pg',
+        source_title:'Postgres transcript',
+        source_fingerprint:'fingerprint',
+        source_version:1,
+        status:'processed',
+        source_receipt_json:{rawText:'Evidence'},
+        witness_observations_json:[],
+        executive_relevance_json:{},
+        domain_routes_json:['transcripts'],
+        packet_updates_json:[],
+        review_updates_json:[],
+        prepared_work_candidates_json:[],
+        no_action_receipt_json:{},
+        unknowns_json:[],
+        metadata_json:{},
+        created_at:new Date(),
+        updated_at:new Date()
+      }]};
+    },
+    hasPg:()=>true,
+    tenantId:()=>'tenant',
+    userId:()=>'user'
+  });
+  await service.processEvidenceSource({
+    sourceType:'transcript',
+    sourceId:'tr_pg',
+    sourceTitle:'Postgres transcript',
+    rawText:'Evidence',
+    domainRoutes:['transcripts'],
+    notify:false
+  });
+  const insert=queries.find(query=>/insert into source_processing_records/.test(query.sql));
+  assert.ok(insert);
+  assert.equal(typeof insert.values[9],'string');
+  assert.equal(typeof insert.values[10],'string');
+  assert.equal(typeof insert.values[12],'string');
+  assert.deepEqual(JSON.parse(insert.values[12]),['transcripts']);
+
+  const failing=createValSourceProcessingService({
+    dbQuery:async(sql)=>/select .*source_processing_records/.test(sql)
+      ?{rows:[]}
+      :{rows:[]},
+    hasPg:()=>true,
+    tenantId:()=>'tenant',
+    userId:()=>'user'
+  });
+  await assert.rejects(
+    ()=>failing.processEvidenceSource({
+      sourceType:'email',
+      sourceId:'email_1',
+      rawText:'Evidence',
+      notify:false
+    }),
+    /source_processing_records did not persist to Postgres/
+  );
+});
+
 test('source processing routes are backend-only and mounted',()=>{
   assert.match(server,/ensureValSourceProcessingTables/);
   assert.match(server,/registerValSourceProcessingRoutes/);
