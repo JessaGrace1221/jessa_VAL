@@ -17,6 +17,15 @@ test('conversation identity schema creates durable conversation tables',()=>{
   assert.match(server,/ensureValConversationIdentityTables/);
 });
 
+test('conversation identity hashes the complete source key instead of truncating a shared prefix',()=>{
+  const identitySource=fs.readFileSync(path.join(root,'services','valConversationIdentity.js'),'utf8');
+  assert.match(identitySource,/createHash\('sha256'\)/);
+  assert.match(identitySource,/durableId\('uc'/);
+  assert.match(identitySource,/durableId\('eth'/);
+  assert.match(identitySource,/durableId\('em'/);
+  assert.doesNotMatch(identitySource,/toString\('base64url'\)\.slice\(0,48\)/);
+});
+
 test('conversation identity routes are backend-only and mounted from server',()=>{
   assert.match(server,/registerValConversationIdentityRoutes/);
   assert.match(routes,/\/api\/val\/email\/sync/);

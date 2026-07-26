@@ -1,8 +1,13 @@
+const crypto=require('node:crypto');
+
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function normalizeEmail(value){const email=String(value||'').trim().toLowerCase();return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';}
 function normalizeName(value){return String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
 function stableKey(parts=[]){return parts.map(v=>String(v||'').trim().toLowerCase()).filter(Boolean).join(':')||'unknown';}
+function durableId(prefix,parts=[]){
+  return `${prefix}_${crypto.createHash('sha256').update(parts.map(value=>String(value||'')).join('|')).digest('hex').slice(0,40)}`;
+}
 function iso(value){if(!value)return null;if(value instanceof Date)return value.toISOString();const d=new Date(value);return Number.isNaN(d.getTime())?null:d.toISOString();}
 function personRef(value={}){
   if(typeof value==='string')return {name:'',email:normalizeEmail(value)};
@@ -91,7 +96,7 @@ function createValConversationIdentityService({
   async function upsertUnifiedConversationForMessage(message){
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     const participantKeys=[...new Set(participants.map(p=>p.email||normalizeName(p.name)).filter(Boolean))];
-    const id='uc_'+Buffer.from(`${tenantId()}|${userId()}|${message.conversationKey}`).toString('base64url').slice(0,48);
+    const id=durableId('uc',[tenantId(),userId(),message.conversationKey]);
     if(hasPg()){
       const r=await dbQuery(`
         insert into unified_conversations (id,tenant_id,user_id,conversation_key,primary_provider,primary_thread_id,subject,participant_keys_json,participants_json,latest_message_at,latest_inbound_at,latest_outbound_at,message_count,metadata_json,updated_at)
@@ -126,7 +131,7 @@ function createValConversationIdentityService({
     return row;
   }
   async function upsertThread(message,unifiedId){
-    const id='eth_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.threadId}`).toString('base64url').slice(0,48);
+    const id=durableId('eth',[tenantId(),userId(),message.provider,message.threadId]);
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     if(hasPg()){
       await dbQuery(`
@@ -152,7 +157,7 @@ function createValConversationIdentityService({
     if(!message.messageId)return {saved:false,reason:'missing_message_id',message};
     const unified=await upsertUnifiedConversationForMessage(message);
     await upsertThread(message,unified.id);
-    const id='em_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.messageId}`).toString('base64url').slice(0,48);
+    const id=durableId('em',[tenantId(),userId(),message.provider,message.messageId]);
     if(hasPg()){
       const r=await dbQuery(`
         insert into email_messages (id,tenant_id,user_id,provider,message_id,thread_id,unified_conversation_id,direction,sender_json,recipients_json,cc_json,bcc_json,subject,body_preview,body_text,snippet,labels_json,has_attachments,web_link,received_at,sent_at,raw_json,updated_at)
