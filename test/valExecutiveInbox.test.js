@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {createValExecutiveInboxService, executiveInboxAdmissionDecision}=require('../services/valExecutiveInbox');
 const {VAL_CONVERSATION_IDENTITY_SQL}=require('../services/valConversationIdentitySchema');
+const {VAL_EXECUTIVE_INBOX_QUEUE_SQL}=require('../services/valExecutiveInboxQueueSchema');
 
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
@@ -23,6 +24,15 @@ test('conversation classification schema stores executive inbox fields and draft
     assert.match(VAL_CONVERSATION_IDENTITY_SQL,new RegExp(field));
   }
   assert.match(VAL_CONVERSATION_IDENTITY_SQL,/create table if not exists email_draft_evaluations/);
+});
+
+test('Executive Inbox persists one active verified queue per tenant and user',()=>{
+  assert.match(VAL_EXECUTIVE_INBOX_QUEUE_SQL,/create table if not exists val_executive_inbox_queue/);
+  assert.match(VAL_EXECUTIVE_INBOX_QUEUE_SQL,/unique\(tenant_id,user_id,conversation_id\)/);
+  assert.match(server,/async function listDurableExecutiveInboxQueue/);
+  assert.match(server,/async function replaceDurableExecutiveInboxQueue/);
+  assert.match(server,/await replaceDurableExecutiveInboxQueue\(items\)/);
+  assert.match(server,/durable_verified_queue/);
 });
 
 test('executive inbox routes are backend-only and mounted',()=>{

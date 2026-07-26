@@ -26,6 +26,7 @@ const {registerValEnvelopesRoutes} = require('./services/valEnvelopesRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
+const {ensureValExecutiveInboxQueueTables} = require('./services/valExecutiveInboxQueueSchema');
 const {
   cachedSentHistory,
   decideExecutiveInboxAdmission
@@ -3016,6 +3017,7 @@ async function purgeTenantData({req,confirmation}={}){
       ['val_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
       ['email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_executive_inbox_queue','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['tenant_api_keys','tenant_id=$1',[tenant]],
       ['tenant_provider_approvals','tenant_id=$1',[tenant]],
       ['tenant_dashboard_studio_overrides','tenant_id=$1',[tenant]],
@@ -3261,6 +3263,7 @@ async function resetValLocalContentForCleanStart({req,confirmation}={}){
         await add('unified_conversations',()=>cleanStartDeleteTable(client,'unified_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('email_action_log',()=>cleanStartDeleteTable(client,'email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('email_rules',()=>cleanStartDeleteTable(client,'email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]));
+        await add('val_executive_inbox_queue',()=>cleanStartDeleteTable(client,'val_executive_inbox_queue','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_messages',()=>cleanStartDeleteTable(client,'val_messages','conversation_id in (select id from val_conversations where user_id=$1)',[userId]));
         await add('val_conversations',()=>cleanStartDeleteTable(client,'val_conversations','user_id=$1',[userId]));
         await add('val_task_calendar_blocks',()=>cleanStartDeleteTable(client,'val_task_calendar_blocks','tenant_id=$1 and user_id=$2',[tenant,userId]));
@@ -7800,6 +7803,7 @@ async function initValDb(){
   await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
+  await ensureValExecutiveInboxQueueTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
     await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
@@ -9949,6 +9953,115 @@ function executiveInboxResolved(email={},resolutions=executiveInboxResolutionRow
   const key=executiveInboxThreadKey(email);
   return !!key&&resolutions.some(row=>row.threadKey===key||((row.threadId||'')&&(row.threadId===email.threadId))||((row.messageId||'')&&(row.messageId===email.messageId)));
 }
+function executiveInboxDurablePayload(item={}){
+  const bodyText=String(item.bodyText||item.bodyPreview||item.snippet||htmlToReadableEmailText(item.bodyHtml||'')).trim();
+  return {
+    provider:item.provider||'email',
+    id:item.id||'',
+    messageId:item.messageId||item.id||'',
+    threadId:item.threadId||'',
+    conversationId:item.conversationId||item.threadId||item.messageId||item.id||'',
+    subject:item.subject||'(No subject)',
+    from:item.from||{},
+    to:safeArray(item.to),
+    cc:safeArray(item.cc),
+    date:item.date||item.receivedAt||'',
+    receivedAt:item.receivedAt||item.date||'',
+    snippet:item.snippet||bodyText.slice(0,320),
+    bodyPreview:item.bodyPreview||bodyText.slice(0,1200),
+    bodyText,
+    bodyHtml:'',
+    headers:item.headers||{},
+    labels:safeArray(item.labels),
+    attachments:safeArray(item.attachments),
+    hasAttachments:!!item.hasAttachments,
+    webLink:item.webLink||'',
+    classification:item.classification||'',
+    recommendedAction:item.recommendedAction||'',
+    matchedContact:item.matchedContact||{},
+    matchedRuleId:item.matchedRuleId||'',
+    requiresApproval:item.requiresApproval!==false,
+    confidence:item.confidence||'',
+    senderMetrics:item.senderMetrics||{},
+    reason:item.reason||'',
+    preparedDraft:item.preparedDraft||null,
+    queueKind:item.queueKind||'needs_judgment',
+    status:item.status||'ready_for_review',
+    executiveInboxAdmission:item.executiveInboxAdmission||{}
+  };
+}
+async function listDurableExecutiveInboxQueue({limit=60}={}){
+  const lim=Math.max(1,Math.min(Number(limit)||60,200));
+  if(pgPool){
+    const result=await dbQuery(`
+      select payload_json
+      from val_executive_inbox_queue
+      where tenant_id=$1 and user_id=$2 and active=true
+      order by verified_at desc
+      limit $3
+    `,[tenantId(),currentUserId(),lim]);
+    return safeArray(result?.rows).map(row=>row.payload_json||{}).filter(item=>item&&typeof item==='object');
+  }
+  return safeArray(valStore().executiveInboxDurableQueue)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.active!==false)
+    .sort((a,b)=>String(b.verifiedAt||'').localeCompare(String(a.verifiedAt||'')))
+    .slice(0,lim)
+    .map(row=>row.payload||{});
+}
+async function replaceDurableExecutiveInboxQueue(items=[]){
+  const payloads=safeArray(items).map(executiveInboxDurablePayload).filter(item=>item.conversationId);
+  if(pgPool){
+    await dbQuery(`
+      with deactivated as (
+        update val_executive_inbox_queue
+        set active=false,updated_at=now()
+        where tenant_id=$1 and user_id=$2
+        returning id
+      ),
+      incoming as (
+        select value as payload
+        from jsonb_array_elements($3::jsonb)
+      )
+      insert into val_executive_inbox_queue
+        (id,tenant_id,user_id,conversation_id,thread_id,message_id,queue_kind,active,payload_json,verified_at,created_at,updated_at)
+      select
+        'exec_inbox_' || md5($1 || ':' || $2 || ':' || (payload->>'conversationId')),
+        $1,
+        $2,
+        payload->>'conversationId',
+        coalesce(payload->>'threadId',''),
+        coalesce(payload->>'messageId',''),
+        coalesce(payload->>'queueKind','needs_judgment'),
+        true,
+        payload,
+        now(),
+        now(),
+        now()
+      from incoming
+      on conflict (tenant_id,user_id,conversation_id)
+      do update set
+        thread_id=excluded.thread_id,
+        message_id=excluded.message_id,
+        queue_kind=excluded.queue_kind,
+        active=true,
+        payload_json=excluded.payload_json,
+        verified_at=now(),
+        updated_at=now()
+    `,[tenantId(),currentUserId(),JSON.stringify(payloads)]);
+    return payloads;
+  }
+  const store=valStore();
+  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue)
+    .map(row=>row.tenantId===tenantId()&&row.userId===currentUserId()?{...row,active:false}:row);
+  payloads.forEach(payload=>{
+    const index=store.executiveInboxDurableQueue.findIndex(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.conversationId===payload.conversationId);
+    const row={tenantId:tenantId(),userId:currentUserId(),conversationId:payload.conversationId,active:true,verifiedAt:new Date().toISOString(),payload};
+    if(index>=0)store.executiveInboxDurableQueue[index]=row;
+    else store.executiveInboxDurableQueue.push(row);
+  });
+  saveValStore(store);
+  return payloads;
+}
 function executiveInboxSentRequestText(email={}){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
   return /\?|(\b(can you|could you|will you|would you|please|let me know|confirm|review|send|share|thoughts|feedback|available|availability|when can|do you have|are you able)\b)/i.test(text);
@@ -10055,10 +10168,11 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
   }
   const timed=await Promise.race([
     Promise.all([
+      listDurableExecutiveInboxQueue({limit:lim}),
       valExecutiveInbox.listHighSignalClassifications({limit:Math.min(200,Math.max(lim*4,120))}),
       valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]}))
-    ]).then(([results,draftResult])=>({results,drafts:safeArray(draftResult?.drafts)})),
-    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,results:[],drafts:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
+    ]).then(([durableItems,results,draftResult])=>({durableItems,results,drafts:safeArray(draftResult?.drafts)})),
+    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,durableItems:[],results:[],drafts:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
   ]);
   const suppressions=executiveInboxSuppressionRows();
   const safeContacts=executiveInboxSafeContactRows();
@@ -10074,8 +10188,8 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
       const previousTime=Date.parse(previous?.updatedAt||previous?.updated_at||previous?.createdAt||previous?.created_at||'')||0;
       if(!previous||rowTime>=previousTime)draftsByConversation.set(key,draft);
     });
-  const diagnostics={indexed:safeArray(timed.results).length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
-  const rows=executiveInboxNewestByConversation(timed.results)
+  const durableItems=safeArray(timed.durableItems);
+  const indexedRows=executiveInboxNewestByConversation(timed.results)
     .filter((row)=>{
       const priority=String(row.priority_level || row.priorityLevel || 'unknown').toLowerCase();
       return priority !== 'suppressed' && executiveInboxPriorityScore(priority) >= 3;
@@ -10095,15 +10209,23 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
         currentMessageId:row.currentMessageId||'',
         source_refs:row.sourceRefs||row.source_refs||[]
       };
-      const email=executiveInboxCachedEmailFromClassification({classification,context},index);
+      return {email:executiveInboxCachedEmailFromClassification({classification,context},index),context};
+    });
+  const sourceRows=durableItems.length
+    ? durableItems.map(email=>({email,context:{current_message:email,sender_metrics:email.senderMetrics||{}}}))
+    : indexedRows;
+  const diagnostics={source:durableItems.length?'durable_verified_queue':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const rows=sourceRows
+    .map(({email,context})=>{
+      const priorAdmission=email.executiveInboxAdmission||{};
       const admission=decideExecutiveInboxAdmission({
         email,
         context,
         suppressions,
         safeContacts,
-        hasSentHistory:cachedSentHistory(context,email),
+        hasSentHistory:priorAdmission.hasSentHistory ?? cachedSentHistory(context,email),
         waitingOnOther:email.queueKind==='waiting_for_response',
-        clearAsk:executiveInboxInboundAskText(email),
+        clearAsk:priorAdmission.clearAsk ?? executiveInboxInboundAskText(email),
         resolved:executiveInboxResolved(email,resolutions)
       });
       diagnostics.deduplicated+=1;
@@ -10119,7 +10241,9 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
         if(key)diagnostics.filtered[key]+=1;
         return null;
       }
-      const preparedDraft=email.queueKind==='waiting_for_response' ? null : draftsByConversation.get(email.conversationId);
+      const preparedDraft=email.queueKind==='waiting_for_response'
+        ? null
+        : (email.preparedDraft || draftsByConversation.get(email.conversationId) || draftsByConversation.get(email.threadId));
       if(preparedDraft)diagnostics.draftsAttached+=1;
       diagnostics.admitted+=1;
       return {...email,preparedDraft,executiveInboxAdmission:admission,reason:admission.reason};
@@ -10143,7 +10267,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     lowPriority:[],
     errors:timed.timeout?[timed.error]:[],
     providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
-    summary:{total:items.length,buckets,source:'cached_conversation_context',cacheOnly:true,activeWindow:'Saved conversations rechecked through the current Executive Inbox admission rules.',executiveInboxDiagnostics:diagnostics},
+    summary:{total:items.length,buckets,source:durableItems.length?'durable_verified_queue':'classification_fallback',cacheOnly:true,activeWindow:'Last verified Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
     diagnostics
   };
 }
@@ -10239,6 +10363,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
   });
   const items=candidates.filter(Boolean);
   diagnostics.admitted=items.length;
+  await replaceDurableExecutiveInboxQueue(items);
   return {
     ...data,
     source:'canonical_executive_inbox',
