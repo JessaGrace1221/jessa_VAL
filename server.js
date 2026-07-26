@@ -32905,6 +32905,7 @@ function transcriptTaskContextExcerpt(rawText='',sourceQuote='',limit=12000){
 function cleanTranscriptTaskLine(value=''){
   return transcriptCleanDisplayLine(value)
     .replace(/\s+-\s+_[^_]+_\s*$/,'')
+    .replace(/\s+-\s+Due:\s*.+$/i,'')
     .replace(/\s+/g,' ')
     .trim();
 }
@@ -32988,7 +32989,8 @@ async function canonicalTranscriptTaskProjection({limit=500}={}){
     const title=executiveTranscriptTaskTitle(unprefixedTitle,sourceQuote);
     const description=String(row.taskDescription||row.task_description||'').trim();
     const contextExcerpt=transcriptTaskContextExcerpt(row.rawText||row.raw_text||row.rawTranscript||'',sourceQuote);
-    const ownerName=String(row.assignedToName||row.assigned_to_name||'').trim();
+    const rawOwnerName=String(row.assignedToName||row.assigned_to_name||'').trim();
+    const ownerName=/^val$/i.test(rawOwnerName)?'VAL':rawOwnerName;
     const ownerType=ownerName
       ? (isOwnerRelationship({name:ownerName})?'user':'other')
       : 'unknown';
