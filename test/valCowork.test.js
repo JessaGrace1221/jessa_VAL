@@ -307,11 +307,12 @@ test('Observer and Chief of Staff conversations resume their own durable message
   assert.equal(replies.length,2);
 });
 
-test('Hearth exposes unresolved commitments with source and prepared-work continuation paths',()=>{
+test('Hearth exposes all unresolved tasks with source and prepared-work continuation paths',()=>{
   assert.match(hearthHtml,/class="task-companion-button"/);
   assert.match(hearth,/function openTaskWorkspace/);
-  assert.match(hearth,/getJson\('\/api\/val\/work-items\/tasks\?limit=120'/);
-  assert.match(hearth,/Open your commitments/);
+  assert.match(hearth,/getJson\('\/api\/val\/work-items\/tasks\?limit=500'/);
+  assert.match(hearth,/Open your tasks/);
+  assert.match(hearth,/Every transcript Action Item stays here until it is done/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
   assert.match(hearth,/postJson\('\/api\/val\/ready-for-you\/build',\{limit:25\}/);
   assert.match(hearth,/function openTaskSourceTranscript/);

@@ -218,6 +218,25 @@ test('Tasks projects only admitted open work owned by the user',async()=>{
   assert.equal(projection.tasks[0].canonical_work_item_id,open.workItem.id);
 });
 
+test('Tasks include every open transcript Action Item even when its owner still needs confirmation',async()=>{
+  const transcriptTask={
+    id:'transcript_task_1',
+    title:'Send the revised dashboard to Mike',
+    evidence_quote:'Jessa will send the revised dashboard to Mike.',
+    source_type:'transcript',
+    source_id:'transcript_1',
+    owner_type:'unknown',
+    owner_name:'Owner to confirm',
+    status:'open',
+    workspace_kind:'transcript_task'
+  };
+  const {service}=harness({loadTranscriptTasks:async()=>[transcriptTask]});
+  const result=await service.taskProjection({limit:100});
+  assert.equal(result.tasks.length,1);
+  assert.deepEqual(result.tasks[0],transcriptTask);
+  assert.equal(result.filters.transcriptActionItems,'all_open');
+});
+
 test('Tasks preload the immutable source packet for immediate Co-Work and prepared work',async()=>{
   const rawText=[
     'Mike: The dashboard needs pipeline projections, an owner, and open follow-up.',

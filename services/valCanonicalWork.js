@@ -123,7 +123,8 @@ function createValCanonicalWorkService({
   tenantId=()=>'default',
   userId=()=>'default',
   afterWorkItemEvent=null,
-  loadSourceProcessingRecord=null
+  loadSourceProcessingRecord=null,
+  loadTranscriptTasks=null
 }={}){
   function store(){
     const value=getStore()||{};
@@ -519,7 +520,7 @@ function createValCanonicalWorkService({
         if(aRank!==bRank)return aRank-bRank;
         return String(b.updatedAt||'').localeCompare(String(a.updatedAt||''));
       });
-    const tasks=await Promise.all(workItems.map(async item=>{
+    const canonicalTasks=await Promise.all(workItems.map(async item=>{
       const sourceProcessingRecordIds=[...new Set([
         ...safeArray(item.metadataJson?.sourceProcessingRecordIds),
         item.sourceProcessingRecordId
@@ -622,12 +623,26 @@ function createValCanonicalWorkService({
       created_at:item.createdAt
       };
     }));
+    const transcriptTasks=typeof loadTranscriptTasks==='function'
+      ? safeArray(await loadTranscriptTasks({limit:Math.max(100,Math.min(Number(limit)||100,500))}))
+      : [];
+    const transcriptKeys=new Set(transcriptTasks.map(task=>[
+      task.source_id||task.transcript_id||'',
+      normalizedKey(task.title||task.evidence_quote||'')
+    ].join('|')));
+    const tasks=[
+      ...transcriptTasks,
+      ...canonicalTasks.filter(task=>!transcriptKeys.has([
+        task.source_id||'',
+        normalizedKey(task.title||task.evidence_quote||'')
+      ].join('|')))
+    ];
     return {
       ok:true,
       tasks,
       openCount:tasks.length,
-      source:'canonical_work_items',
-      filters:{ownership:'user',admissionStatus:'admitted',excludedLifecycleStatuses:['complete','dismissed','superseded']}
+      source:transcriptTasks.length?'canonical_work_plus_transcript_action_items':'canonical_work_items',
+      filters:{ownership:'user',admissionStatus:'admitted',excludedLifecycleStatuses:['complete','dismissed','superseded'],transcriptActionItems:'all_open'}
     };
   }
   async function eventsFor(id){

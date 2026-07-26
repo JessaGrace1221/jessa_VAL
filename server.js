@@ -7832,6 +7832,11 @@ async function initValDb(){
   await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
   await ensureValExecutiveInboxQueueTables({dbQuery,logger:console});
+  await dbQuery(`
+    update transcript_tasks
+    set status='created', needs_approval=false
+    where status='staged' or needs_approval=true
+  `);
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
     await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
@@ -10116,6 +10121,80 @@ async function mergeDurableExecutiveInboxQueue(items=[]){
   saveValStore(store);
   return payloads;
 }
+async function admitSafeListedExecutiveInboxMessages(email=''){
+  const address=normalizeExecutiveEmailAddress(email);
+  if(!address)return [];
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(`
+      select provider,message_id,thread_id,unified_conversation_id,direction,sender_json,
+             recipients_json,cc_json,subject,body_preview,body_text,snippet,labels_json,
+             has_attachments,web_link,received_at,sent_at,raw_json
+      from email_messages
+      where tenant_id=$1 and user_id=$2
+        and direction='inbound'
+        and lower(coalesce(sender_json->>'email',sender_json->>'address',''))=$3
+      order by coalesce(received_at,sent_at) desc nulls last, updated_at desc
+      limit 200
+    `,[tenantId(),currentUserId(),address]);
+    rows=safeArray(result?.rows).map(row=>({
+      provider:row.provider||'email',
+      id:row.message_id,
+      messageId:row.message_id,
+      threadId:row.thread_id||'',
+      conversationId:row.unified_conversation_id||row.thread_id||row.message_id,
+      subject:row.subject||'(No subject)',
+      from:row.sender_json||{email:address},
+      to:safeArray(row.recipients_json),
+      cc:safeArray(row.cc_json),
+      date:row.received_at?.toISOString?.()||row.received_at||row.sent_at?.toISOString?.()||row.sent_at||'',
+      receivedAt:row.received_at?.toISOString?.()||row.received_at||'',
+      snippet:row.snippet||row.body_preview||'',
+      bodyPreview:row.body_preview||row.snippet||'',
+      bodyText:row.body_text||row.body_preview||row.snippet||'',
+      labels:safeArray(row.labels_json),
+      hasAttachments:!!row.has_attachments,
+      webLink:row.web_link||'',
+      raw:row.raw_json||{}
+    }));
+  }else{
+    rows=safeArray(valStore().emailMessages).filter(row=>{
+      const sender=row.senderJson||row.sender_json||row.sender||row.from||{};
+      return String(row.direction||'').toLowerCase()==='inbound'
+        && normalizeExecutiveEmailAddress(sender.email||sender.address||'')===address;
+    });
+  }
+  const safeContacts=executiveInboxSafeContactRows();
+  const suppressions=executiveInboxSuppressionRows();
+  const resolutions=executiveInboxResolutionRows();
+  const newestByConversation=new Map();
+  rows.forEach(row=>{
+    const key=String(row.conversationId||row.unifiedConversationId||row.threadId||row.messageId||row.id||'');
+    if(key&&!newestByConversation.has(key))newestByConversation.set(key,row);
+  });
+  const admitted=Array.from(newestByConversation.values()).filter(row=>decideExecutiveInboxAdmission({
+    email:row,
+    suppressions,
+    safeContacts,
+    resolved:executiveInboxResolved(row,resolutions)
+  }).admitted).map(row=>({
+    ...row,
+    id:'executive-inbox-'+(row.threadId||row.messageId||row.id),
+    queueKind:'needs_judgment',
+    status:'ready_for_review',
+    classification:'needs_attention',
+    reason:'This sender is on your Executive Inbox Safe List.',
+    recommendedAction:'Review this conversation',
+    executiveInboxAdmission:{
+      admitted:true,
+      rule:'manual_executive_contact_override',
+      reason:'The user explicitly added this sender to the Executive Inbox Safe List.',
+      safeListed:true
+    }
+  }));
+  if(admitted.length)await mergeDurableExecutiveInboxQueue(admitted);
+  return admitted;
+}
 async function archiveDurableExecutiveInboxThread({provider='email',threadId='',messageId='',resolution={}}={}){
   const threadKey=[provider,threadId||messageId].join(':');
   if(pgPool){
@@ -10564,8 +10643,9 @@ app.post('/api/val/executive-inbox/safe-contact',async(req,res)=>{
     if(existing)Object.assign(existing,row);
     else store.executiveInboxSafeContacts.unshift(row);
     saveValStore(store);
+    const admitted=await admitSafeListedExecutiveInboxMessages(email);
     await auditLog({req,action:'executive_inbox_safe_contact_marked',resourceType:'executive_inbox_safe_contact',resourceId:email,metadata:{email,name},success:true}).catch(()=>{});
-    res.json({ok:true,safeContact:existing||row});
+    res.json({ok:true,safeContact:existing||row,admittedCount:admitted.length,items:admitted});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/executive-inbox/link-context',async(req,res)=>{
@@ -31337,8 +31417,8 @@ async function processTranscriptPayload(payload){
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
     const assignedName=item.assignedToName||item.assignedPerson||item.person||item.contactName||'',participant=participants.find(p=>looseNameScore(assignedName,p.speakerNameRaw)>=0.8||looseNameScore(assignedName,p.matchedContactName)>=0.8),confidence=Math.max(0,Math.min(1,Number(item.confidence)||0));
     const owner=isOwnerRelationship({name:assignedName,email:participant?.matchedEmail||''}),safeMatch=!!participant&&!participant.needsReview&&participant.matchConfidence>=TRANSCRIPT_SAFE_MATCH_CONFIDENCE;
-    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:contextualTaskTitle(title,item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'staged',needsApproval:!(owner||safeMatch),sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',calendarEventTitle:title,createdAt:new Date().toISOString()};
-    if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);if(owner||safeMatch)createdTasks.push(await promoteTranscriptTask(staged));
+    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:cleanTaskTitle(item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'created',needsApproval:false,preserveSourceTitle:true,sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',calendarEventTitle:title,createdAt:new Date().toISOString()};
+    if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);createdTasks.push(await promoteTranscriptTask(staged));
   }
   for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20)){
     const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
@@ -31870,6 +31950,38 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
     await auditLog({req,action:'transcript_data_clear_failed',resourceType:'transcript',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
+});
+app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
+  try{
+    const taskId=decodeURIComponent(req.params.taskId);
+    let task=null;
+    if(pgPool){
+      const result=await dbQuery(`
+        update transcript_tasks tt
+        set status='complete',needs_approval=false
+        from transcripts t
+        where tt.task_id=$1
+          and t.transcript_id=tt.transcript_id
+          and t.tenant_id=$2 and t.user_id=$3
+        returning tt.*
+      `,[taskId,tenantId(),currentUserId()]);
+      task=result.rows?.[0]?transcriptPgRow(result.rows[0]):null;
+      if(task){
+        await dbQuery(`
+          update val_tasks
+          set completed=true,completed_at=now(),completed_by=$1,updated_at=now()
+          where user_id=$2 and details @> $3::jsonb
+        `,[String(req.body?.completedBy||'you'),currentUserId(),JSON.stringify([{transcriptTaskId:taskId}])]).catch(()=>{});
+      }
+    }else{
+      const store=valStore();
+      task=transcriptFileArray(store,'transcriptTasks').find(row=>String(row.taskId||row.task_id)===String(taskId))||null;
+      if(task){task.status='complete';task.needsApproval=false;saveValStore(store);}
+    }
+    if(!task)return res.status(404).json({ok:false,error:'Transcript action item not found.'});
+    await auditLog({req,action:'transcript_task_completed',resourceType:'transcript_task',resourceId:taskId,metadata:{transcriptId:task.transcriptId||task.transcript_id||'',title:task.taskTitle||task.task_title||''},success:true}).catch(()=>{});
+    res.json({ok:true,task});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.delete('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
@@ -32773,6 +32885,89 @@ function externalActionBoardPacketType(packet={}){
   return 'approval_packet';
 }
 
+function transcriptTaskContextExcerpt(rawText='',sourceQuote='',limit=12000){
+  const text=String(rawText||'').trim();
+  if(!text||text.length<=limit)return text;
+  const quote=String(sourceQuote||'').trim();
+  const index=quote?text.toLowerCase().indexOf(quote.toLowerCase()):-1;
+  if(index<0)return text.slice(0,limit);
+  const start=Math.max(0,index-Math.floor(limit/2));
+  return text.slice(start,Math.min(text.length,start+limit));
+}
+
+async function canonicalTranscriptTaskProjection({limit=500}={}){
+  const bounded=Math.max(1,Math.min(Number(limit)||500,500));
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(`
+      select tt.*,t.meeting_title,t.meeting_datetime,t.calendar_event_id,t.raw_transcript
+      from transcript_tasks tt
+      join transcripts t on t.transcript_id=tt.transcript_id
+      where t.tenant_id=$1 and t.user_id=$2
+        and lower(coalesce(tt.status,'created')) not in ('complete','completed','dismissed','deleted')
+      order by tt.due_date asc nulls last, tt.created_at desc
+      limit $3
+    `,[tenantId(),currentUserId(),bounded]);
+    rows=safeArray(result?.rows).map(transcriptPgRow);
+  }else{
+    const store=valStore();
+    const transcripts=new Map(transcriptFileArray(store,'transcriptIndex').map(row=>[String(row.transcriptId),row]));
+    rows=transcriptFileArray(store,'transcriptTasks')
+      .filter(row=>!['complete','completed','dismissed','deleted'].includes(String(row.status||'created').toLowerCase()))
+      .slice(0,bounded)
+      .map(row=>({...row,...(transcripts.get(String(row.transcriptId))||{})}));
+  }
+  return rows.map(row=>{
+    const transcriptId=String(row.transcriptId||row.transcript_id||'');
+    const storedTitle=String(row.taskTitle||row.task_title||row.sourceQuote||row.source_quote||'Action item').trim();
+    const sourceQuote=String(row.sourceQuote||row.source_quote||storedTitle).trim();
+    const transcriptTitle=String(row.meetingTitle||row.meeting_title||'Transcript').trim();
+    const contextualPrefix=transcriptTitle+' — ';
+    const title=storedTitle.startsWith(contextualPrefix)?storedTitle.slice(contextualPrefix.length).trim():storedTitle;
+    const description=String(row.taskDescription||row.task_description||'').trim();
+    const contextExcerpt=transcriptTaskContextExcerpt(row.rawText||row.raw_text||row.rawTranscript||'',sourceQuote);
+    const ownerName=String(row.assignedToName||row.assigned_to_name||'').trim();
+    const taskId=String(row.taskId||row.task_id||'');
+    return {
+      id:taskId,
+      title,
+      description,
+      evidence_quote:sourceQuote,
+      evidence_summary:description||sourceQuote,
+      source_type:'transcript',
+      source_id:transcriptId,
+      source_title:transcriptTitle,
+      transcript_id:transcriptId,
+      transcript_task_id:taskId,
+      owner_type:ownerName?'user':'unknown',
+      owner_name:ownerName||'Owner to confirm',
+      status:'open',
+      confidence:Number(row.confidence||0),
+      confidence_score:Number(row.confidence||0),
+      due_at:row.dueDate||row.due_date||null,
+      created_at:row.createdAt||row.created_at||'',
+      updated_at:row.createdAt||row.created_at||'',
+      workspace_kind:'transcript_task',
+      source_refs:[{sourceType:'transcript',sourceId:transcriptId,quoteOrSummary:sourceQuote,confidence:Number(row.confidence||0)}],
+      working_brief:{
+        objective:title,
+        sourceSummary:description,
+        sourceQuote,
+        contextLines:[
+          `Transcript: ${transcriptTitle}`,
+          ownerName?`Owner: ${ownerName}`:'Owner needs confirmation',
+          row.dueDate||row.due_date?`Due: ${row.dueDate||row.due_date}`:'',
+          contextExcerpt
+        ].filter(Boolean),
+        sourceContext:{sourceType:'transcript',sourceId:transcriptId,transcriptId,transcriptTaskId:taskId},
+        sourcePackets:[{source_type:'transcript',source_id:transcriptId,source_title:transcriptTitle,context_excerpt:contextExcerpt}],
+        envelope:{type:'source',id:transcriptId,name:transcriptTitle}
+      },
+      source_packet:{source_type:'transcript',source_id:transcriptId,source_title:transcriptTitle,context_excerpt:contextExcerpt}
+    };
+  });
+}
+
 async function processExternalActionBoardEvidence(packet={}){
   const id=String(packet.id||'').trim();
   if(!id)return null;
@@ -32813,6 +33008,7 @@ const valCanonicalWork=registerValCanonicalWorkRoutes(app,{
   tenantId,
   userId:currentUserId,
   loadSourceProcessingRecord:id=>valTranscriptSourceProcessing.getSourceRecord(id),
+  loadTranscriptTasks:canonicalTranscriptTaskProjection,
   afterWorkItemEvent:async({workItem,event})=>{
     await processCanonicalBoardEvidence({
       sourceType:'task',

@@ -14567,6 +14567,28 @@ button.timeline-overview-receipt:focus-visible{
 }
 .timeline-transcript-load-more{width:calc(100% - 20px);margin:10px}
 .transcript-delete{color:#8a4f59;border-color:rgba(138,79,89,.26)}
+.transcript-delete-confirm{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  color:#6f424b;
+  font:560 .76rem/1.2 var(--body);
+}
+.transcript-delete-confirm[hidden]{display:none}
+.transcript-delete-confirm button{
+  min-height:34px;
+  padding:0 11px;
+  border:1px solid rgba(74,91,72,.2);
+  border-radius:6px;
+  background:rgba(255,255,255,.82);
+  color:#435442;
+  font:600 .74rem/1 var(--body);
+  cursor:pointer;
+}
+.transcript-delete-confirm [data-transcript-delete-confirm]{
+  border-color:rgba(138,79,89,.3);
+  color:#8a4f59;
+}
 .drawer-tray.correspondence-open .correspondence-checking-state{
   display:grid;
   grid-template-columns:54px minmax(0,1fr);

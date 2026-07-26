@@ -179,15 +179,16 @@ test('Commitments drawer keeps transcript blobs out of the executive list',()=>{
   assert.match(hearthPrototype,/Open source transcript/);
 });
 
-test('Home commitments only shows work that needs the user',()=>{
-  assert.match(hearthPrototype,/Open your commitments/);
-  assert.match(hearthPrototype,/open commitments that need you/);
-  assert.match(hearthPrototype,/Your commitments/);
-  assert.match(hearthPrototype,/Showing the cleanest commitments first/);
-  assert.match(hearthPrototype,/lower-signal extracted item/);
-  assert.match(hearthPrototype,/\/api\/val\/work-items\/tasks\?limit=120/);
+test('Home tasks shows every open transcript Action Item with source context',()=>{
+  assert.match(hearthPrototype,/Open your tasks/);
+  assert.match(hearthPrototype,/open tasks/);
+  assert.match(hearthPrototype,/Your tasks/);
+  assert.match(hearthPrototype,/Every transcript Action Item stays here until it is done/);
+  assert.doesNotMatch(hearthPrototype,/lower-signal extracted item/);
+  assert.match(hearthPrototype,/\/api\/val\/work-items\/tasks\?limit=500/);
   assert.doesNotMatch(hearthPrototype,/\/api\/val\/commitments\?limit=200/);
-  assert.match(hearthPrototype,/__workspaceKind:canonicalWorkItemId \? 'canonical_work' : 'commitment'/);
+  assert.match(hearthPrototype,/__workspaceKind:transcriptTask \? 'transcript_task'/);
+  assert.match(hearthPrototype,/\/api\/val\/transcript-tasks\//);
   assert.match(hearthPrototype,/eventType:'user_marked_done'/);
 });
 

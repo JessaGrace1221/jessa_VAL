@@ -51,6 +51,15 @@ test('outbox history is required unless the user explicitly safe-lists the conta
   });
   assert.equal(overridden.admitted, true);
   assert.equal(overridden.rule, 'manual_executive_contact_override');
+
+  const ordinarySafeListedMail = decideExecutiveInboxAdmission({
+    email:{from:{email:'new@example.com'},subject:'A quiet update'},
+    safeContacts:[{email:'new@example.com'}],
+    hasSentHistory:false,
+    clearAsk:false
+  });
+  assert.equal(ordinarySafeListedMail.admitted, true);
+  assert.equal(ordinarySafeListedMail.rule, 'manual_executive_contact_override');
 });
 
 test('reciprocal mail still needs an executive action', () => {

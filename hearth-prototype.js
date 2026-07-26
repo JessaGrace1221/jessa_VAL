@@ -10871,7 +10871,18 @@ async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
   }
   const result = await postJson('/api/val/executive-inbox/safe-contact', contact);
   if(result.ok !== false && correspondenceSafeEmail) correspondenceSafeEmail.value = '';
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
+  applyCorrespondenceSafeListResult(result);
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact. ' + (Number(result.admittedCount || 0) ? result.admittedCount + ' saved conversation' + (Number(result.admittedCount) === 1 ? ' is' : 's are') + ' now in Executive Inbox.' : 'New mail from this sender will enter Executive Inbox immediately.');
+}
+
+function applyCorrespondenceSafeListResult(result = {}){
+  const admitted = correspondenceItemsFromEmailIntelligence({items:result.items || []});
+  if(!admitted.length) return;
+  const byId = new Map(admitted.concat(currentCorrespondenceItems).map((row) => [row.id, row]));
+  currentCorrespondenceItems = Array.from(byId.values());
+  currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
+  activeCorrespondenceItem = admitted[0];
+  renderCorrespondenceBrief(activeCorrespondenceItem);
 }
 
 function correspondenceEmailForAction(item = activeCorrespondenceItem){
@@ -11376,7 +11387,8 @@ async function handleCorrespondenceAction(action){
       return;
     }
     if(canUseApi){
-      await postJson('/api/val/executive-inbox/safe-contact', contact);
+      const result = await postJson('/api/val/executive-inbox/safe-contact', contact);
+      applyCorrespondenceSafeListResult(result);
     }
     if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
     return;
@@ -14437,6 +14449,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
     downloadUrl ? '<a class="transcript-download-link" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener">Download transcript</a>' : '',
     '<button type="button" class="transcript-delete" data-transcript-delete="' + escapeHtml(transcript.id || '') + '">Delete transcript</button>',
+    '<span class="transcript-delete-confirm" data-transcript-delete-confirmation="' + escapeHtml(transcript.id || '') + '" hidden><span>Delete this transcript?</span><button type="button" data-transcript-delete-confirm="' + escapeHtml(transcript.id || '') + '">Confirm delete</button><button type="button" data-transcript-delete-cancel>Cancel</button></span>',
     '</div>',
     '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'The full transcript source text was not supplied with this record.') + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
@@ -14518,8 +14531,6 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
 }
 
 async function deleteTimelineTranscript(transcriptId){
-  const phrase=window.prompt?.('Delete this transcript from VAL? Type delete transcript to continue.','');
-  if(String(phrase||'').trim().toLowerCase()!=='delete transcript')return;
   setTimelineTranscriptActionStatus('Deleting transcript...','');
   const response=await fetch('/api/val/transcripts/'+encodeURIComponent(transcriptId),{
     method:'DELETE',
@@ -26423,12 +26434,17 @@ function taskWorkspacePreviewText(value = '', limit = 220){
 }
 
 function taskWorkspaceDisplayTitle(task = {}){
+  if(task.__workspaceKind === 'transcript_task') return String(task.title || task.rawCommitment?.evidence_quote || 'Action item').trim();
   return taskWorkspacePreviewText(task.title || task.description || task.notes || '', 120) || 'Untitled commitment';
 }
 
 function taskWorkspaceDisplayNotes(task = {}){
   const sourceTitle = task.rawCommitment?.source_title || task.sourceTitle || '';
   const evidence = taskWorkspacePreviewText(task.notes || task.rawCommitment?.evidence_quote || '', 180);
+  if(task.__workspaceKind === 'transcript_task'){
+    const context = evidence && evidence !== taskWorkspaceDisplayTitle(task) ? evidence : '';
+    return [sourceTitle ? 'From ' + sourceTitle : 'From transcript', context].filter(Boolean).join(' · ');
+  }
   if(evidence && evidence !== taskWorkspaceDisplayTitle(task)) return evidence;
   if(sourceTitle) return 'Source-backed context is attached from ' + sourceTitle + '.';
   return 'Source-backed context is attached. Open the source transcript when you need the full evidence.';
@@ -26448,18 +26464,19 @@ function taskWorkspaceExecutiveScore(task = {}){
 }
 
 function normalizeTaskWorkspaceItem(item = {}){
-  if(item.__workspaceKind === 'commitment' || item.__workspaceKind === 'canonical_work') return item;
+  if(['commitment','canonical_work','transcript_task'].includes(item.__workspaceKind)) return item;
   if(item.source_type || item.owner_type || item.evidence_quote){
     const status = String(item.status || '').toLowerCase();
     const canonicalWorkItemId = item.canonical_work_item_id || '';
+    const transcriptTask = item.workspace_kind === 'transcript_task' || Boolean(item.transcript_task_id);
     const owner = item.owner_type === 'user'
       ? (item.counterparty_name || item.owner_name || '')
       : (item.owner_name || item.counterparty_name || '');
     return {
       id:item.id || '',
-      __workspaceKind:canonicalWorkItemId ? 'canonical_work' : 'commitment',
+      __workspaceKind:transcriptTask ? 'transcript_task' : (canonicalWorkItemId ? 'canonical_work' : 'commitment'),
       canonicalWorkItemId,
-      title:taskWorkspacePreviewText(item.title || item.description || item.evidence_quote || '', 140) || 'Untitled commitment',
+      title:transcriptTask ? String(item.title || item.evidence_quote || 'Action item').trim() : (taskWorkspacePreviewText(item.title || item.description || item.evidence_quote || '', 140) || 'Untitled commitment'),
       notes:taskWorkspacePreviewText(item.evidence_summary || item.description || item.evidence_quote || '', 240),
       workingBrief:item.workingBrief || item.working_brief || null,
       sourceRefs:item.sourceRefs || item.source_refs || [],
@@ -26672,8 +26689,8 @@ function setTaskCompanionOpenCount(count = 0){
   if(taskCompanionCount) taskCompanionCount.textContent = String(safeCount);
   if(taskCompanionButton){
     taskCompanionButton.dataset.openCount = String(safeCount);
-    taskCompanionButton.setAttribute('aria-label', 'Open your commitments: ' + safeCount + ' open');
-    taskCompanionButton.title = safeCount + ' open commitments that need you';
+    taskCompanionButton.setAttribute('aria-label', 'Open your tasks: ' + safeCount + ' open');
+    taskCompanionButton.title = safeCount + ' open tasks';
   }
 }
 
@@ -26691,15 +26708,14 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
     if(!b.dueDate) return -1;
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
   });
-  const visibleOpenTasks = openTasks.slice(0, 20);
-  const hiddenCount = Math.max(0, openTasks.length - visibleOpenTasks.length);
+  const visibleOpenTasks = openTasks;
   setTaskCompanionOpenCount(openTasks.length);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<section class="task-workspace" aria-label="Your open commitments">',
-      '<header class="task-workspace-header"><div><span>Your commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Showing the cleanest commitments first. Check off what is done; co-work only when you need help.</p></header>',
+    '<section class="task-workspace" aria-label="Your open tasks">',
+      '<header class="task-workspace-header"><div><span>Your tasks</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Every transcript Action Item stays here until it is done. Open the source or co-work with VAL when you need the surrounding context.</p></header>',
       openTasks.length ? '<div class="task-workspace-list">' + visibleOpenTasks.map((task) => {
         const transcriptId = taskWorkspaceTranscriptId(task);
         const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
@@ -26726,7 +26742,6 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
           '</article>'
         ].join('');
       }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>No open commitments.</strong><p>VAL will place promises, follow-through, and source-backed open loops here when they need attention.</p></div>',
-      hiddenCount ? '<p class="task-workspace-held-back">' + escapeHtml(hiddenCount) + ' lower-signal extracted item' + (hiddenCount === 1 ? ' is' : 's are') + ' held back from this view until VAL can attach a clearer next action.</p>' : '',
     '</section>'
   ].join('');
 }
@@ -26734,7 +26749,7 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
 async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
-    const result = await getJson('/api/val/work-items/tasks?limit=120', {cache:'no-store'});
+    const result = await getJson('/api/val/work-items/tasks?limit=500', {cache:'no-store'});
     const items = Array.isArray(result?.tasks) ? result.tasks.map(normalizeTaskWorkspaceItem) : [];
     setTaskCompanionOpenCount(items.filter((task) => !task.completed).length);
   }catch(error){
@@ -26745,9 +26760,9 @@ async function hydrateTaskCompanionCount(){
 async function openTaskWorkspace(){
   closeCalendarPanel();
   setWorkspaceContent({
-    lens:'Commitments',title:'Commitments',meaning:'Every open promise, follow-through item, and source-backed loop with its evidence and prepared work.',
+    lens:'Tasks',title:'Tasks',meaning:'Every open transcript Action Item and source-backed task, with its evidence and prepared work.',
     understanding:[],recommendation:'',actions:[{label:'Close and return to desk',workflow:'cancel:meeting'}],
-    label:'Commitment workspace',suppressClarityStandard:true
+    label:'Task workspace',suppressClarityStandard:true
   });
   deskWorkspace.classList.add('task-workspace-mode');
   if(workspaceGrid) workspaceGrid.hidden = true;
@@ -26756,10 +26771,10 @@ async function openTaskWorkspace(){
   workspaceInputPanel.hidden = true;
   hearth.dataset.distance='judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
-  openWorkspaceShell('Commitments',{returnTarget:'home'});
+  openWorkspaceShell('Tasks',{returnTarget:'home'});
   try{
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/work-items/tasks?limit=120',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Commitments are taking too long to load source context.'}),
+      getJson('/api/val/work-items/tasks?limit=500',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Tasks are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
       postJson('/api/val/ready-for-you/build',{limit:25},{timeoutMs:12000,timeoutMessage:'Prepared work is taking too long to refresh.'})
     ]);
@@ -26812,6 +26827,8 @@ async function completeTaskFromWorkspace(taskId = ''){
           eventType:'user_marked_done',
           payload:{surface:'home_commitments'}
         });
+      }else if(task?.__workspaceKind === 'transcript_task'){
+        await postJson('/api/val/transcript-tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
       }else if(task?.__workspaceKind === 'commitment'){
         await postJson('/api/val/commitments/' + encodeURIComponent(taskId) + '/status', {status:'complete', reason:'Marked done from Home commitments.'});
       }else{
@@ -29024,11 +29041,30 @@ drawerTray.addEventListener('click', async (event) => {
   if(transcriptDelete){
     event.preventDefault();
     event.stopPropagation();
+    const confirmation=transcriptDelete.parentElement?.querySelector('[data-transcript-delete-confirmation="' + cssEscape(transcriptDelete.dataset.transcriptDelete) + '"]');
+    transcriptDelete.hidden=true;
+    if(confirmation) confirmation.hidden=false;
+    return;
+  }
+  const transcriptDeleteConfirm = event.target.closest('[data-transcript-delete-confirm]');
+  if(transcriptDeleteConfirm){
+    event.preventDefault();
+    event.stopPropagation();
     try{
-      await deleteTimelineTranscript(transcriptDelete.dataset.transcriptDelete);
+      await deleteTimelineTranscript(transcriptDeleteConfirm.dataset.transcriptDeleteConfirm);
     }catch(error){
       setTimelineTranscriptActionStatus(error.message||'Transcript deletion failed.','danger');
     }
+    return;
+  }
+  const transcriptDeleteCancel = event.target.closest('[data-transcript-delete-cancel]');
+  if(transcriptDeleteCancel){
+    event.preventDefault();
+    event.stopPropagation();
+    const confirmation=transcriptDeleteCancel.closest('[data-transcript-delete-confirmation]');
+    if(confirmation) confirmation.hidden=true;
+    const deleteButton=confirmation?.parentElement?.querySelector('[data-transcript-delete]');
+    if(deleteButton) deleteButton.hidden=false;
     return;
   }
   const timelineAction = event.target.closest('[data-timeline-action]');

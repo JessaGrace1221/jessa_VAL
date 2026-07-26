@@ -134,6 +134,16 @@ function decideExecutiveInboxAdmission({
   if(suppressed) return {admitted:false, rule:'manual_not_executive_contact', reason:'The user marked this sender as not an executive contact.', address};
   if(hasListMailSignal(email, context)) return {admitted:false, rule:'unsubscribe_or_list_mail', reason:'Unsubscribe or list-mail evidence keeps this message out of Executive Inbox.', address};
   if(isCalendarNotice(email, context)) return {admitted:false, rule:'calendar_notice', reason:'Calendar invitations belong in Calendar, not Executive Inbox.', address};
+  if(safeListed) return {
+    admitted:true,
+    rule:'manual_executive_contact_override',
+    reason:'The user explicitly added this sender to the Executive Inbox Safe List.',
+    address,
+    hasSentHistory:sentHistory,
+    safeListed:true,
+    clearAsk:asksForJudgment,
+    waitingOnOther:waiting
+  };
   if(!sentHistory && !safeListed) return {admitted:false, rule:'no_outbox_history', reason:'The user has not sent mail to this address, so it has not earned Executive Inbox space.', address};
   if(!waiting && !asksForJudgment) return {admitted:false, rule:'no_executive_action', reason:'This thread does not currently require a reply, decision, approval, or follow-up.', address};
 

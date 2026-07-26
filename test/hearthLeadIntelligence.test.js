@@ -698,6 +698,9 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.doesNotMatch(deleteTimelineTranscriptBody, /loadTimelineTranscripts/);
   assert.match(deleteTimelineTranscriptBody, /currentTimelineTranscriptItems=currentTimelineTranscriptItems\.filter/);
   assert.match(deleteTimelineTranscriptBody, /Transcript deleted\./);
+  assert.doesNotMatch(deleteTimelineTranscriptBody, /window\.prompt/);
+  assert.match(hearthJs, /data-transcript-delete-confirm/);
+  assert.match(hearthJs, /Confirm delete/);
   const openTimelineTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
   assert.ok(openTimelineTranscriptBody);
   assert.doesNotMatch(openTimelineTranscriptBody, /scrollIntoView/);
@@ -962,6 +965,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, />Executive contact</);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/resolve-thread/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/safe-contact/);
+  assert.match(hearthJs, /applyCorrespondenceSafeListResult/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/link-context/);
   assert.match(hearthJs, /\/api\/email\/inbox-command/);
   assert.match(hearthJs, /\/api\/email\/inbox-command\/action/);

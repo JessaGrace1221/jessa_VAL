@@ -85,6 +85,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/queue'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/resolve-thread'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/safe-contact'/);
+  assert.match(server,/async function admitSafeListedExecutiveInboxMessages/);
+  assert.match(server,/admittedCount:admitted\.length/);
+  assert.match(server,/manual_executive_contact_override/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/link-context'/);
   assert.match(server,/executive_inbox_context_link/);
   assert.match(server,/function executiveInboxSafeListed/);
