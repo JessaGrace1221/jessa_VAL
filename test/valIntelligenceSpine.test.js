@@ -188,6 +188,9 @@ test('About Me intelligence invokes one independent reasoner for each of 14 Obse
   assert.ok(calls.includes('Witnessing'));
   assert.ok(result.observerRuns.every(run=>run.outputJson.document_review?.sourceId==='doc_about_me'));
   assert.ok(result.observerRuns.every(run=>run.contextPacketJson.event.document.rawText===undefined));
+  assert.ok(result.observerRuns.every(run=>run.contextPacketJson.sharedContextStoredIn==='event_intelligence_runs'));
+  assert.ok(result.observerRuns.every(run=>Array.isArray(run.contextPacketJson.boardPacketIds)));
+  assert.ok(result.observerRuns.every(run=>run.contextPacketJson.boardPackets===undefined));
 });
 
 test('failed Observer reasoning is never stored or advanced as completed',async()=>{
@@ -562,6 +565,7 @@ test('Chief of Staff applies user Witnessing optimization priorities when orderi
   assert.equal(result.recommendation.nextCandidatesJson[0].packetId,taskPacket.id);
   assert.match(JSON.stringify(result.recommendation.anxietyVsMomentumJson),/Revenue/);
   assert.match(JSON.stringify(result.recommendation.anxietyVsMomentumJson),/Chief of Staff Priorities/);
+  assert.ok(result.observerRuns.every(run=>run.contextPacketJson.sharedContextStoredIn==='event_intelligence_runs'));
 });
 
 test('Chief of Staff completion advances ordered packet queue before closing recommendation',async()=>{

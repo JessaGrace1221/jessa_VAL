@@ -76,6 +76,20 @@ function contextForPersistence(contextPacket={}){
     }
   };
 }
+function observerContextReceipt(contextPacket={},eventRunId=''){
+  const persisted=contextForPersistence(contextPacket);
+  return {
+    eventRunId,
+    generatedAt:persisted.generatedAt||'',
+    tenantId:persisted.tenantId||'',
+    userId:persisted.userId||'',
+    event:persisted.event||{},
+    boardPacketIds:safeArray(persisted.boardPackets).map(packet=>packet.id).filter(Boolean),
+    sourceRefs:safeArray(persisted.sourceRefs).slice(0,12),
+    chiefPriorityRules:chiefPriorityRules(persisted),
+    sharedContextStoredIn:'event_intelligence_runs'
+  };
+}
 function sourceRefsFromRows(rows=[],sourceType='unknown',summaryKey='summary',idKey='id',limit=8){
   return safeArray(rows).slice(0,limit).map(row=>normalizeSourceRef({
     sourceType,
@@ -420,7 +434,8 @@ function createValIntelligenceSpine({
     const params=columns.map((_,i)=>`$${i+1}`).join(',');
     const names=columns.map(c=>c.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())).join(',');
     const r=await dbQuery(`insert into ${table} (${names}) values (${params}) returning ${returning}`,values);
-    return r?.rows?.[0] ? parseRecord(r.rows[0]) : row;
+    if(!r?.rows?.[0])throw new Error(`${table} row was not persisted.`);
+    return parseRecord(r.rows[0]);
   }
   async function pgList(table,{where='',params=[],limit=30,order='created_at desc'}={}){
     const lim=Math.max(1,Math.min(Number(limit)||30,200));
@@ -858,7 +873,7 @@ function createValIntelligenceSpine({
       promptKey:promptKey||'event_intelligence_pass',
       promptSource:prompt.sourcePath||'',
       status:reviewFailed?'review_failed':'completed',
-      contextPacketJson:contextForPersistence(contextPacket||{}),
+      contextPacketJson:observerContextReceipt(contextPacket||{},eventRunId),
       outputJson:generated,
       confidence:Number(generated.confidence||0),
       conviction:Number(generated.conviction||0),
@@ -939,7 +954,9 @@ function createValIntelligenceSpine({
     return spineStore().roundTableRuns.find(r=>r.id===id&&r.tenantId===tenantId()&&r.userId===userId())||null;
   }
   function chiefPacketQueue(observerRuns=[],context={}){
-    const priorityRules=chiefPriorityRules(context);
+    const priorityRules=safeArray(context.chiefPriorityRules).length
+      ? safeArray(context.chiefPriorityRules)
+      : chiefPriorityRules(context);
     const grouped=new Map();
     for(const run of safeArray(observerRuns)){
       const observerName=run.observerName||run.observer_name||run.outputJson?.observer||'Observer';
@@ -1000,7 +1017,9 @@ function createValIntelligenceSpine({
   async function buildChiefOutput(roundTable,observerRuns=[]){
     const tensions=safeArray(roundTable?.candidateTensionsJson||roundTable?.candidate_tensions_json||roundTable?.outputJson?.candidate_tensions);
     const contextPacket=observerRuns.find(run=>run.contextPacketJson)?.contextPacketJson||{};
-    const chiefPriorities=chiefPriorityRules(contextPacket);
+    const chiefPriorities=safeArray(contextPacket.chiefPriorityRules).length
+      ? safeArray(contextPacket.chiefPriorityRules)
+      : chiefPriorityRules(contextPacket);
     const packetQueue=chiefPacketQueue(observerRuns,contextPacket);
     const packetChoice=packetQueue[0]||null;
     const fallbackRecommendation=chiefRecommendationFromPacket(packetChoice);
@@ -1271,5 +1290,6 @@ module.exports = {
   DEFAULT_OBSERVERS,
   OBSERVER_PACKET_LENSES,
   contextForPersistence,
+  observerContextReceipt,
   normalizeSourceRef
 };

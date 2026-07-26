@@ -57,6 +57,7 @@ const {createValExecutionReceiptService} = require('./services/valExecutionRecei
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
+const {createValBoardDeliveryQueue}=require('./services/valBoardDeliveryQueue');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
 const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
 const {
@@ -3326,7 +3327,7 @@ async function dbQuery(sql,params){
   try{
     return await pgPool.query(sql,params);
   }catch(e){
-    console.error('Postgres query failed:',e.message);
+    console.error('Postgres query failed:',e.message,'SQL:',String(sql||'').replace(/\s+/g,' ').trim().slice(0,240));
     if(['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','57P01','57P02','57P03','08000','08003','08006'].includes(e.code)){
       console.error('Postgres unavailable, falling back to file store:',e.message);
       try{ await pgPool.end(); }catch(_){}
@@ -20971,7 +20972,8 @@ async function saveMemoryItem(payload){
   const id=payload.id||uuid('mem');
   const rawText=payload.rawText||payload.transcript||payload.summary||'';
   if(pgPool){
-    await dbQuery('insert into val_memory_items (id,user_id,kind,summary,raw_text,importance,metadata,created_at) values ($1,$2,$3,$4,$5,$6,$7,now())',[id,VAL_USER_ID,payload.kind||payload.type||'note',payload.summary||null,rawText,payload.importance||1,JSON.stringify(payload.metadata||{})]);
+    const result=await dbQuery('insert into val_memory_items (id,user_id,kind,summary,raw_text,importance,metadata,created_at) values ($1,$2,$3,$4,$5,$6,$7,now()) on conflict (id) do nothing returning id',[id,VAL_USER_ID,payload.kind||payload.type||'note',payload.summary||null,rawText,payload.importance||1,JSON.stringify(payload.metadata||{})]);
+    return {id,persisted:Boolean(result?.rows?.[0]),deduplicated:!result?.rows?.[0]};
   }else{
     const store=valStore();
     store.memoryItems.unshift({id,userId:VAL_USER_ID,kind:payload.kind||payload.type||'note',summary:payload.summary||'',rawText,importance:payload.importance||1,metadata:payload.metadata||{},createdAt:new Date().toISOString()});
@@ -25573,12 +25575,15 @@ async function saveTranscript(payload){
   if(rawText){
     const chunks=memoryChunks(rawText);
     for(let i=0;i<chunks.length;i++){
-      await saveMemoryItem({kind:type,summary:chunks.length>1?`${payload.title||type} (${i+1}/${chunks.length})`:payload.title||type,rawText:chunks[i],metadata:{...metadata,transcriptId:id,chunkIndex:i+1,chunkCount:chunks.length},importance:payload.importance||1});
+      const chunkFingerprint=crypto.createHash('sha256').update([id,type,i+1,chunks[i]].join('|')).digest('hex').slice(0,28);
+      await saveMemoryItem({id:`transcript_memory_${chunkFingerprint}`,kind:type,summary:chunks.length>1?`${payload.title||type} (${i+1}/${chunks.length})`:payload.title||type,rawText:chunks[i],metadata:{...metadata,transcriptId:id,chunkIndex:i+1,chunkCount:chunks.length,chunkFingerprint},importance:payload.importance||1});
     }
     const people=splitPeopleFromText([payload.title,rawText,JSON.stringify(metadata)].join(' ')).slice(0,8);
     const openLoops=extractOpenLoopsFromText(rawText,'transcript',payload.timestamp||payload.createdAt||new Date().toISOString()).slice(0,10);
     if(people.length||openLoops.length){
+      const relationshipFingerprint=crypto.createHash('sha256').update([id,'relationship_memory',people.map(p=>p.name||p.email).join('|'),openLoops.map(loop=>loop.text).join('|')].join('|')).digest('hex').slice(0,28);
       await saveMemoryItem({
+        id:`transcript_relationship_${relationshipFingerprint}`,
         kind:'relationship_memory',
         summary:`Relationship context from ${payload.title||type}`,
         rawText:[
@@ -31710,10 +31715,14 @@ async function triggerBoardIntelligenceForPackets(packets=[],event={}){
     return null;
   });
 }
+const valBoardDeliveryQueue=createValBoardDeliveryQueue({
+  deliverBatch:triggerBoardIntelligenceForPackets,
+  batchSize:20,
+  delayMs:400,
+  logger:console
+});
 function queueBoardIntelligenceForPackets(packets=[],event={}){
-  void triggerBoardIntelligenceForPackets(packets,event).catch(error=>{
-    console.warn('[val-board] Observer delivery queued for durable retry:',error.message);
-  });
+  valBoardDeliveryQueue.enqueue(packets,event);
 }
 
 function conversationTurnSourceRefs({selectedSourceContext={},sourceRefs=[]}={}){
@@ -33777,22 +33786,22 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
     listBoardPackets:({limit=60}={})=>valBoardPackets?.listPackets({limit})||[]
   }
 });
-setTimeout(()=>{
-  valTranscriptSourceProcessing.retryUndeliveredSources({limit:25}).catch(error=>{
-    console.warn('[val-source] startup Board delivery reconciliation failed:',error.message);
-  });
-  valIntelligenceSpine.retryFailedIntelligenceRuns({limit:10}).catch(error=>{
-    console.warn('[val-board] startup delivery retry failed:',error.message);
-  });
-},60000).unref();
-setInterval(()=>{
-  valTranscriptSourceProcessing.retryUndeliveredSources({limit:25}).catch(error=>{
-    console.warn('[val-source] scheduled Board delivery reconciliation failed:',error.message);
-  });
-  valIntelligenceSpine.retryFailedIntelligenceRuns({limit:10}).catch(error=>{
-    console.warn('[val-board] scheduled delivery retry failed:',error.message);
-  });
-},5*60*1000).unref();
+let valIntelligenceMaintenanceRunning=false;
+async function runValIntelligenceMaintenance(){
+  if(valIntelligenceMaintenanceRunning)return;
+  valIntelligenceMaintenanceRunning=true;
+  try{
+    await valTranscriptSourceProcessing.retryUndeliveredSources({limit:5});
+    await valBoardDeliveryQueue.whenIdle();
+    await valIntelligenceSpine.retryFailedIntelligenceRuns({limit:2});
+  }catch(error){
+    console.warn('[val-board] bounded intelligence maintenance failed:',error.message);
+  }finally{
+    valIntelligenceMaintenanceRunning=false;
+  }
+}
+setTimeout(()=>{void runValIntelligenceMaintenance();},60000).unref();
+setInterval(()=>{void runValIntelligenceMaintenance();},5*60*1000).unref();
 
 const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
   relationship_packet: [
