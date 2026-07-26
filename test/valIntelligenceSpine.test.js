@@ -338,7 +338,7 @@ test('failed Board delivery remains retryable after newer successful traffic',as
 
 test('failed Board retries batch unique packets and reconcile duplicate completed runs without model work',async()=>{
   let store={tasks:[]};
-  const packets=['packet_done','packet_a','packet_b'].map(id=>({
+  const packets=['packet_done','packet_a','packet_b','packet_c'].map(id=>({
     id,
     sourceType:'transcript',
     sourceId:`source_${id}`,
@@ -364,7 +364,8 @@ test('failed Board retries batch unique packets and reconcile duplicate complete
       ['failed_done',['packet_done']],
       ['failed_a',['packet_a']],
       ['failed_a_duplicate',['packet_a']],
-      ['failed_b',['packet_b']]
+      ['failed_b',['packet_b']],
+      ['failed_c',['packet_c']]
     ].map(([id,packetIds])=>({
       id,
       tenantId:'tenant',
@@ -398,13 +399,16 @@ test('failed Board retries batch unique packets and reconcile duplicate complete
   });
   const retry=await spine.retryFailedIntelligenceRuns({limit:10});
   assert.equal(retry.ok,true);
-  assert.equal(retry.retried,3);
+  assert.equal(retry.retried,4);
   assert.equal(retry.reconciled,1);
-  assert.equal(retry.batches,1);
-  assert.equal(reasonerCalls,14);
+  assert.equal(retry.batches,2);
+  assert.equal(reasonerCalls,28);
   assert.ok(store.eventIntelligenceRuns.filter(run=>run.id.startsWith('failed_')).every(run=>run.status==='superseded_by_retry'));
-  const recovery=store.eventIntelligenceRuns.find(run=>run.status==='completed'&&run.id!=='completed_existing');
-  assert.deepEqual(recovery.contextPacketJson.boardPackets.map(packet=>packet.id).sort(),['packet_a','packet_b']);
+  const recoveryPackets=store.eventIntelligenceRuns
+    .filter(run=>run.status==='completed'&&run.id!=='completed_existing')
+    .flatMap(run=>run.contextPacketJson.boardPackets.map(packet=>packet.id))
+    .sort();
+  assert.deepEqual(recoveryPackets,['packet_a','packet_b','packet_c']);
 });
 
 test('in-memory intelligence pass records observers, round table, recommendation, momentum, and unknowns',async()=>{

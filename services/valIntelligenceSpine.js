@@ -1209,7 +1209,7 @@ function createValIntelligenceSpine({
       let batchPacketIds=new Set();
       for(const entry of pending){
         const nextPacketIds=new Set([...batchPacketIds,...entry.packetIds]);
-        if(batch.length&&(batch.length>=5||nextPacketIds.size>20)){
+        if(batch.length&&nextPacketIds.size>2){
           batches.push({entries:batch,packetIds:[...batchPacketIds]});
           batch=[];
           batchPacketIds=new Set();
