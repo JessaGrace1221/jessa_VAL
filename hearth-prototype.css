@@ -17703,6 +17703,7 @@ html{
 .observer-live-board.packets-active .observer-path,
 .observer-live-board.packets-active .observer-filament,
 .observer-live-board.packets-active .observer-live-thread,
+.observer-live-board.packets-active .observer-static-signal,
 .observer-live-board.packets-active .observer-node-ring::before,
 .observer-live-board.packets-active .observer-node-ring::after{
   animation:none;
@@ -17715,6 +17716,14 @@ html{
 }
 .observer-live-board.packets-active .observer-live-packet{
   will-change:transform;
+}
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .hearth-light,
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .living-rooms,
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .executive-conversation-field,
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .executive-compass-field,
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .field-spoke,
+body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation-path{
+  animation-play-state:paused!important;
 }
 @keyframes observer-card-note-arrive{
   from{opacity:0;transform:translateY(4px)}

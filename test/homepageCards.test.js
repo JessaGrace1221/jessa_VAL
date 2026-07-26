@@ -310,6 +310,12 @@ test('Board of Observers waits for one compact truthful hydration before renderi
   assert.doesNotMatch(boardSource,/const chief = observerBoardState\.chiefOfStaff;\s*await loadLiveObserverBoardContext\(\);/);
 });
 
+test('Board of Observers pauses background motion while packet lights remain live',()=>{
+  assert.match(hearthCss,/\.observer-live-board\.packets-active \.observer-static-signal,/);
+  assert.match(hearthCss,/body:has\(\.desk-workspace\.observer-board-mode\[aria-hidden="false"\]\) \.conversation-path/);
+  assert.match(hearthCss,/animation-play-state:paused!important/);
+});
+
 test('Witnessing First Look treats delivered and deliberately excluded candidates as resolved',()=>{
   assert.match(hearthPrototype,/function valFirstLookCandidateIsResolved/);
   assert.match(hearthPrototype,/\['delivered', 'excluded'\]\.includes/);
