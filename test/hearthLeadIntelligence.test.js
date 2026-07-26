@@ -858,6 +858,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /with no sent-mail history/);
   assert.match(server, /outboxContacts:timed\.outboundRecipients\?\.size\|\|0/);
   assert.match(server, /executiveContacts:safeContacts\.length/);
+  assert.match(server, /executiveContactCount:executiveInboxSafeContactRows\(\)\.length/);
+  assert.match(hearthJs, /diagnostics\.executiveContacts = Number\(result\.executiveContactCount\)/);
   assert.match(hearthCss, /\.correspondence-trust-receipt/);
   assert.match(hearthHtml, /class="drawer-link correspondence-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="correspondence-detail"/);

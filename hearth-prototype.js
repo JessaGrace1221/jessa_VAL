@@ -10918,6 +10918,11 @@ async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
 }
 
 function applyCorrespondenceSafeListResult(result = {}){
+  const diagnostics = currentCorrespondenceTrustData?.summary?.executiveInboxDiagnostics || currentCorrespondenceTrustData?.diagnostics;
+  if(diagnostics && Number.isFinite(Number(result.executiveContactCount))){
+    diagnostics.executiveContacts = Number(result.executiveContactCount);
+    renderCorrespondenceTrustReceipt();
+  }
   const admitted = correspondenceItemsFromEmailIntelligence({items:result.items || []});
   if(!admitted.length) return;
   const byId = new Map(admitted.concat(currentCorrespondenceItems).map((row) => [row.id, row]));

@@ -10700,7 +10700,7 @@ app.post('/api/val/executive-inbox/safe-contact',async(req,res)=>{
     saveValStore(store);
     const admitted=await admitSafeListedExecutiveInboxMessages(email);
     await auditLog({req,action:'executive_inbox_safe_contact_marked',resourceType:'executive_inbox_safe_contact',resourceId:email,metadata:{email,name},success:true}).catch(()=>{});
-    res.json({ok:true,safeContact:existing||row,admittedCount:admitted.length,items:admitted});
+    res.json({ok:true,safeContact:existing||row,executiveContactCount:executiveInboxSafeContactRows().length,admittedCount:admitted.length,items:admitted});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/executive-inbox/link-context',async(req,res)=>{
