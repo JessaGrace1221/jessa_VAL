@@ -1157,43 +1157,105 @@ function createValIntelligenceSpine({
     return row;
   }
   let retryInProgress=false;
+  async function completedIntelligencePacketIds(){
+    if(hasPg()){
+      const result=await dbQuery(
+        `select distinct packet->>'id' as packet_id
+         from event_intelligence_runs run
+         cross join lateral jsonb_array_elements(coalesce(run.context_packet_json->'boardPackets','[]'::jsonb)) packet
+         where run.tenant_id=$1 and run.user_id=$2 and run.status='completed'
+           and coalesce(packet->>'id','')<>''`,
+        [tenantId(),userId()]
+      );
+      return new Set(safeArray(result?.rows).map(row=>String(row.packet_id||'')).filter(Boolean));
+    }
+    const ids=spineStore().eventIntelligenceRuns
+      .filter(row=>row.tenantId===tenantId()&&row.userId===userId()&&row.status==='completed')
+      .flatMap(row=>safeArray(row.contextPacketJson?.boardPackets).map(packet=>String(packet.id||'')).filter(Boolean));
+    return new Set(ids);
+  }
   async function retryFailedIntelligenceRuns({limit=10}={}){
     if(retryInProgress)return {ok:true,retried:0,skipped:true,reason:'A Board delivery retry is already running.'};
     retryInProgress=true;
     const results=[];
     try{
       const failed=await listFailedEventRuns({limit:Math.max(1,Math.min(Number(limit)||10,50))});
+      const completedPacketIds=await completedIntelligencePacketIds();
+      const pending=[];
       for(const row of failed){
         const context=row.contextPacketJson||row.context_packet_json||{};
-        const packetIds=safeArray(context.boardPackets).map(packet=>packet.id).filter(Boolean);
+        const packetIds=[...new Set(safeArray(context.boardPackets).map(packet=>String(packet.id||'')).filter(Boolean))];
         if(!packetIds.length){
           results.push({eventRunId:row.id,ok:false,error:'Failed run did not preserve Board packet IDs.'});
           continue;
         }
-        try{
-          const pass=await runIntelligencePass({
-            event:{
-              type:'observer_delivery_retry',
-              sourceType:row.eventSourceType||row.event_source_type||'board_retry',
-              sourceId:row.eventSourceId||row.event_source_id||row.id,
-              packetIds,
-              retryOfEventRunId:row.id
-            }
-          });
+        const missingPacketIds=packetIds.filter(packetId=>!completedPacketIds.has(packetId));
+        if(!missingPacketIds.length){
           await updateEventRun(row.id,{
             status:'superseded_by_retry',
-            resultJson:{...(row.resultJson||row.result_json||{}),retryEventRunId:pass.eventRun?.id||''},
+            resultJson:{...(row.resultJson||row.result_json||{}),reconciledFromCompletedPacketIds:packetIds},
             unknownsJson:row.unknownsJson||row.unknowns_json||[],
             sourceRefsJson:row.sourceRefsJson||row.source_refs_json||[],
             errorMessage:'',
             completedAt:row.completedAt||row.completed_at||now()
           });
-          results.push({eventRunId:row.id,retryEventRunId:pass.eventRun?.id||'',ok:true});
+          results.push({eventRunId:row.id,ok:true,alreadyCompleted:true,packetIds});
+          continue;
+        }
+        pending.push({row,packetIds:missingPacketIds});
+      }
+      const batches=[];
+      let batch=[];
+      let batchPacketIds=new Set();
+      for(const entry of pending){
+        const nextPacketIds=new Set([...batchPacketIds,...entry.packetIds]);
+        if(batch.length&&(batch.length>=5||nextPacketIds.size>20)){
+          batches.push({entries:batch,packetIds:[...batchPacketIds]});
+          batch=[];
+          batchPacketIds=new Set();
+        }
+        batch.push(entry);
+        for(const packetId of entry.packetIds)batchPacketIds.add(packetId);
+      }
+      if(batch.length)batches.push({entries:batch,packetIds:[...batchPacketIds]});
+      for(const recoveryBatch of batches){
+        try{
+          const pass=await runIntelligencePass({
+            event:{
+              type:'observer_delivery_retry',
+              sourceType:'board_retry_batch',
+              sourceId:`retry_batch_${recoveryBatch.entries.map(entry=>entry.row.id).join('_').slice(0,180)}`,
+              packetIds:recoveryBatch.packetIds,
+              retryOfEventRunIds:recoveryBatch.entries.map(entry=>entry.row.id)
+            }
+          });
+          for(const entry of recoveryBatch.entries){
+            const row=entry.row;
+            await updateEventRun(row.id,{
+              status:'superseded_by_retry',
+              resultJson:{...(row.resultJson||row.result_json||{}),retryEventRunId:pass.eventRun?.id||'',retryBatchPacketIds:recoveryBatch.packetIds},
+              unknownsJson:row.unknownsJson||row.unknowns_json||[],
+              sourceRefsJson:row.sourceRefsJson||row.source_refs_json||[],
+              errorMessage:'',
+              completedAt:row.completedAt||row.completed_at||now()
+            });
+            results.push({eventRunId:row.id,retryEventRunId:pass.eventRun?.id||'',ok:true,packetIds:entry.packetIds});
+          }
+          for(const packetId of recoveryBatch.packetIds)completedPacketIds.add(packetId);
         }catch(error){
-          results.push({eventRunId:row.id,ok:false,error:error.message});
+          for(const entry of recoveryBatch.entries){
+            results.push({eventRunId:entry.row.id,ok:false,error:error.message,packetIds:entry.packetIds});
+          }
         }
       }
-      return {ok:results.every(result=>result.ok),retried:results.filter(result=>result.ok).length,failed:results.filter(result=>!result.ok).length,results};
+      return {
+        ok:results.every(result=>result.ok),
+        retried:results.filter(result=>result.ok&&!result.alreadyCompleted).length,
+        reconciled:results.filter(result=>result.ok&&result.alreadyCompleted).length,
+        failed:results.filter(result=>!result.ok).length,
+        batches:batches.length,
+        results
+      };
     }finally{
       retryInProgress=false;
     }

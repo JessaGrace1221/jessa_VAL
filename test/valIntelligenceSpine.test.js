@@ -336,6 +336,77 @@ test('failed Board delivery remains retryable after newer successful traffic',as
   assert.equal(store.eventIntelligenceRuns.find(run=>run.id==='event_failed_old').status,'superseded_by_retry');
 });
 
+test('failed Board retries batch unique packets and reconcile duplicate completed runs without model work',async()=>{
+  let store={tasks:[]};
+  const packets=['packet_done','packet_a','packet_b'].map(id=>({
+    id,
+    sourceType:'transcript',
+    sourceId:`source_${id}`,
+    packetType:'meeting_evidence_packet',
+    title:id,
+    summary:`Evidence for ${id}.`,
+    primaryObserversJson:['Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:`source_${id}`,quote_or_summary:`Exact evidence for ${id}.`,confidence:0.9}],
+    prototype:false,
+    status:'active'
+  }));
+  store.eventIntelligenceRuns=[
+    {
+      id:'completed_existing',
+      tenantId:'tenant',
+      userId:'user',
+      status:'completed',
+      contextPacketJson:{boardPackets:[packets[0]]},
+      createdAt:'2026-01-01T00:00:00.000Z'
+    },
+    ...[
+      ['failed_done',['packet_done']],
+      ['failed_a',['packet_a']],
+      ['failed_a_duplicate',['packet_a']],
+      ['failed_b',['packet_b']]
+    ].map(([id,packetIds])=>({
+      id,
+      tenantId:'tenant',
+      userId:'user',
+      eventSourceType:'transcript',
+      eventSourceId:id,
+      status:'review_failed',
+      contextPacketJson:{boardPackets:packets.filter(packet=>packetIds.includes(packet.id))},
+      resultJson:{},
+      unknownsJson:[],
+      sourceRefsJson:[],
+      createdAt:'2026-01-02T00:00:00.000Z'
+    }))
+  ];
+  let reasonerCalls=0;
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,8)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async({deterministicOutput})=>{reasonerCalls++;return deterministicOutput;},
+    loaders:{
+      listBoardPackets:async()=>packets,
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const retry=await spine.retryFailedIntelligenceRuns({limit:10});
+  assert.equal(retry.ok,true);
+  assert.equal(retry.retried,3);
+  assert.equal(retry.reconciled,1);
+  assert.equal(retry.batches,1);
+  assert.equal(reasonerCalls,14);
+  assert.ok(store.eventIntelligenceRuns.filter(run=>run.id.startsWith('failed_')).every(run=>run.status==='superseded_by_retry'));
+  const recovery=store.eventIntelligenceRuns.find(run=>run.status==='completed'&&run.id!=='completed_existing');
+  assert.deepEqual(recovery.contextPacketJson.boardPackets.map(packet=>packet.id).sort(),['packet_a','packet_b']);
+});
+
 test('in-memory intelligence pass records observers, round table, recommendation, momentum, and unknowns',async()=>{
   let store={
     memoryItems:[{id:'mem_1',kind:'teach_val_project',summary:'Frisson: protect human judgment',rawText:'Frisson is about wisdom, not productivity.'}],
