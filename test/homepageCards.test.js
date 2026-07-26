@@ -190,6 +190,9 @@ test('Home tasks shows every open transcript Action Item with source context',()
   assert.match(hearthPrototype,/__workspaceKind:transcriptTask \? 'transcript_task'/);
   assert.match(hearthPrototype,/\/api\/val\/transcript-tasks\//);
   assert.match(hearthPrototype,/relatedTaskIds:task\.relatedTaskIds/);
+  assert.match(hearthPrototype,/const completedTaskIds = new Set/);
+  assert.match(hearthPrototype,/currentTaskWorkspaceTasks = currentTaskWorkspaceTasks\.filter/);
+  assert.match(hearthPrototype,/currentTaskWorkspaceTasks = previousTasks/);
   assert.match(hearthPrototype,/Waiting on ' \+ owner/);
   assert.match(hearthPrototype,/Owner to confirm/);
   assert.match(hearthPrototype,/eventType:'user_marked_done'/);

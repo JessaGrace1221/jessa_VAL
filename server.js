@@ -31955,6 +31955,7 @@ app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
   try{
     const taskId=decodeURIComponent(req.params.taskId);
     let task=null;
+    let completedTaskIds=[];
     if(pgPool){
       const requestedIds=[...new Set([taskId,...safeArray(req.body?.relatedTaskIds).map(String)].filter(Boolean))].slice(0,100);
       const result=await dbQuery(`
@@ -31967,6 +31968,7 @@ app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
         returning tt.*
       `,[requestedIds,tenantId(),VAL_USER_ID]);
       const completedRows=safeArray(result.rows).map(transcriptPgRow);
+      completedTaskIds=completedRows.map(row=>row.taskId).filter(Boolean);
       task=completedRows.find(row=>String(row.taskId)===String(taskId))||null;
       if(task){
         for(const completedId of completedRows.map(row=>row.taskId).filter(Boolean)){
@@ -31983,11 +31985,12 @@ app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
       const rows=transcriptFileArray(store,'transcriptTasks').filter(row=>requestedIds.has(String(row.taskId||row.task_id)));
       task=rows.find(row=>String(row.taskId||row.task_id)===String(taskId))||null;
       rows.forEach(row=>{row.status='complete';row.needsApproval=false;});
+      completedTaskIds=rows.map(row=>row.taskId||row.task_id).filter(Boolean);
       if(task)saveValStore(store);
     }
     if(!task)return res.status(404).json({ok:false,error:'Transcript action item not found.'});
     await auditLog({req,action:'transcript_task_completed',resourceType:'transcript_task',resourceId:taskId,metadata:{transcriptId:task.transcriptId||task.transcript_id||'',title:task.taskTitle||task.task_title||''},success:true}).catch(()=>{});
-    res.json({ok:true,task});
+    res.json({ok:true,task,completedTaskIds});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.delete('/api/val/transcripts/:transcriptId',async(req,res)=>{

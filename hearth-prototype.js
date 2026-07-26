@@ -26822,7 +26822,15 @@ function cssEscape(value = ''){
 async function completeTaskFromWorkspace(taskId = ''){
   const task = taskById(taskId);
   const row = scraperPreviewList?.querySelector('[data-task-workspace-row="' + cssEscape(taskId) + '"]');
+  const completedTaskIds = new Set([
+    taskId,
+    ...safeArray(task?.relatedTaskIds),
+    ...safeArray(task?.rawCommitment?.related_task_ids)
+  ].filter(Boolean).map(String));
+  const previousTasks = currentTaskWorkspaceTasks;
   if(row) row.classList.add('is-completing');
+  currentTaskWorkspaceTasks = currentTaskWorkspaceTasks.filter((item) => !completedTaskIds.has(String(item.id || '')));
+  renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
   try{
     if(canUseApi && taskId){
       if(task?.__workspaceKind === 'canonical_work'){
@@ -26839,19 +26847,9 @@ async function completeTaskFromWorkspace(taskId = ''){
         await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
       }
     }
-    currentTaskWorkspaceTasks = currentTaskWorkspaceTasks.map((item) => String(item.id || '') === String(taskId || '') ? {...item, completed:true, completedAt:new Date().toISOString(), completedBy:'you'} : item);
-    if(row){
-      row.classList.remove('is-completing');
-      row.classList.add('is-complete');
-      row.querySelector('.task-workspace-actions')?.remove();
-      window.setTimeout(() => {
-        renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
-      }, 520);
-    }else{
-      renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
-    }
   }catch(error){
-    if(row) row.classList.remove('is-completing');
+    currentTaskWorkspaceTasks = previousTasks;
+    renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
     appendHomeCoworkMessage('val', 'I could not mark that commitment done yet. Nothing else changed. ' + (error.message || ''));
   }
 }
