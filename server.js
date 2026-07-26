@@ -10434,7 +10434,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     if(key&&!sourceRowsByConversation.has(key))sourceRowsByConversation.set(key,{...row,durable:false});
   });
   const sourceRows=Array.from(sourceRowsByConversation.values());
-  const diagnostics={source:durableItems.length?'durable_plus_classification_index':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const diagnostics={source:durableItems.length?'durable_plus_classification_index':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,outboxContacts:timed.outboundRecipients?.size||0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
   const rows=sourceRows
     .map(({email,context})=>{
       const priorAdmission=email.executiveInboxAdmission||{};

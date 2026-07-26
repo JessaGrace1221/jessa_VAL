@@ -101,6 +101,7 @@ const correspondenceDrawerLink = document.querySelector('.correspondence-drawer-
 const closeCorrespondenceDetail = document.querySelector('.close-correspondence-detail');
 const correspondenceList = document.querySelector('[data-correspondence-list]');
 const correspondenceCount = document.querySelector('[data-correspondence-count]');
+const correspondenceTrustReceipt = document.querySelector('[data-correspondence-trust-receipt]');
 const correspondenceThreadBody = document.querySelector('[data-correspondence-thread-body]');
 const correspondenceDraftPreview = document.querySelector('[data-correspondence-draft-preview]');
 const correspondenceDraftBody = document.querySelector('[data-correspondence-draft-body]');
@@ -188,6 +189,7 @@ let currentCorrespondenceSort = 'priority';
 let correspondenceToolsOpen = false;
 let currentCorrespondenceScanDays = 14;
 let currentCorrespondenceScanStatus = '';
+let currentCorrespondenceTrustData = null;
 let correspondenceScanInFlight = false;
 let correspondenceLoading = false;
 let correspondenceThreadHydrationToken = 0;
@@ -9666,6 +9668,46 @@ function sortedCorrespondenceItems(items = []){
   return copy.sort((a, b) => correspondencePriorityRank(a) - correspondencePriorityRank(b) || correspondenceSortValue(b) - correspondenceSortValue(a));
 }
 
+function renderCorrespondenceTrustReceipt(result = currentCorrespondenceTrustData){
+  if(!correspondenceTrustReceipt) return;
+  const title = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-title]');
+  const detail = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-detail]');
+  const attention = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-attention]');
+  const excluded = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-excluded]');
+  const contacts = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-contacts]');
+  const diagnostics = result?.summary?.executiveInboxDiagnostics || result?.diagnostics || {};
+  const filtered = diagnostics.filtered || {};
+  const admitted = Number(result?.summary?.total ?? result?.pagination?.total ?? diagnostics.admitted ?? currentCorrespondenceItems.length) || 0;
+  const checked = Number(diagnostics.deduplicated ?? diagnostics.indexed ?? diagnostics.uniqueThreads) || 0;
+  const excludedCount = Object.values(filtered).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const establishedContacts = Number(diagnostics.outboxContacts) || 0;
+  const reasons = [
+    [filtered.unsubscribeOrListMail, 'list mail'],
+    [filtered.calendarNotice, 'calendar notice'],
+    [filtered.noOutboxHistory, 'without an established exchange'],
+    [filtered.noExecutiveAction, 'without an executive action'],
+    [filtered.resolved, 'already resolved'],
+    [filtered.suppressed, 'manually excluded']
+  ].filter(([count]) => Number(count) > 0).map(([count, label]) => `${Number(count)} ${label}`);
+  if(!result){
+    if(title) title.textContent = 'Opening saved evidence...';
+    if(detail) detail.textContent = 'VAL is checking which conversations genuinely require executive attention.';
+    if(attention) attention.textContent = '—';
+    if(excluded) excluded.textContent = '—';
+    if(contacts) contacts.textContent = '—';
+    return;
+  }
+  if(title) title.textContent = checked
+    ? `VAL checked ${checked} candidate conversation${checked === 1 ? '' : 's'}.`
+    : 'VAL checked the saved Executive Inbox evidence.';
+  if(detail) detail.textContent = reasons.length
+    ? `Kept out: ${reasons.join(', ')}.`
+    : 'Only unresolved conversations with an established exchange enter this room.';
+  if(attention) attention.textContent = String(admitted);
+  if(excluded) excluded.textContent = String(excludedCount);
+  if(contacts) contacts.textContent = establishedContacts ? String(establishedContacts) : 'Verified';
+}
+
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   updateCorrespondenceFilterTabs();
@@ -11123,6 +11165,8 @@ function dismissCorrespondenceRuleSuggestion(index){
 
 async function hydrateCorrespondenceDrawer(){
   setCorrespondenceLoadingState(true, 'Opening saved Executive Inbox context. Use Scan only when you want a fresh Gmail or Outlook pass.');
+  currentCorrespondenceTrustData = null;
+  renderCorrespondenceTrustReceipt();
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
@@ -11147,6 +11191,8 @@ async function hydrateCorrespondenceDrawer(){
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentCorrespondenceItems = Array.from(byId.values());
+    currentCorrespondenceTrustData = inbox;
+    renderCorrespondenceTrustReceipt();
     currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No saved conversations currently cross the Executive Inbox judgment gate. Use Scan to refresh Gmail or Outlook.';
@@ -11156,6 +11202,8 @@ async function hydrateCorrespondenceDrawer(){
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
     currentCorrespondenceItems = [];
+    currentCorrespondenceTrustData = null;
+    renderCorrespondenceTrustReceipt();
     activeCorrespondenceItem = null;
     setCorrespondenceLoadingState(false, 'Executive Inbox could not open saved conversations. Use Scan to refresh Gmail or Outlook.');
     renderCorrespondenceBrief(activeCorrespondenceItem);
@@ -11195,6 +11243,8 @@ async function scanCorrespondenceWindow(days = 30){
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   try{
     const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:75000, timeoutMessage:'VAL is still verifying conversations and preparing source-backed drafts.'});
+    currentCorrespondenceTrustData = result;
+    renderCorrespondenceTrustReceipt();
     currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
     currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;

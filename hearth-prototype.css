@@ -14384,6 +14384,71 @@ button.timeline-overview-receipt:focus-visible{
   border-color:rgba(24,24,27,.08);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.72);
 }
+.drawer-tray.correspondence-open .correspondence-trust-receipt{
+  display:grid;
+  grid-template-columns:minmax(280px,1fr) auto;
+  align-items:center;
+  gap:28px;
+  margin:0;
+  padding:15px 24px;
+  border:1px solid rgba(91,111,85,.14);
+  border-left:3px solid rgba(125,141,111,.62);
+  border-radius:8px;
+  background:
+    linear-gradient(90deg,rgba(241,247,238,.62),rgba(255,247,248,.54)),
+    rgba(255,255,255,.44);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt > div{display:grid;gap:3px;min-width:0}
+.drawer-tray.correspondence-open .correspondence-trust-receipt > div > span{
+  color:#65715f;
+  font-size:.68rem;
+  font-weight:650;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt > div > strong{
+  color:#243029;
+  font-size:.94rem;
+  font-weight:600;
+  line-height:1.3;
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt > div > p{
+  margin:0;
+  color:rgba(44,48,43,.7);
+  font-size:.78rem;
+  line-height:1.35;
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt dl{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(92px,auto));
+  gap:0;
+  margin:0;
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt dl div{
+  display:grid;
+  gap:2px;
+  min-width:92px;
+  padding:2px 16px;
+  border-left:1px solid rgba(91,111,85,.14);
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt dt{
+  color:rgba(54,60,54,.58);
+  font-size:.66rem;
+  white-space:nowrap;
+}
+.drawer-tray.correspondence-open .correspondence-trust-receipt dd{
+  margin:0;
+  color:#28392f;
+  font-size:1.06rem;
+  font-weight:650;
+  line-height:1.1;
+}
+@media (max-width:900px){
+  .drawer-tray.correspondence-open .correspondence-trust-receipt{grid-template-columns:1fr;gap:12px}
+  .drawer-tray.correspondence-open .correspondence-trust-receipt dl{grid-template-columns:repeat(3,1fr)}
+  .drawer-tray.correspondence-open .correspondence-trust-receipt dl div:first-child{border-left:0;padding-left:0}
+}
 .drawer-tray.correspondence-open .correspondence-queue,
 .drawer-tray.correspondence-open .correspondence-thread,
 .drawer-tray.correspondence-open .correspondence-brief,
