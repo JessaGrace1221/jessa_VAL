@@ -262,7 +262,7 @@ test('transcript inbox supports direct upload and clearing broken transcript arc
 test('fallback summaries are not counted as hard processing failures',()=>{
   assert.match(server,/function isHardTranscriptProcessingFailure/);
   assert.match(server,/summary==='fallback_complete'&&processing==='complete'/);
-  assert.match(server,/failedProcessing:mapped\.filter\(isHardTranscriptProcessingFailure\)\.length/);
+  assert.match(server,/failedProcessing:allMapped\.filter\(isHardTranscriptProcessingFailure\)\.length/);
 });
 
 test('transcript detail uses a typed transcript Working Brief instead of freeform transcript chat',()=>{

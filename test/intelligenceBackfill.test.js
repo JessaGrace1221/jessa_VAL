@@ -65,7 +65,7 @@ test('transcript migration merges old archive records with the processed transcr
   const start=server.indexOf("app.get('/api/val/transcripts'");
   const end=server.indexOf("app.get('/api/val/transcripts/review'",start);
   const body=server.slice(start,end);
-  assert.match(body,/transcriptArchiveRecords\(days,limit\)/);
+  assert.match(body,/transcriptArchiveRecords\(days,1000\)/);
   assert.match(body,/mergeTranscriptMigrationRecords\(archive,data\)/);
   assert.doesNotMatch(body,/if\(data\.transcripts\.length\)/);
 });

@@ -169,12 +169,15 @@ const documentStatus = document.querySelector('[data-document-status]');
 let currentTimelineReviewItems = [];
 let currentTimelineTranscriptItems = [];
 let currentTimelineTranscript = null;
+let timelineTranscriptPagination = {offset:0, limit:100, total:0, hasMore:false};
 let timelineTranscriptOpenRequest = 0;
 let timelineTranscriptRefreshDays = 90;
 let timelineTranscriptsLoading = false;
 const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
+let currentCorrespondenceActiveItems = [];
+let currentCorrespondenceArchiveItems = [];
 let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
@@ -9607,6 +9610,7 @@ function correspondenceItemsFromReady(result = {}){
 }
 
 function correspondenceItemMatchesFilter(item, filter = currentCorrespondenceFilter){
+  if(filter === 'archive') return true;
   if(filter === 'all') return true;
   if(filter === 'tracking') return item.status === 'needs_context';
   if(filter === 'waiting') return item.status === 'waiting_for_response';
@@ -9674,6 +9678,8 @@ function renderCorrespondenceList(){
     const filter = node.dataset.correspondenceFilterCount;
     const count = filter === 'all'
       ? currentCorrespondenceItems.length
+      : filter === 'archive'
+        ? currentCorrespondenceArchiveItems.length
       : filter === 'tracking'
         ? currentCorrespondenceItems.filter((item) => item.status === 'needs_context').length
         : filter === 'waiting'
@@ -11119,7 +11125,7 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const inbox = await getJson('/api/val/executive-inbox/queue?limit=60', {
+    const inbox = await getJson('/api/val/executive-inbox/queue?limit=200', {
       timeoutMs:7000,
       timeoutMessage:'Saved Executive Inbox context is taking too long to open.'
     });
@@ -11129,6 +11135,7 @@ async function hydrateCorrespondenceDrawer(){
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentCorrespondenceItems = Array.from(byId.values());
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No saved conversations currently cross the Executive Inbox judgment gate. Use Scan to refresh Gmail or Outlook.';
     setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
@@ -11142,6 +11149,22 @@ async function hydrateCorrespondenceDrawer(){
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not open saved conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
+  }
+}
+
+async function hydrateCorrespondenceArchive(){
+  if(!canUseApi)return;
+  setCorrespondenceLoadingState(true,'Opening resolved Executive Inbox conversations from VAL storage.');
+  try{
+    const result=await getJson('/api/val/executive-inbox/archive?limit=200',{timeoutMs:7000,timeoutMessage:'The Executive Inbox archive is taking too long to open.'});
+    currentCorrespondenceArchiveItems=correspondenceItemsFromEmailIntelligence(result).map(item=>({...item,status:'resolved'}));
+    currentCorrespondenceItems=currentCorrespondenceArchiveItems.slice();
+    activeCorrespondenceItem=currentCorrespondenceItems[0]||null;
+    setCorrespondenceLoadingState(false,currentCorrespondenceItems.length?'Resolved conversations remain available as evidence.':'No resolved Executive Inbox conversations yet.');
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+  }catch(error){
+    setCorrespondenceLoadingState(false,'Executive Inbox archive could not open.');
+    if(correspondenceSafety)correspondenceSafety.textContent=error.message;
   }
 }
 
@@ -11161,6 +11184,7 @@ async function scanCorrespondenceWindow(days = 30){
   try{
     const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:75000, timeoutMessage:'VAL is still verifying conversations and preparing source-backed drafts.'});
     currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length
       ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
@@ -11338,6 +11362,7 @@ async function handleCorrespondenceAction(action){
       }
     }
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact.';
@@ -11366,6 +11391,7 @@ async function handleCorrespondenceAction(action){
       });
     }
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked resolved. VAL will keep the thread as evidence, but remove it from the active Executive Inbox.';
@@ -14269,7 +14295,7 @@ function renderTimelineTranscriptStats(data = {}){
 
 function renderTimelineTranscriptList(activeId = ''){
   if(!timelineEventList || !timelineEventCount) return;
-  const items = currentTimelineTranscriptItems.slice(0, 40);
+  const items = currentTimelineTranscriptItems;
   const totalActions = items.reduce((sum, transcript) => sum + Number(transcript.taskCount || transcript.openActionCount || 0), 0);
   timelineEventCount.textContent = items.length
     ? items.length + ' recent transcript' + (items.length === 1 ? '' : 's') + (totalActions ? ' · ' + totalActions + ' action item' + (totalActions === 1 ? '' : 's') : '')
@@ -14293,7 +14319,9 @@ function renderTimelineTranscriptList(activeId = ''){
       '<small>' + escapeHtml(tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items') + '</small>',
       '</button>'
     ].join('');
-  }).join('');
+  }).join('') + (timelineTranscriptPagination.hasMore
+    ? '<button type="button" class="timeline-transcript-load-more" data-transcript-load-more>Load more transcripts</button>'
+    : '');
 }
 
 function renderTimelineTranscriptEmpty(){
@@ -14407,6 +14435,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<div class="timeline-transcript-source-actions">',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
     downloadUrl ? '<a class="transcript-download-link" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener">Download transcript</a>' : '',
+    '<button type="button" class="transcript-delete" data-transcript-delete="' + escapeHtml(transcript.id || '') + '">Delete transcript</button>',
     '</div>',
     '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'The full transcript source text was not supplied with this record.') + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
@@ -14444,16 +14473,18 @@ async function openTimelineTranscript(transcriptId){
   }
 }
 
-async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false} = {}){
+async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false, append = false} = {}){
   timelineTranscriptRefreshDays = days === 30 ? 30 : 90;
   if(transcriptRefreshWindow) transcriptRefreshWindow.value = String(timelineTranscriptRefreshDays);
   const loadingMessage = refresh
     ? 'VAL is checking transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days and rebuilding the drawer.'
     : 'VAL is reading transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days.';
   setTimelineTranscriptsLoading(true, loadingMessage);
-  renderTimelineTranscriptStats({counts:{}});
-  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><span class="val-presence-mark val-loading-mark timeline-loading-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p></article>';
-  renderTimelineTranscriptEmpty();
+  if(!append){
+    renderTimelineTranscriptStats({counts:{}});
+    if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><span class="val-presence-mark val-loading-mark timeline-loading-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p></article>';
+    renderTimelineTranscriptEmpty();
+  }
   if(!canUseApi){
     setTimelineTranscriptsLoading(false);
     return;
@@ -14463,10 +14494,14 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
       hydrateRelationshipIndex().catch(() => null),
       hydrateProjectIndex().catch(() => null)
     ]);
+    const offset=append?currentTimelineTranscriptItems.length:0;
     const data = refresh
       ? await postJson('/api/val/transcripts/refresh', {days:timelineTranscriptRefreshDays, limit:50})
-      : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=50', {cache: 'no-store'});
-    currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
+      : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=100&offset=' + encodeURIComponent(offset), {cache: 'no-store'});
+    currentTimelineTranscriptItems = append
+      ? currentTimelineTranscriptItems.concat(Array.isArray(data.transcripts) ? data.transcripts : [])
+      : (Array.isArray(data.transcripts) ? data.transcripts : []);
+    timelineTranscriptPagination=data.pagination||{offset,limit:100,total:currentTimelineTranscriptItems.length,hasMore:false};
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
     resetTimelineTranscriptDetailScroll();
@@ -14480,6 +14515,22 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
   }finally{
     setTimelineTranscriptsLoading(false);
   }
+}
+
+async function deleteTimelineTranscript(transcriptId){
+  const phrase=window.prompt?.('Delete this transcript from VAL? Type delete transcript to continue.','');
+  if(String(phrase||'').trim().toLowerCase()!=='delete transcript')return;
+  const response=await fetch('/api/val/transcripts/'+encodeURIComponent(transcriptId),{
+    method:'DELETE',
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({confirmation:'delete transcript'})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||result.ok===false)throw new Error(result.error||'Transcript deletion failed.');
+  currentTimelineTranscriptItems=currentTimelineTranscriptItems.filter(item=>String(item.id)!==String(transcriptId));
+  currentTimelineTranscript=null;
+  await loadTimelineTranscripts({openFirst:true,days:timelineTranscriptRefreshDays});
 }
 
 function focusTimelineTranscriptSection(section){
@@ -28944,6 +28995,24 @@ drawerTray.addEventListener('click', async (event) => {
     }
     return;
   }
+  const transcriptLoadMore = event.target.closest('[data-transcript-load-more]');
+  if(transcriptLoadMore){
+    event.preventDefault();
+    event.stopPropagation();
+    await loadTimelineTranscripts({openFirst:false,days:timelineTranscriptRefreshDays,append:true});
+    return;
+  }
+  const transcriptDelete = event.target.closest('[data-transcript-delete]');
+  if(transcriptDelete){
+    event.preventDefault();
+    event.stopPropagation();
+    try{
+      await deleteTimelineTranscript(transcriptDelete.dataset.transcriptDelete);
+    }catch(error){
+      setTimelineTranscriptActionStatus(error.message||'Transcript deletion failed.','danger');
+    }
+    return;
+  }
   const timelineAction = event.target.closest('[data-timeline-action]');
   if(timelineAction){
     event.preventDefault();
@@ -29014,6 +29083,14 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     currentCorrespondenceFilter = correspondenceFilter.dataset.correspondenceFilter || 'requires_reply';
+    if(currentCorrespondenceFilter==='archive'){
+      await hydrateCorrespondenceArchive();
+      return;
+    }
+    if(currentCorrespondenceItems===currentCorrespondenceArchiveItems||currentCorrespondenceItems.every(item=>item.status==='resolved')){
+      currentCorrespondenceItems=currentCorrespondenceActiveItems.slice();
+      activeCorrespondenceItem=currentCorrespondenceItems[0]||null;
+    }
     renderCorrespondenceList();
     const visibleItems = sortedCorrespondenceItems(currentCorrespondenceItems.filter((item) => correspondenceItemMatchesFilter(item)));
     if(visibleItems.length && !visibleItems.some((item) => item.id === activeCorrespondenceItem?.id)){

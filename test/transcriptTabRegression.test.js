@@ -133,7 +133,9 @@ test('frontend distinguishes loading failure from a successful empty archive',()
 });
 
 test('refresh reloads the full durable archive and updates counts',()=>{
-  assert.match(ui,/api\/val\/transcripts\?days=3650&limit=250/);
+  assert.match(ui,/api\/val\/transcripts\?days=3650&limit=100&offset=/);
+  assert.match(ui,/transcriptState\.pagination=data\.pagination/);
+  assert.match(ui,/loadMoreTranscripts/);
   assert.match(ui,/onclick="loadTranscripts\(true\)\.catch/);
   assert.match(ui,/transcriptState\.counts=data\.counts/);
   assert.match(ui,/updateCommandCenterBadges/);

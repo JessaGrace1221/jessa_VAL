@@ -6993,6 +6993,25 @@ async function initValDb(){
       metadata jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists val_source_sync_checkpoints (
+      tenant_id text not null,
+      user_id text not null,
+      source text not null,
+      last_successful_sync_at timestamptz,
+      metadata_json jsonb not null default '{}',
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,source)
+    );
+    create table if not exists val_transcript_deletions (
+      tenant_id text not null,
+      user_id text not null,
+      transcript_id text not null,
+      source_key text,
+      title text,
+      deleted_at timestamptz not null default now(),
+      metadata_json jsonb not null default '{}',
+      primary key (tenant_id,user_id,transcript_id)
+    );
     create table if not exists transcripts (
       transcript_id text primary key,
       user_id text not null default 'default',
@@ -7769,6 +7788,7 @@ async function initValDb(){
     create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
     create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
+    create index if not exists val_transcript_deletions_source_idx on val_transcript_deletions(tenant_id,user_id,source_key);
     create index if not exists identity_links_lookup_idx on identity_links(tenant_id,user_id,entity_type,normalized_value);
     create index if not exists identity_links_source_idx on identity_links(tenant_id,user_id,source_type,source_id);
     create index if not exists val_decisions_source_idx on val_decisions(tenant_id,user_id,source_type,source_id,status);
@@ -9834,6 +9854,17 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const requestedDays=Number(req.query.days||req.body?.days)||14;
     const activeDays=Math.max(1,Math.min(90,Number.isFinite(requestedDays)?requestedDays:14));
     const limit=Number(req.query.limit||req.body?.limit)||30;
+    const incremental=req.query.incremental==='1'||req.body?.incremental===true;
+    const [syncCheckpoint,outlookSyncCheckpoint]=incremental
+      ? await Promise.all([
+          sourceSyncCheckpoint('gmail').catch(()=>null),
+          sourceSyncCheckpoint('outlook').catch(()=>null)
+        ])
+      : [null,null];
+    const checkpointDate=syncCheckpoint?.lastSuccessfulSyncAt?new Date(syncCheckpoint.lastSuccessfulSyncAt):null;
+    const afterDate=checkpointDate&&Number.isFinite(checkpointDate.getTime())
+      ? checkpointDate.toISOString().slice(0,10).replace(/-/g,'/')
+      : '';
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     if(!gmailStatus.connected){
@@ -9846,15 +9877,16 @@ async function emailIntelligencePayload(req,{force=false}={}){
         needsAttention:[],needsReply:[],waitingOnResponse:[],lowPriority:[],draftSuggestions:[],relationshipContext:[]
       };
     }
-    const recentQuery=`in:anywhere -in:sent newer_than:${activeDays}d`;
-    const unreadQuery=`in:anywhere -in:sent is:unread newer_than:${activeDays}d`;
-    const documentQuery=`in:anywhere has:attachment newer_than:${activeDays}d`;
+    const recentQuery=afterDate?`in:anywhere -in:sent after:${afterDate}`:`in:anywhere -in:sent newer_than:${activeDays}d`;
+    const unreadQuery=afterDate?`in:anywhere -in:sent is:unread after:${afterDate}`:`in:anywhere -in:sent is:unread newer_than:${activeDays}d`;
+    const documentQuery=afterDate?`in:anywhere has:attachment after:${afterDate}`:`in:anywhere has:attachment newer_than:${activeDays}d`;
+    const sentQuery=afterDate?`in:sent after:${afterDate}`:`in:sent newer_than:${activeDays}d`;
     const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
-      fetchGmailMessages({query:`in:sent newer_than:${activeDays}d`,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:sentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
       fetchGmailMessages({query:documentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:documentQuery})),
-      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+      fetchUnifiedOutlookEmails(limit,{receivedAfter:outlookSyncCheckpoint?.lastSuccessfulSyncAt||''}).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
@@ -9895,7 +9927,19 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
     const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
-    else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
+    else{
+      gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();
+      gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;
+      gmailSyncStatus.lastAnalyzedCount=emails.length;
+      gmailSyncStatus.lastQuery=recentQuery;
+      if(incremental)await saveSourceSyncCheckpoint('gmail',{lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,metadata:{recentQuery,unreadQuery,sentQuery,documentQuery,fetched:gmailSyncStatus.lastFetchedCount}}).catch(()=>{});
+    }
+    if(incremental&&!outlook.error&&!outlook.needsAuth){
+      await saveSourceSyncCheckpoint('outlook',{
+        lastSuccessfulSyncAt:new Date().toISOString(),
+        metadata:{fetched:safeArray(outlook.emails).length}
+      }).catch(()=>{});
+    }
     return {
       ok:true,
       source:'gmail',
@@ -9998,35 +10042,38 @@ function executiveInboxDurablePayload(item={}){
     executiveInboxAdmission:item.executiveInboxAdmission||{}
   };
 }
-async function listDurableExecutiveInboxQueue({limit=60}={}){
+async function listDurableExecutiveInboxQueue({limit=60,offset=0,active=true}={}){
   const lim=Math.max(1,Math.min(Number(limit)||60,200));
+  const skip=Math.max(0,Number(offset)||0);
   if(pgPool){
     const result=await dbQuery(`
       select payload_json
       from val_executive_inbox_queue
-      where tenant_id=$1 and user_id=$2 and active=true
+      where tenant_id=$1 and user_id=$2 and active=$3
       order by verified_at desc
-      limit $3
-    `,[tenantId(),currentUserId(),lim]);
+      limit $4 offset $5
+    `,[tenantId(),currentUserId(),active,lim,skip]);
     return safeArray(result?.rows).map(row=>row.payload_json||{}).filter(item=>item&&typeof item==='object');
   }
   return safeArray(valStore().executiveInboxDurableQueue)
-    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.active!==false)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.active!==false)===active)
     .sort((a,b)=>String(b.verifiedAt||'').localeCompare(String(a.verifiedAt||'')))
-    .slice(0,lim)
+    .slice(skip,skip+lim)
     .map(row=>row.payload||{});
 }
-async function replaceDurableExecutiveInboxQueue(items=[]){
+async function countDurableExecutiveInboxQueue({active=true}={}){
+  if(pgPool){
+    const result=await dbQuery('select count(*)::int as count from val_executive_inbox_queue where tenant_id=$1 and user_id=$2 and active=$3',[tenantId(),currentUserId(),active]);
+    return Number(result?.rows?.[0]?.count)||0;
+  }
+  return safeArray(valStore().executiveInboxDurableQueue)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.active!==false)===active).length;
+}
+async function mergeDurableExecutiveInboxQueue(items=[]){
   const payloads=safeArray(items).map(executiveInboxDurablePayload).filter(item=>item.conversationId);
   if(pgPool){
     await dbQuery(`
-      with deactivated as (
-        update val_executive_inbox_queue
-        set active=false,updated_at=now()
-        where tenant_id=$1 and user_id=$2
-        returning id
-      ),
-      incoming as (
+      with incoming as (
         select value as payload
         from jsonb_array_elements($3::jsonb)
       )
@@ -10059,8 +10106,7 @@ async function replaceDurableExecutiveInboxQueue(items=[]){
     return payloads;
   }
   const store=valStore();
-  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue)
-    .map(row=>row.tenantId===tenantId()&&row.userId===currentUserId()?{...row,active:false}:row);
+  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue);
   payloads.forEach(payload=>{
     const index=store.executiveInboxDurableQueue.findIndex(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.conversationId===payload.conversationId);
     const row={tenantId:tenantId(),userId:currentUserId(),conversationId:payload.conversationId,active:true,verifiedAt:new Date().toISOString(),payload};
@@ -10069,6 +10115,37 @@ async function replaceDurableExecutiveInboxQueue(items=[]){
   });
   saveValStore(store);
   return payloads;
+}
+async function archiveDurableExecutiveInboxThread({provider='email',threadId='',messageId='',resolution={}}={}){
+  const threadKey=[provider,threadId||messageId].join(':');
+  if(pgPool){
+    const result=await dbQuery(`
+      update val_executive_inbox_queue
+      set active=false,
+          payload_json=payload_json||$4::jsonb,
+          updated_at=now()
+      where tenant_id=$1 and user_id=$2
+        and (
+          ($3<>'' and (thread_id=$3 or (payload_json->>'provider'=$6 and payload_json->>'threadId'=$3)))
+          or ($5<>'' and (message_id=$5 or payload_json->>'messageId'=$5))
+        )
+      returning payload_json
+    `,[tenantId(),currentUserId(),threadId,JSON.stringify({status:'resolved',archive:{...resolution,threadKey}}),messageId,provider]);
+    return safeArray(result?.rows).map(row=>row.payload_json||{});
+  }
+  const store=valStore();
+  const archived=[];
+  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue).map(row=>{
+    if(row.tenantId!==tenantId()||row.userId!==currentUserId())return row;
+    const payload=row.payload||{};
+    const matches=(threadId&&payload.threadId===threadId)||(messageId&&(payload.messageId===messageId||payload.id===messageId));
+    if(!matches)return row;
+    const next={...row,active:false,updatedAt:new Date().toISOString(),payload:{...payload,status:'resolved',archive:{...resolution,threadKey}}};
+    archived.push(next.payload);
+    return next;
+  });
+  saveValStore(store);
+  return archived;
 }
 function executiveInboxSentRequestText(email={}){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
@@ -10170,13 +10247,14 @@ function executiveInboxNewestByConversation(rows=[]){
   return Array.from(byConversation.values());
 }
 async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
-  const lim=Math.max(1,Math.min(Number(limit)||30,60));
+  const lim=Math.max(1,Math.min(Number(limit)||30,200));
+  const offset=Math.max(0,Number(req.query?.offset)||0);
   if(!valExecutiveInbox?.listHighSignalClassifications){
     return {ok:true,source:'canonical_executive_inbox_cached',items:[],queue:[],emails:[],needsReply:[],needsAttention:[],waitingOnResponse:[],draftSuggestions:[],lowPriority:[],errors:['Saved Executive Inbox index is unavailable.'],summary:{total:0,buckets:{},source:'cached_unavailable'}};
   }
   const timed=await Promise.race([
     Promise.all([
-      listDurableExecutiveInboxQueue({limit:lim}),
+      listDurableExecutiveInboxQueue({limit:lim,offset}),
       valExecutiveInbox.listHighSignalClassifications({limit:Math.min(200,Math.max(lim*4,120))}),
       valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]}))
     ]).then(([durableItems,results,draftResult])=>({durableItems,results,drafts:safeArray(draftResult?.drafts)})),
@@ -10259,6 +10337,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     .filter(Boolean);
   const items=rows.filter((item)=>item.messageId || item.threadId || item.conversationId || item.subject);
   const buckets=items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{});
+  const total=await countDurableExecutiveInboxQueue({active:true}).catch(()=>items.length);
   return {
     ok:true,
     source:'canonical_executive_inbox_cached',
@@ -10275,7 +10354,8 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     lowPriority:[],
     errors:timed.timeout?[timed.error]:[],
     providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
-    summary:{total:items.length,buckets,source:durableItems.length?'durable_verified_queue':'classification_fallback',cacheOnly:true,activeWindow:'Last verified Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
+    pagination:{offset,limit:lim,total,hasMore:offset+items.length<total},
+    summary:{total,buckets,source:durableItems.length?'durable_verified_queue':'classification_fallback',cacheOnly:true,activeWindow:'Saved Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
     diagnostics
   };
 }
@@ -10283,7 +10363,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
   if(preferCached){
     return localExecutiveInboxQueue(req,{limit:req.query?.limit||30});
   }
-  const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150}};
+  const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150,incremental:'1'}};
   const data=await emailIntelligencePayload(queryReq,{force});
   if(data.ok===false)return {...data,items:[],queue:[]};
   const suppressions=executiveInboxSuppressionRows();
@@ -10371,19 +10451,17 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
   });
   const items=candidates.filter(Boolean);
   diagnostics.admitted=items.length;
-  await replaceDurableExecutiveInboxQueue(items);
+  await mergeDurableExecutiveInboxQueue(items);
+  const savedQueue=await localExecutiveInboxQueue(queryReq,{limit:Math.min(200,Number(req.query?.limit)||150)});
   return {
     ...data,
+    ...savedQueue,
     source:'canonical_executive_inbox',
-    items,
-    queue:items,
-    emails:items,
-    needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
-    needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
-    waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
+    cached:false,
+    refreshed:true,
     draftSuggestions:[],
     lowPriority:[],
-    summary:{...(data.summary||{}),total:items.length,buckets:items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{}),executiveInboxDiagnostics:diagnostics},
+    summary:{...(data.summary||{}),...(savedQueue.summary||{}),executiveInboxDiagnostics:diagnostics},
     diagnostics
   };
 }
@@ -10393,6 +10471,26 @@ app.get('/api/val/executive-inbox/queue',async(req,res)=>{
     await auditLog({req,action:'executive_inbox_queue_loaded',resourceType:'executive_inbox',metadata:{count:result.items?.length||0,source:'canonical'},success:result.ok!==false}).catch(()=>{});
     res.status(result.ok===false?400:200).json(result);
   }catch(e){res.status(500).json({ok:false,error:e.message,items:[],queue:[]});}
+});
+app.get('/api/val/executive-inbox/archive',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(200,Number(req.query.limit)||60));
+    const offset=Math.max(0,Number(req.query.offset)||0);
+    const resolutions=executiveInboxResolutionRows();
+    const [inactiveRows,legacyActiveRows]=await Promise.all([
+      listDurableExecutiveInboxQueue({limit:200,offset:0,active:false}),
+      listDurableExecutiveInboxQueue({limit:200,offset:0,active:true})
+    ]);
+    const byConversation=new Map();
+    inactiveRows.concat(legacyActiveRows).filter(item=>executiveInboxResolved(item,resolutions)||item.status==='resolved'||item.archive?.threadKey).forEach(item=>{
+      const key=item.conversationId||item.threadId||item.messageId||item.id;
+      if(key&&!byConversation.has(key))byConversation.set(key,item);
+    });
+    const archived=Array.from(byConversation.values());
+    const items=archived.slice(offset,offset+limit);
+    const total=archived.length;
+    res.json({ok:true,items,queue:items,emails:items,pagination:{offset,limit,total,hasMore:offset+items.length<total}});
+  }catch(e){res.status(500).json({ok:false,error:e.message,items:[]});}
 });
 app.get('/api/val/executive-inbox/thread',async(req,res)=>{
   try{
@@ -10517,6 +10615,7 @@ app.post('/api/val/executive-inbox/resolve-thread',async(req,res)=>{
     if(existing)Object.assign(existing,row);
     else store.executiveInboxResolutions.unshift(row);
     saveValStore(store);
+    await archiveDurableExecutiveInboxThread({provider,threadId,messageId,resolution:existing||row});
     await auditLog({req,action:'executive_inbox_thread_resolved',resourceType:'executive_inbox_thread',resourceId:threadKey,metadata:{threadId,messageId},success:true}).catch(()=>{});
     res.json({ok:true,resolution:existing||row});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -10780,6 +10879,37 @@ let googleTokens = {}; // hot cache; durable copy lives in Postgres scoped by te
 let googleTokensLoaded = false;
 let lastGoogleAuthError = null;
 let gmailSyncStatus = {lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',lastFetchedCount:0,lastAnalyzedCount:0,lastQuery:''};
+async function sourceSyncCheckpoint(source=''){
+  const key=String(source||'').trim().toLowerCase();
+  if(!key)return null;
+  if(pgPool){
+    const result=await dbQuery('select source,last_successful_sync_at,metadata_json,updated_at from val_source_sync_checkpoints where tenant_id=$1 and user_id=$2 and source=$3 limit 1',[tenantId(),currentUserId(),key]);
+    const row=result?.rows?.[0];
+    return row?{source:row.source,lastSuccessfulSyncAt:row.last_successful_sync_at?.toISOString?.()||row.last_successful_sync_at||'',metadata:row.metadata_json||{},updatedAt:row.updated_at?.toISOString?.()||row.updated_at||''}:null;
+  }
+  return safeArray(valStore().sourceSyncCheckpoints).find(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.source===key)||null;
+}
+async function saveSourceSyncCheckpoint(source='',{lastSuccessfulSyncAt=new Date().toISOString(),metadata={}}={}){
+  const key=String(source||'').trim().toLowerCase();
+  if(!key)return null;
+  const row={tenantId:tenantId(),userId:currentUserId(),source:key,lastSuccessfulSyncAt,metadata,updatedAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery(`
+      insert into val_source_sync_checkpoints (tenant_id,user_id,source,last_successful_sync_at,metadata_json,updated_at)
+      values ($1,$2,$3,$4,$5,now())
+      on conflict (tenant_id,user_id,source)
+      do update set last_successful_sync_at=excluded.last_successful_sync_at,metadata_json=excluded.metadata_json,updated_at=now()
+    `,[row.tenantId,row.userId,row.source,row.lastSuccessfulSyncAt,JSON.stringify(metadata||{})]);
+    return row;
+  }
+  const store=valStore();
+  store.sourceSyncCheckpoints=safeArray(store.sourceSyncCheckpoints);
+  const index=store.sourceSyncCheckpoints.findIndex(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.source===key);
+  if(index>=0)store.sourceSyncCheckpoints[index]=row;
+  else store.sourceSyncCheckpoints.push(row);
+  saveValStore(store);
+  return row;
+}
 
 function validGoogleClientId(id=GOOGLE_CLIENT_ID){
   return /^\d+[-\w]*\.apps\.googleusercontent\.com$/.test(String(id||'').trim());
@@ -12879,10 +13009,19 @@ async function fetchOutlookMessageAttachments(token,messageId){
     return [];
   }
 }
-async function fetchUnifiedOutlookEmails(limit=20){
+async function fetchUnifiedOutlookEmails(limit=20,{receivedAfter=''}={}){
   const token=await getMicrosoftToken();
   if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
-  const url=`https://graph.microsoft.com/v1.0/me/messages?$top=${encodeURIComponent(limit)}&$orderby=receivedDateTime desc&$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead`;
+  const query=new URLSearchParams({
+    '$top':String(limit),
+    '$orderby':'receivedDateTime desc',
+    '$select':'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead'
+  });
+  const receivedAfterDate=receivedAfter?new Date(receivedAfter):null;
+  if(receivedAfterDate&&Number.isFinite(receivedAfterDate.getTime())){
+    query.set('$filter',`receivedDateTime ge ${receivedAfterDate.toISOString()}`);
+  }
+  const url=`https://graph.microsoft.com/v1.0/me/messages?${query.toString()}`;
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
@@ -18420,9 +18559,49 @@ function krispThirtyDayWindow(days=30){
   const start=new Date(end.getTime()-Math.max(1,Number(days)||30)*24*60*60*1000);
   return {start:start.toISOString(),end:end.toISOString(),days:Math.max(1,Number(days)||30)};
 }
+async function transcriptWasDeleted(transcriptId='',sourceKey=''){
+  const id=String(transcriptId||'').trim();
+  const source=String(sourceKey||'').trim();
+  if(!id&&!source)return false;
+  if(pgPool){
+    const result=await dbQuery(`
+      select transcript_id
+      from val_transcript_deletions
+      where tenant_id=$1 and user_id=$2
+        and (transcript_id=$3 or ($4<>'' and source_key=$4))
+      limit 1
+    `,[tenantId(),currentUserId(),id,source]);
+    return !!result?.rows?.[0];
+  }
+  return safeArray(valStore().transcriptDeletions).some(row=>
+    row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.transcriptId===id||(source&&row.sourceKey===source))
+  );
+}
+async function saveTranscriptDeletion({transcriptId='',sourceKey='',title='',metadata={}}={}){
+  const id=String(transcriptId||'').trim();
+  if(!id)throw new Error('transcriptId is required.');
+  const row={tenantId:tenantId(),userId:currentUserId(),transcriptId:id,sourceKey:String(sourceKey||'').trim(),title:String(title||'').trim(),deletedAt:new Date().toISOString(),metadata};
+  if(pgPool){
+    await dbQuery(`
+      insert into val_transcript_deletions (tenant_id,user_id,transcript_id,source_key,title,deleted_at,metadata_json)
+      values ($1,$2,$3,$4,$5,$6,$7)
+      on conflict (tenant_id,user_id,transcript_id)
+      do update set source_key=excluded.source_key,title=excluded.title,deleted_at=excluded.deleted_at,metadata_json=excluded.metadata_json
+    `,[row.tenantId,row.userId,row.transcriptId,row.sourceKey,row.title,row.deletedAt,JSON.stringify(metadata||{})]);
+    return row;
+  }
+  const store=valStore();
+  store.transcriptDeletions=safeArray(store.transcriptDeletions);
+  const index=store.transcriptDeletions.findIndex(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.transcriptId===id);
+  if(index>=0)store.transcriptDeletions[index]=row;
+  else store.transcriptDeletions.push(row);
+  saveValStore(store);
+  return row;
+}
 async function krispTranscriptAlreadyStored(transcriptId=''){
   const id=String(transcriptId||'').trim();
   if(!id)return false;
+  if(await transcriptWasDeleted(id))return true;
   if(DEMO_MODE)return (requestContext.getStore()?.demoState?.transcripts||[]).some(row=>String(row.id)===id);
   await valDbReady;
   if(pgPool){
@@ -18461,7 +18640,12 @@ async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={
 async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgress=async()=>{}}={}){
   if(await cleanStartSourceIntakeLocked())throw new Error('VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.');
   if(!(await krispMcp.isConfigured()))throw new Error('Krisp is not connected.');
+  const checkpoint=await sourceSyncCheckpoint('krisp').catch(()=>null);
   const window=krispThirtyDayWindow(days);
+  if(checkpoint?.lastSuccessfulSyncAt){
+    const checkpointTime=new Date(checkpoint.lastSuccessfulSyncAt);
+    if(Number.isFinite(checkpointTime.getTime()))window.start=checkpointTime.toISOString();
+  }
   const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
   const report=(state,message,extra={})=>onProgress({type:'progress',source:'krisp',state,message,...extra});
   await report('reading','Krisp is listing meeting transcripts from the last '+window.days+' days.');
@@ -18477,6 +18661,10 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
   };
   if(!receipts.length){
     await report('complete','Krisp did not return a transcript receipt in the last '+window.days+' days.',{count:0});
+    await saveSourceSyncCheckpoint('krisp',{
+      lastSuccessfulSyncAt:new Date().toISOString(),
+      metadata:{window,found:0,imported:0,alreadyPresent:0}
+    }).catch(()=>{});
     return result;
   }
   await report('reading','Krisp returned '+receipts.length+' transcript receipt'+(receipts.length===1?'':'s')+'. VAL is preserving the original material exactly as Krisp provided it.',{count:receipts.length});
@@ -18523,6 +18711,7 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
     ? `Krisp intake finished: ${result.imported} saved, ${result.alreadyPresent} already present, and ${result.failed} unavailable for review.`
     : `Krisp intake finished: ${result.imported} exact transcript${result.imported===1?'':'s'} saved and ${result.alreadyPresent} already present.`;
   await report(result.failed?'partial':'complete',outcome,{count:result.imported,receipt:result});
+  if(!result.failed)await saveSourceSyncCheckpoint('krisp',{lastSuccessfulSyncAt:new Date().toISOString(),metadata:{window,found:result.found,imported:result.imported,alreadyPresent:result.alreadyPresent}}).catch(()=>{});
   return result;
 }
 function firstLookWitnessingRoutingRules(witnessing=[]){
@@ -25804,6 +25993,36 @@ async function clearTranscriptStaging(transcriptId){
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
   const store=valStore();for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'])store[key]=transcriptFileArray(store,key).filter(row=>row.transcriptId!==transcriptId);saveValStore(store);
 }
+async function deleteTranscriptForUser(transcriptId=''){
+  const id=String(transcriptId||'').trim();
+  if(!id)throw new Error('transcriptId is required.');
+  const record=(await transcriptArchiveRecords(3650,1000)).find(item=>String(item.id)===id);
+  if(!record)throw Object.assign(new Error('Transcript not found.'),{statusCode:404});
+  const metadata=record.metadata||{};
+  const sourceKey=String(metadata.documentId||metadata.sourceId||metadata.source_id||'').trim();
+  await saveTranscriptDeletion({transcriptId:id,sourceKey,title:record.title||'',metadata:{source:metadata.source||record.type||'',deletedBy:'user'}});
+  await clearTranscriptStaging(id);
+  if(pgPool){
+    await dbQuery('delete from meeting_transcript_links where tenant_id=$1 and user_id=$2 and transcript_id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from val_decisions where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=$4',[tenantId(),currentUserId(),'transcript',id]).catch(()=>{});
+    await dbQuery('delete from evidence_items where tenant_id=$1 and source_type=$2 and source_id=$3',[tenantId(),'transcript',id]).catch(()=>{});
+    await dbQuery('delete from val_memory_items where tenant_id=$1 and user_id=$2 and metadata->>\'transcriptId\'=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from transcripts where tenant_id=$1 and user_id=$2 and transcript_id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from val_transcripts where tenant_id=$1 and user_id=$2 and id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+  }else{
+    const store=valStore();
+    store.transcripts=safeArray(store.transcripts).filter(row=>String(row.id)!==id);
+    store.transcriptIndex=transcriptFileArray(store,'transcriptIndex').filter(row=>String(row.transcriptId)!==id);
+    ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','meetingTranscriptLinks'].forEach(key=>{
+      store[key]=transcriptFileArray(store,key).filter(row=>String(row.transcriptId)!==id);
+    });
+    store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType==='transcript'&&String(row.sourceId)===id));
+    store.evidenceItems=transcriptFileArray(store,'evidenceItems').filter(row=>!(row.sourceType==='transcript'&&String(row.sourceId)===id));
+    store.memoryItems=transcriptFileArray(store,'memoryItems').filter(row=>String(row.metadata?.transcriptId||'')!==id);
+    saveValStore(store);
+  }
+  return {deleted:true,transcriptId:id,title:record.title||'',sourceKey};
+}
 async function clearAllTranscriptDataForTenant({requireJessa=false}={}){
   if(requireJessa&&CLIENT_CONFIG.clientSlug!=='jessa-val') throw new Error('Full transcript cleanup is enabled only for jessa_val.');
   if(DEMO_MODE){
@@ -31357,8 +31576,9 @@ function normalizedTranscriptWebhookPayload(body={}){
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
-async function transcriptDrawerListPayload({days=90,limit=50,migrationRecords=null}={}){
+async function transcriptDrawerListPayload({days=90,limit=50,offset=0,migrationRecords=null}={}){
   const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
+  const safeOffset=Math.max(0,Number(offset)||0);
   const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
   const cutoff=Date.now()-safeDays*24*60*60*1000;
   let records=Array.isArray(migrationRecords)?migrationRecords:null;
@@ -31369,13 +31589,17 @@ async function transcriptDrawerListPayload({days=90,limit=50,migrationRecords=nu
     migrationRecords=mergeTranscriptMigrationRecords(records,data);
   }
   records=records||migrationRecords||[];
-  const mapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
+  const allMapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
     .filter(transcript=>{
       const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
       return !Number.isFinite(time)||time>=cutoff;
-    })
-    .slice(0,safeLimit);
-  return {transcripts:mapped,counts:{total:mapped.length,needsReview:mapped.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:mapped.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:mapped.filter(isHardTranscriptProcessingFailure).length}};
+    });
+  const mapped=allMapped.slice(safeOffset,safeOffset+safeLimit);
+  return {
+    transcripts:mapped,
+    pagination:{offset:safeOffset,limit:safeLimit,total:allMapped.length,hasMore:safeOffset+mapped.length<allMapped.length},
+    counts:{total:allMapped.length,needsReview:allMapped.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:allMapped.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:allMapped.filter(isHardTranscriptProcessingFailure).length}
+  };
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
@@ -31383,10 +31607,11 @@ app.get('/api/val/transcripts',async(req,res)=>{
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||90));
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||50));
-    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days,limit});
-    const [archive,data]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[]}))]);
+    const offset=Math.max(0,Number(req.query.offset)||0);
+    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days,limit,offset});
+    const [archive,data]=await Promise.all([transcriptArchiveRecords(days,1000),transcriptIndexData().catch(()=>({transcripts:[]}))]);
     const migrationRecords=mergeTranscriptMigrationRecords(archive,data);
-    const payload=await transcriptDrawerListPayload({days,limit,migrationRecords});
+    const payload=await transcriptDrawerListPayload({days,limit,offset,migrationRecords});
     res.json({ok:true,...payload});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -31494,6 +31719,19 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
   }catch(e){
     await auditLog({req,action:'transcript_data_clear_failed',resourceType:'transcript',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.delete('/api/val/transcripts/:transcriptId',async(req,res)=>{
+  try{
+    const id=decodeURIComponent(req.params.transcriptId);
+    const confirmation=String(req.body?.confirmation||'').trim().toLowerCase();
+    if(confirmation!=='delete transcript')return res.status(400).json({ok:false,error:'Type "delete transcript" to confirm.'});
+    const result=await deleteTranscriptForUser(id);
+    await auditLog({req,action:'transcript_deleted_by_user',resourceType:'transcript',resourceId:id,metadata:{title:result.title,sourceKey:result.sourceKey},success:true}).catch(()=>{});
+    res.json({ok:true,...result,message:'Transcript deleted from VAL. Its deletion receipt will prevent the same source record from being imported again.'});
+  }catch(e){
+    await auditLog({req,action:'transcript_delete_failed',resourceType:'transcript',resourceId:req.params.transcriptId,metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(e.statusCode||500).json({ok:false,error:e.message});
   }
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{

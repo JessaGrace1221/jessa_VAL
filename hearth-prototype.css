@@ -14555,6 +14555,18 @@ button.timeline-overview-receipt:focus-visible{
 .drawer-tray.correspondence-open .correspondence-list button[data-correspondence-item] p{grid-area:summary;margin:0;color:rgba(45,43,38,.7);font-size:.82rem;line-height:1.42;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .drawer-tray.correspondence-open .correspondence-list button[data-correspondence-item] small{grid-area:meta;color:rgba(45,43,38,.56);font-size:.7rem;line-height:1.3;overflow-wrap:anywhere}
 .drawer-tray.correspondence-open .correspondence-list em{grid-area:priority;justify-self:end;align-self:start;color:#8a2f37;font:760 .68rem/1.2 var(--body);font-style:normal;white-space:nowrap}
+.timeline-transcript-load-more,
+.transcript-delete{
+  border:1px solid rgba(74,91,72,.24);
+  border-radius:6px;
+  background:rgba(255,255,255,.78);
+  color:#435442;
+  font:600 .76rem/1.2 var(--body);
+  padding:8px 11px;
+  cursor:pointer;
+}
+.timeline-transcript-load-more{width:calc(100% - 20px);margin:10px}
+.transcript-delete{color:#8a4f59;border-color:rgba(138,79,89,.26)}
 .drawer-tray.correspondence-open .correspondence-checking-state{
   display:grid;
   grid-template-columns:54px minmax(0,1fr);

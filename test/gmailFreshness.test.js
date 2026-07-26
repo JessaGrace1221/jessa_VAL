@@ -10,9 +10,10 @@ const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 test('gmail fetch uses the bounded 90-day executive window and sorts newest first',()=>{
   assert.match(server,/query='in:inbox newer_than:14d'/);
   assert.match(server,/const activeDays=Math\.max\(1,Math\.min\(90,Number\.isFinite\(requestedDays\)\?requestedDays:14\)\)/);
-  assert.match(server,/const recentQuery=`in:anywhere -in:sent newer_than:\$\{activeDays\}d`/);
-  assert.match(server,/const unreadQuery=`in:anywhere -in:sent is:unread newer_than:\$\{activeDays\}d`/);
-  assert.match(server,/fetchGmailMessages\(\{query:`in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const recentQuery=afterDate\?`in:anywhere -in:sent after:\$\{afterDate\}`:`in:anywhere -in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const unreadQuery=afterDate\?`in:anywhere -in:sent is:unread after:\$\{afterDate\}`:`in:anywhere -in:sent is:unread newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const sentQuery=afterDate\?`in:sent after:\$\{afterDate\}`:`in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/saveSourceSyncCheckpoint\('gmail'/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
 });
@@ -24,6 +25,13 @@ test('gmail refresh retries rejected access tokens and exposes sync status',()=>
   assert.match(server,/lastFetchedCount/);
   assert.match(server,/lastAnalyzedCount/);
   assert.match(server,/app\.post\('\/api\/email\/gmail\/refresh'/);
+});
+
+test('outlook refresh uses the same durable incremental checkpoint contract',()=>{
+  assert.match(server,/sourceSyncCheckpoint\('outlook'\)/);
+  assert.match(server,/fetchUnifiedOutlookEmails\(limit,\{receivedAfter:outlookSyncCheckpoint\?\.lastSuccessfulSyncAt\|\|''\}\)/);
+  assert.match(server,/query\.set\('\$filter',`receivedDateTime ge \$\{receivedAfterDate\.toISOString\(\)\}`\)/);
+  assert.match(server,/saveSourceSyncCheckpoint\('outlook'/);
 });
 
 test('executive inbox UI has manual refresh and visible sync metadata',()=>{

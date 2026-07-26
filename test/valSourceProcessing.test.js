@@ -309,7 +309,7 @@ test('live email document intake routes admitted relationship attachments throug
     server.indexOf('async function emailIntelligencePayload'),
     server.indexOf("app.get('/api/email/intelligence'")
   );
-  assert.match(emailPayload,/const documentQuery=`in:anywhere has:attachment newer_than:\$\{activeDays\}d`/);
+  assert.match(emailPayload,/const documentQuery=afterDate\?`in:anywhere has:attachment after:\$\{afterDate\}`:`in:anywhere has:attachment newer_than:\$\{activeDays\}d`/);
   assert.match(emailPayload,/documentGmail/);
   assert.match(emailPayload,/valConversationIdentity\?\.upsertEmailMessage/);
   assert.match(emailPayload,/processEmailDocumentSourceProcessing\(Array\.from\(sourceProcessingEmailMap\.values\(\)\),\{origin:'email_intelligence'\}/);

@@ -928,7 +928,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceChooseRelationship/);
   assert.match(hearthJs, /const correspondenceProjectSelect/);
   assert.match(hearthJs, /function hydrateCorrespondenceDrawer/);
-  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?limit=60/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?limit=200/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/archive\?limit=200/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?refresh=1&days=/);
   assert.doesNotMatch(hearthJs, /\/api\/val\/email\/review-drafts\?limit=20/);
   assert.doesNotMatch(hearthJs, /\/api\/email\/intelligence\?days=30&limit=75/);
@@ -940,7 +941,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   );
   assert.match(hydrateCorrespondenceDrawer, /void Promise\.all\(\[/);
   assert.doesNotMatch(hydrateCorrespondenceDrawer, /await Promise\.all\(\[\s*hydrateRelationshipIndex/);
-  assert.match(hydrateCorrespondenceDrawer, /getJson\('\/api\/val\/executive-inbox\/queue\?limit=60'/);
+  assert.match(hydrateCorrespondenceDrawer, /getJson\('\/api\/val\/executive-inbox\/queue\?limit=200'/);
   assert.match(hearthJs, /const actionable = \['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'\]/);
   assert.match(hearthJs, /\.concat\(result\.waitingOnResponse \|\| \[\]\)/);
   assert.match(hearthHtml, /data-correspondence-action="resolve_thread"/);
@@ -1854,7 +1855,8 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
   assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
   assert.match(hearthJs, /async function getJson\(url, \{cache = 'default', timeoutMs = 0, timeoutMessage = ''\} = \{\}\)/);
   assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
-  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=50', \{cache: 'no-store'\}\)/);
+  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=100&offset='/);
+  assert.match(hearthJs, /data-transcript-load-more/);
   assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);
 });
 
