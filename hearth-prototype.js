@@ -9680,11 +9680,11 @@ function renderCorrespondenceTrustReceipt(result = currentCorrespondenceTrustDat
   const admitted = Number(result?.summary?.total ?? result?.pagination?.total ?? diagnostics.admitted ?? currentCorrespondenceItems.length) || 0;
   const checked = Number(diagnostics.deduplicated ?? diagnostics.indexed ?? diagnostics.uniqueThreads) || 0;
   const excludedCount = Object.values(filtered).reduce((sum, value) => sum + (Number(value) || 0), 0);
-  const establishedContacts = Number(diagnostics.outboxContacts) || 0;
+  const executiveContacts = Number(diagnostics.executiveContacts) || 0;
   const reasons = [
     [filtered.unsubscribeOrListMail, 'list mail'],
     [filtered.calendarNotice, 'calendar notice'],
-    [filtered.noOutboxHistory, 'without an established exchange'],
+    [filtered.noOutboxHistory, 'with no sent-mail history'],
     [filtered.noExecutiveAction, 'without an executive action'],
     [filtered.resolved, 'already resolved'],
     [filtered.suppressed, 'manually excluded']
@@ -9702,10 +9702,10 @@ function renderCorrespondenceTrustReceipt(result = currentCorrespondenceTrustDat
     : 'VAL checked the saved Executive Inbox evidence.';
   if(detail) detail.textContent = reasons.length
     ? `Kept out: ${reasons.join(', ')}.`
-    : 'Only unresolved conversations with an established exchange enter this room.';
+    : 'Only unresolved conversations from known correspondents enter this room.';
   if(attention) attention.textContent = String(admitted);
   if(excluded) excluded.textContent = String(excludedCount);
-  if(contacts) contacts.textContent = establishedContacts ? String(establishedContacts) : 'Verified';
+  if(contacts) contacts.textContent = String(executiveContacts);
 }
 
 function renderCorrespondenceList(){
