@@ -31,6 +31,7 @@ test('Chief language is generated from any grounded packet without project-speci
       recommendation:'Send Ashley the revised HopeMakers scope before Friday’s review.',
       why:'Ashley is waiting, and the Friday review is the decision boundary.',
       action:'Send the revised scope to Ashley.',
+      lead_observer:'Commitment',
       evidence_quote:'Ashley: Please send the revised HopeMakers scope before our Friday review.',
       confidence:0.91
     }),
@@ -39,6 +40,7 @@ test('Chief language is generated from any grounded packet without project-speci
   const result=await reasoner({packet:packet(),priorities:[{label:'Commitments'}]});
   assert.equal(result.grounded,true);
   assert.match(result.recommendation,/Ashley/);
+  assert.equal(result.leadObserver,'Commitment');
   assert.equal(result.evidenceRef.sourceId,'email_hopemakers');
 });
 
@@ -49,6 +51,7 @@ test('Chief rejects invented evidence and falls back to the actual packet action
       recommendation:'Call Ashley because she is frustrated.',
       why:'Trust is deteriorating.',
       action:'Call Ashley.',
+      lead_observer:'Relationship',
       evidence_quote:'Ashley said she was frustrated.',
       confidence:0.99
     }),
@@ -64,4 +67,5 @@ test('fallback Chief language keeps task packets direct and actionable',()=>{
   const result=fallbackChiefLanguage(packet());
   assert.equal(result.recommendation,'Send the revised HopeMakers scope to Ashley');
   assert.match(result.why,/Ashley asked/);
+  assert.equal(result.leadObserver,'Commitment');
 });

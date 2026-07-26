@@ -22,12 +22,24 @@ function fallbackChiefLanguage(packet={}){
   const title=compactText(packet.title||'Review the highest Board packet',180);
   const summary=compactText(packet.summary||'',320);
   const type=String(packet.packetType||packet.packet_type||'');
+  const observed=safeArray(packet.observers).filter(observer=>observer.status!=='no_signal');
+  const preferredNames=/email|reply|message|communication/.test(type)
+    ? ['Executive Inbox','Relationship','Commitment']
+    : (/calendar|meeting|timing|capacity/.test(type)
+      ? ['Calendar','Capacity','Commitment']
+      : (/task|commitment/.test(type)
+        ? ['Commitment','Project','Capacity']
+        : ['Project','Relationship','Capacity','Momentum']));
+  const leadObserver=preferredNames.find(name=>observed.some(observer=>observer.observer===name))
+    || observed.slice().sort((a,b)=>Number(b.confidence||0)-Number(a.confidence||0))[0]?.observer
+    || '';
   if(type==='task_packet'){
     return {
       title,
       recommendation:title,
       why:summary||'This is the highest-ranked source-backed action in the current Board queue.',
-      action:title
+      action:title,
+      leadObserver
     };
   }
   if(/email|reply|message|communication/.test(type)){
@@ -35,14 +47,16 @@ function fallbackChiefLanguage(packet={}){
       title,
       recommendation:`Review "${title}" and decide whether to reply, hold, or close it.`,
       why:summary||'This communication has the strongest current source-backed attention signal.',
-      action:`Review "${title}".`
+      action:`Review "${title}".`,
+      leadObserver
     };
   }
   return {
     title,
     recommendation:summary?`Decide the next move for "${title}."`:`Review "${title}" before choosing an action.`,
     why:summary||'This packet has the strongest current source-backed Observer convergence.',
-    action:`Inspect the evidence for "${title}" and choose the next move.`
+    action:`Inspect the evidence for "${title}" and choose the next move.`,
+    leadObserver
   };
 }
 
@@ -77,6 +91,7 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
             recommendation:'one direct plain-language action',
             why:'one concrete consequence or reason',
             action:'the same action in imperative form',
+            lead_observer:'the one supplied Observer whose finding most directly supports this action',
             evidence_quote:'one exact quote copied from evidence',
             confidence:'0 to 1'
           },
@@ -103,12 +118,15 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
       const recommendation=compactText(parsed.recommendation,360);
       const why=compactText(parsed.why,420);
       const action=compactText(parsed.action||parsed.recommendation,360);
+      const leadObserver=String(parsed.lead_observer||'').trim();
       if(!title||!recommendation||!why||!action)throw new Error('Chief response was incomplete.');
+      if(!observers.some(observer=>observer.observer===leadObserver))throw new Error('Chief response did not select a supplied Observer.');
       return {
         title,
         recommendation,
         why,
         action,
+        leadObserver,
         evidenceQuote:String(parsed.evidence_quote).trim(),
         evidenceRef:evidence,
         confidence:Math.max(0.2,Math.min(0.95,Number(parsed.confidence)||0.7)),

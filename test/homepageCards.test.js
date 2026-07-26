@@ -244,6 +244,8 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
 test('Chief of Staff Home witness is concrete and points to inspectable proof',()=>{
   assert.match(server,/function buildChiefDailyWitness/);
   assert.match(server,/const dailyWitness=buildChiefDailyWitness\(chiefHomeItem\)/);
+  assert.match(server,/chiefHeadline:dashboardShortText\(recommendation\.title/);
+  assert.match(server,/\[candidate\.leadObserver\|\|candidate\.lead_observer\]/);
   assert.match(server,/I put the clearest next decision in Alignment\./);
   assert.match(server,/\$\{observerName\} has the source trail if you want the full context\./);
   assert.match(server,/GOALL is the thing to settle today/);

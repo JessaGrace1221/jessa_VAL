@@ -1041,6 +1041,8 @@ function createValIntelligenceSpine({
         : `Place attention on ${top.signal}.`)
       : 'Run the intelligence pass again after more evidence is available.');
     const opposing=safeArray(roundTable?.opposingViewsJson||roundTable?.opposing_views_json||roundTable?.outputJson?.opposing_views)[0];
+    const currentPacket=chiefQueuePacketReceipt(packetChoice);
+    if(currentPacket)currentPacket.leadObserver=packetRecommendation?.leadObserver||'';
     return {
       title,
       recommendation,
@@ -1055,7 +1057,7 @@ function createValIntelligenceSpine({
         reasoning:'The recommendation should distinguish what is asking for attention from what is worthy of it.',
         chief_priorities:chiefPriorities,
         matched_priorities:packetChoice?.chiefPriorityMatches||[],
-        current_packet:chiefQueuePacketReceipt(packetChoice)
+        current_packet:currentPacket
       },
       chiefPriorities,
       chiefPriorityMatches:packetChoice?.chiefPriorityMatches||[],

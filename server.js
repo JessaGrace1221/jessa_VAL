@@ -24627,7 +24627,9 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
   ].filter(Boolean).join(' '), summary, 320);
   const envelope=chiefRecommendationEnvelope(candidate);
   const confidence=Number(recommendation.confidence||0.72);
-  const boardObservers=safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers)
+  const boardObservers=[candidate.leadObserver||candidate.lead_observer]
+    .filter(Boolean)
+    .concat(safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers))
     .concat(safeArray(candidate.observers).filter(observer=>observer?.status!=='no_signal').map(observer=>observer.observer))
     .map(String)
     .filter((name,observerIndex,names)=>name&&names.indexOf(name)===observerIndex);
@@ -24651,6 +24653,7 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     projectName:envelope?.projectName||'',
     managerColorName:envelope?.managerColorName||'',
     title:index===0?dashboardShortText(recommendation.recommendation||title,title,180):title,
+    chiefHeadline:dashboardShortText(recommendation.title||title,title,180),
     summary:index===0?dashboardShortText(recommendation.recommendation||summary,summary,220):summary,
     why,
     reason_it_matters:why,
@@ -24676,7 +24679,8 @@ function buildChiefDailyWitness(chiefItem={}){
   if(!chiefItem?.chiefRecommendationId||!chiefItem?.canonicalWorkItemId)return null;
   const observerName=String(chiefItem.boardObservers?.[0]||chiefItem.observerFindings?.[0]?.observer||'Board').trim();
   const finding=dashboardShortText(
-    chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
+    chiefItem.chiefHeadline
+    || chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
     || chiefItem.observerFindings?.[0]?.finding
     || chiefItem.why
     || chiefItem.summary
