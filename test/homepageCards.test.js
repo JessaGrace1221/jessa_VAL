@@ -189,6 +189,9 @@ test('Home tasks shows every open transcript Action Item with source context',()
   assert.doesNotMatch(hearthPrototype,/\/api\/val\/commitments\?limit=200/);
   assert.match(hearthPrototype,/__workspaceKind:transcriptTask \? 'transcript_task'/);
   assert.match(hearthPrototype,/\/api\/val\/transcript-tasks\//);
+  assert.match(hearthPrototype,/relatedTaskIds:task\.relatedTaskIds/);
+  assert.match(hearthPrototype,/Waiting on ' \+ owner/);
+  assert.match(hearthPrototype,/Owner to confirm/);
   assert.match(hearthPrototype,/eventType:'user_marked_done'/);
 });
 

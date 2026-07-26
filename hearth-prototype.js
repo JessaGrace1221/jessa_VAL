@@ -26480,6 +26480,8 @@ function normalizeTaskWorkspaceItem(item = {}){
       notes:taskWorkspacePreviewText(item.evidence_summary || item.description || item.evidence_quote || '', 240),
       workingBrief:item.workingBrief || item.working_brief || null,
       sourceRefs:item.sourceRefs || item.source_refs || [],
+      relatedTaskIds:Array.isArray(item.related_task_ids) ? item.related_task_ids : [],
+      ownerType:item.owner_type || '',
       sourceContext:item.sourceContext || item.source_context || {},
       contactName:owner,
       dueDate:item.due_at || '',
@@ -26723,7 +26725,9 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
         const owner = task.contactName || task.assignedToName || 'Unassigned';
         const status = task.schedulingStatus && task.schedulingStatus !== 'unscheduled' ? task.schedulingStatus : 'Open';
         const hasPrepared = attachments.length > 0;
-        const state = hasPrepared ? 'VAL Ready' : 'Needs You';
+        const state = hasPrepared
+          ? 'VAL Ready'
+          : (task.ownerType === 'other' && owner ? 'Waiting on ' + owner : (task.ownerType === 'unknown' ? 'Owner to confirm' : 'Needs You'));
         const displayTitle = taskWorkspaceDisplayTitle(task);
         const displayNotes = taskWorkspaceDisplayNotes(task);
         return [
@@ -26828,7 +26832,7 @@ async function completeTaskFromWorkspace(taskId = ''){
           payload:{surface:'home_commitments'}
         });
       }else if(task?.__workspaceKind === 'transcript_task'){
-        await postJson('/api/val/transcript-tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
+        await postJson('/api/val/transcript-tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you',relatedTaskIds:task.relatedTaskIds || task.rawCommitment?.related_task_ids || []});
       }else if(task?.__workspaceKind === 'commitment'){
         await postJson('/api/val/commitments/' + encodeURIComponent(taskId) + '/status', {status:'complete', reason:'Marked done from Home commitments.'});
       }else{

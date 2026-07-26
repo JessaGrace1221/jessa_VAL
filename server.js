@@ -31956,27 +31956,34 @@ app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
     const taskId=decodeURIComponent(req.params.taskId);
     let task=null;
     if(pgPool){
+      const requestedIds=[...new Set([taskId,...safeArray(req.body?.relatedTaskIds).map(String)].filter(Boolean))].slice(0,100);
       const result=await dbQuery(`
         update transcript_tasks tt
         set status='complete',needs_approval=false
         from transcripts t
-        where tt.task_id=$1
+        where tt.task_id=any($1::text[])
           and t.transcript_id=tt.transcript_id
           and t.tenant_id=$2 and t.user_id=$3
         returning tt.*
-      `,[taskId,tenantId(),VAL_USER_ID]);
-      task=result.rows?.[0]?transcriptPgRow(result.rows[0]):null;
+      `,[requestedIds,tenantId(),VAL_USER_ID]);
+      const completedRows=safeArray(result.rows).map(transcriptPgRow);
+      task=completedRows.find(row=>String(row.taskId)===String(taskId))||null;
       if(task){
-        await dbQuery(`
-          update val_tasks
-          set completed=true,completed_at=now(),completed_by=$1,updated_at=now()
-          where user_id=$2 and details @> $3::jsonb
-        `,[String(req.body?.completedBy||'you'),VAL_USER_ID,JSON.stringify([{transcriptTaskId:taskId}])]).catch(()=>{});
+        for(const completedId of completedRows.map(row=>row.taskId).filter(Boolean)){
+          await dbQuery(`
+            update val_tasks
+            set completed=true,completed_at=now(),completed_by=$1,updated_at=now()
+            where user_id=$2 and details @> $3::jsonb
+          `,[String(req.body?.completedBy||'you'),VAL_USER_ID,JSON.stringify([{transcriptTaskId:completedId}])]).catch(()=>{});
+        }
       }
     }else{
       const store=valStore();
-      task=transcriptFileArray(store,'transcriptTasks').find(row=>String(row.taskId||row.task_id)===String(taskId))||null;
-      if(task){task.status='complete';task.needsApproval=false;saveValStore(store);}
+      const requestedIds=new Set([taskId,...safeArray(req.body?.relatedTaskIds).map(String)]);
+      const rows=transcriptFileArray(store,'transcriptTasks').filter(row=>requestedIds.has(String(row.taskId||row.task_id)));
+      task=rows.find(row=>String(row.taskId||row.task_id)===String(taskId))||null;
+      rows.forEach(row=>{row.status='complete';row.needsApproval=false;});
+      if(task)saveValStore(store);
     }
     if(!task)return res.status(404).json({ok:false,error:'Transcript action item not found.'});
     await auditLog({req,action:'transcript_task_completed',resourceType:'transcript_task',resourceId:taskId,metadata:{transcriptId:task.transcriptId||task.transcript_id||'',title:task.taskTitle||task.task_title||''},success:true}).catch(()=>{});
@@ -32895,6 +32902,60 @@ function transcriptTaskContextExcerpt(rawText='',sourceQuote='',limit=12000){
   return text.slice(start,Math.min(text.length,start+limit));
 }
 
+function cleanTranscriptTaskLine(value=''){
+  return transcriptCleanDisplayLine(value)
+    .replace(/\s+-\s+_[^_]+_\s*$/,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function transcriptTaskContentWords(value=''){
+  const stop=new Set(['about','after','again','also','and','are','before','being','but','can','could','for','from','have','into','just','need','needs','that','the','their','them','then','there','they','this','those','through','to','was','were','will','with','would','you','your']);
+  return cleanTranscriptTaskLine(value).toLowerCase().match(/[a-z0-9]+/g)?.filter(word=>word.length>2&&!stop.has(word))||[];
+}
+
+function executiveTranscriptTaskTitle(storedTitle='',sourceQuote=''){
+  const title=cleanTranscriptTaskLine(storedTitle);
+  const quote=cleanTranscriptTaskLine(sourceQuote);
+  if(!title)return quote||'Action item';
+  if(!quote)return title;
+  const quoteWords=[...new Set(transcriptTaskContentWords(quote))];
+  if(quoteWords.length<5)return title;
+  const titleWords=new Set(transcriptTaskContentWords(title));
+  const overlap=quoteWords.filter(word=>titleWords.has(word)).length/quoteWords.length;
+  return overlap>=0.4?title:quote;
+}
+
+function transcriptTaskProjectionKey(task={}){
+  const action=cleanTranscriptTaskLine(task.title||task.evidence_quote||'')
+    .toLowerCase()
+    .replace(/^(?:jessa(?: grace)?|val|speaker[_\s-]?\d+)\s+to\s+/,'')
+    .replace(/[^a-z0-9]+/g,' ')
+    .trim();
+  const source=String(task.source_title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  return [source,action].filter(Boolean).join('|');
+}
+
+function mergeTranscriptTaskProjection(tasks=[]){
+  const groups=new Map();
+  for(const task of tasks){
+    const key=transcriptTaskProjectionKey(task)||String(task.id||'');
+    const existing=groups.get(key);
+    if(!existing){
+      groups.set(key,{...task,related_task_ids:[task.id].filter(Boolean),duplicate_count:1});
+      continue;
+    }
+    existing.related_task_ids=[...new Set(existing.related_task_ids.concat(task.id).filter(Boolean))];
+    existing.duplicate_count+=1;
+    existing.source_refs=[...safeArray(existing.source_refs),...safeArray(task.source_refs)];
+    existing.working_brief.sourcePackets=[
+      ...safeArray(existing.working_brief.sourcePackets),
+      ...safeArray(task.working_brief?.sourcePackets)
+    ];
+  }
+  return Array.from(groups.values());
+}
+
 async function canonicalTranscriptTaskProjection({limit=500}={}){
   const bounded=Math.max(1,Math.min(Number(limit)||500,500));
   let rows=[];
@@ -32917,13 +32978,14 @@ async function canonicalTranscriptTaskProjection({limit=500}={}){
       .slice(0,bounded)
       .map(row=>({...row,...(transcripts.get(String(row.transcriptId))||{})}));
   }
-  return rows.map(row=>{
+  return mergeTranscriptTaskProjection(rows.map(row=>{
     const transcriptId=String(row.transcriptId||row.transcript_id||'');
     const storedTitle=String(row.taskTitle||row.task_title||row.sourceQuote||row.source_quote||'Action item').trim();
     const sourceQuote=String(row.sourceQuote||row.source_quote||storedTitle).trim();
     const transcriptTitle=String(row.meetingTitle||row.meeting_title||'Transcript').trim();
     const contextualPrefix=transcriptTitle+' — ';
-    const title=storedTitle.startsWith(contextualPrefix)?storedTitle.slice(contextualPrefix.length).trim():storedTitle;
+    const unprefixedTitle=storedTitle.startsWith(contextualPrefix)?storedTitle.slice(contextualPrefix.length).trim():storedTitle;
+    const title=executiveTranscriptTaskTitle(unprefixedTitle,sourceQuote);
     const description=String(row.taskDescription||row.task_description||'').trim();
     const contextExcerpt=transcriptTaskContextExcerpt(row.rawText||row.raw_text||row.rawTranscript||'',sourceQuote);
     const ownerName=String(row.assignedToName||row.assigned_to_name||'').trim();
@@ -32968,7 +33030,7 @@ async function canonicalTranscriptTaskProjection({limit=500}={}){
       },
       source_packet:{source_type:'transcript',source_id:transcriptId,source_title:transcriptTitle,context_excerpt:contextExcerpt}
     };
-  });
+  }));
 }
 
 async function processExternalActionBoardEvidence(packet={}){

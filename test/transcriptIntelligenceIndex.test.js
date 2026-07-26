@@ -344,6 +344,15 @@ test('creates transcript tasks from the exact Krisp action line',()=>{
   assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
 });
 
+test('Home task projection uses the canonical transcript owner and consolidates repeated Action Items',()=>{
+  assert.match(server,/async function canonicalTranscriptTaskProjection/);
+  assert.match(server,/\[tenantId\(\),VAL_USER_ID,bounded\]/);
+  assert.match(server,/function executiveTranscriptTaskTitle/);
+  assert.match(server,/function mergeTranscriptTaskProjection/);
+  assert.match(server,/related_task_ids/);
+  assert.match(server,/tt\.task_id=any\(\$1::text\[\]\)/);
+});
+
 test('exposes drafts and settings templates navigation',()=>{
   assert.match(ui,/\['drafts','✎','Drafts'\]/);
   assert.match(ui,/\['settings_templates','▤','Templates'\]/);
