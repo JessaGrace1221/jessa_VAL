@@ -10338,7 +10338,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     const kind=waiting?'waiting_for_response':'needs_judgment';
     const reason=admission.reason || executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
     const status=waiting?'waiting_for_response':'ready_for_review';
-    const preparedDraft=!waiting ? await prepareEmailDraftIfNeeded({
+    const preparedDraft=!waiting ? await prepareSourceBackedExecutiveInboxDraft({
       ...email,
       classification:'needs_reply',
       reason,
@@ -12117,10 +12117,12 @@ function executiveInboxDraftLooksGeneric(draft={}){
   const body=String(draft.body||draft.writerOutput?.body||draft.sourceContext?.writerOutput?.body||'').replace(/\s+/g,' ').trim().toLowerCase();
   if(!body)return false;
   const hasOldOpening=/thank you for your note[. ]+i wanted to respond thoughtfully/i.test(body);
+  const hasPlaceholderOpening=/thank you for sending this over[. ]+i saw your note about/i.test(body);
+  const defersInsteadOfDrafting=/i(?:’|')ll review the details and come back with the clean next step/i.test(body);
   const exposesRules=/writing rules val used/i.test(body);
   const onlyClassifierReason=/saw this needs attention because asks for a response or decision/i.test(body);
   const onlyClassifierAction=/here is what i recommend as the next step[.: ]+draft a reply for approval/i.test(body);
-  return exposesRules || hasOldOpening || onlyClassifierReason || onlyClassifierAction;
+  return exposesRules || hasOldOpening || hasPlaceholderOpening || defersInsteadOfDrafting || onlyClassifierReason || onlyClassifierAction;
 }
 function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
@@ -12250,6 +12252,38 @@ async function prepareEmailDraftIfNeeded(email,rules=[]){
     status:'ready_for_review',
     sourceContext
   });
+}
+async function prepareSourceBackedExecutiveInboxDraft(email,rules=[]){
+  if(!emailShouldPrepareDraft(email))return null;
+  const existing=await existingExecutiveInboxDraftForEmail(email);
+  if(existing&&String(existing.body||'').trim()&&!executiveInboxDraftLooksGeneric(existing))return existing;
+  if(!valExecutiveInbox?.generateDraft)return null;
+  const writingRules=executiveInboxWritingRuleText(rules);
+  const conversationId=email.conversationId||email.threadId||email.messageId||'';
+  const result=await valExecutiveInbox.generateDraft({
+    context:{
+      conversationId,
+      threadId:email.threadId||'',
+      current_message:email,
+      latest_inbound:email,
+      sender_metrics:email.senderMetrics||{}
+    },
+    classification:{
+      conversation_state:'active',
+      waiting_on_user:true,
+      waiting_on_other:false,
+      priority_level:'high',
+      executive_meaning:email.reason||email.recommendedAction||'This thread needs executive judgment.',
+      why_now:email.reason||email.recommendedAction||'This thread needs executive judgment.',
+      approval_policy:'approval_required',
+      from:email.from||{}
+    },
+    writingRules
+  });
+  const draft=result?.draft||null;
+  return draft&&String(draft.body||'').trim()&&!executiveInboxDraftLooksGeneric(draft)&&String(draft.status||result.status||'ready_for_review')==='ready_for_review'
+    ? draft
+    : null;
 }
 function emailEvidenceStatus(email){
   const classification=String(email.classification||'').toLowerCase();

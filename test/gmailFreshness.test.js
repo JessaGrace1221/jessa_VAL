@@ -108,7 +108,8 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/No generic draft was created/);
   assert.match(server,/filter\(d=>!executiveInboxDraftLooksGeneric\(d\)\)/);
   assert.doesNotMatch(server,/preparedDraftResults=await Promise\.all\(emails\.map/);
-  assert.match(server,/const preparedDraft=!waiting \? await prepareEmailDraftIfNeeded/);
+  assert.match(server,/const preparedDraft=!waiting \? await prepareSourceBackedExecutiveInboxDraft/);
+  assert.match(server,/async function prepareSourceBackedExecutiveInboxDraft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
 });

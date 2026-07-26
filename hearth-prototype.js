@@ -11158,7 +11158,7 @@ async function scanCorrespondenceWindow(days = 30){
   renderCorrespondenceList();
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   try{
-    const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:45000, timeoutMessage:'Gmail scan is taking longer than expected.'});
+    const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:75000, timeoutMessage:'VAL is still verifying conversations and preparing source-backed drafts.'});
     currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length
