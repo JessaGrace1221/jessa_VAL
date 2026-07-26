@@ -24627,6 +24627,17 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
   ].filter(Boolean).join(' '), summary, 320);
   const envelope=chiefRecommendationEnvelope(candidate);
   const confidence=Number(recommendation.confidence||0.72);
+  const boardObservers=safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers)
+    .concat(safeArray(candidate.observers).filter(observer=>observer?.status!=='no_signal').map(observer=>observer.observer))
+    .map(String)
+    .filter((name,observerIndex,names)=>name&&names.indexOf(name)===observerIndex);
+  const observerFindings=safeArray(candidate.observers)
+    .filter(observer=>observer?.status!=='no_signal'&&observer?.finding)
+    .map(observer=>({
+      observer:String(observer.observer||'Observer'),
+      finding:dashboardShortText(observer.finding,'',320),
+      confidence:Math.max(0,Math.min(1,Number(observer.confidence)||0))
+    }));
   return {
     id:`chief_alignment_${recommendation.id}_${packetId||index}`,
     chiefRecommendationId:recommendation.id,
@@ -24646,6 +24657,8 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     ifIgnored:dashboardShortText(recommendation.opposingView||recommendation.anxietyVsMomentumJson?.anxiety_signal||'', '', 180),
     target:{type:'chief_of_staff_recommendation',id:recommendation.id,label:recommendation.title||title},
     observerName:'Chief of Staff',
+    boardObservers,
+    observerFindings,
     confidence,
     whyNowPacket:{
       why_now:index===0?(recommendation.recommendation||title):title,
@@ -24657,6 +24670,51 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     },
     homeAdmission:{whyNowPacketComplete:true},
     metadata:{source:'chief_of_staff_recommendation',chiefRecommendationId:recommendation.id,chiefQueuePacketId:packetId,canonicalWorkItemId:String(candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),sourceProcessingRecordId:String(candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),roundTableRunId:recommendation.roundTableRunId||recommendation.round_table_run_id||'',eventRunId:recommendation.eventRunId||recommendation.event_run_id||'',chiefQueueIndex:index}
+  };
+}
+function buildChiefDailyWitness(chiefItem={}){
+  if(!chiefItem?.chiefRecommendationId||!chiefItem?.canonicalWorkItemId)return null;
+  const observerName=String(chiefItem.boardObservers?.[0]||chiefItem.observerFindings?.[0]?.observer||'Board').trim();
+  const finding=dashboardShortText(
+    chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
+    || chiefItem.observerFindings?.[0]?.finding
+    || chiefItem.why
+    || chiefItem.summary
+    || '',
+    '',
+    260
+  ).replace(/^I\s+(?:am\s+)?(?:seeing|watching|noticing)\s+/i,'');
+  if(!finding)return null;
+  const findingSentence=finding.charAt(0).toLowerCase()+finding.slice(1).replace(/[.!?]+$/,'');
+  const first=observerName==='Board'
+    ? `The Board is showing me that ${findingSentence}.`
+    : `${observerName} is showing me that ${findingSentence}.`;
+  const second='I put the clearest next decision in Alignment.';
+  const third=`${observerName} has the source trail if you want the full context.`;
+  return {
+    display_greeting:[first,second,third].join('\n'),
+    greeting_lines:[first,second,third],
+    perspective:first,
+    observerName,
+    permission_line:'Nothing sends, imports, or changes externally unless you approve it.',
+    moment_type:'chief_of_staff_briefing',
+    what_was_witnessed:finding,
+    what_it_cost_or_represented:chiefItem.ifIgnored||chiefItem.why||'',
+    evidence:[chiefItem],
+    confidence:Number(chiefItem.confidence||0.72),
+    voice_note:'chief_of_staff',
+    internalUnderstanding:{
+      greeting_context:'The Chief of Staff selected the highest-ranked source-backed Board deduction.',
+      current_day_state:'chief_ranked_attention',
+      observed_pattern:finding,
+      envelope:chiefItem.envelope||null,
+      confidence:Number(chiefItem.confidence||0.72),
+      evidence:[chiefItem],
+      prepared_work:[],
+      suggested_tone:'direct',
+      things_intentionally_not_mentioned:[]
+    },
+    generatedAt:new Date().toISOString()
   };
 }
 function chiefRecommendationHomeItems(recommendation={}){
@@ -24718,7 +24776,8 @@ async function buildExecutiveBriefing(){
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
   const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
-  const dailyWitness=buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
+  const dailyWitness=buildChiefDailyWitness(chiefHomeItem)
+    || buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
     || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
   return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,chiefRecommendation:chiefHomeItem||null,chiefAlignmentQueue:chiefHomeItems,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
@@ -34047,6 +34106,7 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   logger:console,
   observerReasoner:reasonBoardEvidenceForObserver,
   chiefReasoner:reasonChiefOfStaffRecommendation,
+  admitCanonicalWork:input=>valCanonicalWork.admit(input),
   recordChiefOrdering:(id,input)=>valCanonicalWork.recordChiefOrdering(id,input),
   rebalanceChiefQueue:()=>valCanonicalWork.rebalanceChiefQueue(),
   completeCanonicalWorkItem:(id,input)=>valCanonicalWork.transition(id,input),

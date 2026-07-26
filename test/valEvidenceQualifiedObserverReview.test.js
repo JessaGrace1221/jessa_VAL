@@ -27,6 +27,9 @@ test('Observer accepts a model finding only with exact packet evidence',async()=
       packetId:'packet_goall',
       status:'observed',
       observation:'Jessa made a concrete promise to finish the handoff.',
+      watching:'I am watching whether the promised handoff gets a clear owner and finish.',
+      concern:'This promise can become trust debt if it stays open.',
+      question:'What would make this commitment unambiguous?',
       useful_context:['The commitment belongs to GOALL.'],
       evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.',
       confidence:0.91
@@ -39,6 +42,9 @@ test('Observer accepts a model finding only with exact packet evidence',async()=
   });
   assert.equal(output.packetReviews[0].status,'observed');
   assert.equal(output.packetReviews[0].reflectionMode,'model_backed_evidence_review_v1');
+  assert.match(output.packetReviews[0].watching,/clear owner/i);
+  assert.match(output.packetReviews[0].concern,/trust debt/i);
+  assert.match(output.packetReviews[0].question,/unambiguous/i);
   assert.equal(output.evidence[0].quote_or_summary,'Jessa will finish the GOALL dashboard handoff for Mike.');
 });
 

@@ -414,6 +414,7 @@ function createValIntelligenceSpine({
   promptRegistry=createValPromptRegistry(),
   observerReasoner=null,
   chiefReasoner=null,
+  admitCanonicalWork=null,
   recordChiefOrdering=null,
   rebalanceChiefQueue=null,
   loaders={}
@@ -1074,6 +1075,92 @@ function createValIntelligenceSpine({
     if(!roundTable) throw new Error('No Round Table run is available. Run /api/val/events/intelligence-pass first.');
     if(!observerRuns.length&&roundTable.eventRunId) observerRuns=await listObserverRuns({eventRunId:roundTable.eventRunId,limit:50});
     const output=await buildChiefOutput(roundTable,observerRuns);
+    if(typeof admitCanonicalWork==='function'){
+      const nonAlignmentPacketTypes=new Set([
+        'draft_review_packet',
+        'identity_context_packet',
+        'relational_context_packet',
+        'operating_context_packet',
+        'document_packet',
+        'cowork_packet',
+        'learning_packet'
+      ]);
+      const workIdsByPacket=new Map();
+      for(const [index,packet] of safeArray(output.packetQueue).entries()){
+        const packetId=String(packet.packetId||packet.packet_id||'').trim();
+        const packetType=String(packet.packetType||packet.packet_type||'').trim();
+        const existingWorkId=String(packet.canonicalWorkItemId||packet.canonical_work_item_id||'').trim();
+        if(existingWorkId){
+          workIdsByPacket.set(packetId,existingWorkId);
+          continue;
+        }
+        if(!packetId||nonAlignmentPacketTypes.has(packetType))continue;
+        const evidence=safeArray(packet.evidence);
+        const exactSourceQuote=compactText(
+          evidence[0]?.quoteOrSummary
+          || evidence[0]?.quote_or_summary
+          || evidence[0]?.quote
+          || '',
+          1200
+        );
+        if(!exactSourceQuote)continue;
+        const actionText=compactText(
+          index===0
+            ? (output.anxietyVsMomentum?.momentum_signal||output.recommendation||packet.title)
+            : `Review ${packet.title||'this Board signal'} and decide the next concrete step.`,
+          360
+        );
+        if(!actionText)continue;
+        const admitted=await admitCanonicalWork({
+          sourceProcessingRecordId:packet.sourceProcessingRecordId||packet.source_processing_record_id||'',
+          sourceType:packet.sourceType||packet.source_type||'board_packet',
+          sourceId:packet.sourceId||packet.source_id||packetId,
+          sourceTitle:packet.title||'Board-selected work',
+          workType:'chief_alignment',
+          ownership:'user',
+          ownerName:'Executive',
+          actionText,
+          objectText:packet.title||packet.summary||actionText,
+          outcomeText:packet.summary||actionText,
+          title:actionText,
+          summary:packet.summary||output.why||'The Chief of Staff selected this from source-backed Board review.',
+          exactSourceQuote,
+          sourceRefs:evidence,
+          envelope:packet.envelope||null,
+          projectId:packet.projectId||packet.project_id||'',
+          projectName:packet.projectName||packet.project_name||'',
+          relationshipId:packet.relationshipId||packet.relationship_id||'',
+          relationshipName:packet.relationshipName||packet.relationship_name||'',
+          confidence:Number(index===0?output.confidence:Math.min(0.85,Number(packet.score||0)/20))||0.65,
+          boardPacketId:packetId,
+          observerReceipts:safeArray(packet.observers),
+          roundTableRunId:roundTable.id,
+          metadata:{
+            source:'chief_of_staff_alignment',
+            chiefQueueIndex:index,
+            chiefPriorityMatches:safeArray(packet.chiefPriorityMatches),
+            noExternalAction:true
+          },
+          notify:false
+        }).catch(error=>{
+          logger.warn?.('[val-chief] canonical work admission failed:',error.message);
+          return null;
+        });
+        const workId=String(admitted?.workItem?.id||'').trim();
+        if(workId){
+          packet.canonicalWorkItemId=workId;
+          workIdsByPacket.set(packetId,workId);
+        }
+      }
+      const attachWorkId=receipt=>{
+        if(!receipt)return receipt;
+        const packetId=String(receipt.packetId||receipt.packet_id||'');
+        const canonicalWorkItemId=workIdsByPacket.get(packetId);
+        return canonicalWorkItemId?{...receipt,canonicalWorkItemId}:receipt;
+      };
+      output.anxietyVsMomentum.current_packet=attachWorkId(output.anxietyVsMomentum.current_packet);
+      output.nextCandidates=safeArray(output.nextCandidates).map(attachWorkId);
+    }
     const scope=currentScope();
     const row={
       id:uuid('chief'),

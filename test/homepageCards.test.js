@@ -242,6 +242,10 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
 });
 
 test('Chief of Staff Home witness is concrete and points to inspectable proof',()=>{
+  assert.match(server,/function buildChiefDailyWitness/);
+  assert.match(server,/const dailyWitness=buildChiefDailyWitness\(chiefHomeItem\)/);
+  assert.match(server,/I put the clearest next decision in Alignment\./);
+  assert.match(server,/\$\{observerName\} has the source trail if you want the full context\./);
   assert.match(server,/GOALL is the thing to settle today/);
   assert.match(server,/Mike needs the dashboard\/projections handoff clarified/);
   assert.match(server,/open Full Context if you want to inspect the source before acting/);
@@ -289,16 +293,15 @@ test('Observer chats stay in scoped Co-Work instead of falling through to generi
   assert.doesNotMatch(submitSource,/entry\.entrypointId === 'observer\.discussion' \|\| entry\.entrypointId === 'board\.chief_of_staff'\)\{\s*return false/);
 });
 
-test('Board of Observers uses a bounded initial hydration without rebuilding the visible graph',()=>{
+test('Board of Observers waits for one compact truthful hydration before rendering the graph',()=>{
   const boardSource = hearthPrototype.slice(
     hearthPrototype.indexOf('async function openObserverBoard'),
     hearthPrototype.indexOf('function orientHomeCoworkFromInput')
   );
-  assert.match(boardSource,/Promise\.race\(\[\s*liveContextPromise/);
-  assert.match(boardSource,/window\.setTimeout\(resolve, 800\)/);
+  assert.match(boardSource,/liveContextPromise = loadLiveObserverBoardContext\(\);\s*await liveContextPromise;/);
   assert.match(boardSource,/skipLiveLoad/);
   assert.match(boardSource,/existingSelectedObserverId/);
-  assert.doesNotMatch(boardSource,/liveContextPromise\.then\(\(\) => \{/);
+  assert.doesNotMatch(boardSource,/Promise\.race/);
   assert.doesNotMatch(boardSource,/openObserverBoard\(\{\.\.\.options, selectedObserverId:/);
   assert.doesNotMatch(boardSource,/const chief = observerBoardState\.chiefOfStaff;\s*await loadLiveObserverBoardContext\(\);/);
 });
@@ -349,7 +352,7 @@ test('Board Observer cards stay stable during hydration, scroll, and close only 
   assert.match(hearthPrototype,/workspaceInputPanel\.querySelectorAll\('\.observer-node\[data-observer-cowork\],\.observer-chief-card\[data-observer-cowork\]'\)\.forEach/);
   assert.match(hearthPrototype,/if\(selectedObserverId\)\{\s*requestAnimationFrame\(\(\) => updateObserverSelectedCard\(selectedObserverId\)\);/);
   assert.match(hearthPrototype,/openObserverBoard\(\{afterWitnessing:true,waitForLiveContext:true\}\)/);
-  assert.match(hearthPrototype,/new Promise\(\(resolve\) => window\.setTimeout\(resolve, 800\)\)/);
+  assert.match(hearthPrototype,/fetchBoardResource\('\/api\/val\/board\/context\?limit=36&compact=true', 12000\)/);
   assert.doesNotMatch(hearthPrototype,/liveContextPromise\.then\(\(\) => \{[\s\S]{0,500}openObserverBoard/);
   assert.match(hearthCss,/\.observer-graph-field\.observer-card-open \.observer-card-dismiss-surface\{\s*pointer-events:auto;/);
   assert.match(hearthCss,/\.observer-signal-paths\{[\s\S]{0,220}pointer-events:none;/);

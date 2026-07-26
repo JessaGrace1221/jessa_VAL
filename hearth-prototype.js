@@ -956,30 +956,30 @@ function observerBoardConnectionsFromPackets(packets = []){
 }
 
 async function loadLiveObserverBoardContext(){
-  let timeoutId = null;
-  try{
+  async function fetchBoardResource(url, timeoutMs){
     const controller = window.AbortController ? new AbortController() : null;
-    timeoutId = controller ? window.setTimeout(() => controller.abort(), 7000) : null;
-    const [boardResponse,evidenceResponse] = await Promise.all([
-      fetch('/api/val/board/context?limit=80', {
+    const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    try{
+      const response = await fetch(url, {
         method:'GET',
         credentials:'same-origin',
         headers:{'Accept':'application/json'},
         signal:controller?.signal
-      }),
-      fetch('/api/val/observers/evidence?limit=200', {
-        method:'GET',
-        credentials:'same-origin',
-        headers:{'Accept':'application/json'},
-        signal:controller?.signal
-      })
-    ]);
-    const [result,evidenceResult] = await Promise.all([
-      boardResponse.json().catch(() => ({})),
-      evidenceResponse.json().catch(() => ({}))
-    ]);
-    if(!boardResponse.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
-    if(!evidenceResponse.ok || evidenceResult.ok === false) throw new Error(evidenceResult.error || 'Observer evidence could not load yet.');
+      });
+      const result = await response.json().catch(() => ({}));
+      if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
+      return result;
+    }finally{
+      if(timeoutId) window.clearTimeout(timeoutId);
+    }
+  }
+  const [boardResult,evidenceResult] = await Promise.allSettled([
+    fetchBoardResource('/api/val/board/context?limit=36&compact=true', 12000),
+    fetchBoardResource('/api/val/observers/evidence?limit=200', 12000)
+  ]);
+  const result = boardResult.status === 'fulfilled' ? boardResult.value : null;
+  const evidence = evidenceResult.status === 'fulfilled' ? evidenceResult.value : null;
+  if(result){
     observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
     observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
     observerBoardState.witnessingComplete = typeof result?.witnessingComplete === 'boolean'
@@ -991,27 +991,23 @@ async function loadLiveObserverBoardContext(){
     observerBoardState.witnessingNextStep = String(result?.witnessingNextStep || '');
     observerBoardState.sourceSummary = result?.sourceSummary || null;
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
-    observerBoardState.reviewsByObserver = evidenceResult?.reviewsByObserver && typeof evidenceResult.reviewsByObserver === 'object'
-      ? evidenceResult.reviewsByObserver
+  }
+  if(evidence){
+    observerBoardState.reviewsByObserver = evidence?.reviewsByObserver && typeof evidence.reviewsByObserver === 'object'
+      ? evidence.reviewsByObserver
       : {};
     observerBoardState.observerEvidenceSummary = {
-      receiptCount:Number(evidenceResult?.receiptCount||0),
-      observedCount:Number(evidenceResult?.observedCount||0),
-      noSignalCount:Number(evidenceResult?.noSignalCount||0),
-      observerCount:Number(evidenceResult?.observerCount||0)
+      receiptCount:Number(evidence?.receiptCount||0),
+      observedCount:Number(evidence?.observedCount||0),
+      noSignalCount:Number(evidence?.noSignalCount||0),
+      observerCount:Number(evidence?.observerCount||0)
     };
-    return result || null;
-  }catch(error){
-    observerBoardState.livePackets = [];
-    observerBoardState.livePacketCount = 0;
-    observerBoardState.sourceSummary = null;
-    observerBoardState.sources = [];
-    observerBoardState.reviewsByObserver = {};
-    observerBoardState.livePacketError = error.message;
-    return null;
-  }finally{
-    if(timeoutId) window.clearTimeout(timeoutId);
   }
+  const failures = [boardResult,evidenceResult]
+    .filter(item => item.status === 'rejected')
+    .map(item => item.reason?.message || 'Board context could not load yet.');
+  observerBoardState.livePacketError = failures.join(' ');
+  return result || evidence || null;
 }
 
 const coworkSession = {
@@ -26929,6 +26925,60 @@ function observerReviewSummaryLine(review = {}){
   return observerCompactLine(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 240);
 }
 
+function observerPresentation(observer = {}, review = {}){
+  const name = String(observer.name || '').trim();
+  const usefulContext = safeArray(review.usefulContext).map((item) => observerCompactLine(item, '', 190)).filter(Boolean);
+  const watchingByObserver = {
+    'Executive Inbox':'I am watching which human conversation now deserves executive attention.',
+    Relationship:'I am watching for changes in trust, warmth, distance, and repair.',
+    Project:'I am watching whether this work is moving, blocked, or losing long-term value.',
+    Capacity:'I am watching the tradeoff between current demands and sound decision-making.',
+    Courage:'I am watching for an important decision being hidden inside safer activity.',
+    Delight:'I am watching for what restores energy, curiosity, and connection.',
+    Opportunity:'I am watching whether this opening becomes concrete enough to act on.',
+    Momentum:'I am watching for meaningful movement rather than activity alone.',
+    Meaning:'I am watching how this connects to the larger story and stated values.',
+    Synchronicity:'I am watching whether this convergence repeats without calling it certainty.',
+    Commitment:'I am watching whether this promise is being carried, renegotiated, or neglected.',
+    Calendar:'I am watching whether the schedule protects the time this actually requires.',
+    Environment:'I am watching which physical or external conditions change what is possible.',
+    Witnessing:'I am watching whether current choices remain consistent with what you have told me about yourself.'
+  };
+  const concernByObserver = {
+    'Executive Inbox':'The right person may be neglected while lower-value communication consumes attention.',
+    Relationship:'Trust can erode quietly when a change in warmth or distance is left unnamed.',
+    Project:'A blocked dependency can make activity look like progress.',
+    Capacity:'Too many competing demands can reduce the quality of the next decision.',
+    Courage:'Avoidance can keep the safest work moving while the important decision waits.',
+    Delight:'Effectiveness can become brittle when energy and connection disappear from the workday.',
+    Opportunity:'An opening can expire if its timing or owner stays unclear.',
+    Momentum:'Visible activity can conceal that the meaningful work has stopped moving.',
+    Meaning:'A locally efficient choice can drift away from the larger purpose.',
+    Synchronicity:'A repeated pattern can be ignored or overclaimed before enough evidence exists.',
+    Commitment:'An unowned promise can become a trust debt.',
+    Calendar:'The schedule can promise more than the available time can honestly hold.',
+    Environment:'External conditions can quietly undermine an otherwise sound plan.',
+    Witnessing:'A recommendation can be efficient and still conflict with the user’s stated way of moving through life.'
+  };
+  return {
+    watching:observerCompactLine(
+      review.watching || usefulContext[0] || watchingByObserver[name],
+      'I am continuing to watch this evidence through my assigned lens.',
+      220
+    ),
+    concern:observerCompactLine(
+      review.concern || concernByObserver[name],
+      'I am not holding a supported concern from this evidence.',
+      200
+    ),
+    explore:observerCompactLine(
+      review.question || observer.stance,
+      'What would become clearer if we examined this signal together?',
+      180
+    )
+  };
+}
+
 function observerReviewNamedLine(review = {}){
   const people = safeArray(review.people).filter(Boolean);
   const projects = safeArray(review.projects).filter(Boolean);
@@ -27335,6 +27385,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const receivedCount = isChief ? 0 : observerLiveReviews(name, 80).length;
   const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
   const latestDeduction = meaningfulReviews[0] || null;
+  const presentation = latestDeduction ? observerPresentation(observer, latestDeduction) : null;
   const currentlySeeing = isChief
     ? 'The full Board is active.'
     : latestDeduction
@@ -27347,7 +27398,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
     : latestDeduction
-      ? observerCompactLine(latestDeduction.observation, 'Watching the evidence attached to this deduction.', 220)
+      ? presentation.watching
       : completedReviews.length
         ? 'Nothing active right now.'
       : hasLiveReviews
@@ -27365,13 +27416,13 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
     : latestDeduction
-      ? observerCompactLine(latestDeduction.concern, 'No supported concern right now.', 200)
+      ? presentation.concern
       : completedReviews.length ? 'No supported concern right now.'
       : hasLiveReviews ? 'No concern is being claimed before the deduction is complete.' : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
     : latestDeduction
-      ? observerCompactLine(latestDeduction.question, 'Nothing to explore yet.', 180)
+      ? presentation.explore
       : completedReviews.length ? 'Nothing to explore yet.'
       : hasLiveReviews ? 'What, if anything, becomes meaningful through this lens?' : 'Open or ingest a source packet, then ask this Observer what it noticed.';
   const packetFrom = isChief ? 'Board' : String(latestDeduction?.evidence?.sourceType || checkedReviews[0]?.evidence?.sourceType || 'No live source').replace(/_/g, ' ');
@@ -27641,14 +27692,7 @@ async function openObserverBoard(options = {}){
   let liveContextPromise = null;
   if(!options.skipLiveLoad){
     liveContextPromise = loadLiveObserverBoardContext();
-    if(options.waitForLiveContext){
-      await liveContextPromise;
-    }else{
-      await Promise.race([
-        liveContextPromise,
-        new Promise((resolve) => window.setTimeout(resolve, 800))
-      ]);
-    }
+    await liveContextPromise;
   }
   const chief = observerBoardState.chiefOfStaff;
   const observerPositions = {

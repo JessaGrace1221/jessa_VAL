@@ -43,6 +43,7 @@ function normalizeObserverEvidenceReview(run={},review={}){
     lensFinding:observed?compactText(review.observation||review.seeing||'',420):'No meaningful signal from my lens.',
     observation:observed?compactText(review.observation||review.seeing||'',420):'No meaningful signal from my lens.',
     usefulContext:safeArray(review.usefulContext||review.useful_context).map(item=>compactText(item,240)).filter(Boolean).slice(0,6),
+    watching:compactText(review.watching||'',280),
     concern:compactText(review.concern||'',240),
     question:compactText(review.question||'',200),
     people:safeArray(review.people).map(item=>compactText(item,120)).filter(Boolean).slice(0,8),

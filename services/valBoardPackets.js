@@ -1079,24 +1079,43 @@ function createValBoardPacketsService({
       witnessingError:String(witnessing?.error||'')
     };
   }
-  async function boardContext({limit=80,observerName=''}={}){
+  function compactBoardPacket(packet={}){
+    return {
+      id:packet.id||'',
+      sourceType:packet.sourceType||'',
+      sourceId:packet.sourceId||'',
+      packetType:packet.packetType||'',
+      title:compactText(packet.title||'Packet',180),
+      summary:compactText(packet.summary||'',320),
+      status:packet.status||'',
+      routeObserversJson:safeArray(packet.routeObserversJson).map(route=>({
+        observerName:route.observerName||'',
+        primary:!!route.primary
+      })),
+      primaryObserversJson:safeArray(packet.primaryObserversJson),
+      createdAt:packet.createdAt||'',
+      updatedAt:packet.updatedAt||''
+    };
+  }
+  async function boardContext({limit=80,observerName='',compact=false}={}){
     const [packets,witnessing]=await Promise.all([
       listPackets({limit,observerName}),
       witnessingStatus()
     ]);
     const sourceReadiness=sourceReadinessFromPackets(packets);
+    const visiblePackets=compact?packets.map(compactBoardPacket):packets;
     return {
       observers:BOARD_OBSERVERS,
       ...witnessing,
       sources:sourceReadiness.sources,
       sourceSummary:sourceReadiness.summary,
       livePacketCount:packets.length,
-      packets,
-      byObserver:Object.fromEntries(BOARD_OBSERVERS.map(observer=>[
+      packets:visiblePackets,
+      byObserver:compact?{}:Object.fromEntries(BOARD_OBSERVERS.map(observer=>[
         observer,
         packets.filter(packet=>safeArray(packet.routeObserversJson).some(route=>route.observerName===observer))
       ])),
-      reviewsByObserver:Object.fromEntries(BOARD_OBSERVERS.map(observer=>[
+      reviewsByObserver:compact?{}:Object.fromEntries(BOARD_OBSERVERS.map(observer=>[
         observer,
         packets.map(packet=>safeArray(packet.payloadJson?.observerReviews).find(review=>review.observerName===observer)).filter(Boolean)
       ]))

@@ -70,6 +70,9 @@ function noSignalReview(observerName,packet={}){
     observation:'No meaningful signal from my lens.',
     evidence:[],
     usefulContext:[],
+    watching:'',
+    concern:'',
+    question:'',
     confidence:0.9,
     reflectionMode:'model_backed_evidence_review_v1',
     reviewedAt:new Date().toISOString()
@@ -127,12 +130,17 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         'Otherwise return no_meaningful_signal. This is a valid and preferred answer when the lens does not apply.',
         'An observed review must cite one evidence_quote copied exactly from that packet evidence.',
         'Do not infer names, projects, motives, urgency, or relationships that the evidence does not state.',
+        'Write as this Observer in concise, natural first-person language.',
+        'observation states the concrete signal you see now.',
+        'watching states what you will continue monitoring through this lens.',
+        'concern states the supported risk, tension, or cost. Leave it empty when none is supported.',
+        'question states one useful question this Observer would explore with the user. Leave it empty when none is supported.',
         'Do not recommend an action. Do not expose chain-of-thought.'
       ].join('\n'),
       user:[
         JSON.stringify({packets:packetBriefs}),
         '',
-        'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","useful_context":["short grounded fact"],"evidence_quote":"exact supplied quote or empty","confidence":0.0}]}'
+        'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","watching":"one distinct sentence or empty","concern":"one distinct sentence or empty","question":"one concise question or empty","useful_context":["short grounded fact"],"evidence_quote":"exact supplied quote or empty","confidence":0.0}]}'
       ].join('\n'),
       maxTokens:Math.min(3200,700+(packets.length*180)),
       temperature:0.1,
@@ -165,6 +173,9 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         observation:compactText(candidate.observation,420),
         evidence,
         usefulContext:safeArray(candidate.useful_context).map(item=>compactText(item,240)).filter(Boolean).slice(0,6),
+        watching:compactText(candidate.watching,280),
+        concern:compactText(candidate.concern,240),
+        question:compactText(candidate.question,200),
         confidence:Math.max(0.2,Math.min(0.95,Number(candidate.confidence)||0.65)),
         reflectionMode:'model_backed_evidence_review_v1',
         reviewedAt

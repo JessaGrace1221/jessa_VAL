@@ -797,6 +797,90 @@ test('Chief of Staff persists canonical work order for current and next Alignmen
   assert.equal(rebalanceCount,1);
 });
 
+test('Chief of Staff materializes grounded actionable packets while keeping prepared drafts out of Alignment',async()=>{
+  let store={tasks:[]};
+  const admissions=[];
+  const recorded=[];
+  const packets=[
+    {
+      id:'packet_capacity_email',
+      sourceType:'email',
+      sourceId:'email_capacity',
+      packetType:'email_attention_packet',
+      title:'Resolve Monday ownership before committing',
+      summary:'Capacity found timing strain around ownership and Monday availability.',
+      primaryObserversJson:['Capacity','Commitment'],
+      routeObserversJson:[],
+      sourceRefsJson:[{source_type:'email',source_id:'email_capacity',quote_or_summary:'We need ownership and Monday availability confirmed before deciding.',confidence:0.94}],
+      payloadJson:{projectName:'GOALL'},
+      prototype:false
+    },
+    {
+      id:'packet_existing_draft',
+      sourceType:'draft',
+      sourceId:'draft_1',
+      packetType:'draft_review_packet',
+      title:'Prepared GOALL reply',
+      summary:'A real draft is ready for review in Leverage.',
+      primaryObserversJson:['Executive Inbox'],
+      routeObserversJson:[],
+      sourceRefsJson:[{source_type:'draft',source_id:'draft_1',quote_or_summary:'Draft reply body.',confidence:0.96}],
+      payloadJson:{projectName:'GOALL'},
+      prototype:false
+    }
+  ];
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_materialized`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    admitCanonicalWork:async input=>{
+      admissions.push(input);
+      return {ok:true,workItem:{id:`work_${input.boardPacketId}`}};
+    },
+    recordChiefOrdering:async(id,input)=>recorded.push({id,input}),
+    rebalanceChiefQueue:async()=>({ok:true}),
+    loaders:{
+      listBoardPackets:async()=>packets,
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'board_packet_received',sourceType:'email',sourceId:'email_capacity',packetIds:packets.map(packet=>packet.id)}
+  });
+  assert.equal(admissions.length,1);
+  assert.equal(admissions[0].boardPacketId,'packet_capacity_email');
+  assert.equal(admissions[0].workType,'chief_alignment');
+  assert.equal(admissions[0].projectName,'GOALL');
+  assert.equal(admissions[0].notify,false);
+  assert.match(admissions[0].exactSourceQuote,/ownership and Monday availability/i);
+  assert.equal(recorded.length,1);
+  assert.equal(recorded[0].id,'work_packet_capacity_email');
+  assert.ok(
+    [
+      result.recommendation.anxietyVsMomentumJson.current_packet,
+      ...result.recommendation.nextCandidatesJson
+    ].some(candidate=>candidate?.canonicalWorkItemId==='work_packet_capacity_email')
+  );
+  assert.ok(
+    [
+      result.recommendation.anxietyVsMomentumJson.current_packet,
+      ...result.recommendation.nextCandidatesJson
+    ].find(candidate=>candidate?.packetId==='packet_existing_draft')
+  );
+  assert.ok(
+    ![
+      result.recommendation.anxietyVsMomentumJson.current_packet,
+      ...result.recommendation.nextCandidatesJson
+    ].find(candidate=>candidate?.packetId==='packet_existing_draft')?.canonicalWorkItemId
+  );
+});
+
 test('all 14 independent Observer reviews run with bounded concurrency',async()=>{
   let store={tasks:[]};
   let active=0;

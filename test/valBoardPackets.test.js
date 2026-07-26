@@ -181,6 +181,36 @@ test('Board context exposes durable Witnessing completion instead of relying on 
   assert.equal(context.witnessingAnsweredCount,12);
   assert.equal(context.livePacketCount,1);
 });
+
+test('compact Board context keeps visual routing truth without repeating full packet payloads',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_compact`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    getWitnessingCompletion:async()=>({complete:true,sessionId:'witnessing_complete'}),
+    logger:{log(){}}
+  });
+  await service.createPacket({
+    sourceType:'email',
+    sourceId:'email_compact',
+    packetType:'email_attention_packet',
+    title:'Executive email',
+    summary:'A real email needs a reply.',
+    payload:{rawText:'x'.repeat(20000)}
+  });
+  const context=await service.boardContext({compact:true});
+  assert.equal(context.livePacketCount,1);
+  assert.equal(context.packets[0].routeObserversJson.length,BOARD_OBSERVERS.length);
+  assert.equal(context.packets[0].payloadJson,undefined);
+  assert.deepEqual(context.byObserver,{});
+  assert.deepEqual(context.reviewsByObserver,{});
+  assert.ok(JSON.stringify(context).length<10000);
+});
+
 test('Observer reviews preserve concrete named evidence for project-first executive context',async()=>{
   let store={};
   const service=createValBoardPacketsService({
@@ -719,6 +749,15 @@ test('Observer cards expose an honest quiet state when no valid evidence qualifi
   assert.match(frontend,/Nothing to explore yet\./);
 });
 
+test('Observer cards present distinct lens language instead of repeating one observation',()=>{
+  assert.match(frontend,/function observerPresentation/);
+  assert.match(frontend,/review\.watching \|\| usefulContext\[0\]/);
+  assert.match(frontend,/review\.concern \|\| concernByObserver\[name\]/);
+  assert.match(frontend,/review\.question \|\| observer\.stance/);
+  assert.match(frontend,/Relationship:'I am watching for changes in trust, warmth, distance, and repair\.'/);
+  assert.match(frontend,/Capacity:'Too many competing demands can reduce the quality of the next decision\.'/);
+});
+
 test('profile persistence paths emit Board packets when relationship/project truth changes',()=>{
   assert.match(server,/async function recordRelationshipProfileBoardPacket/);
   assert.match(server,/function relationshipProfileEvidenceText/);
@@ -767,11 +806,13 @@ test('VAL-created calendar events enter immutable canonical source processing be
 
 test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/loadLiveObserverBoardContext/);
-  assert.match(frontend,/fetch\('\/api\/val\/board\/context\?limit=80'/);
+  assert.match(frontend,/fetchBoardResource\('\/api\/val\/board\/context\?limit=36&compact=true', 12000\)/);
+  assert.match(frontend,/Promise\.allSettled/);
   assert.match(routes,/app\.get\('\/api\/val\/board\/context'/);
+  assert.match(routes,/compact:\/\^\(1\|true\|yes\)\$\//);
   assert.match(routes,/app\.get\('\/api\/val\/board\/status'/);
   assert.match(routes,/service\.witnessingStatus\(\)/);
-  assert.match(routes,/service\.boardContext\(\{limit:/);
+  assert.match(routes,/service\.boardContext\(\{\s*limit:/);
   assert.match(frontend,/observerBoardConnectionsFromPackets/);
   assert.match(frontend,/observerBoardState\.livePackets/);
   assert.match(frontend,/observerBoardState\.sourceSummary/);

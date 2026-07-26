@@ -27,7 +27,11 @@ function registerValBoardPacketsRoutes(app,deps={}){
   app.get('/api/val/board/context',async(req,res)=>{
     try{
       await waitForDb();
-      res.json({ok:true,...await service.boardContext({limit:parseLimit(req.query.limit,80),observerName:String(req.query.observerName||'')})});
+      res.json({ok:true,...await service.boardContext({
+        limit:parseLimit(req.query.limit,80),
+        observerName:String(req.query.observerName||''),
+        compact:/^(1|true|yes)$/i.test(String(req.query.compact||''))
+      })});
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 

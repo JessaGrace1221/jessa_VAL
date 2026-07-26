@@ -1040,7 +1040,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/not-executive-contact/);
   assert.match(hearthJs, /action === 'not_executive_contact'/);
   assert.match(hearthJs, /const dateLabel = correspondenceHumanContactTime\(item\.receivedAt \|\| item\.latestAt \|\| item\.lastContact \|\| item\.date \|\| ''\)/);
-  assert.match(hearthJs, /\[dateLabel, item\.context \|\| item\.source \|\| ''\]\.filter\(Boolean\)\.join\(' · '\)/);
+  assert.match(hearthJs, /const senderLabel = item\.senderName \|\| item\.senderEmail \|\| ''/);
+  assert.match(hearthJs, /senderLabel \? 'From ' \+ senderLabel : ''/);
+  assert.match(hearthJs, /\]\.filter\(Boolean\)\.join\(' · '\)/);
   assert.match(hearthJs, /if\(correspondenceActionId === 'not_executive_contact'\)\{[\s\S]{0,500}await handleCorrespondenceAction\(correspondenceActionId\)/);
   assert.match(hearthJs, /timeoutMs:6000/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
