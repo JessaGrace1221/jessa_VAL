@@ -27107,7 +27107,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true}){
   let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
   const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -27142,11 +27142,11 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     return d;
   };
   let d=await request();
-  if(d.error && /temperature/i.test(d.error.message||'')){
+  if(allowCompatibilityRetries&&d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
     d=await request();
   }
-  if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+  if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
     body.text={format:{type:'json_object'}};
     d=await request();
   }
@@ -27163,11 +27163,11 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     console.warn('[VAL model] Tenant OpenAI key could not generate a response; using the approved platform fallback.');
     openAiKey=platformKey;
     d=await request();
-    if(d.error && /temperature/i.test(d.error.message||'')){
+    if(allowCompatibilityRetries&&d.error && /temperature/i.test(d.error.message||'')){
       delete body.temperature;
       d=await request();
     }
-    if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+    if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
       body.text={format:{type:'json_object'}};
       d=await request();
     }
@@ -27180,21 +27180,38 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   return responseText(d);
 }
 
-async function callBoardNanoModel({system,user,maxTokens=1000,temperature=0.1,json=false,jsonSchema=null,timeoutMs=30000}={}){
+let boardNanoUnavailableUntil=0;
+let boardNanoUnavailableReason='';
+async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSchema=null,timeoutMs=30000}={}){
+  if(Date.now()<boardNanoUnavailableUntil){
+    throw new Error(`The scheduled Board nano lane is temporarily unavailable: ${boardNanoUnavailableReason||'OpenAI capacity is unavailable'}`);
+  }
   const apiKey=String(OPENAI_KEY||'').trim();
   if(!apiKey)throw new Error('The scheduled Board requires the configured OpenAI platform key.');
-  return callOpenAIResponses({
-    system,
-    messages:[{role:'user',content:user}],
-    maxTokens,
-    temperature,
-    json,
-    jsonSchema,
-    timeoutMs,
-    model:OPENAI_OBSERVER_MODEL,
-    apiKey,
-    allowPlatformFallback:false
-  });
+  try{
+    const response=await callOpenAIResponses({
+      system,
+      messages:[{role:'user',content:user}],
+      maxTokens,
+      temperature:undefined,
+      json,
+      jsonSchema,
+      timeoutMs,
+      model:OPENAI_OBSERVER_MODEL,
+      apiKey,
+      allowPlatformFallback:false,
+      allowCompatibilityRetries:false
+    });
+    boardNanoUnavailableUntil=0;
+    boardNanoUnavailableReason='';
+    return response;
+  }catch(error){
+    if(valReasoningCapacityError(error)){
+      boardNanoUnavailableUntil=Date.now()+2*60*1000;
+      boardNanoUnavailableReason=error.message;
+    }
+    throw error;
+  }
 }
 
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){

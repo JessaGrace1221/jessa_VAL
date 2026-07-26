@@ -81,6 +81,8 @@ test('Board reasoning is capped at three nano briefings per local day',()=>{
   assert.match(server,/schedule:\['06:00','12:00','17:00'\]/);
   assert.match(server,/async function callBoardNanoModel/);
   assert.match(server,/allowPlatformFallback:false/);
+  assert.match(server,/allowCompatibilityRetries:false/);
+  assert.match(server,/boardNanoUnavailableUntil/);
   assert.match(server,/callModel:callBoardNanoModel/);
 });
 

@@ -25,6 +25,7 @@ The default timezone is the VAL user's configured timezone.
 - Empty briefings make no model calls
 - Failed briefings do not retry automatically
 - Failed OpenAI calls do not fall back to Anthropic or another provider
+- Provider-capacity failures open a short circuit for the rest of that briefing
 - Manual Board reasoning and retry routes are disabled
 
 Packets beyond a briefing's limit remain durable and wait for the next scheduled
