@@ -175,6 +175,8 @@ const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-nano';
 const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||42);
 const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
+const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
+  && !/^(1|true|yes)$/i.test(String(process.env.VAL_BOARD_LAUNCH_READY||''));
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -34311,6 +34313,9 @@ async function pendingScheduledBoardPackets(){
 }
 
 async function runScheduledBoardBriefingIfDue({now=new Date()}={}){
+  if(VAL_BOARD_LAUNCH_HOLD){
+    return {ok:true,skipped:true,reason:'launch_hold'};
+  }
   const slot=currentBoardBriefingSlot({now,timeZone:CLIENT_CONFIG.timezone});
   if(!slot)return {ok:true,skipped:true,reason:'before_first_briefing'};
   const checkpoint=await claimScheduledBoardBriefing(slot);
@@ -34367,6 +34372,7 @@ app.get('/api/val/board/briefing-status',async(req,res)=>{
       packetsPerBriefing:VAL_BOARD_PACKETS_PER_BRIEFING,
       dailyObserverCallLimit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
       model:OPENAI_OBSERVER_MODEL,
+      launchHold:VAL_BOARD_LAUNCH_HOLD,
       runs
     });
   }catch(error){

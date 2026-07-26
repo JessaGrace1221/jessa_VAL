@@ -59,6 +59,9 @@ test('scheduled maintenance runs one claimed briefing and never retries model re
   assert.doesNotMatch(block,/retryFailedIntelligenceRuns/);
   assert.doesNotMatch(block,/valBoardDeliveryQueue/);
   assert.match(schema,/unique \(tenant_id,user_id,local_date,briefing_slot\)/);
+  assert.match(server,/VAL_BOARD_LAUNCH_HOLD/);
+  assert.match(server,/reason:'launch_hold'/);
+  assert.match(server,/VAL_BOARD_LAUNCH_READY/);
 });
 
 test('source intake queues packets without invoking Observer reasoning',()=>{

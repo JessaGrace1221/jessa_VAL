@@ -6,6 +6,10 @@ Source intake is continuous and model-free. Emails, transcripts, calendar events
 tasks, drafts, relationship updates, Witnessing evidence, documents, notes, chat,
 and voice create durable evidence packets as they arrive.
 
+Jessa VAL remains on a launch hold by default. Scheduled reasoning cannot begin
+until `VAL_BOARD_LAUNCH_READY=true` is explicitly configured after launch approval.
+The hold does not stop evidence intake.
+
 The Board of Observers reasons over those packets only three times per local day:
 
 - Morning briefing: 6:00 AM
