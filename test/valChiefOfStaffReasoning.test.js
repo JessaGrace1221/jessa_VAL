@@ -69,3 +69,31 @@ test('fallback Chief language keeps task packets direct and actionable',()=>{
   assert.match(result.why,/Ashley asked/);
   assert.equal(result.leadObserver,'Commitment');
 });
+
+test('relationship-profile evidence cannot be mislabeled as Calendar',async()=>{
+  const relationshipPacket={
+    ...packet(),
+    sourceType:'relationship_profile',
+    packetType:'relationship_packet',
+    observers:[
+      {observer:'Relationship',status:'observed',finding:'The sent email still appears unanswered.',confidence:0.88},
+      {observer:'Calendar',status:'observed',finding:'Time has passed since the message.',confidence:0.94},
+      {observer:'Commitment',status:'observed',finding:'The follow-up loop remains open.',confidence:0.82}
+    ]
+  };
+  const reasoner=createChiefOfStaffReasoner({
+    callModel:async()=>JSON.stringify({
+      title:'Ashley reply loop is open',
+      recommendation:'Decide whether to follow up with Ashley.',
+      why:'The sent email still appears unanswered.',
+      action:'Decide whether to follow up with Ashley.',
+      lead_observer:'Calendar',
+      evidence_quote:'Ashley: Please send the revised HopeMakers scope before our Friday review.',
+      confidence:0.9
+    }),
+    logger:{warn(){}}
+  });
+  const result=await reasoner({packet:relationshipPacket});
+  assert.equal(result.grounded,true);
+  assert.equal(result.leadObserver,'Relationship');
+});

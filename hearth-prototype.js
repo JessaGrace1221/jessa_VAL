@@ -952,7 +952,7 @@ function observerBoardConnectionsFromPackets(packets = []){
       ]);
     });
   });
-  return connections.slice(0, 36);
+  return connections.slice(0, 24);
 }
 
 async function loadLiveObserverBoardContext(){

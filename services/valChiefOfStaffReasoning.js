@@ -18,21 +18,35 @@ function exactEvidence(packet={},quote=''){
   if(!requested)return null;
   return evidenceRefs(packet).find(ref=>ref.quote.includes(requested))||null;
 }
+function leadObserverPreference(packet={}){
+  const sourceType=String(packet.sourceType||packet.source_type||'').toLowerCase();
+  const packetType=String(packet.packetType||packet.packet_type||'').toLowerCase();
+  if(sourceType==='relationship_profile')return ['Relationship','Commitment','Executive Inbox'];
+  if(sourceType==='email'||sourceType==='gmail_email'||sourceType==='outlook_email')return ['Executive Inbox','Relationship','Commitment'];
+  if(sourceType==='calendar_event')return ['Calendar','Capacity','Commitment'];
+  if(sourceType==='task')return ['Commitment','Project','Capacity'];
+  if(sourceType==='project_profile')return ['Project','Momentum','Capacity'];
+  if(sourceType==='witnessing'||sourceType==='knowledge_document')return ['Witnessing','Meaning','Capacity'];
+  if(/email|reply|message|communication/.test(packetType))return ['Executive Inbox','Relationship','Commitment'];
+  if(/calendar|meeting|timing|capacity/.test(packetType))return ['Calendar','Capacity','Commitment'];
+  if(/task|commitment/.test(packetType))return ['Commitment','Project','Capacity'];
+  return ['Project','Relationship','Capacity','Momentum'];
+}
+function groundedLeadObserver(packet={},observers=[],requested=''){
+  const observed=safeArray(observers).filter(observer=>observer.status!=='no_signal');
+  const preference=leadObserverPreference(packet);
+  const requestedObserver=observed.find(observer=>observer.observer===requested);
+  if(requestedObserver&&preference.includes(requested))return requested;
+  return preference.find(name=>observed.some(observer=>observer.observer===name))
+    || observed.slice().sort((a,b)=>Number(b.confidence||0)-Number(a.confidence||0))[0]?.observer
+    || '';
+}
 function fallbackChiefLanguage(packet={}){
   const title=compactText(packet.title||'Review the highest Board packet',180);
   const summary=compactText(packet.summary||'',320);
   const type=String(packet.packetType||packet.packet_type||'');
   const observed=safeArray(packet.observers).filter(observer=>observer.status!=='no_signal');
-  const preferredNames=/email|reply|message|communication/.test(type)
-    ? ['Executive Inbox','Relationship','Commitment']
-    : (/calendar|meeting|timing|capacity/.test(type)
-      ? ['Calendar','Capacity','Commitment']
-      : (/task|commitment/.test(type)
-        ? ['Commitment','Project','Capacity']
-        : ['Project','Relationship','Capacity','Momentum']));
-  const leadObserver=preferredNames.find(name=>observed.some(observer=>observer.observer===name))
-    || observed.slice().sort((a,b)=>Number(b.confidence||0)-Number(a.confidence||0))[0]?.observer
-    || '';
+  const leadObserver=groundedLeadObserver(packet,observed);
   if(type==='task_packet'){
     return {
       title,
@@ -73,6 +87,7 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
         finding:compactText(observer.finding,320),
         confidence:Number(observer.confidence||0)
       }));
+    const allowedLeadObservers=leadObserverPreference(packet).filter(name=>observers.some(observer=>observer.observer===name));
     try{
       const raw=await callModel({
         system:[
@@ -105,6 +120,7 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
             evidence:refs.map(ref=>ref.quote).slice(0,10),
             observerFindings:observers
           },
+          allowedLeadObservers,
           userPriorities:safeArray(priorities).slice(0,8)
         }),
         maxTokens:900,
@@ -118,9 +134,10 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
       const recommendation=compactText(parsed.recommendation,360);
       const why=compactText(parsed.why,420);
       const action=compactText(parsed.action||parsed.recommendation,360);
-      const leadObserver=String(parsed.lead_observer||'').trim();
+      const requestedLeadObserver=String(parsed.lead_observer||'').trim();
+      const leadObserver=groundedLeadObserver(packet,observers,requestedLeadObserver);
       if(!title||!recommendation||!why||!action)throw new Error('Chief response was incomplete.');
-      if(!observers.some(observer=>observer.observer===leadObserver))throw new Error('Chief response did not select a supplied Observer.');
+      if(!leadObserver)throw new Error('Chief response did not select a source-compatible supplied Observer.');
       return {
         title,
         recommendation,
@@ -142,5 +159,7 @@ function createChiefOfStaffReasoner({callModel,logger=console}={}){
 module.exports={
   createChiefOfStaffReasoner,
   fallbackChiefLanguage,
-  exactEvidence
+  exactEvidence,
+  leadObserverPreference,
+  groundedLeadObserver
 };

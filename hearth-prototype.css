@@ -17700,6 +17700,22 @@ html{
   transform:none;
   animation:observer-card-note-arrive .55s ease-out .08s both;
 }
+.observer-live-board.packets-active .observer-path,
+.observer-live-board.packets-active .observer-filament,
+.observer-live-board.packets-active .observer-live-thread,
+.observer-live-board.packets-active .observer-node-ring::before,
+.observer-live-board.packets-active .observer-node-ring::after{
+  animation:none;
+}
+.observer-live-board.packets-active .observer-path{opacity:.5}
+.observer-live-board.packets-active .observer-filament{opacity:.54}
+.observer-live-board.packets-active .observer-live-thread{
+  opacity:.53;
+  stroke-width:.62;
+}
+.observer-live-board.packets-active .observer-live-packet{
+  will-change:transform;
+}
 @keyframes observer-card-note-arrive{
   from{opacity:0;transform:translateY(4px)}
   to{opacity:1;transform:translateY(0)}

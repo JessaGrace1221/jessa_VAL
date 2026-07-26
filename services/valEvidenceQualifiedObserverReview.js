@@ -15,14 +15,14 @@ function packetEvidence(packet={}){
   const refs=safeArray(packetValue(packet,'sourceRefsJson')||packet.sourceRefs).map(ref=>({
     sourceType:String(ref.sourceType||ref.source_type||packetValue(packet,'sourceType')||'unknown'),
     sourceId:String(ref.sourceId||ref.source_id||packetValue(packet,'sourceId')||''),
-    quote:String(ref.quoteOrSummary||ref.quote_or_summary||ref.sourceQuote||ref.source_quote||'').trim(),
+    quote:compactText(ref.quoteOrSummary||ref.quote_or_summary||ref.sourceQuote||ref.source_quote||'',900),
     confidence:Math.max(0,Math.min(1,Number(ref.confidence)||0.65)),
     createdAt:ref.createdAt||ref.created_at||packet.createdAt||packet.created_at||new Date().toISOString()
   })).filter(ref=>ref.quote);
   if(evidenceContent)refs.push({
     sourceType,
     sourceId,
-    quote:evidenceContent,
+    quote:compactText(evidenceContent,2600),
     confidence:1,
     createdAt:packet.createdAt||packet.created_at||new Date().toISOString()
   });
@@ -116,8 +116,8 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
       sourceId:String(packetValue(packet,'sourceId')||''),
       packetType:String(packetValue(packet,'packetType')||'learning_packet'),
       title:compactText(packet.title||'',180),
-      summary:compactText(packet.summary||'',700),
-      evidence:packetEvidence(packet).map(ref=>ref.quote).slice(0,8)
+      summary:compactText(packet.summary||'',500),
+      evidence:packetEvidence(packet).map(ref=>ref.quote).slice(0,4)
     }));
     const result=parseJsonResponse(await callModel({
       system:[
@@ -142,7 +142,7 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         '',
         'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","watching":"one distinct sentence or empty","concern":"one distinct sentence or empty","question":"one concise question or empty","useful_context":["short grounded fact"],"evidence_quote":"exact supplied quote or empty","confidence":0.0}]}'
       ].join('\n'),
-      maxTokens:Math.min(3200,700+(packets.length*180)),
+      maxTokens:Math.min(1400,500+(packets.length*160)),
       temperature:0.1,
       json:true
     }),{reviews:[]});

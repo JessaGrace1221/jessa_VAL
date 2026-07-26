@@ -169,6 +169,9 @@ const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',')
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-mini';
+const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||280);
+const VAL_BOARD_AUTOMATIC_RETRIES = String(process.env.VAL_BOARD_AUTOMATIC_RETRIES||'').toLowerCase()==='true';
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -26687,12 +26690,12 @@ let valReasoningUnavailableReason='';
 function valReasoningCapacityError(error){
   return /(quota|billing|credit balance|plans & billing|insufficient credit)/i.test(String(error?.message||error||''));
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model=''}){
   if(Date.now()<valReasoningUnavailableUntil){
     throw new Error(`VAL reasoning providers are temporarily unavailable: ${valReasoningUnavailableReason||'provider capacity is unavailable'}`);
   }
   try{
-    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs,model});
     valReasoningUnavailableUntil=0;
     valReasoningUnavailableReason='';
     return response;
@@ -27030,11 +27033,11 @@ function aboutMeDocumentCategory(value=''){
   return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')==='about_me';
 }
 const reasonAboutMeDocumentForObserver=createAboutMeObserverReasoner({
-  callModel:callValModel,
+  callModel:input=>callValModel({...input,model:OPENAI_OBSERVER_MODEL}),
   observerLenses:OBSERVER_PACKET_LENSES
 });
 const reasonBoardEvidenceForObserver=createEvidenceQualifiedObserverReasoner({
-  callModel:callValModel,
+  callModel:input=>callValModel({...input,model:OPENAI_OBSERVER_MODEL}),
   observerLenses:OBSERVER_PACKET_LENSES,
   aboutMeReasoner:reasonAboutMeDocumentForObserver
 });
@@ -27093,9 +27096,9 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model=''}){
   let openAiKey=await resolveOpenAIKey();
-  const openAiModel=await resolveOpenAIModel();
+  const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const preparedMessages=messages.map(m=>{
     let content=String(m.content||'');
@@ -32042,9 +32045,32 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+async function boardObserverDailyBudget(){
+  if(!pgPool)return {allowed:true,count:0,limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT};
+  const result=await dbQuery(
+    `select count(*)::int as count
+     from observer_runs
+     where tenant_id=$1 and user_id=$2 and created_at>=date_trunc('day',now())`,
+    [tenantId(),currentUserId()]
+  ).catch(error=>{
+    console.warn('[val-board] daily reasoning budget check failed:',error.message);
+    return {rows:[{count:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT}]};
+  });
+  const count=Math.max(0,Number(result?.rows?.[0]?.count)||0);
+  return {
+    allowed:count+DEFAULT_OBSERVERS.length<=VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
+    count,
+    limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT
+  };
+}
 async function triggerBoardIntelligenceForPackets(packets=[],event={}){
   const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
   if(!livePackets.length||!valIntelligenceSpine?.runIntelligencePass)return null;
+  const budget=await boardObserverDailyBudget();
+  if(!budget.allowed){
+    console.warn(`[val-board] Observer review deferred at daily call limit ${budget.count}/${budget.limit}. Packets remain available for later review.`);
+    return {ok:false,deferred:true,reason:'daily_observer_call_limit',budget,packetIds:livePackets.map(packet=>packet.id)};
+  }
   const first=livePackets[0];
   return valIntelligenceSpine.runIntelligencePass({
     event:{
@@ -32060,8 +32086,8 @@ async function triggerBoardIntelligenceForPackets(packets=[],event={}){
 }
 const valBoardDeliveryQueue=createValBoardDeliveryQueue({
   deliverBatch:triggerBoardIntelligenceForPackets,
-  batchSize:20,
-  delayMs:400,
+  batchSize:4,
+  delayMs:750,
   logger:console
 });
 function queueBoardIntelligenceForPackets(packets=[],event={}){
@@ -34098,7 +34124,7 @@ registerValExecutiveInstructionRoutes(app,{
   auditLog
 });
 const reasonChiefOfStaffRecommendation=createChiefOfStaffReasoner({
-  callModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json,timeoutMs:30000}),
+  callModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json,timeoutMs:30000,model:OPENAI_OBSERVER_MODEL}),
   logger:console
 });
 valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
@@ -34137,9 +34163,12 @@ async function runValIntelligenceMaintenance(){
   if(valIntelligenceMaintenanceRunning)return;
   valIntelligenceMaintenanceRunning=true;
   try{
-    await valTranscriptSourceProcessing.retryUndeliveredSources({limit:5});
     await valBoardDeliveryQueue.whenIdle();
-    await valIntelligenceSpine.retryFailedIntelligenceRuns({limit:2});
+    if(VAL_BOARD_AUTOMATIC_RETRIES){
+      await valTranscriptSourceProcessing.retryUndeliveredSources({limit:2});
+      await valBoardDeliveryQueue.whenIdle();
+      await valIntelligenceSpine.retryFailedIntelligenceRuns({limit:1});
+    }
   }catch(error){
     console.warn('[val-board] bounded intelligence maintenance failed:',error.message);
   }finally{
