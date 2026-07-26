@@ -8015,13 +8015,16 @@ async function requireAuth(req,res,next){
     return requestContext.run({user,demo:true,demoState:state},()=>next());
   }
   await valDbReady;
+  const sessionUser=await getSessionUser(req);
+  if(sessionUser){
+    req.valUser=sessionUser;
+    return requestContext.run({user:sessionUser},()=>next());
+  }
   if(PUBLIC_HEARTH_TEST_MODE){
     const user=await publicHearthTestUser();
     req.valUser=user;
     return requestContext.run({user,publicHearthTest:true},()=>next());
   }
-  const user=await getSessionUser(req);
-  if(user){req.valUser=user;return requestContext.run({user},()=>next());}
   if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
   return res.redirect('/login');
 }
