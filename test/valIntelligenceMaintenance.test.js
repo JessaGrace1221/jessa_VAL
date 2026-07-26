@@ -79,6 +79,9 @@ test('Board reasoning is capped at three nano briefings per local day',()=>{
   assert.match(server,/created_at at time zone \$3/);
   assert.match(server,/reason:'daily_observer_call_limit'/);
   assert.match(server,/schedule:\['06:00','12:00','17:00'\]/);
+  assert.match(server,/async function callBoardNanoModel/);
+  assert.match(server,/allowPlatformFallback:false/);
+  assert.match(server,/callModel:callBoardNanoModel/);
 });
 
 test('manual Board passes and retries are closed in scheduled-only mode',()=>{

@@ -27036,11 +27036,11 @@ function aboutMeDocumentCategory(value=''){
   return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')==='about_me';
 }
 const reasonAboutMeDocumentForObserver=createAboutMeObserverReasoner({
-  callModel:input=>callValModel({...input,model:OPENAI_OBSERVER_MODEL}),
+  callModel:callBoardNanoModel,
   observerLenses:OBSERVER_PACKET_LENSES
 });
 const reasonBoardEvidenceForObserver=createEvidenceQualifiedObserverReasoner({
-  callModel:input=>callValModel({...input,model:OPENAI_OBSERVER_MODEL}),
+  callModel:callBoardNanoModel,
   observerLenses:OBSERVER_PACKET_LENSES,
   aboutMeReasoner:reasonAboutMeDocumentForObserver
 });
@@ -27107,8 +27107,8 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model=''}){
-  let openAiKey=await resolveOpenAIKey();
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true}){
+  let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
   const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const preparedMessages=messages.map(m=>{
@@ -27151,7 +27151,8 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     d=await request();
   }
   const platformKey=String(OPENAI_KEY||'').trim();
-  const canUsePlatformFallback=platformKey
+  const canUsePlatformFallback=allowPlatformFallback
+    &&platformKey
     &&platformKey!==openAiKey
     &&platformKeyFallbackAllowed('openai');
   if(
@@ -27177,6 +27178,23 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     throw new Error('OpenAI response incomplete: '+reason+'.');
   }
   return responseText(d);
+}
+
+async function callBoardNanoModel({system,user,maxTokens=1000,temperature=0.1,json=false,jsonSchema=null,timeoutMs=30000}={}){
+  const apiKey=String(OPENAI_KEY||'').trim();
+  if(!apiKey)throw new Error('The scheduled Board requires the configured OpenAI platform key.');
+  return callOpenAIResponses({
+    system,
+    messages:[{role:'user',content:user}],
+    maxTokens,
+    temperature,
+    json,
+    jsonSchema,
+    timeoutMs,
+    model:OPENAI_OBSERVER_MODEL,
+    apiKey,
+    allowPlatformFallback:false
+  });
 }
 
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
@@ -34141,7 +34159,7 @@ registerValExecutiveInstructionRoutes(app,{
   auditLog
 });
 const reasonChiefOfStaffRecommendation=createChiefOfStaffReasoner({
-  callModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json,timeoutMs:30000,model:OPENAI_OBSERVER_MODEL}),
+  callModel:callBoardNanoModel,
   logger:console
 });
 valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{

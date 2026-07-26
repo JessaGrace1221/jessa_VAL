@@ -17,12 +17,14 @@ The default timezone is the VAL user's configured timezone.
 ## Cost Boundary
 
 - Model: `gpt-5-nano`
+- Provider lane: OpenAI only, using one configured platform credential
 - Maximum packets per briefing: 12
 - Observer calls per full briefing: 14, one per Observer
 - Maximum Observer calls per day: 42
 - Chief of Staff synthesis calls per full day: 3
 - Empty briefings make no model calls
 - Failed briefings do not retry automatically
+- Failed OpenAI calls do not fall back to Anthropic or another provider
 - Manual Board reasoning and retry routes are disabled
 
 Packets beyond a briefing's limit remain durable and wait for the next scheduled
