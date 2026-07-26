@@ -9860,12 +9860,13 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const activeDays=Math.max(1,Math.min(90,Number.isFinite(requestedDays)?requestedDays:14));
     const limit=Number(req.query.limit||req.body?.limit)||30;
     const incremental=req.query.incremental==='1'||req.body?.incremental===true;
-    const [syncCheckpoint,outlookSyncCheckpoint]=incremental
+    const [syncCheckpoint,outlookSyncCheckpoint,sentHistoryCheckpoint]=incremental
       ? await Promise.all([
           sourceSyncCheckpoint('gmail').catch(()=>null),
-          sourceSyncCheckpoint('outlook').catch(()=>null)
+          sourceSyncCheckpoint('outlook').catch(()=>null),
+          sourceSyncCheckpoint('gmail_sent_history').catch(()=>null)
         ])
-      : [null,null];
+      : [null,null,null];
     const checkpointDate=syncCheckpoint?.lastSuccessfulSyncAt?new Date(syncCheckpoint.lastSuccessfulSyncAt):null;
     const afterDate=checkpointDate&&Number.isFinite(checkpointDate.getTime())
       ? checkpointDate.toISOString().slice(0,10).replace(/-/g,'/')
@@ -9886,17 +9887,26 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const unreadQuery=afterDate?`in:anywhere -in:sent is:unread after:${afterDate}`:`in:anywhere -in:sent is:unread newer_than:${activeDays}d`;
     const documentQuery=afterDate?`in:anywhere has:attachment after:${afterDate}`:`in:anywhere has:attachment newer_than:${activeDays}d`;
     const sentQuery=afterDate?`in:sent after:${afterDate}`:`in:sent newer_than:${activeDays}d`;
-    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook]=await Promise.all([
+    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook,sentHistoryGmail]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
       fetchGmailMessages({query:sentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
       fetchGmailMessages({query:documentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:documentQuery})),
-      fetchUnifiedOutlookEmails(limit,{receivedAfter:outlookSyncCheckpoint?.lastSuccessfulSyncAt||''}).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+      fetchUnifiedOutlookEmails(limit,{receivedAfter:outlookSyncCheckpoint?.lastSuccessfulSyncAt||''}).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'})),
+      incremental&&!sentHistoryCheckpoint
+        ? fetchGmailSentNetworkMessages().catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail'}))
+        : Promise.resolve({emails:[],needsAuth:false,provider:'gmail',skipped:true})
     ]);
+    const durableSentMap=new Map();
+    [...safeArray(sentHistoryGmail.emails),...safeArray(sentGmail.emails)].forEach(email=>{
+      const key=email.messageId||email.id||email.threadId||'';
+      if(key&&!durableSentMap.has(key))durableSentMap.set(key,email);
+    });
+    const durableSentGmail=Array.from(durableSentMap.values());
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
     const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),0);
-    const scanCorpus=[...Array.from(gmailMap.values()),...(sentGmail.emails||[]),...(outlook.emails||[])];
+    const scanCorpus=[...Array.from(gmailMap.values()),...durableSentGmail,...(outlook.emails||[])];
     const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
       const withMetrics={...email,senderMetrics:emailSenderMetrics(email,scanCorpus)};
@@ -9904,11 +9914,13 @@ async function emailIntelligencePayload(req,{force=false}={}){
       return {...withMetrics,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
     const durableEmailMap=new Map();
-    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+    [...emails,...(documentGmail.emails||[]),...durableSentGmail].forEach(email=>{
       const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
       if(key&&!durableEmailMap.has(key))durableEmailMap.set(key,email);
     });
-    const durableEmailResults=await Promise.all(Array.from(durableEmailMap.values()).map(email=>valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message})))).catch(()=>[]);
+    const durableEmailResults=await mapWithConcurrency(Array.from(durableEmailMap.values()),12,email=>
+      valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message}))
+    ).catch(()=>[]);
     const evidenceResults=await saveEmailEvidenceBatch(emails);
     const relationshipIntake=evidenceResults.reduce((acc,result)=>{
       const intake=result?.relationshipIntake||{};
@@ -9930,7 +9942,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
-    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error].filter(Boolean);
+    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error,sentHistoryGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{
       gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();
@@ -9938,6 +9950,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
       gmailSyncStatus.lastAnalyzedCount=emails.length;
       gmailSyncStatus.lastQuery=recentQuery;
       if(incremental)await saveSourceSyncCheckpoint('gmail',{lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,metadata:{recentQuery,unreadQuery,sentQuery,documentQuery,fetched:gmailSyncStatus.lastFetchedCount}}).catch(()=>{});
+      if(incremental&&!sentHistoryCheckpoint&&!sentHistoryGmail.error&&!sentHistoryGmail.needsAuth){
+        await saveSourceSyncCheckpoint('gmail_sent_history',{
+          lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,
+          metadata:{query:sentHistoryGmail.query||'in:sent newer_than:90d',fetched:safeArray(sentHistoryGmail.emails).length}
+        }).catch(()=>{});
+      }
     }
     if(incremental&&!outlook.error&&!outlook.needsAuth){
       await saveSourceSyncCheckpoint('outlook',{
@@ -9954,7 +9972,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:durableSentGmail.length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       relationshipIntake,
@@ -10073,6 +10091,34 @@ async function countDurableExecutiveInboxQueue({active=true}={}){
   }
   return safeArray(valStore().executiveInboxDurableQueue)
     .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.active!==false)===active).length;
+}
+async function durableOutboundRecipientEmails(){
+  if(pgPool){
+    const result=await dbQuery(`
+      select distinct lower(coalesce(person->>'email',person->>'address','')) as email
+      from email_messages message
+      cross join lateral jsonb_array_elements(
+        coalesce(message.recipients_json,'[]'::jsonb)
+        || coalesce(message.cc_json,'[]'::jsonb)
+        || coalesce(message.bcc_json,'[]'::jsonb)
+      ) person
+      where message.tenant_id=$1
+        and message.user_id=$2
+        and message.direction='outbound'
+    `,[tenantId(),currentUserId()]);
+    return new Set(safeArray(result?.rows).map(row=>normalizeExecutiveEmailAddress(row.email)).filter(Boolean));
+  }
+  const recipients=new Set();
+  safeArray(valStore().emailMessages).forEach(row=>{
+    if(row.tenantId!==tenantId()||row.userId!==currentUserId()||String(row.direction||'').toLowerCase()!=='outbound')return;
+    safeArray(row.recipientsJson||row.recipients_json)
+      .concat(safeArray(row.ccJson||row.cc_json),safeArray(row.bccJson||row.bcc_json))
+      .forEach(person=>{
+        const email=normalizeExecutiveEmailAddress(person?.email||person?.address||person);
+        if(email)recipients.add(email);
+      });
+  });
+  return recipients;
 }
 async function mergeDurableExecutiveInboxQueue(items=[]){
   const payloads=safeArray(items).map(executiveInboxDurablePayload).filter(item=>item.conversationId);
@@ -10335,9 +10381,10 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     Promise.all([
       listDurableExecutiveInboxQueue({limit:lim,offset}),
       valExecutiveInbox.listHighSignalClassifications({limit:Math.min(200,Math.max(lim*4,120))}),
-      valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]}))
-    ]).then(([durableItems,results,draftResult])=>({durableItems,results,drafts:safeArray(draftResult?.drafts)})),
-    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,durableItems:[],results:[],drafts:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
+      valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]})),
+      durableOutboundRecipientEmails()
+    ]).then(([durableItems,results,draftResult,outboundRecipients])=>({durableItems,results,drafts:safeArray(draftResult?.drafts),outboundRecipients})),
+    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,durableItems:[],results:[],drafts:[],outboundRecipients:new Set(),error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
   ]);
   const suppressions=executiveInboxSuppressionRows();
   const safeContacts=executiveInboxSafeContactRows();
@@ -10396,7 +10443,10 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
         context,
         suppressions,
         safeContacts,
-        hasSentHistory:priorAdmission.hasSentHistory ?? cachedSentHistory(context,email),
+        hasSentHistory:priorAdmission.hasSentHistory === true || (
+          timed.outboundRecipients?.has(normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'')) ||
+          cachedSentHistory(context,email)
+        ),
         waitingOnOther:email.queueKind==='waiting_for_response',
         clearAsk:priorAdmission.clearAsk ?? executiveInboxInboundAskText(email),
         resolved:executiveInboxResolved(email,resolutions)
@@ -10459,8 +10509,11 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
   const suppressions=executiveInboxSuppressionRows();
   const safeContacts=executiveInboxSafeContactRows();
   const resolutions=executiveInboxResolutionRows();
-  const profilesPromise=listRelationshipProfiles({limit:800}).catch(()=>[]);
-  const sentCache=new Map();
+  const [profiles,outboundRecipients]=await Promise.all([
+    listRelationshipProfiles({limit:800}).catch(()=>[]),
+    durableOutboundRecipientEmails().catch(()=>new Set())
+  ]);
+  const profilesPromise=Promise.resolve(profiles);
   const rows=sortEmailsNewestFirst(data.emails||[]);
   const byThread=new Map();
   rows.forEach(email=>{
@@ -10490,7 +10543,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     const safeListed=executiveInboxSafeListed(email,safeContacts);
     const known=safeListed || await executiveInboxKnownContact(email,profilesPromise);
     const metrics=email.senderMetrics||{};
-    const hasSent=Number(metrics.outboundToSenderCount||0)>0 || await executiveInboxHasAnySentMailTo(senderEmail,sentCache);
+    const hasSent=Number(metrics.outboundToSenderCount||0)>0 || outboundRecipients.has(senderEmail);
     const sentByOwner=emailWasSentByOwner(email);
     const waiting=sentByOwner&&executiveInboxSentRequestText(email);
     const ask=executiveInboxInboundAskText(email);
@@ -13038,7 +13091,7 @@ async function fetchGmailSentNetworkMessages({userId=currentUserId(),tenantId:te
     return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(error.message),error:error.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};
   }
   const headerQuery=new URLSearchParams({format:'metadata'});
-  for(const header of ['To','Cc','Subject','Date'])headerQuery.append('metadataHeaders',header);
+  for(const header of ['From','To','Cc','Subject','Date'])headerQuery.append('metadataHeaders',header);
   const details=await mapWithConcurrency((listing.messages||[]).slice(0,500),12,async(message)=>{
     try{
       const url=`https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}?${headerQuery.toString()}`;

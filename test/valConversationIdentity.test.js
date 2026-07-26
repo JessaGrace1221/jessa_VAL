@@ -81,3 +81,35 @@ test('CRM identity resolver recommends use_existing for exact email and does not
   assert.equal(result.recommended_action,'use_existing');
   assert.equal(result.crm_contact_id,'crm_1');
 });
+
+test('sent labels and explicit direction persist as outbound without owner-email inference',async()=>{
+  let store={};
+  const service=createValConversationIdentityService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    ownerEmails:[]
+  });
+  await service.upsertEmailMessage({
+    provider:'gmail',
+    messageId:'sent_label',
+    threadId:'sent_thread',
+    labelIds:['SENT'],
+    from:{email:'jessa@example.com'},
+    to:[{email:'michele@example.com'}],
+    subject:'Introduction'
+  });
+  await service.upsertEmailMessage({
+    provider:'outlook',
+    messageId:'explicit_outbound',
+    threadId:'outlook_thread',
+    direction:'outbound',
+    from:{email:'jessa@example.com'},
+    to:[{email:'mike@example.com'}],
+    subject:'Dashboard handoff'
+  });
+  assert.deepEqual(store.emailMessages.map(message=>message.direction),['outbound','outbound']);
+  assert.equal(store.unifiedConversations.every(conversation=>conversation.latestOutboundAt),true);
+});

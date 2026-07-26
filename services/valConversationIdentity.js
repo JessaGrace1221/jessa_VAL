@@ -12,6 +12,8 @@ function messageDate(message={}){
   return iso(message.receivedAt||message.date||message.sentAt||message.internalDate||message.createdAt)||new Date().toISOString();
 }
 function messageDirection(message={},ownerEmails=[]){
+  const labels=safeArray(message.labels||message.labelIds).map(label=>String(label||'').toUpperCase());
+  if(String(message.direction||'').toLowerCase()==='outbound'||labels.includes('SENT')||message.sentByUser)return 'outbound';
   const from=normalizeEmail(message.from?.email||message.sender?.email);
   const owners=new Set(ownerEmails.map(normalizeEmail).filter(Boolean));
   if(from&&owners.has(from))return 'outbound';

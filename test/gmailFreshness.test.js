@@ -16,6 +16,12 @@ test('gmail fetch uses the bounded 90-day executive window and sorts newest firs
   assert.match(server,/saveSourceSyncCheckpoint\('gmail'/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
+  assert.match(server,/sourceSyncCheckpoint\('gmail_sent_history'\)/);
+  assert.match(server,/fetchGmailSentNetworkMessages\(\)/);
+  assert.match(server,/\[\.\.\.emails,\.\.\.\(documentGmail\.emails\|\|\[\]\),\.\.\.durableSentGmail\]/);
+  assert.match(server,/saveSourceSyncCheckpoint\('gmail_sent_history'/);
+  assert.match(server,/durableOutboundRecipientEmails/);
+  assert.match(server,/timed\.outboundRecipients\?\.has/);
 });
 
 test('gmail refresh retries rejected access tokens and exposes sync status',()=>{
