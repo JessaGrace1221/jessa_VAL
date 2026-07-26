@@ -25613,15 +25613,22 @@ async function updateTranscriptMetadata(id,updates={}){
   const store=valStore(),row=(store.transcripts||[]).find(t=>String(t.id)===String(id));
   if(row){row.metadata={...(row.metadata||{}),...updates};saveValStore(store);}
 }
-async function recentTranscripts(days=7){
-  if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.transcripts || []);
+async function recentTranscripts(days=7,limit=0){
+  const boundedLimit=Number(limit)>0?Math.max(1,Math.min(Number(limit),500)):0;
+  if(DEMO_MODE){
+    const rows=cloneDemo(requestContext.getStore()?.demoState?.transcripts || []);
+    return boundedLimit?rows.slice(0,boundedLimit):rows;
+  }
   await valDbReady;
   const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
   if(pgPool){
-    const r=await dbQuery('select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and created_at >= $2 order by created_at desc',[VAL_USER_ID,since]);
+    const params=[VAL_USER_ID,since];
+    const limitSql=boundedLimit?(params.push(boundedLimit),` limit $${params.length}`):'';
+    const r=await dbQuery(`select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and created_at >= $2 order by created_at desc${limitSql}`,params);
     return r.rows.map(row=>({id:row.id,type:row.type,title:row.title||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?row.created_at.toISOString():''}));
   }
-  return (valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
+  const rows=(valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
+  return boundedLimit?rows.slice(0,boundedLimit):rows;
 }
 function isTranscriptLikeType(type=''){
   const kind=String(type||'').toLowerCase();

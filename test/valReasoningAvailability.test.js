@@ -7,6 +7,8 @@ const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
 
 test('Board intelligence uses the canonical transcript archive loader',()=>{
   assert.match(server,/listRecentTranscripts:\(\{limit=8\}=\{\}\)=>recentTranscripts\(3650,limit\)/);
+  assert.match(server,/async function recentTranscripts\(days=7,limit=0\)/);
+  assert.match(server,/const limitSql=boundedLimit/);
 });
 
 test('provider capacity failures open a bounded reasoning circuit instead of storming all 14 Observers',()=>{
