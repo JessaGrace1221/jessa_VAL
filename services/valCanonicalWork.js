@@ -9,6 +9,19 @@ function jsonValue(value,fallback){
   return value;
 }
 function toSnake(key){return key.replace(/[A-Z]/g,m=>'_'+m.toLowerCase());}
+const WORK_JSON_FIELDS=new Set([
+  'sourceRefsJson',
+  'envelopeJson',
+  'dueBasisJson',
+  'observerReceiptsJson',
+  'preparedArtifactIdsJson',
+  'metadataJson'
+]);
+const EVENT_JSON_FIELDS=new Set(['sourceRefsJson','payloadJson']);
+function pgValue(column,value,jsonFields){
+  if(value===undefined)return null;
+  return jsonFields.has(column)?JSON.stringify(value??(/RefsJson$|IdsJson$/.test(column)?[]:{})):value;
+}
 function rowToCamel(row={}){
   const out={};
   for(const [key,value] of Object.entries(row)){
@@ -121,7 +134,7 @@ function createValCanonicalWorkService({
   async function pgUpsertWork(row){
     const columns=['id','tenantId','userId','sourceProcessingRecordId','sourceType','sourceId','sourceFingerprint','workFingerprint','workType','ownership','ownerId','ownerName','actionText','objectText','outcomeText','title','summary','exactSourceQuote','sourceRefsJson','envelopeJson','projectId','projectName','relationshipId','relationshipName','admissionStatus','lifecycleStatus','dueAt','dueBasisJson','confidence','boardPacketId','observerReceiptsJson','roundTableRunId','chiefRecommendationId','chiefRank','preparedArtifactIdsJson','metadataJson','createdAt','updatedAt','completedAt'];
     const names=columns.map(toSnake);
-    const values=columns.map(column=>row[column]===undefined?null:row[column]);
+    const values=columns.map(column=>pgValue(column,row[column],WORK_JSON_FIELDS));
     const params=columns.map((_,index)=>`$${index+1}`).join(',');
     const updates=names.filter(name=>!['id','tenant_id','user_id','work_fingerprint','created_at'].includes(name)).map(name=>`${name}=excluded.${name}`).join(',');
     const result=await dbQuery(
@@ -130,16 +143,18 @@ function createValCanonicalWorkService({
        returning *`,
       values
     );
-    return rowToCamel(result.rows?.[0]||row);
+    if(!result?.rows?.[0])throw new Error('Canonical work item was not persisted.');
+    return rowToCamel(result.rows[0]);
   }
   async function saveEvent(event){
     if(hasPg()){
       const columns=['id','tenantId','userId','workItemId','eventType','previousStatus','newStatus','sourceRefsJson','payloadJson','createdAt'];
       const names=columns.map(toSnake);
-      const values=columns.map(column=>event[column]===undefined?null:event[column]);
+      const values=columns.map(column=>pgValue(column,event[column],EVENT_JSON_FIELDS));
       const params=columns.map((_,index)=>`$${index+1}`).join(',');
       const result=await dbQuery(`insert into val_work_item_events (${names.join(',')}) values (${params}) on conflict (id) do nothing returning *`,values);
-      return rowToCamel(result.rows?.[0]||event);
+      if(!result?.rows?.[0])throw new Error('Canonical work event was not persisted.');
+      return rowToCamel(result.rows[0]);
     }
     const value=store();
     if(!value.valWorkItemEvents.some(existing=>existing.id===event.id))value.valWorkItemEvents.push(event);

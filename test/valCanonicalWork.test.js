@@ -47,6 +47,89 @@ test('canonical work schema stores work lineage and append-only events',()=>{
   for(const field of ['source_processing_record_id','source_fingerprint','work_fingerprint','ownership','admission_status','lifecycle_status','observer_receipts_json','chief_recommendation_id','prepared_artifact_ids_json'])assert.match(VAL_CANONICAL_WORK_SQL,new RegExp(field));
 });
 
+test('Postgres canonical work serializes JSON and never reports an unsaved row as durable',async()=>{
+  const calls=[];
+  const service=createValCanonicalWorkService({
+    hasPg:()=>true,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_1`,
+    dbQuery:async(sql,params=[])=>{
+      calls.push({sql,params});
+      if(/^select \* from val_work_items/i.test(sql))return {rows:[]};
+      if(/^insert into val_work_items/i.test(sql)){
+        const row=grounded();
+        return {rows:[{
+          id:'work_1',
+          tenant_id:'tenant',
+          user_id:'user',
+          source_processing_record_id:row.sourceProcessingRecordId,
+          source_type:row.sourceType,
+          source_id:row.sourceId,
+          source_fingerprint:'source_fingerprint',
+          work_fingerprint:'work_fingerprint',
+          work_type:row.workType,
+          ownership:row.ownership,
+          owner_name:row.ownerName,
+          action_text:row.actionText,
+          object_text:row.objectText,
+          outcome_text:row.outcomeText,
+          title:row.title,
+          exact_source_quote:row.exactSourceQuote,
+          source_refs_json:params[18],
+          envelope_json:params[19],
+          admission_status:'admitted',
+          lifecycle_status:'open',
+          due_basis_json:params[27],
+          observer_receipts_json:params[30],
+          prepared_artifact_ids_json:params[34],
+          metadata_json:params[35],
+          created_at:'2026-07-25T12:00:00.000Z',
+          updated_at:'2026-07-25T12:00:00.000Z'
+        }]};
+      }
+      if(/^insert into val_work_item_events/i.test(sql)){
+        return {rows:[{
+          id:'workevt_1',
+          tenant_id:'tenant',
+          user_id:'user',
+          work_item_id:'work_1',
+          event_type:'work_admitted',
+          source_refs_json:params[7],
+          payload_json:params[8],
+          created_at:'2026-07-25T12:00:00.000Z'
+        }]};
+      }
+      return {rows:[]};
+    }
+  });
+
+  const result=await service.admit(grounded());
+  const workInsert=calls.find(call=>/^insert into val_work_items/i.test(call.sql));
+  const eventInsert=calls.find(call=>/^insert into val_work_item_events/i.test(call.sql));
+  assert.equal(typeof workInsert.params[18],'string');
+  assert.equal(typeof workInsert.params[19],'string');
+  assert.equal(typeof workInsert.params[27],'string');
+  assert.equal(typeof workInsert.params[30],'string');
+  assert.equal(typeof workInsert.params[34],'string');
+  assert.equal(typeof workInsert.params[35],'string');
+  assert.equal(typeof eventInsert.params[7],'string');
+  assert.equal(typeof eventInsert.params[8],'string');
+  assert.equal(result.workItem.id,'work_1');
+  assert.equal(result.workItem.sourceRefsJson.length,1);
+});
+
+test('Postgres canonical work throws when the database does not return the inserted row',async()=>{
+  const service=createValCanonicalWorkService({
+    hasPg:()=>true,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_1`,
+    dbQuery:async sql=>/^select \* from val_work_items/i.test(sql)?{rows:[]}:{rows:[]}
+  });
+  await assert.rejects(service.admit(grounded()),/was not persisted/);
+});
+
 test('grounded user work is admitted with project-first envelope and no invented due date',async()=>{
   const {service}=harness();
   const result=await service.admit(grounded());
