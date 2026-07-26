@@ -2745,7 +2745,7 @@ button.observer-node:focus-visible{
   width:100%;
   height:100%;
   overflow:visible;
-  pointer-events:none;
+  pointer-events:auto;
 }
 .observer-card-dismiss-surface{
   position:absolute;
@@ -2855,17 +2855,18 @@ button.observer-node:focus-visible{
 .observer-filament-bridge{stroke:rgba(168,139,93,.58)}
 .observer-live-thread{
   fill:none;
-  stroke-width:.64;
+  stroke-width:.58;
   stroke-linecap:round;
-  opacity:.5;
+  opacity:.46;
   vector-effect:non-scaling-stroke;
   stroke-dasharray:none!important;
   filter:drop-shadow(0 0 4px rgba(255,255,255,.7));
   animation:observer-thread-arrive 24s ease-in-out infinite;
+  pointer-events:none;
 }
-.observer-live-thread-sage{stroke:rgba(82,130,78,.78)}
-.observer-live-thread-rose{stroke:rgba(204,96,119,.76)}
-.observer-live-thread-bridge{stroke:rgba(171,141,95,.62)}
+.observer-live-thread-sage{stroke:rgba(74,125,70,.78)}
+.observer-live-thread-rose{stroke:rgba(196,91,113,.76)}
+.observer-live-thread-bridge{stroke:rgba(177,139,68,.72)}
 .observer-live-thread-stress{
   stroke-width:.62;
   opacity:.48;
@@ -2884,14 +2885,14 @@ button.observer-node:focus-visible{
   fill:rgba(255,255,255,.78);
   stroke:transparent;
   stroke-width:0;
-  filter:drop-shadow(0 0 1px rgba(255,255,255,.44)) drop-shadow(0 0 4px rgba(255,244,210,.3));
+  filter:drop-shadow(0 0 1px rgba(255,255,255,.82)) drop-shadow(0 0 5px rgba(255,244,210,.42));
 }
-.observer-live-orb-sage{fill:rgba(225,243,215,.92);stroke:transparent}
-.observer-live-orb-rose{fill:rgba(255,222,230,.92);stroke:transparent}
-.observer-live-orb-bridge{fill:rgba(255,242,210,.9);stroke:transparent}
+.observer-live-orb-sage{fill:rgba(153,196,142,.98);stroke:transparent;filter:drop-shadow(0 0 1px rgba(255,255,255,.92)) drop-shadow(0 0 6px rgba(91,145,82,.54))}
+.observer-live-orb-rose{fill:rgba(231,154,171,.98);stroke:transparent;filter:drop-shadow(0 0 1px rgba(255,255,255,.92)) drop-shadow(0 0 6px rgba(199,95,119,.52))}
+.observer-live-orb-bridge{fill:rgba(229,191,111,.98);stroke:transparent;filter:drop-shadow(0 0 1px rgba(255,255,255,.94)) drop-shadow(0 0 6px rgba(184,139,49,.5))}
 .observer-live-packet{
-  pointer-events:none;
-  cursor:default;
+  pointer-events:auto;
+  cursor:help;
   outline:none;
 }
 .observer-live-packet-stress .observer-live-label{
@@ -2908,7 +2909,7 @@ button.observer-node:focus-visible{
 .observer-live-hit{
   fill:rgba(255,255,255,.001);
   stroke:transparent;
-  pointer-events:none;
+  pointer-events:all;
 }
 .observer-live-label{
   opacity:0;

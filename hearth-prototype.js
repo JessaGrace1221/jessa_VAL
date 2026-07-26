@@ -922,43 +922,98 @@ function observerBoardPacketLabel(packet = {}){
 function observerBoardPacketSide(from = '', to = ''){
   const sage = new Set(['Executive Inbox','Project','Capacity','Momentum','Commitment','Calendar','Environment']);
   const rose = new Set(['Relationship','Courage','Delight','Opportunity','Meaning','Witnessing']);
+  if(from === 'Chief of Staff'){
+    if(sage.has(to)) return 'sage';
+    if(rose.has(to)) return 'rose';
+  }
   if(sage.has(from) && sage.has(to)) return 'sage';
   if(rose.has(from) && rose.has(to)) return 'rose';
   return 'bridge';
 }
 
+function observerBoardBalancedConnections(candidates = [], limit = 20){
+  const grouped = new Map();
+  candidates.forEach((candidate) => {
+    const key = candidate.from + '>' + candidate.to;
+    const current = grouped.get(key) || {
+      ...candidate,
+      key,
+      packetCount:0,
+      primaryCount:0,
+      labels:new Map()
+    };
+    current.packetCount += 1;
+    if(candidate.primary) current.primaryCount += 1;
+    current.labels.set(candidate.label, (current.labels.get(candidate.label) || 0) + 1);
+    grouped.set(key, current);
+  });
+  const groups = Array.from(grouped.values()).map((group) => {
+    const label = Array.from(group.labels.entries()).sort((a,b) => b[1] - a[1])[0]?.[0] || group.label || 'Packet';
+    return {...group,label};
+  });
+  const selected = [];
+  const selectedKeys = new Set();
+  const fromCounts = new Map();
+  const toCounts = new Map();
+  const take = (group) => {
+    if(!group || selectedKeys.has(group.key) || selected.length >= limit) return false;
+    selected.push(group);
+    selectedKeys.add(group.key);
+    fromCounts.set(group.from, (fromCounts.get(group.from) || 0) + 1);
+    toCounts.set(group.to, (toCounts.get(group.to) || 0) + 1);
+    return true;
+  };
+  const rank = (a,b) => (
+    (b.primaryCount - a.primaryCount)
+    || ((fromCounts.get(a.from) || 0) - (fromCounts.get(b.from) || 0))
+    || ((toCounts.get(a.to) || 0) - (toCounts.get(b.to) || 0))
+    || (b.packetCount - a.packetCount)
+    || (a.packetIndex - b.packetIndex)
+  );
+  ['sage','rose','bridge'].forEach((side) => {
+    take(groups.filter((group) => group.side === side && !selectedKeys.has(group.key)).sort(rank)[0]);
+  });
+  observerBoardState.observers.map((observer) => observer.name).forEach((observerName) => {
+    take(groups.filter((group) => group.to === observerName && !selectedKeys.has(group.key)).sort(rank)[0]);
+  });
+  groups.sort(rank).forEach(take);
+  return selected.map((group,index) => {
+    const style = [
+      {bend:1.2,duration:'20.8s',begin:'0s'},
+      {bend:-1.5,duration:'22.4s',begin:'-4.8s'},
+      {bend:1.8,duration:'23.2s',begin:'-9.1s'},
+      {bend:-1.1,duration:'21.6s',begin:'-13.2s'},
+      {bend:1.5,duration:'24.2s',begin:'-6.5s'},
+      {bend:-1.9,duration:'22.8s',begin:'-16.4s'}
+    ][index % 6];
+    const label = group.packetCount > 1
+      ? group.packetCount + ' ' + group.label + ' packets'
+      : group.label;
+    return [group.from,group.to,label,group.side,style.bend,style.duration,style.begin,'.84',group.packetCount];
+  });
+}
+
 function observerBoardConnectionsFromPackets(packets = []){
-  const routeStyle = [
-    {bend: 1.4, duration: '18.5s', begin: '0s'},
-    {bend: -1.9, duration: '20.2s', begin: '-3.8s'},
-    {bend: 2.3, duration: '21.4s', begin: '-7.5s'},
-    {bend: -1.3, duration: '19.6s', begin: '-10.2s'},
-    {bend: 1.8, duration: '22.2s', begin: '-5.1s'},
-    {bend: -2.4, duration: '20.8s', begin: '-12.4s'}
-  ];
-  const connections = [];
+  const candidates = [];
   (Array.isArray(packets) ? packets : []).slice(0, 80).forEach((packet, packetIndex) => {
     const routes = Array.isArray(packet.routeObserversJson) ? packet.routeObserversJson : [];
-    const primary = routes.filter((route) => route.primary).map((route) => route.observerName).filter(Boolean);
-    const visibleTargets = (primary.length ? primary : routes.map((route) => route.observerName)).filter(Boolean).slice(0, 5);
     const sourceObserver = observerBoardPacketSourceObserver(packet);
-    const from = sourceObserver === 'Chief of Staff' ? 'Delight' : sourceObserver;
-    visibleTargets.forEach((to, routeIndex) => {
+    const from = sourceObserver;
+    routes.forEach((route, routeIndex) => {
+      const to = route.observerName;
       if(!to || to === from) return;
-      const style = routeStyle[(packetIndex + routeIndex) % routeStyle.length];
-      connections.push([
+      candidates.push({
         from,
         to,
-        observerBoardPacketLabel(packet),
-        observerBoardPacketSide(from, to),
-        style.bend + ((packetIndex % 5) - 2) * .2,
-        style.duration,
-        style.begin,
-        '1.08'
-      ]);
+        label:observerBoardPacketLabel(packet),
+        side:observerBoardPacketSide(from, to),
+        primary:Boolean(route.primary),
+        packetIndex,
+        routeIndex
+      });
     });
   });
-  return connections.slice(0, 24);
+  return observerBoardBalancedConnections(candidates,20);
 }
 
 async function loadLiveObserverBoardContext(){
@@ -27839,6 +27894,7 @@ async function openObserverBoard(options = {}){
   }
   const chief = observerBoardState.chiefOfStaff;
   const observerPositions = {
+    'Chief of Staff': {x:50,y:50,side:'bridge',visualName:'Chief of Staff',signals:'Board synthesis'},
     'Capacity': {x:50,y:17,side:'bridge',visualName:'Capacity',signals:'Decision quality and load',pulseDur:'18.8s',pulseDelay:'6.6s'},
     'Calendar': {x:36,y:24,side:'sage',visualName:'Calendar',signals:'Time and preparation windows',pulseDur:'17.4s',pulseDelay:'4.2s'},
     'Momentum': {x:25,y:32,side:'sage',visualName:'Momentum',signals:'Meaningful movement',pulseDur:'19.2s',pulseDelay:'8.4s'},
@@ -27863,13 +27919,6 @@ async function openObserverBoard(options = {}){
   const livePacketConnections = observerBoardConnectionsFromPackets(observerBoardState.livePackets || []);
   const showPacketField = witnessingComplete && (livePacketConnections.length > 0 || stressMode);
   const observerSideClass = (position) => String(position.side || '').includes('rose') ? 'rose' : String(position.side || '').includes('sage') ? 'sage' : 'bridge';
-  const centerPathFor = (position, bend = 0) => {
-    const dx = 50 - position.x;
-    const dy = 50 - position.y;
-    const mx = position.x + dx * .52 + bend;
-    const my = position.y + dy * .48 - bend * .42;
-    return 'M' + position.x + ' ' + position.y + ' C' + (position.x + dx * .22 + bend * .35).toFixed(1) + ' ' + (position.y + dy * .18).toFixed(1) + ' ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' 50 50';
-  };
   const pathBetweenObservers = (fromName, toName, bend = 0) => {
     const from = observerPositions[fromName];
     const to = observerPositions[toName];
@@ -27878,15 +27927,6 @@ async function openObserverBoard(options = {}){
     const cy = ((from.y + to.y) / 2 - bend * .34).toFixed(1);
     return 'M' + from.x + ' ' + from.y + ' C' + cx + ' ' + cy + ' ' + cx + ' ' + cy + ' ' + to.x + ' ' + to.y;
   };
-  const baseObserverPaths = showPacketField ? positionedObservers.map(({position}) => {
-    const side = observerSideClass(position);
-    return '<path class="observer-path observer-path-' + side + (String(position.side || '').includes('selected') ? ' selected' : '') + '" d="' + centerPathFor(position, 0) + '" />';
-  }).join('') : '';
-  const observerFilaments = showPacketField ? positionedObservers.map(({position,index}) => {
-    const side = observerSideClass(position);
-    const bend = (index % 2 ? -1 : 1) * (1.4 + (index % 3) * .55);
-    return '<path class="observer-filament observer-filament-' + side + '" d="' + centerPathFor(position, bend) + '" />';
-  }).join('') : '';
   const liveConnections = livePacketConnections;
   const stressLabels = ['Email','Draft','Task','Comment','Transcript','Packet','Signal','Context','Reply','Memory','Promise','Meeting','Source'];
   const stressPairs = stressMode
@@ -27908,7 +27948,7 @@ async function openObserverBoard(options = {}){
       })
     : [];
   const allLiveConnections = showPacketField ? (stressMode && !liveConnections.length ? observerBoardPrototypeConnections().concat(stressPairs) : liveConnections.concat(stressPairs)) : [];
-  const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius]) => {
+  const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius,packetCount]) => {
     const d = pathBetweenObservers(from,to,bend);
     const orbRadius = radius || (stressMode ? '1.05' : '.62');
     const orbRx = (Number(orbRadius) * .72).toFixed(2);
@@ -27917,7 +27957,7 @@ async function openObserverBoard(options = {}){
     if(!d) return '';
     return [
       '<path class="observer-live-thread observer-live-thread-' + side + (stressMode ? ' observer-live-thread-stress' : '') + '" d="' + d + '" />',
-      '<g class="observer-live-packet' + (stressMode ? ' observer-live-packet-stress' : '') + '" tabindex="0" aria-label="' + escapeHtml(label) + ' signal">',
+      '<g class="observer-live-packet' + (stressMode ? ' observer-live-packet-stress' : '') + '" tabindex="0" aria-label="' + escapeHtml(label) + ' signal" data-packet-count="' + escapeHtml(String(packetCount || 1)) + '">',
         '<ellipse class="observer-live-hit" rx="' + hitRx + '" ry="' + hitRadius + '"></ellipse>',
         '<ellipse class="observer-live-orb observer-live-orb-' + side + '" rx="' + orbRx + '" ry="' + escapeHtml(orbRadius) + '"></ellipse>',
         '<text class="observer-live-label" x="1.8" y="-1.8">' + escapeHtml(label) + '</text>',
@@ -27952,11 +27992,8 @@ async function openObserverBoard(options = {}){
   );
   const completedObserverCount = completedObserverNames.length;
   const deductionObserverCount = deductionObserverNames.length;
-  const sourceReadinessLabel = sourceSummary.live
-    ? sourceSummary.live + ' Live Source Hook' + (sourceSummary.live === 1 ? '' : 's') + (sourceSummary.pending ? ' · ' + sourceSummary.pending + ' Pending' : '')
-    : '';
   const boardStatus = showPacketField
-    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets' + (sourceReadinessLabel ? ' · ' + sourceReadinessLabel : ''))
+    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Source Packets · ' + allLiveConnections.length + ' Visible Routes')
     : witnessingComplete
       ? 'Context Receipt Pending'
       : observerBoardState.witnessingSessionId
@@ -28017,8 +28054,6 @@ async function openObserverBoard(options = {}){
         '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',
         showPacketField ? '' : boardHoldingMessage,
         '<svg class="observer-signal-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">',
-          baseObserverPaths,
-          observerFilaments,
           liveThreads,
         '</svg>',
         '<button type="button" class="observer-card-dismiss-surface" data-observer-card-dismiss aria-label="Return to Board of Observers" onpointerdown="event.preventDefault();event.stopPropagation();const graph=this.closest(\'.observer-graph-field\');const slot=graph&&graph.querySelector(\'[data-observer-card-slot]\');if(slot){slot.hidden=true;slot.setAttribute(\'hidden\',\'\');slot.innerHTML=\'\';}graph&&graph.classList.remove(\'observer-card-open\');graph&&graph.querySelectorAll(\'.observer-node.is-selected,.observer-node-label.is-card-obscured\').forEach((item)=>item.classList.remove(\'is-selected\',\'is-card-obscured\'));"></button>',

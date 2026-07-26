@@ -323,6 +323,20 @@ test('Board of Observers pauses background motion while packet lights remain liv
   assert.match(hearthCss,/animation-play-state:paused!important/);
 });
 
+test('Board of Observers balances truthful packet routes without empty decorative paths',()=>{
+  assert.match(hearthPrototype,/function observerBoardBalancedConnections/);
+  assert.match(hearthPrototype,/if\(from === 'Chief of Staff'\)/);
+  assert.match(hearthPrototype,/return observerBoardBalancedConnections\(candidates,20\)/);
+  assert.match(hearthPrototype,/\['sage','rose','bridge'\]\.forEach/);
+  assert.match(hearthPrototype,/observerBoardState\.observers\.map\(\(observer\) => observer\.name\)\.forEach/);
+  assert.match(hearthPrototype,/routes\.forEach\(\(route, routeIndex\)/);
+  assert.doesNotMatch(hearthPrototype,/return connections\.slice\(0, 24\)/);
+  assert.doesNotMatch(hearthPrototype,/const baseObserverPaths = showPacketField/);
+  assert.doesNotMatch(hearthPrototype,/const observerFilaments = showPacketField/);
+  assert.match(hearthPrototype,/Source Packets · ' \+ allLiveConnections\.length \+ ' Visible Routes/);
+  assert.match(hearthCss,/\.observer-live-packet\{\s*pointer-events:auto;/);
+});
+
 test('Witnessing First Look treats delivered and deliberately excluded candidates as resolved',()=>{
   assert.match(hearthPrototype,/function valFirstLookCandidateIsResolved/);
   assert.match(hearthPrototype,/\['delivered', 'excluded'\]\.includes/);
@@ -372,8 +386,9 @@ test('Board Observer cards stay stable during hydration, scroll, and close only 
   assert.match(hearthPrototype,/fetchBoardResource\('\/api\/val\/board\/context\?limit=36&compact=true', 12000\)/);
   assert.doesNotMatch(hearthPrototype,/liveContextPromise\.then\(\(\) => \{[\s\S]{0,500}openObserverBoard/);
   assert.match(hearthCss,/\.observer-graph-field\.observer-card-open \.observer-card-dismiss-surface\{\s*pointer-events:auto;/);
-  assert.match(hearthCss,/\.observer-signal-paths\{[\s\S]{0,220}pointer-events:none;/);
-  assert.match(hearthCss,/\.observer-live-packet\{[\s\S]{0,120}pointer-events:none;/);
+  assert.match(hearthCss,/\.observer-signal-paths\{[\s\S]{0,220}pointer-events:auto;/);
+  assert.match(hearthCss,/\.observer-live-thread\{[\s\S]{0,420}pointer-events:none;/);
+  assert.match(hearthCss,/\.observer-live-packet\{[\s\S]{0,120}pointer-events:auto;/);
   assert.match(hearthCss,/\.observer-selected-card\{[\s\S]{0,180}max-height:min\(620px,calc\(100vh - 96px\)\);[\s\S]{0,120}overflow-y:auto;/);
   assert.match(hearthCss,/animation:observer-card-note-arrive \.55s ease-out \.08s both;/);
   const positionedNodeCss = hearthCss.slice(
