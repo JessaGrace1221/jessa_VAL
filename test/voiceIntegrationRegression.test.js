@@ -274,7 +274,9 @@ test('Home VAL chat Rolodex resolves action contacts from Stewardship context',(
 test('Home VAL prepares SMS as a real approval packet when GHL contact is linked',()=>{
   assert.match(server,/valExternalActions\.createSmsSendPacket/);
   assert.match(server,/contactId:contact\.contactId/);
-  assert.match(server,/home_sms_action_packet/);
+  assert.match(server,/await processExternalActionBoardEvidence\(packet\)/);
+  assert.match(server,/sourceType:'external_action'/);
+  assert.match(server,/boardPacketType:externalActionBoardPacketType\(packet\)/);
   assert.match(server,/I found \$\{contactName\} and prepared the SMS for approval/);
   assert.match(server,/needs:'ghl_contact_link'/);
   assert.match(server,/Say “Send” when you want me to send it\. Nothing has been sent yet\./);

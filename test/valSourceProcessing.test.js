@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const {VAL_SOURCE_PROCESSING_SQL}=require('../services/valSourceProcessingSchema');
-const {createValSourceProcessingService,documentsFromInput}=require('../services/valSourceProcessing');
+const {createValSourceProcessingService,documentsFromInput,evidenceChunks}=require('../services/valSourceProcessing');
 const {createValReviewUpdatesService}=require('../services/valReviewUpdates');
 const {createValReadyForYouService}=require('../services/valReadyForYou');
 
@@ -51,6 +51,7 @@ test('source processing routes are backend-only and mounted',()=>{
   assert.match(server,/valSourceProcessing\.processKnowledgeDocument\(knowledgeDocumentInput\)/);
   assert.match(server,/sourceProcessingRecordId:processed\?\.sourceProcessingRecord\?\.id/);
   assert.match(server,/afterKnowledgeDocument:queueKnowledgeDocumentObserverDelivery/);
+  assert.match(server,/processSourceEvent:input=>processCanonicalBoardEvidence\(input\)/);
 });
 
 test('knowledge documents keep their complete extracted text and Witnessing receipt',async()=>{
@@ -82,6 +83,136 @@ test('knowledge documents keep their complete extracted text and Witnessing rece
   assert.match(result.sourceProcessingRecord.witnessObservationsJson[0].observation,/read "Jessa DISC Profile\.pdf"/);
   assert.equal(result.sourceProcessingRecord.metadataJson.noExternalAction,true);
   assert.equal(result.sourceProcessingRecord.metadataJson.documentCategory,'about_me');
+});
+
+test('transcript source processing is versioned, immutable, and deduplicated by content',async()=>{
+  const store={sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const {sourceProcessing}=servicesFor(store);
+  const transcript={
+    id:'tr_versioned',
+    title:'GOALL handoff',
+    rawText:'Jessa: I will finish the GOALL dashboard handoff for Mike.'
+  };
+  const first=await sourceProcessing.processTranscriptSource({transcript});
+  const repeated=await sourceProcessing.processTranscriptSource({transcript});
+  const changed=await sourceProcessing.processTranscriptSource({transcript:{...transcript,rawText:`${transcript.rawText}\nMike: Please include pipeline projections.`}});
+
+  assert.equal(first.deduplicated,false);
+  assert.equal(repeated.deduplicated,true);
+  assert.equal(first.sourceProcessingRecord.id,repeated.sourceProcessingRecord.id);
+  assert.equal(changed.deduplicated,false);
+  assert.notEqual(changed.sourceProcessingRecord.id,first.sourceProcessingRecord.id);
+  assert.equal(first.sourceProcessingRecord.sourceVersion,1);
+  assert.equal(changed.sourceProcessingRecord.sourceVersion,2);
+  assert.equal(store.sourceProcessingRecords.length,2);
+  assert.equal(first.sourceProcessingRecord.metadataJson.immutableSourceVersion,true);
+});
+
+test('provider calendar evidence deduplicates unchanged refreshes and emits only changed versions',async()=>{
+  const store={sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const deliveries=[];
+  const {sourceProcessing}=servicesFor(store,{
+    afterSourceProcessed:async input=>{
+      deliveries.push(input);
+      return [{id:`packet_${input.record.id}`,sourceType:input.sourceType}];
+    }
+  });
+  const input={
+    sourceType:'calendar_event',
+    sourceId:'google:event_1',
+    sourceTitle:'GOALL weekly check-in',
+    rawText:'Provider: google\nTitle: GOALL weekly check-in\nStarts: 2026-07-27T11:00:00Z\nAttendees: mike@example.com',
+    sourceRefs:[{sourceType:'project_profile',sourceId:'project_goall',quoteOrSummary:'This meeting belongs to GOALL.',confidence:0.9}],
+    domainRoutes:['calendar','board_of_observers','meeting_prep']
+  };
+  const first=await sourceProcessing.processEvidenceSource(input);
+  const unchanged=await sourceProcessing.processEvidenceSource(input);
+  const changed=await sourceProcessing.processEvidenceSource({
+    ...input,
+    rawText:`${input.rawText}\nLocation: Zoom`
+  });
+
+  assert.equal(first.deduplicated,false);
+  assert.equal(unchanged.deduplicated,true);
+  assert.equal(changed.deduplicated,false);
+  assert.equal(deliveries.length,2);
+  assert.equal(first.sourceProcessingRecord.sourceVersion,1);
+  assert.equal(changed.sourceProcessingRecord.sourceVersion,2);
+  assert.equal(first.sourcePackets[0].sourceType,'calendar_event');
+  assert.equal(first.sourceProcessingRecord.sourceReceiptJson.sourceRefs.length,2);
+  assert.equal(deliveries[0].sourceRefs[1].source_id,'project_goall');
+});
+
+test('stored source receipts retry Board delivery until a packet receipt exists',async()=>{
+  const store={sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  let providerAvailable=false;
+  let attempts=0;
+  const {sourceProcessing}=servicesFor(store,{
+    afterSourceProcessed:async input=>{
+      attempts+=1;
+      if(!providerAvailable)return [];
+      return [{id:`packet_${input.record.id}`,sourceType:input.sourceType}];
+    }
+  });
+  const input={
+    sourceType:'email',
+    sourceId:'email_retry_1',
+    sourceTitle:'A source that must not disappear',
+    rawText:'Michele asked Jessa to send the final introduction by Friday.'
+  };
+  const first=await sourceProcessing.processEvidenceSource(input);
+  assert.equal(first.sourceProcessingRecord.metadataJson.boardDelivery.status,'failed');
+  assert.equal(first.sourcePackets.length,0);
+
+  providerAvailable=true;
+  const repeated=await sourceProcessing.processEvidenceSource(input);
+  assert.equal(repeated.deduplicated,true);
+  assert.equal(repeated.boardDeliveryRetried,true);
+  assert.equal(repeated.sourceProcessingRecord.metadataJson.boardDelivery.status,'delivered');
+  assert.equal(repeated.sourcePackets.length,1);
+
+  const noRemaining=await sourceProcessing.retryUndeliveredSources({limit:20});
+  assert.equal(noRemaining.attempted,0);
+  assert.equal(attempts,2);
+});
+
+test('scheduled source reconciliation processes oldest undelivered receipts first',async()=>{
+  const store={sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const delivered=[];
+  const {sourceProcessing}=servicesFor(store,{
+    afterSourceProcessed:async input=>{
+      delivered.push(input.record.id);
+      return [{id:`packet_${input.record.id}`}];
+    }
+  });
+  for(let index=0;index<30;index++){
+    const result=await sourceProcessing.processEvidenceSource({
+      sourceType:'transcript',
+      sourceId:`source_${index}`,
+      sourceTitle:`Source ${index}`,
+      rawText:`Evidence ${index}`,
+      notify:false,
+      createdAt:new Date(Date.UTC(2026,0,index+1)).toISOString()
+    });
+    result.sourceProcessingRecord.createdAt=new Date(Date.UTC(2026,0,index+1)).toISOString();
+  }
+  const retry=await sourceProcessing.retryUndeliveredSources({limit:5});
+  assert.equal(retry.delivered,5);
+  const expected=store.sourceProcessingRecords
+    .slice()
+    .sort((left,right)=>new Date(left.createdAt)-new Date(right.createdAt))
+    .slice(0,5)
+    .map(record=>record.id);
+  assert.deepEqual(delivered,expected);
+});
+
+test('long source evidence is split into ordered overlapping chunks without losing the tail',()=>{
+  const rawText=Array.from({length:500},(_,index)=>`Transcript line ${index+1}: durable source evidence for the Board.`).join('\n');
+  const chunks=evidenceChunks(rawText,1200,120);
+  assert.ok(chunks.length>1);
+  assert.match(chunks[0],/Transcript line 1:/);
+  assert.match(chunks.at(-1),/Transcript line 500:/);
+  assert.ok(chunks.every(chunk=>chunk.length<=1200));
 });
 
 test('live email document intake routes admitted relationship attachments through source processing',()=>{
@@ -121,8 +252,25 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|result\.what_val_did_receipt/);
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|null/);
   assert.match(server,/afterDocumentEvent:async\(event\)=>\{/);
-  assert.match(server,/recordSourceEvent\('document',event\)/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(\[packet\],\{type:event\.eventType\|\|'document_event'/);
+  assert.match(server,/source:'derived_document_event'/);
+  assert.match(server,/processCanonicalBoardEvidence\(\{/);
+});
+
+test('Google, Outlook, and GHL calendar reads use canonical versioned source intake',()=>{
+  assert.match(server,/function calendarEventEvidenceText/);
+  assert.match(server,/async function processCalendarEventsForBoard/);
+  assert.match(server,/sourceType:'calendar_event'/);
+  assert.match(server,/sourceId:`\$\{provider\}:\$\{sourceId\}`/);
+  assert.match(server,/if\(label!=='val'\)void processCalendarEventsForBoard\(loaded,label\)/);
+  assert.match(server,/calendar_event:'meeting_context_packet'/);
+});
+
+test('live transcript processing hands the full transcript to canonical source intake instead of the legacy summary packet lane',()=>{
+  assert.match(server,/const sourceProcessing=await processCanonicalBoardEvidence\(\{\s*sourceType:'transcript',\s*sourceId,\s*sourceTitle:title,\s*rawText:transcript,/s);
+  assert.match(server,/const boardPackets=sourceProcessing\?\.sourcePackets\|\|\[\];/);
+  assert.doesNotMatch(server,/const boardPackets=await valBoardPackets\?\.recordTranscriptProcessed\(\{sourceId,title,summary,analysis:parsed/);
+  assert.match(server,/const transcriptIntelligence=await valTranscriptIntelligence\?\.intake\(\{\s*transcript:\{\s*id:sourceId,\s*title,\s*meetingTitle:title,\s*rawText:transcript,/s);
+  assert.match(server,/return \{analysis:parsed,summary,participants,observations,canonicalPipeline,transcriptIntelligence,/);
 });
 
 test('calendar invite attachments do not count as Project Managers document evidence',async()=>{
@@ -151,8 +299,8 @@ test('calendar invite attachments do not count as Project Managers document evid
 
 test('relationship-sent documents create Project Managers and Leverage review surfaces',async()=>{
   const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
-  const documentEvents=[];
-  const {sourceProcessing}=servicesFor(store,{afterDocumentEvent:async(event)=>{documentEvents.push(event);return {id:`packet_${event.id}`};}});
+  const sourceEvents=[];
+  const {sourceProcessing}=servicesFor(store,{afterSourceProcessed:async(event)=>{sourceEvents.push(event);return [{id:`packet_${event.record.id}`}];}});
   const result=await sourceProcessing.processRelationshipDocumentEmail({
     relationship:{admitted:true,id:'rel_anthony',name:'Anthony',email:'anthony@example.com'},
     source:{sourceType:'email_message',sourceId:'email_anthony_scope',subject:'Frisson partner scope',receivedAt:'2026-07-12T10:00:00Z'},
@@ -186,17 +334,19 @@ test('relationship-sent documents create Project Managers and Leverage review su
   assert.equal(result.readyForYouItem.metadataJson.whatValDidReceipt.summary,result.sourceProcessingRecord.whatValDidReceipt.summary);
   assert.equal(projectSurface.metadataJson.assignedProjectManager.name,result.projectSuggestion.proposedValueJson.assignedProjectManager.name);
   assert.equal(store.relationshipProfiles.length,0);
-  assert.equal(documentEvents.length,1);
-  assert.equal(documentEvents[0].eventType,'document_project_review_prepared');
-  assert.equal(documentEvents[0].sourceType,'document');
-  assert.equal(documentEvents[0].projectName,'Frisson Partner Scope');
-  assert.equal(documentEvents[0].noExternalAction,true);
+  assert.equal(sourceEvents.length,2);
+  assert.equal(sourceEvents[0].sourceType,'email_message');
+  assert.equal(sourceEvents[0].sourceId,'email_anthony_scope');
+  assert.match(sourceEvents[0].rawText,/Frisson Scope\.pdf/);
+  assert.equal(sourceEvents[1].sourceType,'task');
+  assert.equal(sourceEvents[1].record.metadataJson.boardPacketType,'project_packet');
+  assert.equal(sourceEvents[1].record.metadataJson.sourceProcessingRecordId,result.sourceProcessingRecord.id);
 });
 
-test('source-only document receipts still notify the Board without creating project work',async()=>{
+test('source-only document receipts notify the Board once without creating project work',async()=>{
   const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
-  const documentEvents=[];
-  const {sourceProcessing}=servicesFor(store,{afterDocumentEvent:async(event)=>{documentEvents.push(event);return {id:`packet_${event.id}`};}});
+  const sourceEvents=[];
+  const {sourceProcessing}=servicesFor(store,{afterSourceProcessed:async(event)=>{sourceEvents.push(event);return [{id:`packet_${event.record.id}`}];}});
   const result=await sourceProcessing.processRelationshipDocumentEmail({
     relationship:{admitted:false,name:'Unknown Sender',email:'unknown@example.com'},
     source:{sourceType:'gmail_email',sourceId:'msg_unknown_doc',subject:'Random attachment'},
@@ -205,10 +355,10 @@ test('source-only document receipts still notify the Board without creating proj
   assert.equal(result.sourceProcessingRecord.status,'no_action');
   assert.equal(result.projectSuggestion,null);
   assert.equal(result.readyForYouItem,null);
-  assert.equal(documentEvents.length,1);
-  assert.equal(documentEvents[0].eventType,'document_source_no_action');
-  assert.equal(documentEvents[0].title,'Random Proposal.pdf');
-  assert.equal(documentEvents[0].noExternalAction,true);
+  assert.equal(sourceEvents.length,1);
+  assert.equal(sourceEvents[0].sourceType,'gmail_email');
+  assert.match(sourceEvents[0].rawText,/Random Proposal\.pdf/);
+  assert.equal(sourceEvents[0].record.metadataJson.source,'relationship_document_email');
 });
 
 test('Google Drive shares count as relationship document evidence',async()=>{

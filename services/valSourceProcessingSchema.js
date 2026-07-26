@@ -6,6 +6,8 @@ create table if not exists source_processing_records (
   source_type text not null,
   source_id text not null,
   source_title text,
+  source_fingerprint text,
+  source_version integer not null default 1,
   status text not null default 'processed',
   source_receipt_json jsonb not null default '{}',
   witness_observations_json jsonb not null default '[]',
@@ -59,7 +61,11 @@ create table if not exists surface_registrations (
   updated_at timestamptz not null default now()
 );
 
+alter table source_processing_records add column if not exists source_fingerprint text;
+alter table source_processing_records add column if not exists source_version integer not null default 1;
+
 create index if not exists source_processing_records_lookup_idx on source_processing_records(tenant_id,user_id,source_type,source_id,created_at desc);
+create unique index if not exists source_processing_records_version_idx on source_processing_records(tenant_id,user_id,source_type,source_id,source_fingerprint);
 create index if not exists prepared_artifact_records_lookup_idx on prepared_artifact_records(tenant_id,user_id,artifact_type,status,created_at desc);
 create index if not exists surface_registrations_lookup_idx on surface_registrations(tenant_id,user_id,surface,status,created_at desc);
 create index if not exists surface_registrations_target_idx on surface_registrations(tenant_id,user_id,surface_target_type,surface_target_id,status);

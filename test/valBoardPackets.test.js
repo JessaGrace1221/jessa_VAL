@@ -20,18 +20,18 @@ test('Board packet schema and routes are mounted',()=>{
   assert.match(routes,/\/api\/val\/board\/context/);
   assert.match(routes,/\/api\/val\/board\/sources/);
   assert.match(routes,/\/api\/val\/board\/events\/:sourceType/);
-  assert.match(routes,/afterSourceEvent/);
-  assert.match(server,/afterSourceEvent:async/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(\[packet\],\{type:'source_event'/);
+  assert.match(routes,/Live Board events cannot bypass source processing/);
+  assert.doesNotMatch(routes,/service\.recordSourceEvent/);
   const triggerStart=server.indexOf('async function triggerBoardIntelligenceForPackets');
   const triggerEnd=server.indexOf('function conversationTurnSourceRefs',triggerStart);
   const triggerSource=server.slice(triggerStart,triggerEnd);
-  assert.ok(
-    triggerSource.indexOf('enrichBoardPacketsWithModel') < triggerSource.indexOf('return valIntelligenceSpine.runIntelligencePass'),
-    'Observer digestion must finish before the Chief of Staff intelligence spine runs.'
-  );
+  assert.match(triggerSource,/valIntelligenceSpine\.runIntelligencePass/);
+  assert.match(triggerSource,/packetIds:livePackets\.map\(packet=>packet\.id\)/);
+  assert.doesNotMatch(server,/async function enrichBoardPacketsWithModel/);
+  assert.doesNotMatch(server,/async function modelReviewBoardPacket/);
   assert.match(server,/queueKnowledgeDocumentObserverDelivery/);
-  assert.match(server,/recordSourceEvent\('document'/);
+  assert.match(server,/source:'document_reference_history'/);
+  assert.match(server,/source:'derived_document_event'/);
 });
 
 test('Board packet service routes and digests each packet through every observer',async()=>{
@@ -222,22 +222,18 @@ test('Observer reviews preserve concrete named evidence for project-first execut
 
 test('Board source registry separates automatic hooks from source-specific ingress',()=>{
   const byType=Object.fromEntries(BOARD_SOURCE_REGISTRY.map(source=>[source.sourceType,source]));
-  for(const sourceType of ['email','transcript','calendar_event','witnessing','cowork','external_action','home_email_action']){
+  for(const sourceType of ['email','transcript','calendar_event','witnessing','cowork','external_action']){
     assert.equal(byType[sourceType]?.status,'live',sourceType);
     assert.ok(byType[sourceType]?.hook,sourceType);
   }
-  for(const sourceType of ['task','relationship_profile','project_profile','ghl_voice','ghl_text']){
+  for(const sourceType of ['task','relationship_profile','project_profile','ghl_voice','ghl_text','sms','linkedin_visibility','public_research']){
     assert.equal(byType[sourceType]?.status,'live',sourceType);
     assert.ok(byType[sourceType]?.hook,sourceType);
     assert.ok(byType[sourceType]?.claim,sourceType);
   }
   assert.equal(byType.document?.status,'live');
   assert.match(byType.document?.claim||'',/all 14 Observers/);
-  for(const sourceType of ['sms','linkedin_visibility','public_research']){
-    assert.equal(byType[sourceType]?.status,'ingress',sourceType);
-    assert.match(byType[sourceType]?.hook||'',/\/api\/val\/board\/events\//,sourceType);
-    assert.ok(byType[sourceType]?.claim,sourceType);
-  }
+  assert.equal(byType.home_email_action,undefined);
 });
 
 test('Board source readiness calculates honest claim boundaries from packet records',async()=>{
@@ -256,10 +252,11 @@ test('Board source readiness calculates honest claim boundaries from packet reco
   const readiness=await service.sourceReadiness();
   assert.equal(readiness.summary.claimAllSourcesSafe,false);
   assert.ok(readiness.summary.live>0);
-  assert.ok(readiness.summary.ingress>0);
+  assert.equal(readiness.summary.ingress,0);
   assert.ok(readiness.sources.find(source=>source.sourceType==='email').packetCount>0);
   assert.ok(readiness.sources.find(source=>source.sourceType==='witnessing').packetCount>0);
-  assert.equal(readiness.sources.find(source=>source.sourceType==='sms').claimSafe,false);
+  assert.equal(readiness.sources.find(source=>source.sourceType==='sms').claimSafe,true);
+  assert.equal(readiness.sources.find(source=>source.sourceType==='sms').observed,false);
   assert.equal(readiness.sources.find(source=>source.sourceType==='sms').packetCount,0);
 });
 
@@ -285,12 +282,46 @@ test('source-specific Board event ingress creates claim-safe packets for non-aut
   assert.equal(readiness.sources.find(source=>source.sourceType==='linkedin_visibility').claimSafe,true);
   assert.equal(readiness.sources.find(source=>source.sourceType==='document').claimSafe,true);
   assert.equal(readiness.sources.find(source=>source.sourceType==='public_research').claimSafe,true);
-  assert.ok(readiness.summary.activeIngress>=3);
+  assert.ok(readiness.summary.activeLive>=3);
   const packets=await service.listPackets({limit:20});
   assert.ok(packets.some(packet=>packet.sourceType==='sms'&&packet.packetType==='relationship_packet'));
   assert.ok(packets.some(packet=>packet.sourceType==='linkedin_visibility'&&packet.packetType==='relationship_packet'));
   assert.ok(packets.some(packet=>packet.sourceType==='document'&&packet.packetType==='document_packet'));
   assert.ok(packets.some(packet=>packet.sourceType==='public_research'&&packet.packetType==='project_packet'));
+});
+
+test('saved drafts and direct GHL text become first-class Board evidence',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_test`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){}}
+  });
+
+  const draft=await service.recordDraftEvent({
+    id:'draft_1',
+    draftType:'email_draft',
+    subject:'Follow up with Michele',
+    body:'Hi Michele, here is the introduction we discussed.',
+    sourceContext:{
+      sourceRefs:[{sourceType:'transcript',sourceId:'transcript_1',quoteOrSummary:'Jessa will introduce Michele.',confidence:0.92}]
+    }
+  });
+  const ghlText=await service.recordSourceEvent('ghl_text',{
+    id:'ghl_text_1',
+    summary:'Help me map the best payment structure for GOALL.'
+  });
+
+  assert.equal(draft.sourceType,'draft');
+  assert.equal(draft.packetType,'draft_review_packet');
+  assert.equal(draft.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
+  assert.equal(ghlText.sourceType,'ghl_text');
+  assert.equal(ghlText.packetType,'cowork_packet');
+  assert.equal(ghlText.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
 });
 
 test('email, transcript, calendar, Witnessing, and Co-Work sources create live non-prototype Board packets',async()=>{
@@ -690,13 +721,17 @@ test('Observer cards expose an honest quiet state when no valid evidence qualifi
 
 test('profile persistence paths emit Board packets when relationship/project truth changes',()=>{
   assert.match(server,/async function recordRelationshipProfileBoardPacket/);
-  assert.match(server,/recordProfileEvent\(\{eventType,profile\}\)/);
+  assert.match(server,/function relationshipProfileEvidenceText/);
+  assert.match(server,/processCanonicalBoardEvidence\(\{/);
+  assert.match(server,/sourceType,/);
   assert.match(server,/recordRelationshipProfileBoardPacket\(saved,'relationship_profile_saved'\)/);
   assert.match(server,/recordRelationshipProfileBoardPacket\(saved,'relationship_profile_recalculated'\)/);
 });
 
 test('Home chat, GHL text, and GHL voice routes record conversation turns for the Board',()=>{
   assert.match(server,/async function recordValConversationTurnPacket/);
+  assert.match(server,/function compactConversationExchange/);
+  assert.match(server,/return processCanonicalBoardEvidence\(\{/);
   assert.match(server,/function boardConversationSourceType/);
   assert.match(server,/ghl_text'\|\|value==='ghl_chat'/);
   const voiceRoute=server.slice(server.indexOf("app.post('/api/val/ghl/voice-turn'"),server.indexOf("app.post('/api/val/chat'"));
@@ -709,6 +744,25 @@ test('Home chat, GHL text, and GHL voice routes record conversation turns for th
   const fastRoute=server.slice(server.indexOf('function sendFastHearthChatNow'),server.indexOf('function ghlVoiceUserMessage'));
   assert.match(fastRoute,/recordValConversationTurnPacket\(\{/);
   assert.match(fastRoute,/fastHearthChat:true/);
+});
+
+test('legacy draft, SMS, LinkedIn, and lead-research surfaces emit Board evidence automatically',()=>{
+  assert.match(server,/async function recordInternalDraftBoardEvent/);
+  assert.match(server,/sourceType:'draft'/);
+  assert.match(server,/sourceType:'linkedin_visibility'/);
+  assert.match(server,/async function recordGhlConversationMessagesForBoard/);
+  assert.match(server,/sourceType:'sms'/);
+  assert.match(server,/async function recordPublicResearchBoardEvent/);
+  assert.match(server,/sourceType:'public_research'/);
+  assert.match(server,/void recordPublicResearchBoardEvent\(\{/);
+  assert.match(server,/async function processCanonicalBoardEvidence/);
+});
+
+test('VAL-created calendar events enter immutable canonical source processing before Board review',()=>{
+  const saveCalendarBlock=server.match(/async function saveValCalendarEvent\(event\)\{[\s\S]*?\n\}/)?.[0]||'';
+  assert.match(saveCalendarBlock,/processCanonicalBoardEvidence\(\{/);
+  assert.match(saveCalendarBlock,/sourceType:'calendar_event'/);
+  assert.doesNotMatch(saveCalendarBlock,/recordCalendarEvent\(/);
 });
 
 test('Board front end prefers live Board context over prototype packets',()=>{
@@ -751,8 +805,8 @@ test('Witnessing completion automatically reconciles every historical Board pack
   assert.match(server,/post-Witnessing reconciliation deferred/);
   assert.match(server,/backfillBoardPackets\(\{days:3650,limit:300\}\)/);
   assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(reviewablePackets\.slice\(0,80\)/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(reviewablePackets,/);
-  assert.match(server,/board_packet_witnessing_complete_/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(\[completeSessionPacket\]/);
+  assert.match(server,/processCanonicalBoardEvidence\(\{/);
+  assert.match(server,/source:'witnessing_session_committed'/);
+  assert.match(server,/sourceId:session\.id/);
   assert.match(frontend,/await openObserverBoardAfterWitnessing\(\)/);
 });

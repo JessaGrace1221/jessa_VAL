@@ -30,15 +30,19 @@ test('intelligence backfill rehydrates existing evidence before dashboard conclu
 test('intelligence backfill reconciles historical evidence into Board packets',()=>{
   assert.match(server,/async function backfillBoardPackets/);
   assert.match(server,/app\.post\('\/api\/val\/board\/reconcile'/);
-  assert.match(server,/valBoardPackets\.recordTranscriptProcessed/);
-  assert.match(server,/valBoardPackets\.recordEmailSync/);
-  assert.match(server,/valBoardPackets\.recordCalendarEvent/);
-  assert.match(server,/valBoardPackets\.recordCommitmentEvent/);
-  assert.match(server,/valBoardPackets\.recordProfileEvent/);
-  assert.match(server,/await modelReviewBoardPacket\(reviewablePackets\[0\]/);
-  assert.match(server,/modelReview\.status='provider_unavailable'/);
-  assert.match(server,/triggerBoardIntelligenceForPackets\(reviewablePackets,\{type:'board_reconciliation'/);
-  assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(reviewablePackets\.slice\(0,80\)/);
+  const start=server.indexOf('async function backfillBoardPackets');
+  const end=server.indexOf('async function backfillValIntelligence',start);
+  const body=server.slice(start,end);
+  assert.match(body,/processCanonicalBoardEvidence\(\{/);
+  assert.match(body,/sourceType:'transcript'/);
+  assert.match(body,/sourceType:'email'/);
+  assert.match(body,/sourceType:'calendar_event'/);
+  assert.match(body,/sourceType:'task'/);
+  assert.match(body,/sourceType,\n\s+sourceId:profile/);
+  assert.match(body,/original transcript text could not be recovered/);
+  assert.doesNotMatch(body,/valBoardPackets\.record/);
+  assert.doesNotMatch(body,/modelReviewBoardPacket/);
+  assert.doesNotMatch(body,/triggerBoardIntelligenceForPackets/);
 });
 
 test('Board packet reconciliation reads existing source tables and local stores',()=>{

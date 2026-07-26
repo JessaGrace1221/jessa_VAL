@@ -169,7 +169,8 @@ test('intelligence spine reads high-signal classifications and draft candidates'
   assert.match(spine,/listHighSignalClassifications/);
   assert.match(spine,/readyForYouDraftCandidates/);
   assert.match(spine,/conversation_classification/);
-  assert.match(spine,/email_draft_readiness/);
+  assert.match(spine,/ready_for_you_draft_candidates/);
+  assert.doesNotMatch(spine,/email_draft_readiness/);
 });
 
 test('opening Executive Inbox reads the saved index instead of rerunning classification',()=>{

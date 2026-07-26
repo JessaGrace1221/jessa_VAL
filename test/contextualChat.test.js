@@ -59,7 +59,9 @@ test('selected source Co-Work answers from the loaded envelope instead of dead-e
   assert.match(server,/Here is the working outline from the loaded packet/);
   assert.match(server,/What the dashboard needs to contain/);
   assert.match(server,/People\/context named in the packet/);
-  assert.match(server,/GOALL\|Goal Agency\|dashboard\|projection\|handoff\|Mike/);
+  assert.match(server,/const focusTerms=\[\.\.\.new Set/);
+  assert.match(server,/const matchesFocus=line=>!focusTerms\.length/);
+  assert.doesNotMatch(server,/const keyword=\/\\b\(GOALL\|Goal Agency\|dashboard/);
   assert.match(server,/function selectedSourceIframeDraft/);
   assert.match(server,/I have the selected packet loaded, so I am not going to ask what "this" is/);
   assert.match(server,/Here is a clean iframe-ready first version based on the loaded context/);

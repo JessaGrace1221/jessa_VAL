@@ -462,6 +462,7 @@ function createValExecutiveInboxService({
   listReviewDrafts,
   listSuppressedExecutiveContacts,
   saveSuppressedExecutiveContact,
+  afterClassification,
   logger=console
 }={}){
   function store(){
@@ -549,8 +550,14 @@ function createValExecutiveInboxService({
     classification.identity_resolution=identity;
     classification.teach_val_signals=safeArray(teachVal).slice(0,6);
     classification.id=await saveClassification(context,classification);
+    const canonicalIntake=typeof afterClassification==='function'
+      ? await afterClassification({context,classification}).catch(error=>{
+          logger.warn?.('[val-executive-inbox] canonical intake failed:',error.message);
+          return {ok:false,error:error.message};
+        })
+      : null;
     logger.log?.(`[val-executive-inbox] classified ${context.conversationId||context.threadId||classification.id} ${classification.priority_level}`);
-    return {ok:true,context,classification};
+    return {ok:true,context,classification,canonical_intake:canonicalIntake};
   }
   async function classifyBatch({limit=25,conversationIds=[]}={}){
     let ids=safeArray(conversationIds).filter(Boolean);
@@ -727,6 +734,27 @@ function createValExecutiveInboxService({
     }
     return store().conversationClassifications.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&priorityScore(r.priority_level||r.priorityLevel)>=3).slice(0,lim);
   }
+  async function listClassifications({limit=200}={}){
+    const lim=Math.max(1,Math.min(Number(limit)||200,1000));
+    if(hasPg()){
+      const result=await dbQuery(
+        `select * from conversation_classifications where tenant_id=$1 and user_id=$2 order by created_at asc limit $3`,
+        [tenantId(),userId(),lim]
+      );
+      return safeArray(result.rows).map(row=>({
+        ...rowObject(row),
+        context:jsonValue(row.context_json,{}),
+        commitments:jsonValue(row.commitments_json,[]),
+        sourceRefs:jsonValue(row.source_refs_json,[]),
+        identity_resolution:jsonValue(row.context_json,{})?.classification?.identity_resolution||{}
+      }));
+    }
+    return store().conversationClassifications
+      .filter(row=>row.tenantId===tenantId()&&row.userId===userId())
+      .slice()
+      .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
+      .slice(0,lim);
+  }
   async function listReadyForYouDraftCandidates({limit=8}={}){
     const lim=Math.max(1,Math.min(Number(limit)||8,30));
     const generated=typeof listReviewDrafts==='function'
@@ -740,7 +768,7 @@ function createValExecutiveInboxService({
       ...rows
     ].slice(0,lim);
   }
-  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listHighSignalClassifications,listReadyForYouDraftCandidates,markNotExecutiveContact};
+  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listClassifications,listHighSignalClassifications,listReadyForYouDraftCandidates,markNotExecutiveContact};
 }
 
 module.exports={createValExecutiveInboxService,classifyHeuristically,createDraftReadiness,createDraftBrief,runDraftQa,qaCheckGeneratedDraft,normalizeDraftWriterOutput,executiveInboxAdmissionDecision,executiveContactSuppressionKey};

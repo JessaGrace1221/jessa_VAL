@@ -105,7 +105,9 @@ test('buildQueue keeps prepared work beyond the old five item cap',async()=>{
     sourceContext:{
       source:'proposal',
       preparedArtifactKind:'proposal_draft',
-      preparedArtifact:{kind:'proposal_draft',body:'Reviewable prepared proposal artifact ' + (index + 1) + '.'},
+      recipientEmail:`client${index+1}@example.com`,
+      recipientId:`crm_client_${index+1}`,
+      preparedArtifact:{kind:'proposal_draft',body:'Reviewable prepared proposal artifact ' + (index + 1) + '.',target:`client${index+1}@example.com`,recipients:[{name:`Client ${index+1}`,email:`client${index+1}@example.com`,contactId:`crm_client_${index+1}`}]},
       canValAct:'approval_required',
       executionPath:'review_then_send'
     },
@@ -137,8 +139,9 @@ test('buildQueue keeps prepared work beyond the old five item cap',async()=>{
   assert.equal(listed.visibleLimit,20);
 });
 
-test('approve, reject, and snooze update local state only',async()=>{
+test('approve, reject, and snooze remain local actions and notify the canonical decision return path',async()=>{
   let store={readyForYouItems:[]};
+  const decisions=[];
   const service=createValReadyForYouService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -146,7 +149,8 @@ test('approve, reject, and snooze update local state only',async()=>{
     tenantId:()=>'tenant',
     userId:()=>'user',
     executiveInboxService:{reviewDrafts:async()=>({drafts:[{id:'draft_approve',subject:'Ready',body:'Body',status:'ready_for_review',sourceContext:{source:'executive_inbox_review_only',writerOutput:{confidence:0.8}}}]}),listReadyForYouDraftCandidates:async()=>[]},
-    listDrafts:async()=>[]
+    listDrafts:async()=>[],
+    afterDecision:async event=>decisions.push(event)
   });
   const built=await service.buildQueue();
   const id=built.allBuilt[0].id;
@@ -163,6 +167,15 @@ test('approve, reject, and snooze update local state only',async()=>{
   assert.equal(snoozed.status,'snoozed');
   assert.ok(snoozed.snoozedUntil);
   assert.equal(snoozed.decisionJson.external_action,false);
+  assert.deepEqual(decisions.map(event=>event.status),['approved','rejected','snoozed']);
+  assert.ok(decisions.every(event=>event.item&&event.reviewedAt));
+});
+
+test('server returns every prepared-work decision to canonical work and the Board',()=>{
+  assert.match(server,/afterDecision:async\(\{item,status,decision,reviewedAt,snoozedUntil\}=\{\}\)=>/);
+  assert.match(server,/valCanonicalWork\.recordDecision/);
+  assert.match(server,/source:'prepared_work_decision'/);
+  assert.match(server,/sourceId:`prepared-decision:\$\{item\.id\}`/);
 });
 
 test('empty queue returns caught-up state',async()=>{
@@ -282,8 +295,9 @@ test('transcript prepared artifacts stay visible in Ready For You',async()=>{
           prepared_artifact:{
             kind:'introduction_email_draft',
             source:'relationship_intro_matching',
-            recipients:[{name:'Aric Soyring',contactId:'crm_aric'},{name:'Greg Niesen',contactId:'crm_greg'}],
-            body:'Draft intro body.',
+            recipients:[{name:'Aric Soyring',email:'aric@example.com',contactId:'crm_aric'},{name:'Greg Niesen',email:'greg@example.com',contactId:'crm_greg'}],
+            consentConfirmed:true,
+            body:'Hi Aric and Greg, I would like to introduce you because your partnership interests appear aligned.',
             execution_level:'level_2_autonomous_draft',
             completion_status:'complete_for_review',
             linked_context:{transcript:{id:'tr_intro'},project:{id:'frisson',name:'Frisson'},relationships:[{name:'Aric Soyring',contactId:'crm_aric'}],task:{id:'task_intro',title:'Continue intro'}},
@@ -375,6 +389,78 @@ test('commitment packets with enough context produce reviewable Leverage prepare
   assert.equal(built.preparedCount,1);
 });
 
+test('canonical work packets are preferred and preserve full lineage in Leverage',async()=>{
+  let store={readyForYouItems:[]};
+  let legacyRead=false;
+  const attached=[];
+  const ready=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_canonical`,
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    executiveInboxService:{reviewDrafts:async()=>({drafts:[]}),listReadyForYouDraftCandidates:async()=>[]},
+    meetingPrepService:{listReadyForYouCandidates:async()=>[]},
+    transcriptIntelligenceService:{listReadyForYouCandidates:async()=>[]},
+    canonicalWorkService:{
+      taskProjection:async()=>({ok:true,tasks:[{
+        id:'work_goall_1',
+        canonical_work_item_id:'work_goall_1',
+        source_processing_record_id:'source_record_9',
+        source_type:'transcript',
+        source_id:'transcript_9',
+        title:'Build the GOALL projections dashboard',
+        description:'Create the agreed dashboard for the GOALL project.',
+        evidence_quote:'Jessa: I will build the dashboard in HTML and CSS for the CRM.',
+        owner_type:'user',
+        owner_name:'Jessa',
+        status:'open',
+        confidence_score:0.94,
+        project_name:'GOALL',
+        relationship_name:'Mike',
+        envelope:{type:'project',id:'project_goall',name:'GOALL'},
+        working_brief:{
+          projectName:'GOALL',
+          relationshipName:'Mike',
+          contextLines:[
+            'Mike: Show pipeline projections, owner, and open follow-up.',
+            'Jessa: Make it iframe-ready for the CRM.'
+          ],
+          sourceRefs:[{source_type:'transcript',source_id:'transcript_9',quote_or_summary:'Make it iframe-ready for the CRM.',confidence:0.94}]
+        },
+        source_packet:{
+          canonical_work_item_id:'work_goall_1',
+          source_processing_record_id:'source_record_9',
+          source_type:'transcript',
+          source_id:'transcript_9',
+          source_version:2,
+          source_fingerprint:'fingerprint_9',
+          context_excerpt:'Mike: Show pipeline projections, owner, and open follow-up.\nJessa: Make it iframe-ready for the CRM.'
+        }
+      }]}),
+      attachPreparedArtifact:async(id,input)=>{attached.push({id,input});return {ok:true,attached:true};}
+    },
+    commitmentsService:{list:async()=>{legacyRead=true;return {ok:true,commitments:[]};}},
+    listDrafts:async()=>[]
+  });
+  const built=await ready.buildQueue({limit:5});
+  const item=built.preparedItems.find(row=>row.metadataJson?.canonicalWorkItemId==='work_goall_1');
+  assert.ok(item);
+  assert.equal(legacyRead,false);
+  assert.equal(item.metadataJson.projectName,'GOALL');
+  assert.equal(item.metadataJson.relationshipName,'Mike');
+  assert.equal(item.metadataJson.sourceProcessingRecordId,'source_record_9');
+  assert.equal(item.metadataJson.preparedArtifact.source_packet.canonical_work_item_id,'work_goall_1');
+  assert.equal(item.metadataJson.preparedArtifact.source_packet.source_version,2);
+  assert.match(item.metadataJson.preparedArtifact.html,/pipeline projections/i);
+  assert.match(item.metadataJson.preparedArtifact.html,/iframe/i);
+  assert.equal(attached.length,1);
+  assert.equal(attached[0].id,'work_goall_1');
+  assert.equal(attached[0].input.artifactId,item.id);
+  assert.equal(attached[0].input.metadata.latestPreparedArtifactKind,'html_page_draft');
+});
+
 test('meeting overview drafts preserve their reviewable email artifact for Leverage',async()=>{
   const state={drafts:[{
     id:'meeting-overview-draft',
@@ -387,7 +473,9 @@ test('meeting overview drafts preserve their reviewable email artifact for Lever
       source:'transcript_meeting_overview',
       transcriptId:'transcript-1',
       preparedArtifactKind:'email_draft',
-      preparedArtifact:{kind:'email_draft',body:'Action Items'},
+      recipientEmail:'mike@example.com',
+      recipientId:'crm_mike',
+      preparedArtifact:{kind:'email_draft',body:'Action Items\n- Send the website link\n\nKey Points\n- CRM ownership is confirmed.',target:'mike@example.com',recipients:[{name:'Mike',email:'mike@example.com',contactId:'crm_mike'}]},
       canValAct:'approval_required',
       executionPath:'create_provider_draft_then_human_send',
       noExternalAction:true
@@ -408,6 +496,48 @@ test('meeting overview drafts preserve their reviewable email artifact for Lever
   assert.equal(item.metadataJson.preparedArtifact.kind,'email_draft');
   assert.equal(item.metadataJson.canValAct,'approval_required');
   assert.equal(item.metadataJson.executionPath,'create_provider_draft_then_human_send');
+});
+
+test('existing contactless prepared work is reclassified as a durable task when read',async()=>{
+  const savedTasks=[];
+  let store={readyForYouItems:[{
+    id:'ready_bad_email',
+    tenantId:'tenant',
+    userId:'user',
+    category:'prepared_work',
+    type:'email_draft',
+    itemType:'email_draft',
+    title:'Email draft prepared',
+    status:'ready_for_review',
+    summary:'Send the information to Anna.',
+    whatValPrepared:'Hi Anna, here is the information you requested.',
+    sourceRefsJson:[{source_type:'transcript',source_id:'tr_bad',quote_or_summary:'Send the information to Anna.',confidence:0.8}],
+    confidence:0.8,
+    requiresApproval:true,
+    metadataJson:{
+      source:'transcript_intelligence',
+      transcriptId:'tr_bad',
+      preparedArtifactKind:'email_draft',
+      preparedArtifact:{kind:'email_draft',body:'Hi Anna, here is the information you requested.'}
+    },
+    createdAt:'2026-07-24T12:00:00Z'
+  }]};
+  const ready=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    saveTask:async task=>{savedTasks.push(task);}
+  });
+  const listed=await ready.listItems({limit:5});
+  assert.equal(listed.items[0].type,'prepared_work_needs_information');
+  assert.equal(listed.items[0].category,'task');
+  assert.equal(listed.items[0].metadataJson.preparedArtifactKind,'');
+  assert.equal(listed.preparedCount,0);
+  assert.equal(savedTasks.length,1);
+  assert.equal(savedTasks[0].source,'prepared_work_admission');
+  assert.match(savedTasks[0].notes,/recipient/i);
 });
 
 test('transcript commitment review bundles do not count as prepared Leverage work',async()=>{
@@ -455,4 +585,74 @@ test('transcript commitment review bundles do not count as prepared Leverage wor
   assert.equal(item.metadataJson.preparedWorkCount,0);
   assert.equal(built.preparedCount,0);
   assert.deepEqual(built.preparedItems,[]);
+});
+
+test('canonical prepared work is generated once per immutable source version',async()=>{
+  let store={readyForYouItems:[]};
+  let generationCount=0;
+  const preparedReceipts=[];
+  const task={
+    id:'work_goall',
+    canonical_work_item_id:'work_goall',
+    title:'Build the GOALL dashboard in HTML',
+    description:'Create the CRM iframe dashboard.',
+    evidence_quote:'Jessa: I will build the GOALL dashboard in HTML for the CRM iframe.',
+    source_type:'transcript',
+    source_id:'tr_goall',
+    source_refs:[{source_type:'transcript',source_id:'tr_goall',quote_or_summary:'Jessa: I will build the GOALL dashboard in HTML for the CRM iframe.',confidence:0.96}],
+    project_name:'GOALL',
+    status:'open',
+    confidence_score:0.96,
+    workingBrief:{
+      projectName:'GOALL',
+      envelope:{type:'project',id:'goall',name:'GOALL'},
+      contextLines:['The dashboard needs pipeline projections, owner, follow-up, and weekly status.'],
+      sourceContext:{
+        sourceProcessingRecordIds:['source_1'],
+        immutableSourceVersions:[{sourceProcessingRecordId:'source_1',sourceVersion:1,sourceFingerprint:'fp_1'}]
+      }
+    },
+    source_packet:{source_processing_record_id:'source_1',source_type:'transcript',source_id:'tr_goall',context_excerpt:'The dashboard needs pipeline projections, owner, follow-up, and weekly status.'},
+    source_packets:[{source_processing_record_id:'source_1',source_version:1,source_fingerprint:'fp_1',source_title:'GOALL meeting',context_excerpt:'The dashboard needs pipeline projections, owner, follow-up, and weekly status.'}]
+  };
+  const service=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    uuid:prefix=>`${prefix}_test`,
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    canonicalWorkService:{
+      taskProjection:async()=>({ok:true,tasks:[task]}),
+      attachPreparedArtifact:async()=>({ok:true})
+    },
+    generatePreparedArtifact:async({artifact})=>{
+      generationCount+=1;
+      return {
+        ok:true,
+        artifact:{
+          ...artifact,
+          html:'<!doctype html><html><body><h1>GOALL Dashboard</h1><p>Pipeline projections, owner, follow-up, and weekly status.</p></body></html>',
+          generatedFromCanonicalPacket:true,
+          usedEvidence:[task.evidence_quote]
+        }
+      };
+    },
+    afterPreparedItem:async item=>{
+      preparedReceipts.push(item);
+      return {sourceProcessingRecord:{id:'source_prepared_1'}};
+    },
+    listDrafts:async()=>[]
+  });
+  const first=await service.prepareCanonicalWorkItem(task.id);
+  const second=await service.prepareCanonicalWorkItem(task.id);
+  assert.equal(first.prepared,true);
+  assert.equal(second.prepared,true);
+  assert.equal(generationCount,1);
+  assert.equal(preparedReceipts.length,1);
+  assert.match(preparedReceipts[0].metadataJson.preparedArtifact.html,/GOALL Dashboard/);
+  assert.equal(preparedReceipts[0].sourceRefsJson[0].source_id,'tr_goall');
+  assert.equal(store.readyForYouItems.length,1);
+  assert.match(store.readyForYouItems[0].metadataJson.preparedArtifact.html,/GOALL Dashboard/);
+  assert.equal(store.readyForYouItems[0].metadataJson.preparedBoardReceiptId,'source_prepared_1');
 });

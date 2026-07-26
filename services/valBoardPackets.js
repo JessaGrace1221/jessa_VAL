@@ -50,31 +50,31 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     sourceType:'email',
     label:'Email sync',
     status:'live',
-    hook:'valConversationIdentity.syncEmail.afterEmailSync',
-    packetTypes:['email_attention_packet','reply_pressure_packet','draft_review_packet'],
-    claim:'Synced Gmail/Outlook messages become Board packets.'
+    hook:'canonical source intake from Gmail/Outlook sync and classified attachment evidence',
+    packetTypes:['email_attention_packet'],
+    claim:'Every new or changed Gmail/Outlook message version receives an immutable source receipt before Board review.'
   },
   {
     sourceType:'transcript',
     label:'Transcripts',
     status:'live',
-    hook:'processTranscriptPayload.recordTranscriptProcessed',
-    packetTypes:['meeting_evidence_packet','decision_trace_packet','task_extraction_packet'],
-    claim:'Processed transcripts become evidence, decision, and task packets.'
+    hook:'processTranscriptPayload.processCanonicalBoardEvidence',
+    packetTypes:['meeting_evidence_packet'],
+    claim:'Every processed transcript version keeps its full text in one immutable source lineage before Board review.'
   },
   {
     sourceType:'calendar_event',
     label:'Calendar events',
     status:'live',
-    hook:'saveValCalendarEvent.recordCalendarEvent',
-    packetTypes:['meeting_context_packet','capacity_window_packet'],
-    claim:'Saved VAL calendar events become meeting and capacity packets.'
+    hook:'calendar provider reads and saved VAL events through canonical source intake',
+    packetTypes:['meeting_context_packet'],
+    claim:'Every new or changed calendar event version receives an immutable source receipt before Board review.'
   },
   {
     sourceType:'witnessing',
     label:'Witnessing Session',
     status:'live',
-    hook:'teach-val/onboarding witnessing save/confirm/commit',
+    hook:'teach-val/onboarding save, confirm, and commit through canonical source intake',
     packetTypes:['identity_context_packet','relational_context_packet','operating_context_packet'],
     claim:'Witnessing answers and committed onboarding memory become foundational Board packets.'
   },
@@ -82,7 +82,7 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     sourceType:'cowork',
     label:'Co-Work conversations',
     status:'live',
-    hook:'valCoworkRoutes.afterCoworkEvent',
+    hook:'valCoworkRoutes.afterCoworkEvent through canonical source intake',
     packetTypes:['cowork_packet'],
     claim:'Co-Work open, response, and apply events become Board packets.'
   },
@@ -90,47 +90,47 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     sourceType:'external_action',
     label:'External action packets',
     status:'live',
-    hook:'valExternalActionsRoutes.afterExternalActionPacket',
+    hook:'valExternalActionsRoutes.afterExternalActionPacket through canonical source intake',
     packetTypes:['approval_packet','task_packet','sent_action_packet'],
     claim:'Prepared, approved, and executed external action packets become Board packets.'
   },
   {
-    sourceType:'home_email_action',
-    label:'Home VAL email preparation',
+    sourceType:'draft',
+    label:'Prepared drafts',
     status:'live',
-    hook:'hearthActionPrepContent.recordExternalActionPacket',
-    packetTypes:['sent_action_packet','approval_packet'],
-    claim:'Home VAL email preparation becomes an approval/action packet before anything is sent.'
+    hook:'saveInternalDraft through canonical source intake',
+    packetTypes:['draft_review_packet'],
+    claim:'Every saved internal draft becomes a reviewable Board packet with its source context attached.'
   },
   {
     sourceType:'sms',
     label:'SMS',
-    status:'ingress',
-    hook:'POST /api/val/board/events/sms',
+    status:'live',
+    hook:'GHL conversation sync/send plus canonical /api/val/board/events/sms ingress',
     packetTypes:['sent_action_packet','relationship_packet'],
-    claim:'SMS receipts become Board packets when the SMS delivery layer sends them to the source-specific Board ingress.'
+    claim:'Every captured SMS exchange or send receipt enters canonical source processing before Board review.'
   },
   {
     sourceType:'linkedin_visibility',
     label:'LinkedIn Visibility',
-    status:'ingress',
-    hook:'POST /api/val/board/events/linkedin_visibility',
+    status:'live',
+    hook:'LinkedIn draft and meeting-prep context plus canonical source-event ingress',
     packetTypes:['relationship_packet','learning_packet'],
-    claim:'LinkedIn drafts and support-circle activity become Board packets when the LinkedIn function sends them to the source-specific Board ingress.'
+    claim:'Captured LinkedIn drafts and visibility evidence enter canonical source processing before Board review.'
   },
   {
     sourceType:'document',
     label:'Documents and uploads',
     status:'live',
-    hook:'VAL document upload and source-processing knowledge-document intake',
+    hook:'immutable knowledge-document and relationship-attachment source intake',
     packetTypes:['document_packet','learning_packet'],
-    claim:'Uploaded knowledge documents become Board packets automatically. About Me documents also receive an individual, source-backed review from all 14 Observers.'
+    claim:'Every readable document version enters one immutable source lineage. About Me documents receive an individual, source-backed review from all 14 Observers.'
   },
   {
     sourceType:'task',
     label:'Tasks and commitments',
     status:'live',
-    hook:'valCommitmentsRoutes.afterCommitmentEvent',
+    hook:'canonical work and commitment lifecycle events',
     packetTypes:['task_packet'],
     claim:'Created or completed user commitments become Board packets automatically.'
   },
@@ -138,7 +138,7 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     sourceType:'relationship_profile',
     label:'Stewardship profiles',
     status:'live',
-    hook:'saveRelationshipProfile.recordProfileEvent',
+    hook:'saveRelationshipProfile through canonical source intake',
     packetTypes:['relationship_packet'],
     claim:'Relationship profile changes become Board packets automatically.'
   },
@@ -146,17 +146,17 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     sourceType:'project_profile',
     label:'Project profiles',
     status:'live',
-    hook:'saveRelationshipProfile.recordProfileEvent profileType=project',
+    hook:'saveRelationshipProfile profileType=project through canonical source intake',
     packetTypes:['project_packet'],
     claim:'Project profile changes become Board packets automatically.'
   },
   {
     sourceType:'public_research',
     label:'Public research',
-    status:'ingress',
-    hook:'POST /api/val/board/events/public_research',
+    status:'live',
+    hook:'meeting prep, lead research, and canonical source-event ingress',
     packetTypes:['document_packet','relationship_packet','project_packet'],
-    claim:'Apollo, Outscraper, public web, and LinkedIn research become Board packets when research results are sent to the source-specific Board ingress.'
+    claim:'Captured Apollo, Outscraper, and public-web research enters canonical source processing before Board review.'
   },
   {
     sourceType:'ghl_voice',
@@ -307,7 +307,7 @@ function packetId(uuid,scope,sourceType,sourceId,packetType){
 }
 function registrySourceKey(packetSourceType=''){
   const source=String(packetSourceType||'').toLowerCase();
-  if(source==='email'||source==='email_sync'||source==='gmail'||source==='outlook'||source==='unified_conversation')return 'email';
+  if(source==='email'||source==='email_sync'||source==='gmail'||source==='gmail_email'||source==='outlook'||source==='outlook_email'||source==='email_message'||source==='unified_conversation')return 'email';
   if(source==='transcript'||source==='krisp'||source==='uploaded_transcript')return 'transcript';
   if(source==='calendar_event'||source==='calendar'||source==='google_calendar'||source==='outlook_calendar')return 'calendar_event';
   if(source==='witnessing'||source==='teach_val_onboarding')return 'witnessing';
@@ -315,7 +315,7 @@ function registrySourceKey(packetSourceType=''){
   if(source==='external_action'||source==='home_email_action')return 'external_action';
   if(source==='sms'||source==='ghl_sms')return 'sms';
   if(source==='linkedin'||source==='linkedin_visibility')return 'linkedin_visibility';
-  if(source==='document'||source==='upload'||source==='google_doc'||source==='attachment')return 'document';
+  if(source==='document'||source==='knowledge_document'||source==='upload'||source==='google_doc'||source==='attachment')return 'document';
   if(source==='task'||source==='commitment')return 'task';
   if(source==='relationship'||source==='relationship_profile'||source==='contact')return 'relationship_profile';
   if(source==='project'||source==='project_profile')return 'project_profile';
@@ -847,6 +847,33 @@ function createValBoardPacketsService({
       payload:{actionType:action,status:packet.status,targetSystem:packet.targetSystem,targetId:packet.targetId,noExternalAction:packet.status!=='executed'}
     });
   }
+  async function recordDraftEvent(draft={}){
+    const id=draft.id||uuid('draft');
+    const sourceContext=draft.sourceContext||draft.source_context_json||{};
+    const body=compactText(draft.body||'',1400);
+    const subject=compactText(draft.subject||draft.title||draft.draftType||draft.draft_type||'Prepared draft',220);
+    const sourceRefs=safeArray(
+      sourceContext.sourceRefs||
+      sourceContext.source_refs||
+      sourceContext.sourceRefsJson||
+      sourceContext.source_refs_json
+    );
+    return createPacket({
+      sourceType:'draft',
+      sourceId:id,
+      packetType:'draft_review_packet',
+      title:subject,
+      summary:body||subject,
+      sourceRefs,
+      payload:{
+        draftType:draft.draftType||draft.draft_type||'',
+        status:draft.status||'draft',
+        contactId:draft.contactId||draft.contact_id||'',
+        sourceContext,
+        noExternalAction:true
+      }
+    });
+  }
   async function recordCommitmentEvent(event={}){
     const commitment=event.commitment||event.result?.commitment||{};
     const id=commitment.id||event.commitmentId||event.id||uuid('commitment');
@@ -934,7 +961,7 @@ function createValBoardPacketsService({
       packetType=/\b(template|example|lesson|voice|style|learn)\b/i.test(combined)?'learning_packet':'document_packet';
     }else if(source==='public_research'){
       packetType=/\b(project|company|organization|goall|dashboard|proposal)\b/i.test(combined)?'project_packet':(/\b(person|relationship|contact|linkedin)\b/i.test(combined)?'relationship_packet':'document_packet');
-    }else if(source==='ghl_voice'){
+    }else if(source==='ghl_voice'||source==='ghl_text'){
       packetType='cowork_packet';
     }
     return createPacket({
@@ -1096,6 +1123,7 @@ function createValBoardPacketsService({
         live:automatic,
         automatic,
         claimSafe,
+        observed:packetCount>0,
         packetCount,
         lastPacketAt:activity.lastPacketAt||'',
         observedPacketTypes:[...activity.packetTypes].filter(Boolean).sort()
@@ -1110,7 +1138,7 @@ function createValBoardPacketsService({
         pending:sources.filter(source=>source.status==='pending').length,
         activeLive:sources.filter(source=>source.status==='live'&&source.packetCount>0).length,
         activeIngress:sources.filter(source=>source.status==='ingress'&&source.packetCount>0).length,
-        claimAllSourcesSafe:sources.every(source=>source.claimSafe)
+        claimAllSourcesSafe:sources.every(source=>source.claimSafe&&source.observed)
       }
     };
   }
@@ -1130,6 +1158,7 @@ function createValBoardPacketsService({
     recordTranscriptProcessed,
     recordCalendarEvent,
     recordExternalActionPacket,
+    recordDraftEvent,
     recordCommitmentEvent,
     recordProfileEvent,
     recordSourceEvent,

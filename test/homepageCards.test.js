@@ -184,8 +184,10 @@ test('Home commitments only shows work that needs the user',()=>{
   assert.match(hearthPrototype,/Your commitments/);
   assert.match(hearthPrototype,/Showing the cleanest commitments first/);
   assert.match(hearthPrototype,/lower-signal extracted item/);
-  assert.match(hearthPrototype,/\/api\/val\/commitments\?limit=120&ownerType=user/);
+  assert.match(hearthPrototype,/\/api\/val\/work-items\/tasks\?limit=120/);
   assert.doesNotMatch(hearthPrototype,/\/api\/val\/commitments\?limit=200/);
+  assert.match(hearthPrototype,/__workspaceKind:canonicalWorkItemId \? 'canonical_work' : 'commitment'/);
+  assert.match(hearthPrototype,/eventType:'user_marked_done'/);
 });
 
 test('Home commitment drafts attach only to the exact commitment, not the whole transcript',()=>{
@@ -203,6 +205,7 @@ test('Home commitment drafts attach only to the exact commitment, not the whole 
 test('Alignment Done persists source commitments when available',()=>{
   assert.match(hearthPrototype,/function alignmentCompletionCommitmentId/);
   assert.match(hearthPrototype,/function alignmentCompletionChiefRecommendationId/);
+  assert.match(hearthPrototype,/function alignmentCompletionCanonicalWorkItemId/);
   assert.match(hearthPrototype,/function homeCompletionKey/);
   assert.match(hearthPrototype,/function markHomeItemCompleted/);
   assert.match(hearthPrototype,/homeCompletedItemsStorageKey/);
@@ -211,6 +214,7 @@ test('Alignment Done persists source commitments when available',()=>{
   assert.match(hearthPrototype,/Marked done from Home Alignment/);
   assert.match(hearthPrototype,/\/api\/val\/commitments\//);
   assert.match(hearthPrototype,/\/api\/val\/chief-of-staff\/' \+ encodeURIComponent\(chiefRecommendationId\) \+ '\/complete'/);
+  assert.match(hearthPrototype,/canonicalWorkItemId/);
   assert.match(hearthPrototype,/void persistAlignmentDone\(handledItem\)/);
 });
 

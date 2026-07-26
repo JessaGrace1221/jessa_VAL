@@ -36,7 +36,8 @@ test('meeting prep routes are backend-only and mounted',()=>{
   assert.match(meetingPrepServiceSource,/withMeetingPrepTimeout\(enrichRelationshipPublicContext/);
   assert.match(meetingPrepServiceSource,/afterPublicContextEvent/);
   assert.match(server,/afterPublicContextEvent:async/);
-  assert.match(server,/recordSourceEvent\(event\.sourceType\|\|'public_research'/);
+  assert.match(server,/afterPublicContextEvent:async\(event\)=>\{\s*await processCanonicalBoardEvidence\(\{/);
+  assert.match(server,/sourceType:event\.sourceType\|\|'public_research'/);
   assert.match(meetingPrepServiceSource,/VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS/);
   assert.match(server,/app\.post\('\/api\/val\/contacts\/create'/);
   assert.match(server,/relationshipDossier=contactId\?buildRelationshipDossier/);

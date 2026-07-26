@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {createValIntelligenceSpine,contextForPersistence,normalizeSourceRef}=require('../services/valIntelligenceSpine');
+const {createValIntelligenceSpine,contextForPersistence,normalizeSourceRef,DEFAULT_OBSERVERS}=require('../services/valIntelligenceSpine');
 const {createAboutMeObserverReasoner,documentChunks,exactEvidence}=require('../services/valAboutMeObserverReview');
 const {VAL_INTELLIGENCE_SPINE_SQL}=require('../services/valIntelligenceSpineSchema');
 
@@ -29,6 +29,7 @@ test('VAL Intelligence Spine exposes backend-only API routes',()=>{
   assert.match(server,/registerValIntelligenceSpineRoutes/);
   assert.match(routes,/\/api\/val\/events\/intelligence-pass/);
   assert.match(routes,/\/api\/val\/observers\/runs/);
+  assert.match(routes,/\/api\/val\/observers\/evidence/);
   assert.match(routes,/\/api\/val\/round-table\/runs/);
   assert.match(routes,/\/api\/val\/chief-of-staff\/recommend/);
   assert.match(routes,/\/api\/val\/chief-of-staff\/:id\/complete/);
@@ -190,6 +191,117 @@ test('failed Observer reasoning is never stored or advanced as completed',async(
   assert.equal(store.eventIntelligenceRuns[0].status,'review_failed');
 });
 
+test('failed all-14 Board delivery is durably retried from preserved packet IDs',async()=>{
+  let store={tasks:[]};
+  let shouldFail=true;
+  const packet={
+    id:'packet_retry',
+    sourceType:'transcript',
+    sourceId:'transcript_retry',
+    packetType:'meeting_evidence_packet',
+    title:'Retryable source',
+    summary:'A durable packet that must reach all Observers.',
+    primaryObserversJson:['Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:'transcript_retry',quote_or_summary:'I will send the final scope.',confidence:0.9}],
+    prototype:false,
+    status:'active'
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,8)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async({deterministicOutput})=>{
+      if(shouldFail)throw new Error('temporary provider failure');
+      return deterministicOutput;
+    },
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  await assert.rejects(
+    spine.runIntelligencePass({event:{type:'source_received',sourceType:'transcript',sourceId:packet.sourceId,packetIds:[packet.id]}}),
+    /14 of 14 Observer reviews did not complete/
+  );
+  shouldFail=false;
+  const retry=await spine.retryFailedIntelligenceRuns({limit:10});
+  assert.equal(retry.ok,true);
+  assert.equal(retry.retried,1);
+  const successful=store.eventIntelligenceRuns.find(run=>run.status==='completed');
+  assert.ok(successful);
+  assert.equal(store.eventIntelligenceRuns.find(run=>run.status==='superseded_by_retry').resultJson.retryEventRunId,successful.id);
+  const successfulObserverRuns=store.observerRuns.filter(run=>run.eventRunId===successful.id);
+  assert.equal(successfulObserverRuns.length,14);
+  assert.ok(successfulObserverRuns.every(run=>run.status==='completed'));
+});
+
+test('failed Board delivery remains retryable after newer successful traffic',async()=>{
+  let store={tasks:[]};
+  const failedRun={
+    id:'event_failed_old',
+    tenantId:'tenant',
+    userId:'user',
+    eventSourceType:'transcript',
+    eventSourceId:'transcript_old',
+    status:'review_failed',
+    contextPacketJson:{boardPackets:[{id:'packet_old'}]},
+    resultJson:{},
+    unknownsJson:[],
+    sourceRefsJson:[],
+    createdAt:'2026-01-01T00:00:00.000Z'
+  };
+  store.eventIntelligenceRuns=[
+    ...Array.from({length:30},(_,index)=>({
+      id:`event_success_${index}`,
+      tenantId:'tenant',
+      userId:'user',
+      status:'completed',
+      createdAt:`2026-02-${String(index%28+1).padStart(2,'0')}T00:00:00.000Z`
+    })),
+    failedRun
+  ];
+  const packet={
+    id:'packet_old',
+    sourceType:'transcript',
+    sourceId:'transcript_old',
+    packetType:'meeting_evidence_packet',
+    title:'Old failed delivery',
+    summary:'This packet must not age out of the retry queue.',
+    primaryObserversJson:['Commitment'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'transcript',source_id:'transcript_old',quote_or_summary:'I will send the final scope.',confidence:0.9}],
+    prototype:false,
+    status:'active'
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,8)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async({deterministicOutput})=>deterministicOutput,
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const retry=await spine.retryFailedIntelligenceRuns({limit:10});
+  assert.equal(retry.ok,true);
+  assert.equal(retry.retried,1);
+  assert.equal(store.eventIntelligenceRuns.find(run=>run.id==='event_failed_old').status,'superseded_by_retry');
+});
+
 test('in-memory intelligence pass records observers, round table, recommendation, momentum, and unknowns',async()=>{
   let store={
     memoryItems:[{id:'mem_1',kind:'teach_val_project',summary:'Frisson: protect human judgment',rawText:'Frisson is about wisdom, not productivity.'}],
@@ -223,7 +335,8 @@ test('in-memory intelligence pass records observers, round table, recommendation
   assert.ok(result.roundTable.id);
   assert.ok(result.recommendation.id);
   assert.ok(result.momentumSnapshot.id);
-  assert.equal(result.readyForYouItems.length,1);
+  assert.equal(result.readyForYouItems.length,0);
+  assert.equal(store.readyForYouItems.length,0);
   assert.ok(result.contextPacket.unknowns.some(u=>/email/i.test(u.source)));
   assert.ok(store.eventIntelligenceRuns.length);
   assert.ok(store.observerRuns.length);
@@ -295,6 +408,26 @@ test('every Board observer reviews every live packet through its own lens',async
   assert.equal(result.roundTable.outputJson.observer_packet_review_counts.Delight,1);
 });
 
+test('an intelligence pass reviews only the newly delivered packet IDs instead of reprocessing Board history',async()=>{
+  const store={boardPackets:[
+    {id:'packet_new',sourceType:'transcript',sourceId:'tr_new',packetType:'meeting_evidence_packet',title:'New meeting',summary:'Jessa committed to send Mike the GOALL dashboard handoff.',status:'active',routeObserversJson:[]},
+    {id:'packet_old',sourceType:'email',sourceId:'email_old',packetType:'email_attention_packet',title:'Old email',summary:'A previously processed email.',status:'active',routeObserversJson:[]}
+  ]};
+  const service=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>Object.assign(store,s),
+    uuid:prefix=>`${prefix}_${Math.random().toString(16).slice(2)}`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    loaders:{listBoardPackets:async()=>store.boardPackets},
+    logger:{log(){},warn(){}}
+  });
+  const context=await service.buildSharedContextPacket({event:{packetIds:['packet_new']}});
+  assert.deepEqual(context.boardPackets.map(packet=>packet.id),['packet_new']);
+  assert.equal(context.recentBoardPacketCount,2);
+});
+
 test('Chief of Staff orders Alignment from the highest evidence packet, not an abstract signal',async()=>{
   let store={tasks:[]};
   const packet={
@@ -318,6 +451,17 @@ test('Chief of Staff orders Alignment from the highest evidence packet, not an a
     tenantId:()=>'test-tenant',
     userId:()=>'test-user',
     logger:{log(){},warn(){}},
+    chiefReasoner:async({packet:chosen})=>{
+      assert.equal(chosen.packetId,packet.id);
+      return {
+        title:'Clarify the GOALL dashboard handoff',
+        recommendation:'Finish the dashboard/projections handoff with Mike so GOALL has one clean next step.',
+        why:'Project owns the work, Momentum wants the handoff closed, and Commitment is watching the follow-through.',
+        action:'Clarify the dashboard handoff with Mike.',
+        confidence:0.9,
+        grounded:true
+      };
+    },
     loaders:{
       listBoardPackets:async()=>[packet],
       loadTasks:async()=>[],
@@ -455,4 +599,113 @@ test('Chief of Staff completion advances ordered packet queue before closing rec
   assert.equal(closed.status,'completed');
   assert.deepEqual(closed.userFeedbackJson.completedPacketIds,[selectedPacketId,nextPacketId]);
   assert.ok(closed.completedAt);
+});
+
+test('Chief of Staff persists canonical work order for current and next Alignment items',async()=>{
+  let store={tasks:[]};
+  const recorded=[];
+  let rebalanceCount=0;
+  const packets=[
+    {
+      id:'packet_rank_1',
+      sourceType:'transcript',
+      sourceId:'tr_rank_1',
+      packetType:'task_packet',
+      title:'Finish the project handoff',
+      summary:'The project handoff is still open.',
+      primaryObserversJson:['Project','Commitment'],
+      routeObserversJson:[],
+      sourceRefsJson:[{source_type:'transcript',source_id:'tr_rank_1',quote_or_summary:'I will finish the handoff.',confidence:0.9}],
+      payloadJson:{canonicalWorkItemId:'work_rank_1',sourceProcessingRecordId:'source_rank_1',projectName:'GOALL'},
+      prototype:false
+    },
+    {
+      id:'packet_rank_2',
+      sourceType:'email',
+      sourceId:'email_rank_2',
+      packetType:'task_packet',
+      title:'Confirm the proposal scope',
+      summary:'The proposal scope needs a decision.',
+      primaryObserversJson:['Opportunity','Commitment'],
+      routeObserversJson:[],
+      sourceRefsJson:[{source_type:'email',source_id:'email_rank_2',quote_or_summary:'Please confirm the scope.',confidence:0.86}],
+      payloadJson:{canonicalWorkItemId:'work_rank_2',sourceProcessingRecordId:'source_rank_2',projectName:'GOALL'},
+      prototype:false
+    }
+  ];
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_rank_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    recordChiefOrdering:async(id,input)=>recorded.push({id,input}),
+    rebalanceChiefQueue:async()=>{rebalanceCount+=1;return {ok:true};},
+    loaders:{
+      listBoardPackets:async()=>packets,
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'board_packet_received',sourceType:'transcript',sourceId:'tr_rank_1',packetIds:packets.map(packet=>packet.id)}
+  });
+  assert.equal(recorded.length,2);
+  assert.deepEqual(recorded.map(row=>row.input.chiefRank),[1,2]);
+  assert.ok(recorded.every(row=>row.input.chiefRecommendationId===result.recommendation.id));
+  assert.ok(recorded.every(row=>row.input.roundTableRunId===result.roundTable.id));
+  assert.ok(recorded.every(row=>Number(row.input.chiefScore)>0));
+  assert.deepEqual(new Set(recorded.map(row=>row.id)),new Set(['work_rank_1','work_rank_2']));
+  assert.equal(rebalanceCount,1);
+});
+
+test('all 14 independent Observer reviews run with bounded concurrency',async()=>{
+  let store={tasks:[]};
+  let active=0;
+  let peak=0;
+  const seen=[];
+  const packet={
+    id:'packet_concurrency',
+    sourceType:'transcript',
+    sourceId:'transcript_concurrency',
+    packetType:'meeting_evidence_packet',
+    title:'Shared evidence packet',
+    summary:'One source is reviewed independently by every Observer.',
+    primaryObserversJson:['Meaning'],
+    routeObserversJson:DEFAULT_OBSERVERS.map(observer=>({observerName:observer.observerName,primary:observer.observerName==='Meaning'})),
+    sourceRefsJson:[{source_type:'transcript',source_id:'transcript_concurrency',quote_or_summary:'Every Observer should inspect this exact source.',confidence:0.9}],
+    prototype:false
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_concurrency_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    observerReasoner:async({observerName,deterministicOutput})=>{
+      active+=1;
+      peak=Math.max(peak,active);
+      seen.push(observerName);
+      await new Promise(resolve=>setTimeout(resolve,8));
+      active-=1;
+      return deterministicOutput;
+    },
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'board_packet_received',sourceType:'transcript',sourceId:'transcript_concurrency',packetIds:[packet.id]}
+  });
+  assert.equal(result.observerRuns.length,14);
+  assert.equal(new Set(seen).size,14);
+  assert.equal(peak,4);
 });

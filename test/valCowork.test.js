@@ -310,7 +310,7 @@ test('Observer and Chief of Staff conversations resume their own durable message
 test('Hearth exposes unresolved commitments with source and prepared-work continuation paths',()=>{
   assert.match(hearthHtml,/class="task-companion-button"/);
   assert.match(hearth,/function openTaskWorkspace/);
-  assert.match(hearth,/getJson\('\/api\/val\/commitments\?limit=120&ownerType=user'/);
+  assert.match(hearth,/getJson\('\/api\/val\/work-items\/tasks\?limit=120'/);
   assert.match(hearth,/Open your commitments/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
   assert.match(hearth,/postJson\('\/api\/val\/ready-for-you\/build',\{limit:25\}/);

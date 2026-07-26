@@ -960,14 +960,26 @@ async function loadLiveObserverBoardContext(){
   try{
     const controller = window.AbortController ? new AbortController() : null;
     timeoutId = controller ? window.setTimeout(() => controller.abort(), 7000) : null;
-    const response = await fetch('/api/val/board/context?limit=80', {
-      method:'GET',
-      credentials:'same-origin',
-      headers:{'Accept':'application/json'},
-      signal:controller?.signal
-    });
-    const result = await response.json().catch(() => ({}));
-    if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
+    const [boardResponse,evidenceResponse] = await Promise.all([
+      fetch('/api/val/board/context?limit=80', {
+        method:'GET',
+        credentials:'same-origin',
+        headers:{'Accept':'application/json'},
+        signal:controller?.signal
+      }),
+      fetch('/api/val/observers/evidence?limit=200', {
+        method:'GET',
+        credentials:'same-origin',
+        headers:{'Accept':'application/json'},
+        signal:controller?.signal
+      })
+    ]);
+    const [result,evidenceResult] = await Promise.all([
+      boardResponse.json().catch(() => ({})),
+      evidenceResponse.json().catch(() => ({}))
+    ]);
+    if(!boardResponse.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
+    if(!evidenceResponse.ok || evidenceResult.ok === false) throw new Error(evidenceResult.error || 'Observer evidence could not load yet.');
     observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
     observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
     observerBoardState.witnessingComplete = typeof result?.witnessingComplete === 'boolean'
@@ -979,7 +991,15 @@ async function loadLiveObserverBoardContext(){
     observerBoardState.witnessingNextStep = String(result?.witnessingNextStep || '');
     observerBoardState.sourceSummary = result?.sourceSummary || null;
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
-    observerBoardState.reviewsByObserver = result?.reviewsByObserver && typeof result.reviewsByObserver === 'object' ? result.reviewsByObserver : {};
+    observerBoardState.reviewsByObserver = evidenceResult?.reviewsByObserver && typeof evidenceResult.reviewsByObserver === 'object'
+      ? evidenceResult.reviewsByObserver
+      : {};
+    observerBoardState.observerEvidenceSummary = {
+      receiptCount:Number(evidenceResult?.receiptCount||0),
+      observedCount:Number(evidenceResult?.observedCount||0),
+      noSignalCount:Number(evidenceResult?.noSignalCount||0),
+      observerCount:Number(evidenceResult?.observerCount||0)
+    };
     return result || null;
   }catch(error){
     observerBoardState.livePackets = [];
@@ -24768,21 +24788,14 @@ function firstHomeCoworkValueByKeys(value, keys = [], depth = 0){
 
 function homeCoworkEnvelopeHint(active = {}, sourceItem = {}, sourceRefs = []){
   const contextRoot = {active, sourceItem, sourceRefs};
-  let projectName = firstHomeCoworkValueByKeys(contextRoot, [
+  const projectName = firstHomeCoworkValueByKeys(contextRoot, [
     'projectName','project_name','projectTitle','project_title','project','projectDisplayName','project_display_name'
   ]);
-  const contextText = collectHomeCoworkContextText(contextRoot).join(' ');
-  if(!projectName && /\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff/i.test(contextText)){
-    projectName = 'GOALL';
-  }
   if(projectName){
-    const isGoall = /\bGOALL\b/i.test(projectName) || /\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff/i.test(contextText);
     return {
       envelopeType: 'project',
       displayName: projectName,
       projectName,
-      managerColorName: isGoall ? 'Taffy' : '',
-      managerColorHex: isGoall ? '#ee78bf' : '',
       reason: 'Project context wins before relationship context.'
     };
   }
@@ -26331,15 +26344,17 @@ function taskWorkspaceExecutiveScore(task = {}){
 }
 
 function normalizeTaskWorkspaceItem(item = {}){
-  if(item.__workspaceKind === 'commitment') return item;
+  if(item.__workspaceKind === 'commitment' || item.__workspaceKind === 'canonical_work') return item;
   if(item.source_type || item.owner_type || item.evidence_quote){
     const status = String(item.status || '').toLowerCase();
+    const canonicalWorkItemId = item.canonical_work_item_id || '';
     const owner = item.owner_type === 'user'
       ? (item.counterparty_name || item.owner_name || '')
       : (item.owner_name || item.counterparty_name || '');
     return {
       id:item.id || '',
-      __workspaceKind:'commitment',
+      __workspaceKind:canonicalWorkItemId ? 'canonical_work' : 'commitment',
+      canonicalWorkItemId,
       title:taskWorkspacePreviewText(item.title || item.description || item.evidence_quote || '', 140) || 'Untitled commitment',
       notes:taskWorkspacePreviewText(item.evidence_summary || item.description || item.evidence_quote || '', 240),
       workingBrief:item.workingBrief || item.working_brief || null,
@@ -26615,8 +26630,8 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
 async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
-    const result = await getJson('/api/val/commitments?limit=120&ownerType=user', {cache:'no-store'});
-    const items = Array.isArray(result?.commitments) ? result.commitments.map(normalizeTaskWorkspaceItem) : [];
+    const result = await getJson('/api/val/work-items/tasks?limit=120', {cache:'no-store'});
+    const items = Array.isArray(result?.tasks) ? result.tasks.map(normalizeTaskWorkspaceItem) : [];
     setTaskCompanionOpenCount(items.filter((task) => !task.completed).length);
   }catch(error){
     setTaskCompanionOpenCount(0);
@@ -26640,7 +26655,7 @@ async function openTaskWorkspace(){
   openWorkspaceShell('Commitments',{returnTarget:'home'});
   try{
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/commitments?limit=120&ownerType=user',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Commitments are taking too long to load source context.'}),
+      getJson('/api/val/work-items/tasks?limit=120',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Commitments are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
       postJson('/api/val/ready-for-you/build',{limit:25},{timeoutMs:12000,timeoutMessage:'Prepared work is taking too long to refresh.'})
     ]);
@@ -26653,7 +26668,7 @@ async function openTaskWorkspace(){
       const id = String(item?.id || item?.metadataJson?.commitmentId || item?.metadata_json?.commitment_id || '');
       return id ? list.findIndex((candidate) => String(candidate?.id || candidate?.metadataJson?.commitmentId || candidate?.metadata_json?.commitment_id || '') === id) === index : true;
     });
-    renderTaskWorkspace(Array.isArray(commitmentsResult?.commitments)?commitmentsResult.commitments:[],draftsResult?.drafts || [],readyItems);
+    renderTaskWorkspace(Array.isArray(commitmentsResult?.tasks)?commitmentsResult.tasks:[],draftsResult?.drafts || [],readyItems);
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;
@@ -26687,7 +26702,13 @@ async function completeTaskFromWorkspace(taskId = ''){
   if(row) row.classList.add('is-completing');
   try{
     if(canUseApi && taskId){
-      if(task?.__workspaceKind === 'commitment'){
+      if(task?.__workspaceKind === 'canonical_work'){
+        await postJson('/api/val/work-items/' + encodeURIComponent(task.canonicalWorkItemId || taskId) + '/transition', {
+          status:'complete',
+          eventType:'user_marked_done',
+          payload:{surface:'home_commitments'}
+        });
+      }else if(task?.__workspaceKind === 'commitment'){
         await postJson('/api/val/commitments/' + encodeURIComponent(taskId) + '/status', {status:'complete', reason:'Marked done from Home commitments.'});
       }else{
         await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
@@ -26798,13 +26819,17 @@ function observerLiveReviews(observerName = '', limit = 8){
 function observerReviewIsCompletedDeduction(review = {}){
   const version = Number(review.reviewVersion || review.review_version || 0);
   const mode = String(review.reviewMode || review.review_mode || '');
-  return review.status === 'observed' && version >= 3 && /^model_backed_observer_suite_/.test(mode);
+  return review.status === 'observed' && (
+    review.evidenceQualified === true
+    || (version >= 3 && (/^model_backed_observer_suite_/.test(mode) || mode === 'durable_observer_run_v1'))
+  );
 }
 
 function observerReviewIsCompletedCheck(review = {}){
   const version = Number(review.reviewVersion || review.review_version || 0);
   const mode = String(review.reviewMode || review.review_mode || '');
-  return version >= 3 && /^model_backed_observer_suite_/.test(mode);
+  return review.evidenceQualified === true
+    || (version >= 3 && (/^model_backed_observer_suite_/.test(mode) || mode === 'durable_observer_run_v1'));
 }
 
 function observerCompletedLiveReviews(observerName = '', limit = 6){
@@ -28009,12 +28034,24 @@ function alignmentCompletionChiefQueuePacketId(item = {}){
   return candidates.find(Boolean) || '';
 }
 
+function alignmentCompletionCanonicalWorkItemId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.canonicalWorkItemId,
+    item.canonical_work_item_id,
+    metadata.canonicalWorkItemId,
+    metadata.canonical_work_item_id
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
 async function persistAlignmentDone(item = {}){
   const commitmentId = alignmentCompletionCommitmentId(item);
   const chiefRecommendationId = alignmentCompletionChiefRecommendationId(item);
   const chiefQueuePacketId = alignmentCompletionChiefQueuePacketId(item);
+  const canonicalWorkItemId = alignmentCompletionCanonicalWorkItemId(item);
   if(!canUseApi) return;
-  if(commitmentId){
+  if(commitmentId && !canonicalWorkItemId){
     await postJson('/api/val/commitments/' + encodeURIComponent(commitmentId) + '/status', {
       status:'complete',
       reason:'Marked done from Home Alignment.'
@@ -28024,7 +28061,14 @@ async function persistAlignmentDone(item = {}){
     await postJson('/api/val/chief-of-staff/' + encodeURIComponent(chiefRecommendationId) + '/complete', {
       outcome:'completed',
       completionNote:'Marked done from Home Alignment.',
-      feedback:{packetId:chiefQueuePacketId,chiefQueuePacketId}
+      canonicalWorkItemId,
+      feedback:{packetId:chiefQueuePacketId,chiefQueuePacketId,canonicalWorkItemId}
+    });
+  }else if(canonicalWorkItemId){
+    await postJson('/api/val/work-items/' + encodeURIComponent(canonicalWorkItemId) + '/transition', {
+      status:'complete',
+      eventType:'alignment_marked_done',
+      payload:{surface:'home_alignment',chiefQueuePacketId}
     });
   }
 }

@@ -1,4 +1,5 @@
 const {createValPromptRegistry} = require('./valPromptRegistry');
+const {fallbackChiefLanguage}=require('./valChiefOfStaffReasoning');
 
 const DEFAULT_OBSERVERS = [
   {observerName:'Executive Inbox',promptKey:'executive_inbox'},
@@ -18,6 +19,19 @@ const DEFAULT_OBSERVERS = [
 ];
 
 function safeArray(value){ return Array.isArray(value) ? value : []; }
+async function mapWithConcurrency(items=[],limit=4,worker=async value=>value){
+  const rows=safeArray(items);
+  const results=new Array(rows.length);
+  let cursor=0;
+  async function run(){
+    while(cursor<rows.length){
+      const index=cursor++;
+      results[index]=await worker(rows[index],index);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(Math.max(1,Number(limit)||1),rows.length||1)},run));
+  return results;
+}
 function compactText(value,limit=500){
   return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
 }
@@ -164,6 +178,26 @@ function packetPrimaryForObserver(packet={},observerName=''){
   const primary=safeArray(packet.primaryObserversJson||packet.primary_observers_json);
   return primary.includes(observerName)||!!packetRouteForObserver(packet,observerName)?.primary;
 }
+function packetLineageForReview(packet={}){
+  const payload=packet.payloadJson||packet.payload_json||packet.payload||{};
+  const projectId=String(payload.projectId||payload.project_id||packet.projectId||packet.project_id||'').trim();
+  const projectName=String(payload.projectName||payload.project_name||packet.projectName||packet.project_name||'').trim();
+  const relationshipId=String(payload.relationshipId||payload.relationship_id||packet.relationshipId||packet.relationship_id||'').trim();
+  const relationshipName=String(payload.relationshipName||payload.relationship_name||payload.relationship||packet.relationshipName||packet.relationship_name||'').trim();
+  return {
+    canonicalWorkItemId:String(payload.canonicalWorkItemId||payload.canonical_work_item_id||packet.canonicalWorkItemId||packet.canonical_work_item_id||'').trim(),
+    sourceProcessingRecordId:String(payload.sourceProcessingRecordId||payload.source_processing_record_id||packet.sourceProcessingRecordId||packet.source_processing_record_id||'').trim(),
+    projectId,
+    projectName,
+    relationshipId,
+    relationshipName,
+    envelope:projectId||projectName
+      ? {type:'project',id:projectId,name:projectName}
+      : (relationshipId||relationshipName
+        ? {type:'relationship',id:relationshipId,name:relationshipName}
+        : {type:'source',id:String(packet.sourceId||packet.source_id||''),name:compactText(packet.title||'',180)})
+  };
+}
 function buildPacketReview(observerName,packet={},context={}){
   const lens=OBSERVER_PACKET_LENSES[observerName]||{
     lens:`${observerName} lens`,
@@ -209,6 +243,7 @@ function buildPacketReview(observerName,packet={},context={}){
     packetType,
     title,
     summary,
+    ...packetLineageForReview(packet),
     status:observed?'observed':'no_signal',
     evidence:reviewEvidenceRef.length ? reviewEvidenceRef : evidence,
     observerName,
@@ -317,6 +352,13 @@ function chiefPriorityRules(context={}){
       sourceType:packetCandidate.sourceType,
       sourceId:packetCandidate.sourceId,
       packetType:packetCandidate.packetType,
+      canonicalWorkItemId:packetCandidate.canonicalWorkItemId,
+      sourceProcessingRecordId:packetCandidate.sourceProcessingRecordId,
+      projectId:packetCandidate.projectId,
+      projectName:packetCandidate.projectName,
+      relationshipId:packetCandidate.relationshipId,
+      relationshipName:packetCandidate.relationshipName,
+      envelope:packetCandidate.envelope,
       observerCount:packetCandidate.observerCount,
       score:packetCandidate.score,
       primaryObservers:packetCandidate.primaryObservers,
@@ -352,6 +394,9 @@ function createValIntelligenceSpine({
   logger=console,
   promptRegistry=createValPromptRegistry(),
   observerReasoner=null,
+  chiefReasoner=null,
+  recordChiefOrdering=null,
+  rebalanceChiefQueue=null,
   loaders={}
 }={}){
   function now(){ return new Date().toISOString(); }
@@ -434,17 +479,30 @@ function createValIntelligenceSpine({
     }
     const store=spineStore();store.momentumSnapshots.unshift(row);saveStore(store);return row;
   }
-  async function saveReadyForYouItem(row){
-    if(hasPg()){
-      return pgInsert('ready_for_you_items',row,[
-        'id','tenantId','userId','eventRunId','status','title','itemType','readinessJson','whatValPrepared','whatUserNeedsToDo','sourceRefsJson','metadataJson','createdAt','updatedAt'
-      ]);
-    }
-    const store=spineStore();store.readyForYouItems.unshift(row);saveStore(store);return row;
-  }
   async function listEventRuns({limit=30}={}){
     if(hasPg()) return pgList('event_intelligence_runs',{where:'tenant_id=$1 and user_id=$2',params:[tenantId(),userId()],limit});
     return spineStore().eventIntelligenceRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,limit);
+  }
+  async function listFailedEventRuns({limit=30}={}){
+    const boundedLimit=Math.max(1,Math.min(Number(limit)||30,100));
+    if(hasPg()){
+      const result=await dbQuery(
+        `select * from event_intelligence_runs
+         where tenant_id=$1 and user_id=$2 and status='review_failed'
+         order by created_at asc
+         limit $3`,
+        [tenantId(),userId(),boundedLimit]
+      );
+      return safeArray(result?.rows).map(row=>parseRecord(row));
+    }
+    return spineStore().eventIntelligenceRuns
+      .filter(row=>
+        row.tenantId===tenantId()
+        && row.userId===userId()
+        && String(row.status||'')==='review_failed'
+      )
+      .sort((left,right)=>new Date(left.createdAt||0)-new Date(right.createdAt||0))
+      .slice(0,boundedLimit);
   }
   async function listObserverRuns({limit=30,eventRunId='',observerName=''}={}){
     if(hasPg()){
@@ -487,7 +545,12 @@ function createValIntelligenceSpine({
     const addUnknown=(source,reason)=>unknowns.push({source,reason,recorded_at:now()});
 
     try{
-      context.boardPackets=await (loaders.listBoardPackets ? loaders.listBoardPackets({limit:60}) : Promise.resolve([]));
+      const availableBoardPackets=await (loaders.listBoardPackets ? loaders.listBoardPackets({limit:60}) : Promise.resolve([]));
+      const requestedPacketIds=new Set(safeArray(event.packetIds||event.packet_ids).map(String).filter(Boolean));
+      context.boardPackets=requestedPacketIds.size
+        ? safeArray(availableBoardPackets).filter(packet=>requestedPacketIds.has(String(packet.id||'')))
+        : safeArray(availableBoardPackets);
+      context.recentBoardPacketCount=safeArray(availableBoardPackets).length;
       if(!context.boardPackets.length)addUnknown('board_packets','No live Board packets have been created yet.');
     }catch(e){
       context.boardPackets=[];
@@ -885,6 +948,13 @@ function createValIntelligenceSpine({
           sourceType:review.sourceType||review.source_type||'',
           sourceId:review.sourceId||review.source_id||'',
           packetType:review.packetType||review.packet_type||'',
+          canonicalWorkItemId:review.canonicalWorkItemId||review.canonical_work_item_id||'',
+          sourceProcessingRecordId:review.sourceProcessingRecordId||review.source_processing_record_id||'',
+          projectId:review.projectId||review.project_id||'',
+          projectName:review.projectName||review.project_name||'',
+          relationshipId:review.relationshipId||review.relationship_id||'',
+          relationshipName:review.relationshipName||review.relationship_name||'',
+          envelope:review.envelope||null,
           observers:[],
           primaryObservers:[],
           triggeredObservers:[],
@@ -899,6 +969,13 @@ function createValIntelligenceSpine({
         current.score += (observed?1:0.12) + (observed&&review.primary?2.5:0) + (review.triggered?1.5:0) + (observed?confidence:0.04);
         if(!current.summary&&review.summary)current.summary=compactText(review.summary,520);
         if(!current.evidence.length&&safeArray(review.evidence).length)current.evidence=safeArray(review.evidence).slice(0,8);
+        if(!current.canonicalWorkItemId)current.canonicalWorkItemId=review.canonicalWorkItemId||review.canonical_work_item_id||'';
+        if(!current.sourceProcessingRecordId)current.sourceProcessingRecordId=review.sourceProcessingRecordId||review.source_processing_record_id||'';
+        if(!current.projectId)current.projectId=review.projectId||review.project_id||'';
+        if(!current.projectName)current.projectName=review.projectName||review.project_name||'';
+        if(!current.relationshipId)current.relationshipId=review.relationshipId||review.relationship_id||'';
+        if(!current.relationshipName)current.relationshipName=review.relationshipName||review.relationship_name||'';
+        if(!current.envelope)current.envelope=review.envelope||null;
         grouped.set(packetId,current);
       }
     }
@@ -913,37 +990,21 @@ function createValIntelligenceSpine({
   }
   function chiefRecommendationFromPacket(packetCandidate=null){
     if(!packetCandidate)return null;
-    const text=[packetCandidate.title,packetCandidate.summary].join(' ');
-    if(/\bGOALL\b|Goal Agency|dashboard|projections|Mike|handoff/i.test(text)){
-      return {
-        title:'Clarify the GOALL dashboard handoff',
-        recommendation:'Finish the dashboard/projections handoff with Mike so GOALL has one clean next step.',
-        why:'The Board is pointing at a project packet, not a generic task. Project owns the work, Momentum wants the handoff closed, and Commitment is watching the follow-through.',
-        action:'Clarify what Mike needs, what the dashboard must show, who owns the next move, and when it must be complete.'
-      };
-    }
-    if(/\bemail|reply|message|introduction|intro\b/i.test(text)){
-      return {
-        title:packetCandidate.title||'Review the communication packet',
-        recommendation:'Decide whether this message needs a reply, draft, hold, or explicit no-action.',
-        why:'The Board is treating this as communication attention, not background noise.',
-        action:'Open the prepared communication context, edit if needed, then approve or hold.'
-      };
-    }
-    return {
-      title:packetCandidate.title||'Review the highest Board packet',
-      recommendation:packetCandidate.summary?`Decide the next move for: ${packetCandidate.summary}`:'Decide the next move for the highest-scored Board packet.',
-      why:'The Chief of Staff chose the packet with the strongest Observer convergence.',
-      action:'Inspect the source, choose the next move, or mark it done if the loop is already closed.'
-    };
+    return fallbackChiefLanguage(packetCandidate);
   }
-  function buildChiefOutput(roundTable,observerRuns=[]){
+  async function buildChiefOutput(roundTable,observerRuns=[]){
     const tensions=safeArray(roundTable?.candidateTensionsJson||roundTable?.candidate_tensions_json||roundTable?.outputJson?.candidate_tensions);
     const contextPacket=observerRuns.find(run=>run.contextPacketJson)?.contextPacketJson||{};
     const chiefPriorities=chiefPriorityRules(contextPacket);
     const packetQueue=chiefPacketQueue(observerRuns,contextPacket);
     const packetChoice=packetQueue[0]||null;
-    const packetRecommendation=chiefRecommendationFromPacket(packetChoice);
+    const fallbackRecommendation=chiefRecommendationFromPacket(packetChoice);
+    const packetRecommendation=packetChoice&&typeof chiefReasoner==='function'
+      ? await chiefReasoner({packet:packetChoice,priorities:chiefPriorities}).catch(error=>{
+          logger.warn?.('[val-chief] recommendation reasoner failed:',error.message);
+          return fallbackRecommendation;
+        })
+      : fallbackRecommendation;
     const capacity=tensions.find(t=>t.observer==='Capacity');
     const top=capacity&&capacity.conviction>=0.74?capacity:(tensions[0]||null);
     const title=packetRecommendation?.title || (top?`Attend to ${top.signal}`:'Gather better evidence before choosing the next move');
@@ -957,7 +1018,9 @@ function createValIntelligenceSpine({
       title,
       recommendation,
       why:packetRecommendation?.why || (top?`${top.observer} had the strongest current conviction. The Round Table did not average the observers; it selected the signal most aligned with long-term momentum and current capacity.`:'The current evidence is too thin for a strong executive recommendation.'),
-      confidence:packetChoice?Math.max(0.42,Math.min(0.94,Number(packetChoice.score||0)/(Math.max(1,packetChoice.observerCount)*4.8))):(top?Math.max(0.35,Math.min(0.92,(Number(top.confidence||0)+Number(top.conviction||0))/2)):0.28),
+      confidence:packetRecommendation?.grounded
+        ? packetRecommendation.confidence
+        : (packetChoice?Math.max(0.42,Math.min(0.94,Number(packetChoice.score||0)/(Math.max(1,packetChoice.observerCount)*4.8))):(top?Math.max(0.35,Math.min(0.92,(Number(top.confidence||0)+Number(top.conviction||0))/2)):0.28)),
       opposingView:opposing?`What almost won instead: ${opposing.view}`:'No strong opposing view emerged.',
       anxietyVsMomentum:{
         anxiety_signal:'Urgency may be over-weighted when evidence is thin.',
@@ -984,7 +1047,7 @@ function createValIntelligenceSpine({
     }
     if(!roundTable) throw new Error('No Round Table run is available. Run /api/val/events/intelligence-pass first.');
     if(!observerRuns.length&&roundTable.eventRunId) observerRuns=await listObserverRuns({eventRunId:roundTable.eventRunId,limit:50});
-    const output=buildChiefOutput(roundTable,observerRuns);
+    const output=await buildChiefOutput(roundTable,observerRuns);
     const scope=currentScope();
     const row={
       id:uuid('chief'),
@@ -1008,6 +1071,30 @@ function createValIntelligenceSpine({
       completedAt:null
     };
     const saved=await saveChiefRecommendation(row);
+    if(typeof recordChiefOrdering==='function'){
+      const orderedPackets=[
+        output.anxietyVsMomentum?.current_packet,
+        ...safeArray(output.nextCandidates)
+      ].filter(packet=>packet?.canonicalWorkItemId||packet?.canonical_work_item_id);
+      for(const [index,packet] of orderedPackets.entries()){
+        await recordChiefOrdering(
+          packet.canonicalWorkItemId||packet.canonical_work_item_id,
+          {
+            boardPacketId:packet.packetId||packet.packet_id||'',
+            observerReceipts:safeArray(packet.observers),
+            roundTableRunId:roundTable.id,
+            chiefRecommendationId:saved.id,
+            chiefRank:index+1,
+            chiefScore:Number(packet.score||0),
+            chiefPriorityMatches:safeArray(packet.chiefPriorityMatches||packet.chief_priority_matches),
+            sourceRefs:safeArray(packet.evidence)
+          }
+        ).catch(error=>logger.warn?.('[val-chief] canonical ordering persistence failed:',error.message));
+      }
+      if(typeof rebalanceChiefQueue==='function'){
+        await rebalanceChiefQueue().catch(error=>logger.warn?.('[val-chief] global queue rebalance failed:',error.message));
+      }
+    }
     logger.log?.(`[val-spine] chief recommendation stored ${saved.id}`);
     return saved;
   }
@@ -1043,6 +1130,48 @@ function createValIntelligenceSpine({
     saveStore(store);
     return row;
   }
+  let retryInProgress=false;
+  async function retryFailedIntelligenceRuns({limit=10}={}){
+    if(retryInProgress)return {ok:true,retried:0,skipped:true,reason:'A Board delivery retry is already running.'};
+    retryInProgress=true;
+    const results=[];
+    try{
+      const failed=await listFailedEventRuns({limit:Math.max(1,Math.min(Number(limit)||10,50))});
+      for(const row of failed){
+        const context=row.contextPacketJson||row.context_packet_json||{};
+        const packetIds=safeArray(context.boardPackets).map(packet=>packet.id).filter(Boolean);
+        if(!packetIds.length){
+          results.push({eventRunId:row.id,ok:false,error:'Failed run did not preserve Board packet IDs.'});
+          continue;
+        }
+        try{
+          const pass=await runIntelligencePass({
+            event:{
+              type:'observer_delivery_retry',
+              sourceType:row.eventSourceType||row.event_source_type||'board_retry',
+              sourceId:row.eventSourceId||row.event_source_id||row.id,
+              packetIds,
+              retryOfEventRunId:row.id
+            }
+          });
+          await updateEventRun(row.id,{
+            status:'superseded_by_retry',
+            resultJson:{...(row.resultJson||row.result_json||{}),retryEventRunId:pass.eventRun?.id||''},
+            unknownsJson:row.unknownsJson||row.unknowns_json||[],
+            sourceRefsJson:row.sourceRefsJson||row.source_refs_json||[],
+            errorMessage:'',
+            completedAt:row.completedAt||row.completed_at||now()
+          });
+          results.push({eventRunId:row.id,retryEventRunId:pass.eventRun?.id||'',ok:true});
+        }catch(error){
+          results.push({eventRunId:row.id,ok:false,error:error.message});
+        }
+      }
+      return {ok:results.every(result=>result.ok),retried:results.filter(result=>result.ok).length,failed:results.filter(result=>!result.ok).length,results};
+    }finally{
+      retryInProgress=false;
+    }
+  }
   async function createMomentumSnapshot({eventRunId='',observerRuns=[]}={}){
     const momentum=observerRuns.find(r=>r.observerName==='Momentum')?.outputJson||{};
     const meaning=observerRuns.find(r=>r.observerName==='Meaning')?.outputJson||{};
@@ -1061,52 +1190,6 @@ function createValIntelligenceSpine({
       sourceRefsJson:safeArray(momentum.evidence).map(normalizeSourceRef),
       createdAt:now()
     });
-  }
-  async function createReadyForYouItems({eventRunId='',contextPacket={}}={}){
-    const drafts=safeArray(getStore().drafts).filter(d=>!d.status||['draft','ready_for_review'].includes(d.status)).slice(0,3);
-    const rows=[];
-    for(const draft of drafts){
-      rows.push(await saveReadyForYouItem({
-        id:uuid('ready'),
-        tenantId:tenantId(),
-        userId:userId(),
-        eventRunId,
-        status:'ready',
-        title:draft.subject||draft.title||'Draft ready for review',
-        itemType:'draft',
-        readinessJson:{status:'ready',why:'Existing internal draft is available for human review.'},
-        whatValPrepared:compactText(draft.body||draft.content||'Draft content prepared.',700),
-        whatUserNeedsToDo:'Review whether this represents you before anything is sent.',
-        sourceRefsJson:[normalizeSourceRef({sourceType:'draft',sourceId:draft.id,quoteOrSummary:draft.subject||draft.title||'',confidence:0.7})],
-        metadataJson:{source:'phase_1_ready_for_you',stubbed:drafts.length===0,contextGeneratedAt:contextPacket.generatedAt||''},
-        createdAt:now(),
-        updatedAt:now()
-      }));
-    }
-    for(const candidate of safeArray(contextPacket.readyForYouDraftCandidates).slice(0,5)){
-      const readiness=candidate.draftReadiness||candidate.draft_readiness||{};
-      const brief=candidate.draftBrief||candidate.draft_brief||{};
-      const generatedDraft=candidate.generatedDraft||candidate.generated_draft||null;
-      const isGenerated=!!generatedDraft;
-      const writerOutput=generatedDraft?.sourceContext?.writerOutput||{};
-      rows.push(await saveReadyForYouItem({
-        id:uuid('ready'),
-        tenantId:tenantId(),
-        userId:userId(),
-        eventRunId,
-        status:readiness.status||candidate.status||'ready_for_review',
-        title:isGenerated?(generatedDraft.subject||writerOutput.subject||'Email draft ready for review'):(brief.single_purpose||'Conversation needs human judgment'),
-        itemType:isGenerated?'email_review_only_draft':'email_draft_readiness',
-        readinessJson:readiness,
-        whatValPrepared:isGenerated?compactText(generatedDraft.body||writerOutput.body||'Review-only email draft prepared. No external draft was created.',900):'VAL evaluated the conversation and prepared draft readiness/brief context. No external draft was created.',
-        whatUserNeedsToDo:readiness.status==='needs_context'?'Provide the missing context before VAL drafts.':'Review whether this represents you before anything is sent.',
-        sourceRefsJson:isGenerated?[normalizeSourceRef({sourceType:'draft',sourceId:generatedDraft.id,quoteOrSummary:generatedDraft.subject||writerOutput.subject||'Review-only email draft',confidence:0.75})]:safeArray(candidate.sourceRefs||candidate.source_refs).slice(0,8),
-        metadataJson:{source:isGenerated?'executive_inbox_review_only':'executive_inbox_draft_readiness',evaluationId:candidate.id||'',conversationId:candidate.conversationId||'',draftId:generatedDraft?.id||'',noExternalAction:true},
-        createdAt:now(),
-        updatedAt:now()
-      }));
-    }
-    return rows;
   }
   async function runIntelligencePass({event={},observerSuite=DEFAULT_OBSERVERS,req=null,includeExternal=false}={}){
     const scope=currentScope();
@@ -1128,10 +1211,11 @@ function createValIntelligenceSpine({
       completedAt:null
     });
     logger.log?.(`[val-spine] intelligence pass started ${eventRun.id}`);
-    const observerRuns=[];
-    for(const observer of observerSuite){
-      observerRuns.push(await runObserver({...observer,contextPacket,eventRunId:eventRun.id}));
-    }
+    const observerRuns=await mapWithConcurrency(
+      observerSuite,
+      4,
+      observer=>runObserver({...observer,contextPacket,eventRunId:eventRun.id})
+    );
     const failedObserverRuns=observerRuns.filter(run=>run.status!=='completed');
     if(failedObserverRuns.length){
       const errorMessage=`${failedObserverRuns.length} of ${observerSuite.length} Observer reviews did not complete.`;
@@ -1151,7 +1235,7 @@ function createValIntelligenceSpine({
     const roundTable=await runRoundTable({eventRunId:eventRun.id,observerRuns});
     const recommendation=await recommendChiefOfStaff({roundTableRunId:roundTable.id,observerRuns});
     const momentumSnapshot=await createMomentumSnapshot({eventRunId:eventRun.id,observerRuns});
-    const readyForYouItems=await createReadyForYouItems({eventRunId:eventRun.id,contextPacket});
+    const readyForYouItems=[];
     const completed=await updateEventRun(eventRun.id,{
       status:'completed',
       resultJson:{observerRunIds:observerRuns.map(r=>r.id),roundTableRunId:roundTable.id,chiefRecommendationId:recommendation.id,momentumSnapshotId:momentumSnapshot.id,readyForYouItemIds:readyForYouItems.map(r=>r.id)},
@@ -1169,6 +1253,7 @@ function createValIntelligenceSpine({
     runRoundTable,
     recommendChiefOfStaff,
     completeChiefRecommendation,
+    retryFailedIntelligenceRuns,
     runIntelligencePass,
     listObserverRuns,
     listRoundTableRuns,

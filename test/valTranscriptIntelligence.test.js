@@ -185,7 +185,7 @@ test('if nothing changed, transcript intake says so',async()=>{
   assert.match(result.no_action_needed.reason,/No commitments/);
 });
 
-test('transcript follow-up candidates feed Ready For You only as review work',async()=>{
+test('underspecified transcript follow-up stays a task instead of entering Leverage',async()=>{
   let transcriptStore={};
   const transcriptService=createValTranscriptIntelligenceService({
     hasPg:()=>false,
@@ -215,10 +215,11 @@ test('transcript follow-up candidates feed Ready For You only as review work',as
   assert.ok(followUp);
   assert.equal(followUp.metadataJson.noTaskCreated,true);
   assert.equal(followUp.metadataJson.noMemoryCommitted,true);
-  const prepared=built.allBuilt.find(item=>item.metadataJson.source==='transcript_intelligence'&&item.category==='prepared_work');
-  assert.ok(prepared);
-  assert.equal(prepared.metadataJson.noExternalAction,true);
-  assert.ok(prepared.metadataJson.preparedArtifactKind);
+  const incomplete=built.allBuilt.find(item=>item.metadataJson.source==='transcript_intelligence'&&item.type==='prepared_work_needs_information');
+  assert.ok(incomplete);
+  assert.equal(incomplete.category,'task_candidate');
+  assert.equal(incomplete.metadataJson.preparedArtifactKind,'');
+  assert.equal(built.preparedCount,0);
 });
 
 test('transcript intake extracts authenticated executive instructions but not attendee approval',async()=>{
@@ -246,7 +247,7 @@ test('transcript intake extracts authenticated executive instructions but not at
   assert.equal(store.transcriptIntelligenceItems.some(i=>i.category==='executive_instruction'&&i.approvalPolicy==='voice_authorized'),true);
 });
 
-test('transcript intelligence prepares proposals pages invites and introductions for review',async()=>{
+test('transcript intelligence admits only complete prepared work and converts the rest to tasks',async()=>{
   let store={};
   const service=createValTranscriptIntelligenceService({
     hasPg:()=>false,
@@ -271,13 +272,16 @@ test('transcript intelligence prepares proposals pages invites and introductions
   const result=await service.intake({transcriptId:'tr_prepared_work'});
   const prepared=result.run.readyForYouCandidatesJson.filter(c=>c.category==='prepared_work');
   const kinds=prepared.map(c=>c.prepared_artifact.kind).sort();
-  assert.deepEqual(kinds,['calendar_invite_draft','html_page_draft','introduction_email_draft','meeting_overview_email_draft','proposal_draft']);
-  assert.equal(result.run.finalJson.counts.prepared_work_candidates,5);
+  assert.deepEqual(kinds,['calendar_invite_draft','meeting_overview_email_draft']);
+  assert.equal(result.run.finalJson.counts.prepared_work_candidates,2);
   assert.ok(prepared.every(c=>c.requires_approval));
   assert.ok(prepared.every(c=>c.what_val_did.includes('Nothing was sent')));
-  assert.equal(prepared.find(c=>c.prepared_artifact.kind==='introduction_email_draft').prepared_artifact.relationship_match_required,true);
-  assert.equal(prepared.find(c=>c.prepared_artifact.kind==='html_page_draft').prepared_artifact.externalPublish,false);
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='calendar_invite_draft').prepared_artifact.externalCalendarWrite,false);
+  const tasks=result.run.readyForYouCandidatesJson.filter(c=>c.category==='task_candidate');
+  assert.ok(tasks.length>=3);
+  assert.ok(tasks.every(c=>c.prepared_artifact===null));
+  assert.ok(tasks.some(c=>c.work_brief?.workType==='proposal_draft'));
+  assert.ok(tasks.some(c=>c.work_brief?.workType==='introduction_email_draft'));
 });
 
 test('usable transcripts with action items create a reviewable meeting overview draft for Leverage',async()=>{
@@ -378,28 +382,29 @@ test('transcript intelligence classifies autonomous execution levels and creates
   });
   const result=await service.intake({transcriptId:'tr_exec_levels'});
   const prepared=result.run.readyForYouCandidatesJson.filter(c=>c.category==='prepared_work');
-  const page=prepared.find(c=>c.prepared_artifact.kind==='html_page_draft');
-  const agreement=prepared.find(c=>c.prepared_artifact.kind==='agreement_draft');
-  assert.equal(page.execution_level,'level_3_autonomous_build');
-  assert.equal(agreement.execution_level,'level_2_autonomous_draft');
-  assert.equal(page.completion_status,'partial_needs_context');
+  const taskCandidates=result.run.readyForYouCandidatesJson.filter(c=>c.category==='task_candidate');
+  const page=taskCandidates.find(c=>c.work_brief?.workType==='html_page_draft');
+  const agreement=taskCandidates.find(c=>c.work_brief?.workType==='agreement_draft');
+  assert.equal(page.execution_level,'level_4_human_judgment_required');
+  assert.equal(agreement.execution_level,'level_4_human_judgment_required');
+  assert.equal(page.completion_status,'needs_information');
   assert.ok(page.remaining_context_needed.some(x=>/repository|destination path|publish target/i.test(x)));
   assert.ok(page.linked_context.project.needs_creation);
-  assert.ok(result.run.contextualTasksJson.some(t=>t.prepared_work_ids.includes(page.id)));
+  assert.ok(result.run.contextualTasksJson.some(t=>t.id===page.continuation_task.id&&t.prepared_work_ids.length===0));
   assert.ok(result.run.contextualTasksJson.some(t=>t.linked_context?.project?.name));
-  const continuationPrepared=prepared.filter(c=>c.continuation_task);
+  const continuationCandidates=result.run.readyForYouCandidatesJson.filter(c=>c.continuation_task);
   assert.ok(prepared.some(c=>c.prepared_artifact.kind==='meeting_overview_email_draft'&&!c.continuation_task));
-  assert.equal(result.run.finalJson.counts.execution_continuation_tasks,continuationPrepared.length);
-  assert.equal(result.run.finalJson.counts.persisted_continuation_tasks,continuationPrepared.length);
-  assert.ok(savedTasks.some(t=>t.source==='transcript_prepared_work'&&t.noExternalAction===true));
+  assert.equal(result.run.finalJson.counts.execution_continuation_tasks,continuationCandidates.length);
+  assert.equal(result.run.finalJson.counts.persisted_continuation_tasks,continuationCandidates.length);
+  assert.ok(savedTasks.some(t=>t.source==='transcript_work_brief_task'&&t.noExternalAction===true));
   assert.ok(savedTasks.some(t=>/Context needed to finish/.test(t.notes)));
-  const savedTaskItem=store.transcriptIntelligenceItems.find(i=>i.category==='contextual_task'&&i.metadataJson.executionLevel==='level_3_autonomous_build');
+  const savedTaskItem=store.transcriptIntelligenceItems.find(i=>i.category==='contextual_task'&&i.metadataJson.executionLevel==='level_4_human_judgment_required');
   assert.ok(savedTaskItem);
   assert.ok(savedTaskItem.linkTargetsJson.some(t=>t.type==='project'));
   assert.ok(savedTaskItem.linkTargetsJson.some(t=>t.type==='task'));
 });
 
-test('transcript intelligence suggests CRM-safe relationship introductions from transcript context',async()=>{
+test('transcript intelligence keeps suggested introductions as tasks until consent is confirmed',async()=>{
   let store={};
   const service=createValTranscriptIntelligenceService({
     hasPg:()=>false,
@@ -421,13 +426,12 @@ test('transcript intelligence suggests CRM-safe relationship introductions from 
     ]
   });
   const result=await service.intake({transcriptId:'tr_intro_match'});
-  const intro=result.run.readyForYouCandidatesJson.find(c=>c.type==='relationship_introduction_candidate');
+  const intro=result.run.readyForYouCandidatesJson.find(c=>c.work_brief?.workType==='introduction_email_draft');
   assert.ok(intro);
-  assert.equal(intro.prepared_artifact.kind,'introduction_email_draft');
-  assert.equal(intro.prepared_artifact.recipients[0].contactId,'crm_aric');
-  assert.equal(intro.prepared_artifact.recipients[1].contactId,'crm_greg');
+  assert.equal(intro.category,'task_candidate');
+  assert.equal(intro.prepared_artifact,null);
+  assert.ok(intro.remaining_context_needed.some(item=>/permission/i.test(item)));
   assert.equal(intro.requires_approval,true);
-  assert.equal(intro.prepared_artifact.externalSend,false);
 });
 
 test('transcript introduction matching stays quiet without resolved current CRM identity',()=>{

@@ -1,8 +1,35 @@
+const crypto=require('node:crypto');
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value='',limit=700){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 const {documentLooksLikeCalendarInvite}=require('./valDocumentEvidenceFilters');
 function stableKey(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180)||'source';
+}
+function contentFingerprint(value=''){
+  return crypto.createHash('sha256').update(String(value||'')).digest('hex');
+}
+function evidenceChunks(value='',maxCharacters=6000,overlapCharacters=240){
+  const text=String(value||'').trim();
+  if(!text)return [];
+  const max=Math.max(1000,Number(maxCharacters)||6000);
+  const overlap=Math.max(0,Math.min(Number(overlapCharacters)||0,Math.floor(max/4)));
+  if(text.length<=max)return [text];
+  const chunks=[];
+  let start=0;
+  while(start<text.length){
+    let end=Math.min(text.length,start+max);
+    if(end<text.length){
+      const paragraphBreak=text.lastIndexOf('\n\n',end);
+      const sentenceBreak=Math.max(text.lastIndexOf('. ',end),text.lastIndexOf('? ',end),text.lastIndexOf('! ',end));
+      const preferred=Math.max(paragraphBreak,sentenceBreak);
+      if(preferred>start+Math.floor(max*0.55))end=preferred+(preferred===paragraphBreak?2:1);
+    }
+    const chunk=text.slice(start,end).trim();
+    if(chunk)chunks.push(chunk);
+    if(end>=text.length)break;
+    start=Math.max(start+1,end-overlap);
+  }
+  return chunks;
 }
 function jsonValue(value,fallback){
   if(value==null)return fallback;
@@ -213,7 +240,8 @@ function createValSourceProcessingService({
   reviewUpdatesService=null,
   readyForYouService=null,
   listProjectProfiles=null,
-  afterDocumentEvent=null
+  afterDocumentEvent=null,
+  afterSourceProcessed=null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -232,7 +260,7 @@ function createValSourceProcessingService({
   async function saveRecord(row){
     const withReceipt=withWhatValDidReceipt(row);
     if(hasPg()){
-      return withWhatValDidReceipt(await pgUpsert('source_processing_records',withReceipt,['id','tenantId','userId','sourceType','sourceId','sourceTitle','status','sourceReceiptJson','witnessObservationsJson','executiveRelevanceJson','domainRoutesJson','packetUpdatesJson','reviewUpdatesJson','preparedWorkCandidatesJson','noActionReceiptJson','unknownsJson','metadataJson','createdAt','updatedAt']));
+      return withWhatValDidReceipt(await pgUpsert('source_processing_records',withReceipt,['id','tenantId','userId','sourceType','sourceId','sourceTitle','sourceFingerprint','sourceVersion','status','sourceReceiptJson','witnessObservationsJson','executiveRelevanceJson','domainRoutesJson','packetUpdatesJson','reviewUpdatesJson','preparedWorkCandidatesJson','noActionReceiptJson','unknownsJson','metadataJson','createdAt','updatedAt']));
     }
     const s=store();const idx=s.sourceProcessingRecords.findIndex(r=>r.id===row.id);
     if(idx>=0)s.sourceProcessingRecords[idx]={...s.sourceProcessingRecords[idx],...withReceipt,createdAt:s.sourceProcessingRecords[idx].createdAt||withReceipt.createdAt,updatedAt:now()};else s.sourceProcessingRecords.unshift(withReceipt);
@@ -264,6 +292,90 @@ function createValSourceProcessingService({
     if(typeof listProjectProfiles==='function')return safeArray(await listProjectProfiles({limit:200}).catch(()=>[]));
     return safeArray(store().relationshipProfiles).filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
+  async function deliverSourceRecord(record={}){
+    if(typeof afterSourceProcessed!=='function')return {record,sourcePackets:[],delivered:false};
+    const receipt=record.sourceReceiptJson||record.source_receipt_json||{};
+    const rawText=String(receipt.rawText||receipt.raw_text||'').trim();
+    const sourceType=firstText(record.sourceType,record.source_type,receipt.sourceType,receipt.source_type);
+    const sourceId=firstText(record.sourceId,record.source_id,receipt.sourceId,receipt.source_id);
+    const sourceTitle=firstText(record.sourceTitle,record.source_title,receipt.sourceTitle,receipt.source_title,surfaceLabel(sourceType));
+    const sourceRefs=safeArray(receipt.sourceRefs||receipt.source_refs).map(normalizeSourceRef);
+    const sourceRef=sourceRefs[0]||normalizeSourceRef({
+      sourceType,
+      sourceId,
+      quoteOrSummary:compactText(rawText,900),
+      confidence:1,
+      createdAt:firstText(receipt.receivedAt,receipt.received_at,record.createdAt,record.created_at)
+    });
+    let sourcePackets=[];
+    let deliveryError='';
+    try{
+      const delivered=await afterSourceProcessed({
+        record,
+        sourceRef,
+        sourceRefs,
+        rawText,
+        sourceType,
+        sourceId,
+        sourceTitle
+      });
+      sourcePackets=safeArray(delivered);
+      if(delivered&&!Array.isArray(delivered))sourcePackets=[delivered];
+      sourcePackets=sourcePackets.filter(packet=>packet&&typeof packet==='object'&&String(packet.id||'').trim());
+      if(!sourcePackets.length)deliveryError='Canonical source delivery created no Board packets.';
+    }catch(error){
+      deliveryError=error.message||String(error);
+    }
+    const delivered=sourcePackets.length>0;
+    const updated=await saveRecord({
+      ...record,
+      metadataJson:{
+        ...(record.metadataJson||record.metadata_json||{}),
+        boardDelivery:{
+          status:delivered?'delivered':'failed',
+          packetIds:sourcePackets.map(packet=>packet.id).filter(Boolean),
+          attemptedAt:now(),
+          deliveredAt:delivered?now():'',
+          error:deliveryError
+        }
+      },
+      updatedAt:now()
+    });
+    return {record:updated,sourcePackets,delivered,error:deliveryError};
+  }
+  async function retryUndeliveredSources({limit=20}={}){
+    const boundedLimit=Math.max(1,Math.min(Number(limit)||20,100));
+    let records=[];
+    if(hasPg()){
+      const result=await dbQuery(
+        `select * from source_processing_records
+         where tenant_id=$1 and user_id=$2
+           and coalesce(metadata_json->'boardDelivery'->>'status','') <> 'delivered'
+         order by created_at asc
+         limit $3`,
+        [tenantId(),userId(),boundedLimit]
+      );
+      records=safeArray(result?.rows).map(rowToCamel).map(withWhatValDidReceipt);
+    }else{
+      records=store().sourceProcessingRecords
+        .filter(record=>
+          record.tenantId===tenantId()
+          && record.userId===userId()
+          && String(record.metadataJson?.boardDelivery?.status||'')!=='delivered'
+        )
+        .sort((left,right)=>new Date(left.createdAt||0)-new Date(right.createdAt||0))
+        .slice(0,boundedLimit);
+    }
+    const results=[];
+    for(const record of records)results.push(await deliverSourceRecord(record));
+    return {
+      ok:results.every(result=>result.delivered),
+      attempted:results.length,
+      delivered:results.filter(result=>result.delivered).length,
+      failed:results.filter(result=>!result.delivered).length,
+      results
+    };
+  }
   async function notifyBoardOfDocuments({record={},documents=[],relationship={},projectName='',eventType='document_source_processed'}={}){
     if(typeof afterDocumentEvent!=='function')return [];
     const events=[];
@@ -293,7 +405,6 @@ function createValSourceProcessingService({
     return events;
   }
   async function processKnowledgeDocument(input={}){
-    const sc=scope();
     const document=input.document||input.source||{};
     const sourceType=firstText(document.sourceType,document.source_type,input.sourceType,'knowledge_document');
     const sourceId=firstText(document.sourceId,document.source_id,document.id,input.sourceId,uuid('document'));
@@ -310,71 +421,188 @@ function createValSourceProcessingService({
       confidence:1,
       createdAt:firstText(document.createdAt,document.created_at,input.createdAt,input.created_at,now())
     });
-    const packetUpdates=[
-      {target:'knowledge_document_packet',status:'stored',sourceType,sourceId,sourceTitle}
-    ];
     const domainRoutes=['documents'];
     if(uploadedVia==='val_witnessing_session'){
-      packetUpdates.push({target:'witnessing_context',status:'available',sourceType,sourceId,sourceTitle});
       domainRoutes.push('witnessing');
     }
-    const record=await saveRecord({
-      id:sourceRecordId(uuid,sc,sourceType,sourceId),
-      tenantId:sc.tenantId,
-      userId:sc.userId,
+    const processed=await processEvidenceSource({
       sourceType,
       sourceId,
       sourceTitle,
-      status:'processed',
-      sourceReceiptJson:{
-        sourceType,
-        sourceId,
-        sourceTitle,
-        receivedAt:firstText(document.createdAt,document.created_at,input.createdAt,input.created_at,now()),
+      rawText,
+      sourceRefs:[sourceRef],
+      createdAt:firstText(document.createdAt,document.created_at,input.createdAt,input.created_at,now()),
+      witnessObservation:`VAL read "${sourceTitle}" and stored its extracted text as inspectable source evidence.`,
+      executiveRelevance:{
+        document_read:true,
+        witnessing_context_available:uploadedVia==='val_witnessing_session',
+        recommendation_created:false
+      },
+      domainRoutes,
+      sourceReceiptMetadata:{
+        uploadedVia,
+        docType,
+        documentCategory,
+        mimeType:firstText(document.mimeType,document.mime_type,input.mimeType,input.mime_type),
+        fileName:firstText(document.fileName,document.filename,input.fileName,input.filename,sourceTitle)
+      },
+      packetUpdates:[
+        {target:'knowledge_document_packet',status:'stored',sourceType,sourceId,sourceTitle},
+        ...(uploadedVia==='val_witnessing_session'
+          ? [{target:'witnessing_context',status:'available',sourceType,sourceId,sourceTitle}]
+          : [])
+      ],
+      metadata:{
+        source:'knowledge_document_upload',
         uploadedVia,
         docType,
         documentCategory,
         mimeType:firstText(document.mimeType,document.mime_type,input.mimeType,input.mime_type),
         fileName:firstText(document.fileName,document.filename,input.fileName,input.filename,sourceTitle),
-        characterCount:rawText.length,
-        rawText
-      },
-      witnessObservationsJson:[{
-        observer:'witness',
-        observation:`VAL read "${sourceTitle}" and stored its extracted text as inspectable source evidence.`,
-        evidence_refs:[sourceRef]
-      }],
-      executiveRelevanceJson:{
-        document_read:true,
-        witnessing_context_available:uploadedVia==='val_witnessing_session',
-        recommendation_created:false
-      },
-      domainRoutesJson:domainRoutes,
-      packetUpdatesJson:packetUpdates,
-      reviewUpdatesJson:[],
-      preparedWorkCandidatesJson:[],
-      noActionReceiptJson:{},
-      unknownsJson:[],
-      metadataJson:{
-        source:'knowledge_document_upload',
-        uploadedVia,
-        docType,
-        documentCategory,
         documentRead:true,
         noExternalAction:true
-      },
-      createdAt:now(),
-      updatedAt:now()
+      }
     });
     return {
-      ok:true,
-      sourceProcessingRecord:record,
-      whatValDidReceipt:record.whatValDidReceipt,
-      what_val_did_receipt:record.whatValDidReceipt,
+      ...processed,
+      whatValDidReceipt:processed.sourceProcessingRecord?.whatValDidReceipt,
+      what_val_did_receipt:processed.sourceProcessingRecord?.whatValDidReceipt,
       documentRead:true,
       witnessingContextAvailable:uploadedVia==='val_witnessing_session',
       no_external_action:true
     };
+  }
+  async function processEvidenceSource(input={}){
+    const sc=scope();
+    const source=input.source||input;
+    const sourceType=firstText(input.sourceType,input.source_type,source.sourceType,source.source_type);
+    const sourceId=firstText(input.sourceId,input.source_id,source.id,source.sourceId,source.source_id);
+    const sourceTitle=firstText(input.sourceTitle,input.source_title,source.title,source.subject,surfaceLabel(sourceType||'Source'));
+    const rawText=String(input.rawText||input.raw_text||source.rawText||source.raw_text||source.text||source.bodyText||source.body_text||'').trim();
+    if(!sourceType)throw new Error('Evidence source processing requires a source type.');
+    if(!sourceId)throw new Error('Evidence source processing requires a source ID.');
+    if(!rawText)throw new Error('Evidence source processing requires readable source text.');
+    const sourceFingerprint=contentFingerprint(rawText);
+    let existing=null;
+    if(hasPg()){
+      const result=await dbQuery(
+        `select * from source_processing_records where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=$4 and source_fingerprint=$5 limit 1`,
+        [sc.tenantId,sc.userId,sourceType,sourceId,sourceFingerprint]
+      );
+      existing=result.rows?.[0]?withWhatValDidReceipt(rowToCamel(result.rows[0])):null;
+    }else{
+      existing=store().sourceProcessingRecords.find(row=>row.tenantId===sc.tenantId&&row.userId===sc.userId&&row.sourceType===sourceType&&row.sourceId===sourceId&&row.sourceFingerprint===sourceFingerprint)||null;
+    }
+    if(existing){
+      const boardDelivery=existing.metadataJson?.boardDelivery||existing.metadata_json?.boardDelivery||{};
+      if(input.notify!==false&&boardDelivery.status!=='delivered'){
+        const retried=await deliverSourceRecord(existing);
+        return {
+          ok:true,
+          sourceProcessingRecord:retried.record,
+          sourcePacket:retried.sourcePackets[0]||null,
+          sourcePackets:retried.sourcePackets,
+          boardDeliveryRetried:true,
+          deduplicated:true,
+          no_external_action:true
+        };
+      }
+      return {ok:true,sourceProcessingRecord:existing,deduplicated:true,no_external_action:true};
+    }
+    let sourceVersion=1;
+    if(hasPg()){
+      const result=await dbQuery(
+        `select coalesce(max(source_version),0)::int as version from source_processing_records where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=$4`,
+        [sc.tenantId,sc.userId,sourceType,sourceId]
+      );
+      sourceVersion=Number(result.rows?.[0]?.version||0)+1;
+    }else{
+      sourceVersion=store().sourceProcessingRecords.filter(row=>row.tenantId===sc.tenantId&&row.userId===sc.userId&&row.sourceType===sourceType&&row.sourceId===sourceId).reduce((max,row)=>Math.max(max,Number(row.sourceVersion||1)),0)+1;
+    }
+    const timestamp=now();
+    const sourceRef=normalizeSourceRef({sourceType,sourceId,quoteOrSummary:compactText(rawText,900),confidence:1,createdAt:firstText(input.createdAt,input.created_at,source.createdAt,source.created_at,timestamp)});
+    const sourceRefs=[sourceRef,...safeArray(
+      input.sourceRefs||
+      input.source_refs||
+      source.sourceRefs||
+      source.source_refs||
+      source.sourceRefsJson||
+      source.source_refs_json
+    ).map(normalizeSourceRef)].filter((ref,index,all)=>{
+      const key=[ref.source_type,ref.source_id,ref.quote_or_summary].join('|');
+      return all.findIndex(other=>[other.source_type,other.source_id,other.quote_or_summary].join('|')===key)===index;
+    });
+    const domainRoutes=safeArray(input.domainRoutes||input.domain_routes);
+    const metadata={
+      source:'canonical_evidence_intake',
+      immutableSourceVersion:true,
+      noExternalAction:true,
+      ...(input.metadata||input.metadata_json||{})
+    };
+    const record=await saveRecord({
+      id:stableKey(`source_${sc.tenantId}_${sc.userId}_${sourceType}_${sourceId}_${sourceFingerprint.slice(0,16)}`),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      sourceType,
+      sourceId,
+      sourceTitle,
+      sourceFingerprint,
+      sourceVersion,
+      status:'processed',
+      sourceReceiptJson:{
+        sourceType,
+        sourceId,
+        sourceTitle,
+        sourceFingerprint,
+        sourceVersion,
+        receivedAt:firstText(input.createdAt,input.created_at,source.createdAt,source.created_at,timestamp),
+        characterCount:rawText.length,
+        rawText,
+        sourceRefs,
+        ...(input.sourceReceiptMetadata||input.source_receipt_metadata||{})
+      },
+      witnessObservationsJson:[{
+        observer:'witness',
+        observation:firstText(input.witnessObservation,input.witness_observation,`VAL read "${sourceTitle}" as ${surfaceLabel(sourceType).toLowerCase()} evidence.`),
+        evidence_refs:sourceRefs
+      }],
+      executiveRelevanceJson:input.executiveRelevance||input.executive_relevance||{source_read:true,canonical_work_admission_pending:true},
+      domainRoutesJson:domainRoutes,
+      packetUpdatesJson:safeArray(input.packetUpdates||input.packet_updates),
+      reviewUpdatesJson:[],
+      preparedWorkCandidatesJson:[],
+      noActionReceiptJson:{},
+      unknownsJson:[],
+      metadataJson:metadata,
+      createdAt:timestamp,
+      updatedAt:timestamp
+    });
+    let delivered={record,sourcePackets:[],delivered:false};
+    if(input.notify!==false)delivered=await deliverSourceRecord(record);
+    return {
+      ok:true,
+      sourceProcessingRecord:delivered.record,
+      sourcePacket:delivered.sourcePackets[0]||null,
+      sourcePackets:delivered.sourcePackets,
+      deduplicated:false,
+      no_external_action:true
+    };
+  }
+  async function processTranscriptSource(input={}){
+    const transcript=input.transcript||input.source||input;
+    return processEvidenceSource({
+      source:transcript,
+      sourceType:'transcript',
+      sourceId:firstText(transcript.id,transcript.transcriptId,transcript.transcript_id,input.transcriptId,input.transcript_id),
+      sourceTitle:firstText(transcript.title,transcript.meetingTitle,transcript.meeting_title,'Transcript'),
+      rawText:String(transcript.rawTranscript||transcript.raw_transcript||transcript.rawText||transcript.raw_text||transcript.transcriptText||transcript.transcript_text||transcript.text||'').trim(),
+      createdAt:firstText(transcript.createdAt,transcript.created_at),
+      witnessObservation:`VAL read "${firstText(transcript.title,transcript.meetingTitle,transcript.meeting_title,'Transcript')}" as transcript evidence.`,
+      executiveRelevance:{transcript_read:true,canonical_work_admission_pending:true},
+      domainRoutes:['transcripts','board_of_observers','canonical_work'],
+      metadata:{source:'transcript_intelligence'},
+      notify:input.notify
+    });
   }
   async function processRelationshipDocumentEmail(input={}){
     const sc=scope();
@@ -386,32 +614,37 @@ function createValSourceProcessingService({
     const sourceId=firstText(source.sourceId,source.source_id,source.messageId,source.message_id,source.id,documents[0]?.sourceId,uuid('email'));
     const sourceTitle=firstText(source.subject,source.title,input.subject,'Relationship document email');
     const projectName=projectNameFromInput(input,relationship,documents);
-    const record={
-      id:sourceRecordId(uuid,sc,sourceType,sourceId),
-      tenantId:sc.tenantId,
-      userId:sc.userId,
+    const rawText=[
+      `Relationship: ${firstText(relationship.name,relationship.displayName,relationship.email,'Unknown sender')}`,
+      `Subject: ${sourceTitle}`,
+      ...documents.map(doc=>[
+        `Document: ${firstText(doc.title,doc.fileName,doc.filename,doc.name,'Untitled document')}`,
+        firstText(doc.summary,doc.bodyPreview,doc.text,doc.description)
+      ].filter(Boolean).join('\n'))
+    ].join('\n\n');
+    const processed=await processEvidenceSource({
       sourceType,
       sourceId,
       sourceTitle,
-      status:'processed',
-      sourceReceiptJson:{sourceType,sourceId,sourceTitle,receivedAt:firstText(source.receivedAt,source.createdAt,now()),relationship,documentCount:documents.length},
-      witnessObservationsJson:documents.length?[{observer:'witness',observation:`${firstText(relationship.name,relationship.displayName,relationship.email,'A relationship')} sent ${documents.length} document${documents.length===1?'':'s'}.`,documents}]:[],
-      executiveRelevanceJson:{relationship_sender_admitted:admitted,document_evidence_count:documents.length,project_suggestion_eligible:admitted&&documents.length>0},
-      domainRoutesJson:documents.length?['documents','project_managers']:[],
-      packetUpdatesJson:[],
-      reviewUpdatesJson:[],
-      preparedWorkCandidatesJson:[],
-      noActionReceiptJson:{},
-      unknownsJson:[],
-      metadataJson:{source:'relationship_document_email',noExternalAction:true},
-      createdAt:now(),
-      updatedAt:now()
-    };
+      rawText,
+      sourceRefs:documents.flatMap(doc=>safeArray(doc.sourceRefs||doc.source_refs)),
+      createdAt:firstText(source.receivedAt,source.createdAt,now()),
+      witnessObservation:documents.length
+        ? `${firstText(relationship.name,relationship.displayName,relationship.email,'A relationship')} sent ${documents.length} document${documents.length===1?'':'s'}.`
+        : `${firstText(relationship.name,relationship.displayName,relationship.email,'A relationship')} sent an email with no document evidence.`,
+      executiveRelevance:{relationship_sender_admitted:admitted,document_evidence_count:documents.length,project_suggestion_eligible:admitted&&documents.length>0},
+      domainRoutes:documents.length?['documents','project_managers']:['executive_inbox'],
+      sourceReceiptMetadata:{relationship,documentCount:documents.length},
+      metadata:{source:'relationship_document_email',relationship,projectName,documentCount:documents.length,noExternalAction:true}
+    });
+    const record=processed.sourceProcessingRecord;
+    if(processed.deduplicated){
+      return {ok:true,sourceProcessingRecord:record,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],deduplicated:true,whatValDidReceipt:record.whatValDidReceipt,what_val_did_receipt:record.whatValDidReceipt,no_external_action:true};
+    }
     if(!admitted){
       record.status='no_action';
       record.noActionReceiptJson={reason:'Document sender is not an admitted relationship, so VAL will not suggest a project.',sourceType,sourceId};
       const saved=await saveRecord(record);
-      await notifyBoardOfDocuments({record:saved,documents,relationship,projectName,eventType:'document_source_no_action'});
       return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
     }
     if(!documents.length){
@@ -424,7 +657,6 @@ function createValSourceProcessingService({
     if(existing){
       record.noActionReceiptJson={reason:'A matching project already exists. VAL should link documents rather than suggest a new project.',projectId:existing.projectId||existing.id||existing.profileKey||'',sourceType,sourceId};
       const saved=await saveRecord(record);
-      await notifyBoardOfDocuments({record:saved,documents,relationship,projectName,eventType:'document_linked_to_existing_project'});
       return {ok:true,sourceProcessingRecord:saved,existingProject:existing,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_external_action:true};
     }
     if(!reviewUpdatesService?.createRelationshipDocumentProjectSuggestion)throw new Error('Review update service does not support relationship document project suggestions.');
@@ -511,7 +743,27 @@ function createValSourceProcessingService({
       packetUpdatesJson:[{target:'project_packet',status:'review_required',reviewUpdateId:update.id}],
       metadataJson:{...(savedRecord.metadataJson||{}),reviewUpdateId:update.id,preparedArtifactRecordId:preparedArtifact.id,readyForYouItemId:readyItem.id,surfaceRegistrationIds:[projectSurface.id,leverageSurface.id],whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt}
     });
-    await notifyBoardOfDocuments({record:finalRecord,documents,relationship,projectName,eventType:'document_project_review_prepared'});
+    await processEvidenceSource({
+      sourceType:'task',
+      sourceId:update.id,
+      sourceTitle:update.title,
+      rawText:[
+        update.summary,
+        `Project: ${projectName}`,
+        `Relationship: ${firstText(relationship.name,relationship.displayName,relationship.email)}`,
+        'VAL prepared a Project Managers review. No project was created and no external action occurred.'
+      ].filter(Boolean).join('\n'),
+      sourceRefs:safeArray(update.sourceRefsJson),
+      domainRoutes:['project_managers','home_leverage','board_of_observers'],
+      metadata:{
+        source:'relationship_document_project_review',
+        boardPacketType:'project_packet',
+        sourceProcessingRecordId:finalRecord.id,
+        reviewUpdateId:update.id,
+        preparedArtifactRecordId:preparedArtifact.id,
+        noExternalAction:true
+      }
+    });
     return {ok:true,sourceProcessingRecord:finalRecord,projectSuggestion:update,preparedArtifactRecord:preparedArtifact,readyForYouItem:readyItem,surfaceRegistrations:[projectSurface,leverageSurface],whatValDidReceipt:finalRecord.whatValDidReceipt,what_val_did_receipt:finalRecord.whatValDidReceipt,no_external_action:true};
   }
   async function listSourceRecords({limit=50}={}){
@@ -521,6 +773,19 @@ function createValSourceProcessingService({
       return {ok:true,records:(r.rows||[]).map(rowToCamel).map(withWhatValDidReceipt)};
     }
     return {ok:true,records:store().sourceProcessingRecords.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,lim).map(withWhatValDidReceipt)};
+  }
+  async function getSourceRecord(id=''){
+    const recordId=String(id||'').trim();
+    if(!recordId)return null;
+    if(hasPg()){
+      const result=await dbQuery(
+        'select * from source_processing_records where id=$1 and tenant_id=$2 and user_id=$3 limit 1',
+        [recordId,tenantId(),userId()]
+      );
+      return result.rows?.[0]?withWhatValDidReceipt(rowToCamel(result.rows[0])):null;
+    }
+    const record=store().sourceProcessingRecords.find(row=>row.id===recordId&&row.tenantId===tenantId()&&row.userId===userId())||null;
+    return record?withWhatValDidReceipt(record):null;
   }
   async function listSurfaceRegistrations({surface='',status='visible',reviewStatus='',limit=50}={}){
     const lim=Math.max(1,Math.min(Number(limit)||50,200));
@@ -551,7 +816,7 @@ function createValSourceProcessingService({
       .slice(0,lim);
     return {ok:true,surfaceRegistrations:rows};
   }
-  return {processKnowledgeDocument,processRelationshipDocumentEmail,listSourceRecords,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration,sourceProcessingWhatValDidReceipt};
+  return {processKnowledgeDocument,processEvidenceSource,processTranscriptSource,processRelationshipDocumentEmail,retryUndeliveredSources,listSourceRecords,getSourceRecord,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration,sourceProcessingWhatValDidReceipt};
 }
 
-module.exports={createValSourceProcessingService,relationshipAdmitted,documentsFromInput,readyItemFromProjectSuggestion,surfaceMetadataFromProjectSuggestion,sourceProcessingWhatValDidReceipt};
+module.exports={createValSourceProcessingService,relationshipAdmitted,documentsFromInput,readyItemFromProjectSuggestion,surfaceMetadataFromProjectSuggestion,sourceProcessingWhatValDidReceipt,contentFingerprint,evidenceChunks};
