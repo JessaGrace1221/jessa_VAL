@@ -44,6 +44,37 @@ test('source references normalize to the shared audit structure',()=>{
   assert.ok(ref.created_at);
 });
 
+test('Postgres intelligence rows expose canonical fields to Round Table and Chief readers',async()=>{
+  const outputJson={observation:'Relationship observed a trust signal.',packetReviews:[]};
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>true,
+    dbQuery:async()=>({rows:[{
+      id:'observer_pg',
+      tenant_id:'tenant',
+      user_id:'user',
+      event_run_id:'event_pg',
+      observer_name:'Relationship',
+      status:'completed',
+      output_json:outputJson,
+      evidence_refs_json:[{source_type:'transcript',source_id:'tr_1',quote_or_summary:'Exact evidence.'}],
+      closing_statement:'Relationship observed a trust signal.',
+      unknowns_json:[],
+      confidence:0.88,
+      conviction:0.82,
+      created_at:new Date('2026-07-25T12:00:00.000Z')
+    }]}),
+    tenantId:()=>'tenant',
+    userId:()=>'user'
+  });
+  const [run]=await spine.listObserverRuns({eventRunId:'event_pg'});
+  assert.equal(run.observerName,'Relationship');
+  assert.equal(run.eventRunId,'event_pg');
+  assert.equal(run.outputJson,outputJson);
+  assert.equal(run.closingStatement,'Relationship observed a trust signal.');
+  assert.equal(run.evidenceRefsJson[0].source_id,'tr_1');
+  assert.equal(run.createdAt,'2026-07-25T12:00:00.000Z');
+});
+
 test('Observer audit records do not duplicate complete About Me source text',()=>{
   const stored=contextForPersistence({
     event:{

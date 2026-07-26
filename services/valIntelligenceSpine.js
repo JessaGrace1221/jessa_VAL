@@ -380,6 +380,11 @@ function parseRecord(row){
   for(const key of Object.keys(out)){
     if(/_json$/.test(key)) out[key]=jsonValue(out[key],out[key]);
   }
+  for(const [key,value] of Object.entries(out)){
+    if(!key.includes('_'))continue;
+    const camelKey=key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase());
+    if(!(camelKey in out))out[camelKey]=value;
+  }
   return out;
 }
 
