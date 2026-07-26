@@ -63,6 +63,18 @@ function hasListMailSignal(email = {}, context = {}){
   );
 }
 
+function isCalendarNotice(email = {}, context = {}){
+  const classification = String(
+    email.classification ||
+    context.classification?.classification ||
+    context.classification ||
+    ''
+  ).toLowerCase();
+  if(classification === 'calendar_notice') return true;
+  const subject = String(email.subject || context.current_message?.subject || context.currentMessage?.subject || '');
+  return /^(?:updated |canceled |cancelled )?invitation:|^(?:accepted|declined|tentative):/i.test(subject);
+}
+
 function cachedSentHistory(context = {}, email = {}){
   const metrics = context.sender_metrics || context.senderMetrics || email.senderMetrics || {};
   const outbound = Number(
@@ -121,6 +133,7 @@ function decideExecutiveInboxAdmission({
   if(resolved) return {admitted:false, rule:'resolved_thread', reason:'This thread was already resolved.'};
   if(suppressed) return {admitted:false, rule:'manual_not_executive_contact', reason:'The user marked this sender as not an executive contact.', address};
   if(hasListMailSignal(email, context)) return {admitted:false, rule:'unsubscribe_or_list_mail', reason:'Unsubscribe or list-mail evidence keeps this message out of Executive Inbox.', address};
+  if(isCalendarNotice(email, context)) return {admitted:false, rule:'calendar_notice', reason:'Calendar invitations belong in Calendar, not Executive Inbox.', address};
   if(!sentHistory && !safeListed) return {admitted:false, rule:'no_outbox_history', reason:'The user has not sent mail to this address, so it has not earned Executive Inbox space.', address};
   if(!waiting && !asksForJudgment) return {admitted:false, rule:'no_executive_action', reason:'This thread does not currently require a reply, decision, approval, or follow-up.', address};
 
@@ -144,6 +157,7 @@ module.exports = {
   executiveInboxText,
   hasClearAsk,
   hasListMailSignal,
+  isCalendarNotice,
   senderEmail,
   senderKey
 };

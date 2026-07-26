@@ -9854,11 +9854,6 @@ async function emailIntelligencePayload(req,{force=false}={}){
       const c=classifyExecutiveEmail(withMetrics,rules);
       return {...withMetrics,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
-    const preparedDraftResults=await Promise.all(emails.map(async email=>{
-      const draft=await prepareEmailDraftIfNeeded(email,rules).catch(()=>null);
-      if(draft)email.preparedDraft=draft;
-      return draft;
-    }));
     const durableEmailMap=new Map();
     [...emails,...(documentGmail.emails||[])].forEach(email=>{
       const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
@@ -9882,7 +9877,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const projectManagerIntake=await processEmailDocumentSourceProcessing(Array.from(sourceProcessingEmailMap.values()),{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[error.message],noExternalAction:true}));
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
-    const draftsPrepared=preparedDraftResults.filter(Boolean).length;
+    const draftsPrepared=0;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
@@ -9896,7 +9891,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       needsReply:emails.filter(e=>e.classification==='needs_reply'),
       lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)),
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
-      draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
+      draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
       providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
@@ -10079,7 +10074,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
       const previousTime=Date.parse(previous?.updatedAt||previous?.updated_at||previous?.createdAt||previous?.created_at||'')||0;
       if(!previous||rowTime>=previousTime)draftsByConversation.set(key,draft);
     });
-  const diagnostics={indexed:safeArray(timed.results).length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const diagnostics={indexed:safeArray(timed.results).length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
   const rows=executiveInboxNewestByConversation(timed.results)
     .filter((row)=>{
       const priority=String(row.priority_level || row.priorityLevel || 'unknown').toLowerCase();
@@ -10117,6 +10112,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
           resolved_thread:'resolved',
           manual_not_executive_contact:'suppressed',
           unsubscribe_or_list_mail:'unsubscribeOrListMail',
+          calendar_notice:'calendarNotice',
           no_outbox_history:'noOutboxHistory',
           no_executive_action:'noExecutiveAction'
         }[admission.rule];
@@ -10173,7 +10169,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     fetchedMessages:rows.length,
     uniqueThreads:byThread.size,
     admitted:0,
-    filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,noOutboxHistory:0,noExecutiveAction:0},
+    filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},
     providerCounts:{
       gmailRecent:data.providers?.gmail?.recentInboxCount||0,
       gmailUnread:data.providers?.gmail?.unreadCount||0,
@@ -10208,6 +10204,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     if(!admission.admitted){
       const key={
         unsubscribe_or_list_mail:'unsubscribeOrListMail',
+        calendar_notice:'calendarNotice',
         no_outbox_history:'noOutboxHistory',
         no_executive_action:'noExecutiveAction'
       }[admission.rule];
@@ -10217,12 +10214,12 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     const kind=waiting?'waiting_for_response':'needs_judgment';
     const reason=admission.reason || executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
     const status=waiting?'waiting_for_response':'ready_for_review';
-    const preparedDraft=email.preparedDraft || (!waiting ? await prepareEmailDraftIfNeeded({
+    const preparedDraft=!waiting ? await prepareEmailDraftIfNeeded({
       ...email,
       classification:'needs_reply',
       reason,
       recommendedAction:'Draft a reply for approval.'
-    },data.rules||[]).catch(()=>null) : null);
+    },data.rules||[]).catch(()=>null) : null;
     return {
       ...email,
       preparedDraft,

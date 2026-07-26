@@ -24,6 +24,16 @@ test('unsubscribe and list-mail signals never enter Executive Inbox', () => {
   assert.equal(decision.rule, 'unsubscribe_or_list_mail');
 });
 
+test('calendar invitations stay in Calendar instead of Executive Inbox', () => {
+  const decision = decideExecutiveInboxAdmission({
+    email:{subject:'Updated invitation: Weekly leadership sync',from:{email:'leader@example.com'},classification:'calendar_notice'},
+    hasSentHistory:true,
+    clearAsk:true
+  });
+  assert.equal(decision.admitted, false);
+  assert.equal(decision.rule, 'calendar_notice');
+});
+
 test('outbox history is required unless the user explicitly safe-lists the contact', () => {
   const blocked = decideExecutiveInboxAdmission({
     email:{from:{email:'new@example.com'},subject:'Can you review this?'},
