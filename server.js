@@ -10826,6 +10826,13 @@ app.get('/guide',(req,res)=>{
     res.type('html').send(guideHtml(markdown));
   });
 });
+app.use((req,res,next)=>{
+  const sourcePath=decodeURIComponent(String(req.path||'')).replace(/^\/+/,'');
+  const privateRootFile=/^(?:server\.js|package(?:-lock)?\.json|railway\.json|Procfile|\.env(?:\..*)?)$/i.test(sourcePath);
+  const privateDirectory=/^(?:services|test|tests|docs|data|scripts|node_modules|\.git)(?:\/|$)/i.test(sourcePath);
+  if(privateRootFile||privateDirectory)return res.status(404).type('text').send('Not found');
+  next();
+});
 app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'hearth-prototype.html'));});
 app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
