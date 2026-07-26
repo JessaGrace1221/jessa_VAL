@@ -603,6 +603,38 @@ test('Observer Co-Work answers tone questions from proof packet reviews immediat
   assert.match(answered.message,/GOALL dashboard handoff - transcript/);
 });
 
+test('Observer Co-Work rejects a legacy calendar review manufactured from routing language',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async()=>{modelCalls+=1;return 'model should not be needed';}});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        meaningfulReviews:[{
+          status:'observed',
+          observerName:'Relationship',
+          people:['Fix'],
+          lensFinding:'Fix has a relationship signal worth inspecting.',
+          evidence:{
+            sourceType:'calendar_event',
+            sourceId:'calendar_fix',
+            packetTitle:'Fix the calculator',
+            quoteOrSummary:'Provider: google. Title: Fix the calculator. Starts at 9:30 AM.'
+          }
+        }]
+      }
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'Which relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/source evidence does not support the claim/i);
+  assert.match(answered.message,/not going to name a person/i);
+  assert.doesNotMatch(answered.message,/I would start with Fix/i);
+});
+
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
   const pg=postgresCoworkDb();
   const {service}=serviceFor({hasPg:true,dbQuery:pg.dbQuery});

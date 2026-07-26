@@ -325,6 +325,22 @@ function registrySourceKey(packetSourceType=''){
   return source;
 }
 
+const OBSERVER_DERIVED_PAYLOAD_KEYS=new Set([
+  'observerreviews','observer_reviews','reviewsbyobserver','reviews_by_observer',
+  'routeobservers','route_observers','primaryobservers','primary_observers',
+  'observerrouting','observer_routing','routingreason','routing_reason',
+  'observeroutputs','observer_outputs','observerfindings','observer_findings',
+  'chief_of_staff','chiefofstaff','boardrouting','board_routing'
+]);
+function sourcePayloadForObservation(value,depth=0){
+  if(depth>7||value==null)return value;
+  if(Array.isArray(value))return value.map(item=>sourcePayloadForObservation(item,depth+1));
+  if(typeof value!=='object')return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key])=>!OBSERVER_DERIVED_PAYLOAD_KEYS.has(String(key||'').toLowerCase()))
+    .map(([key,item])=>[key,sourcePayloadForObservation(item,depth+1)]));
+}
+
 const OBSERVER_SIGNAL_TERMS = Object.freeze({
   'Executive Inbox':['email','reply','inbox','message','draft','send','conversation','intro','communication','thread'],
   Relationship:['relationship','trust','warmth','repair','distance','person','people','contact','mike','michelle','aric','tone'],
@@ -349,7 +365,7 @@ function packetSearchText(packet={}){
     packet.packetType,
     packet.sourceType,
     safeArray(packet.sourceRefsJson).map(ref=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote).join(' '),
-    JSON.stringify(packet.payloadJson||{})
+    JSON.stringify(sourcePayloadForObservation(packet.payloadJson||{}))
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -378,7 +394,7 @@ function packetTextForExtraction(packet={}){
     packet.title,
     packet.summary,
     packetEvidenceText(packet),
-    JSON.stringify(packet.payloadJson||{})
+    JSON.stringify(sourcePayloadForObservation(packet.payloadJson||{}))
   ].filter(Boolean).join(' '),5000);
 }
 

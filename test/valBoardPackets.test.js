@@ -71,6 +71,40 @@ test('Board packet service routes and digests each packet through every observer
   assert.deepEqual(relationshipReview.projects,[]);
 });
 
+test('Observer delivery metadata cannot manufacture a lens signal',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){}}
+  });
+  const packet=await service.createPacket({
+    sourceType:'calendar_event',
+    sourceId:'calendar_ordinary_work',
+    packetType:'meeting_context_packet',
+    title:'Fix the calculator',
+    summary:'Provider: google. Starts at 9:30 AM and ends at 9:45 AM.',
+    payload:{
+      routeObservers:[{
+        observerName:'Relationship',
+        reason:'This calendar event may change warmth, trust, repair, distance, or mutual value.'
+      }],
+      observerReviews:[{
+        observerName:'Relationship',
+        lensFinding:'A prior generated Relationship finding must not become new evidence.'
+      }]
+    }
+  });
+  const relationship=packet.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
+  const calendar=packet.payloadJson.observerReviews.find(review=>review.observerName==='Calendar');
+  assert.equal(relationship.status,'no_signal');
+  assert.equal(calendar.status,'observed');
+  assert.match(relationship.lensFinding,/No meaningful Relationship signal/);
+});
+
 test('model-backed Observer reviews replace fallback reviews only with packet-grounded entities',async()=>{
   let store={};
   const service=createValBoardPacketsService({

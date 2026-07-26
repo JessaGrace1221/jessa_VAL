@@ -120,6 +120,29 @@ function observerConversationReviewFromCard(observer={},sourceTrail=[]){
     evidence:{quoteOrSummary:evidenceLine||line}
   };
 }
+function observerConversationReviewIsGrounded(review={},observerName=''){
+  if(review.status!=='observed')return false;
+  const evidence=review.evidence||{};
+  const sourceType=String(evidence.sourceType||review.sourceType||'').toLowerCase();
+  if(!/calendar/.test(sourceType)||observerName==='Calendar')return true;
+  const quote=String(evidence.quoteOrSummary||evidence.quote_or_summary||review.evidenceLine||review.line||'');
+  const calendarProofPatterns={
+    'Executive Inbox':/\b(reply|respond|email|message|introduction|follow[- ]?up)\b/i,
+    Relationship:/\b(frustrat|tension|repair|distance|trust|warmth|tone|relationship|attendee|with\s+[A-Z])\b/i,
+    Project:/\b(project|GOALL|dashboard|handoff|deliver|milestone|workstream|owner)\b/i,
+    Capacity:/\b(back[- ]to[- ]back|overload|overwhelmed|capacity|recovery|competing|too many|decision load)\b/i,
+    Courage:/\b(avoid|hesitat|pushback|hard choice|directness|not saying)\b/i,
+    Delight:/\b(joy|delight|curiosity|relief|restore|grounding|play|alive|energized)\b/i,
+    Opportunity:/\b(opportunity|revenue|proposal|pricing|sale|lead|opening|introduction)\b/i,
+    Momentum:/\b(stuck|blocked|finished|completed|handoff|next step|moved forward|lost momentum)\b/i,
+    Meaning:/\b(value|purpose|meaning|larger story|matters|vision|mission)\b/i,
+    Synchronicity:/\b(repeated|again|echo|recurring pattern|convergence|coincidence|timing cluster)\b/i,
+    Commitment:/\b(commitment|promise|follow[- ]?up|action item|owed|due|owner|open loop)\b/i,
+    Environment:/\b(environment|room|travel|location|weather|physical space|interruption|external condition)\b/i,
+    Witnessing:/\b(witnessing|onboarding|revealed preference|asked VAL to remember|protect this)\b/i
+  };
+  return Boolean(calendarProofPatterns[observerName]?.test(quote));
+}
 function observerConversationHumanReply({observerName='Observer',answer='',meaningful=[],sourceTrail=[]}={}){
   const text=compactText(answer,900);
   const lower=text.toLowerCase();
@@ -186,8 +209,10 @@ function observerConversationDirectReply({entrypointId='',workingBrief={},answer
   }));
   const sourceTrailReviews=safeArray(context.sourceTrail).map(item=>compactText(item.line || item.title || item.summary || '',320)).filter(Boolean);
   const cardReview=observerConversationReviewFromCard(observer,context.sourceTrail);
-  const meaningful=(safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews)
-    .filter(review=>review.status==='observed')
+  const rawMeaningful=(safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews)
+    .filter(review=>review.status==='observed');
+  const meaningful=rawMeaningful
+    .filter(review=>observerConversationReviewIsGrounded(review,compactText(observer.name || workingBrief.title || 'Observer',80).replace(/\s+Observer$/i,'')))
     .slice(0,5);
   const fallbackMeaningful=meaningful.length ? meaningful : (cardReview ? [cardReview] : []);
   const checked=(safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : proofReviews).slice(0,6);
@@ -207,6 +232,14 @@ function observerConversationDirectReply({entrypointId='',workingBrief={},answer
     ].join('\n');
   }
 	  const observerName=compactText(observer.name || workingBrief.title || 'this Observer',80).replace(/\s+Observer$/i,'');
+  if(rawMeaningful.length&&!meaningful.length){
+    return [
+      `I checked ${rawMeaningful.length} ${observerName} review${rawMeaningful.length===1?'':'s'}, but the source evidence does not support the claim those reviews made.`,
+      '',
+      'I am not going to name a person, risk, or pattern from routing language alone.',
+      'The next useful step is to wait for a source that contains the actual signal, or inspect the original source directly.'
+    ].join('\n');
+  }
 		  if(fallbackMeaningful.length){
 		    return observerConversationHumanReply({observerName,answer,meaningful:fallbackMeaningful,sourceTrail:sourceTrailReviews.length?sourceTrailReviews:sourceTrail});
 		  }
