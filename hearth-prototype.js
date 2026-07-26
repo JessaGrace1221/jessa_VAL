@@ -9719,7 +9719,12 @@ function renderCorrespondenceList(){
     summary.textContent = item.summary;
     const small = document.createElement('small');
     const dateLabel = correspondenceHumanContactTime(item.receivedAt || item.latestAt || item.lastContact || item.date || '');
-    small.textContent = [dateLabel, item.context || item.source || ''].filter(Boolean).join(' · ');
+    const senderLabel = item.senderName || item.senderEmail || '';
+    small.textContent = [
+      senderLabel ? 'From ' + senderLabel : '',
+      dateLabel,
+      item.context || item.source || ''
+    ].filter(Boolean).join(' · ');
     const priority = document.createElement('em');
     priority.textContent = item.status === 'waiting_for_response' ? 'Waiting' : (item.status === 'needs_context' ? 'Review' : 'High');
     button.append(avatar, label, priority, title, summary, small);
