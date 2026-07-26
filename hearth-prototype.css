@@ -17563,3 +17563,141 @@ body.val-ghl-voice-active .retrieval-system{
   border-radius:50%!important;
   background:radial-gradient(circle at 44% 34%,rgba(255,249,239,.96),rgba(214,225,202,.72) 44%,rgba(183,119,125,.32) 78%,rgba(92,111,83,.28) 100%)!important;
 }
+
+/* Executive Function usability contract: one smooth scroll owner, stable controls, readable rails. */
+html{
+  scroll-behavior:smooth;
+}
+.drawer-tray,
+.workspace-panel,
+.full-calendar-panel,
+.observer-selected-card{
+  scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.drawer-tray:is(.source-open,.relationship-open,.project-open,.timeline-open,.correspondence-open,.commitment-open,.document-open,.val-open){
+  overflow-x:hidden;
+  overflow-y:auto;
+  scroll-behavior:smooth;
+}
+.drawer-tray:is(.source-open,.relationship-open,.project-open,.timeline-open,.correspondence-open,.commitment-open,.document-open,.val-open) .source-detail-header{
+  position:sticky;
+  top:0;
+  z-index:70;
+  background:rgba(255,255,255,.9);
+  -webkit-backdrop-filter:blur(12px) saturate(1.04);
+  backdrop-filter:blur(12px) saturate(1.04);
+}
+.drawer-tray :is(
+  .source-list,
+  .relationship-folder-rail,
+  .relationship-rolodex,
+  .project-rolodex,
+  .timeline-event-list,
+  .correspondence-queue,
+  .commitment-board,
+  .document-library,
+  .val-routing-panel
+){
+  color:rgba(24,24,27,.94);
+  background:rgba(255,255,255,.9);
+  border-color:rgba(24,24,27,.08);
+}
+.drawer-tray :is(
+  .source-list,
+  .relationship-folder-rail,
+  .relationship-rolodex,
+  .project-rolodex,
+  .timeline-event-list,
+  .correspondence-queue,
+  .commitment-board,
+  .document-library,
+  .val-routing-panel
+) :is(p,small,li){
+  color:rgba(39,39,42,.78)!important;
+}
+.drawer-tray :is(
+  .source-list,
+  .relationship-folder-rail,
+  .relationship-rolodex,
+  .project-rolodex,
+  .timeline-event-list,
+  .correspondence-queue,
+  .commitment-board,
+  .document-library,
+  .val-routing-panel
+) :is(strong,h3,h4,b){
+  color:rgba(24,24,27,.95)!important;
+}
+.drawer-tray.correspondence-open .correspondence-queue{
+  position:relative;
+  top:auto;
+  max-height:none;
+  overflow:visible;
+  background:rgba(255,255,255,.94);
+}
+.drawer-tray.correspondence-open .correspondence-list{
+  max-height:none;
+  overflow:visible;
+  padding-right:18px;
+}
+.drawer-tray.correspondence-open .correspondence-list button[data-correspondence-item] small{
+  color:rgba(39,39,42,.72)!important;
+  font-weight:520;
+}
+.drawer-tray.correspondence-open .correspondence-thread-body,
+.drawer-tray.correspondence-open .correspondence-email-html,
+.correspondence-rules-list,
+.correspondence-attachment-view{
+  scroll-behavior:smooth;
+  scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+}
+.observer-selected-card{
+  max-height:min(620px,calc(100vh - 96px));
+  overflow-x:hidden;
+  overflow-y:auto;
+  scroll-behavior:smooth;
+  background:rgba(255,255,255,.9);
+}
+.observer-selected-card>header{
+  position:sticky;
+  top:-20px;
+  z-index:2;
+  margin:-20px -20px 0;
+  padding:18px 20px 12px;
+  background:rgba(255,255,255,.94);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+}
+.observer-card-packet-note{
+  opacity:1;
+  transform:none;
+  animation:observer-card-note-arrive .55s ease-out .08s both;
+}
+@keyframes observer-card-note-arrive{
+  from{opacity:0;transform:translateY(4px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@media(max-width:900px){
+  .observer-card-slot,
+  .observer-card-slot.near-left,
+  .observer-card-slot.near-right,
+  .observer-card-slot.near-top,
+  .observer-card-slot.near-bottom,
+  .observer-card-slot.near-right.near-top,
+  .observer-card-slot.near-right.near-bottom,
+  .observer-card-slot.near-left.near-top,
+  .observer-card-slot.near-left.near-bottom{
+    position:fixed;
+    left:50%;
+    top:50%;
+    width:min(360px,calc(100vw - 40px));
+    transform:translate(-50%,-50%);
+  }
+  .observer-selected-card{
+    width:100%;
+    max-height:calc(100vh - 72px);
+  }
+}

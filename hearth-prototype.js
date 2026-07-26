@@ -9718,7 +9718,8 @@ function renderCorrespondenceList(){
     const summary = document.createElement('p');
     summary.textContent = item.summary;
     const small = document.createElement('small');
-    small.textContent = item.context || item.source || '';
+    const dateLabel = correspondenceHumanContactTime(item.receivedAt || item.latestAt || item.lastContact || item.date || '');
+    small.textContent = [dateLabel, item.context || item.source || ''].filter(Boolean).join(' · ');
     const priority = document.createElement('em');
     priority.textContent = item.status === 'waiting_for_response' ? 'Waiting' : (item.status === 'needs_context' ? 'Review' : 'High');
     button.append(avatar, label, priority, title, summary, small);
@@ -11313,7 +11314,16 @@ async function handleCorrespondenceAction(action){
       return;
     }
     if(canUseApi){
-      await postJson('/api/val/executive-inbox/not-executive-contact', contact);
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Removing this sender from Executive Inbox...';
+      try{
+        await postJson('/api/val/executive-inbox/not-executive-contact', contact, {
+          timeoutMs:6000,
+          timeoutMessage:'VAL could not save this sender preference quickly enough.'
+        });
+      }catch(error){
+        if(correspondenceSafety) correspondenceSafety.textContent = error.message + ' The conversation is still here.';
+        return;
+      }
     }
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
@@ -11429,6 +11439,19 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
+  if(correspondenceActionId === 'not_executive_contact'){
+    correspondenceAction.disabled = true;
+    correspondenceAction.setAttribute('aria-busy','true');
+    try{
+      await handleCorrespondenceAction(correspondenceActionId);
+    }finally{
+      if(correspondenceAction.isConnected){
+        correspondenceAction.disabled = false;
+        correspondenceAction.removeAttribute('aria-busy');
+      }
+    }
+    return true;
+  }
   const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules', 'save_composed_rule'].includes(correspondenceActionId);
   if(drawerUtilityAction){
     await handleCorrespondenceAction(correspondenceActionId);
@@ -27591,13 +27614,7 @@ function markWitnessingCompleteForBoard(){
 
 async function openObserverBoardAfterWitnessing(){
   markWitnessingCompleteForBoard();
-  await openObserverBoard({afterWitnessing:true});
-  window.setTimeout(async() => {
-    if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
-    await loadLiveObserverBoardContext();
-    if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
-    await openObserverBoard({afterWitnessing:true,skipLiveLoad:true});
-  }, 4200);
+  await openObserverBoard({afterWitnessing:true,waitForLiveContext:true});
 }
 
 async function openObserverBoard(options = {}){
@@ -27608,10 +27625,14 @@ async function openObserverBoard(options = {}){
   let liveContextPromise = null;
   if(!options.skipLiveLoad){
     liveContextPromise = loadLiveObserverBoardContext();
-    await Promise.race([
-      liveContextPromise,
-      new Promise((resolve) => window.setTimeout(resolve, 180))
-    ]);
+    if(options.waitForLiveContext){
+      await liveContextPromise;
+    }else{
+      await Promise.race([
+        liveContextPromise,
+        new Promise((resolve) => window.setTimeout(resolve, 800))
+      ]);
+    }
   }
   const chief = observerBoardState.chiefOfStaff;
   const observerPositions = {
@@ -27842,13 +27863,6 @@ async function openObserverBoard(options = {}){
   const selectedObserverId = requestedSelectedObserverId || (selectedObserverName ? observerConversationId(selectedObserverName) : '');
   if(selectedObserverId){
     requestAnimationFrame(() => updateObserverSelectedCard(selectedObserverId));
-  }
-  if(liveContextPromise){
-    liveContextPromise.then(() => {
-      if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
-      const openCardObserverId = workspaceInputPanel?.querySelector?.('.observer-node.is-selected')?.dataset?.observerCowork || '';
-      openObserverBoard({...options, selectedObserverId:openCardObserverId || selectedObserverId, skipLiveLoad:true});
-    }).catch(() => {});
   }
 }
 

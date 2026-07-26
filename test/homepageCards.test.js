@@ -289,16 +289,17 @@ test('Observer chats stay in scoped Co-Work instead of falling through to generi
   assert.doesNotMatch(submitSource,/entry\.entrypointId === 'observer\.discussion' \|\| entry\.entrypointId === 'board\.chief_of_staff'\)\{\s*return false/);
 });
 
-test('Board of Observers opens before live packet hydration finishes',()=>{
+test('Board of Observers uses a bounded initial hydration without rebuilding the visible graph',()=>{
   const boardSource = hearthPrototype.slice(
     hearthPrototype.indexOf('async function openObserverBoard'),
     hearthPrototype.indexOf('function orientHomeCoworkFromInput')
   );
   assert.match(boardSource,/Promise\.race\(\[\s*liveContextPromise/);
+  assert.match(boardSource,/window\.setTimeout\(resolve, 800\)/);
   assert.match(boardSource,/skipLiveLoad/);
   assert.match(boardSource,/existingSelectedObserverId/);
-  assert.match(boardSource,/selectedObserverId:openCardObserverId \|\| selectedObserverId/);
-  assert.match(boardSource,/openObserverBoard\(\{\.\.\.options, selectedObserverId:openCardObserverId \|\| selectedObserverId, skipLiveLoad:true\}\)/);
+  assert.doesNotMatch(boardSource,/liveContextPromise\.then\(\(\) => \{/);
+  assert.doesNotMatch(boardSource,/openObserverBoard\(\{\.\.\.options, selectedObserverId:/);
   assert.doesNotMatch(boardSource,/const chief = observerBoardState\.chiefOfStaff;\s*await loadLiveObserverBoardContext\(\);/);
 });
 
@@ -341,16 +342,20 @@ test('Home LinkedIn visibility uses live receipts and never the retired demo peo
   assert.doesNotMatch(hearthPrototype,/Shared a reflection on sustaining creative momentum without overextending/);
 });
 
-test('Board Observer card interactions survive hydration and close only on outside clicks',()=>{
+test('Board Observer cards stay stable during hydration, scroll, and close only on outside clicks',()=>{
   assert.match(hearthPrototype,/const existingSelectedObserverId = deskWorkspace\?\.classList\.contains\('observer-board-mode'\)/);
   assert.match(hearthPrototype,/const selectedObserverId = requestedSelectedObserverId \|\| \(selectedObserverName \? observerConversationId\(selectedObserverName\) : ''\)/);
   assert.match(hearthPrototype,/function handleObserverBoardNodeActivation/);
   assert.match(hearthPrototype,/workspaceInputPanel\.querySelectorAll\('\.observer-node\[data-observer-cowork\],\.observer-chief-card\[data-observer-cowork\]'\)\.forEach/);
   assert.match(hearthPrototype,/if\(selectedObserverId\)\{\s*requestAnimationFrame\(\(\) => updateObserverSelectedCard\(selectedObserverId\)\);/);
-  assert.match(hearthPrototype,/const openCardObserverId = workspaceInputPanel\?\.querySelector\?\.\('\.observer-node\.is-selected'\)\?\.dataset\?\.observerCowork \|\| ''/);
+  assert.match(hearthPrototype,/openObserverBoard\(\{afterWitnessing:true,waitForLiveContext:true\}\)/);
+  assert.match(hearthPrototype,/new Promise\(\(resolve\) => window\.setTimeout\(resolve, 800\)\)/);
+  assert.doesNotMatch(hearthPrototype,/liveContextPromise\.then\(\(\) => \{[\s\S]{0,500}openObserverBoard/);
   assert.match(hearthCss,/\.observer-graph-field\.observer-card-open \.observer-card-dismiss-surface\{\s*pointer-events:auto;/);
   assert.match(hearthCss,/\.observer-signal-paths\{[\s\S]{0,220}pointer-events:none;/);
   assert.match(hearthCss,/\.observer-live-packet\{[\s\S]{0,120}pointer-events:none;/);
+  assert.match(hearthCss,/\.observer-selected-card\{[\s\S]{0,180}max-height:min\(620px,calc\(100vh - 96px\)\);[\s\S]{0,120}overflow-y:auto;/);
+  assert.match(hearthCss,/animation:observer-card-note-arrive \.55s ease-out \.08s both;/);
   const positionedNodeCss = hearthCss.slice(
     hearthCss.indexOf('.observer-val-node,\n.observer-node'),
     hearthCss.indexOf('.observer-val-node{')

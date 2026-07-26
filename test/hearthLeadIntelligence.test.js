@@ -1034,6 +1034,10 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /email: senderEmail \|\| item\.recipientEmail/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/not-executive-contact/);
   assert.match(hearthJs, /action === 'not_executive_contact'/);
+  assert.match(hearthJs, /const dateLabel = correspondenceHumanContactTime\(item\.receivedAt \|\| item\.latestAt \|\| item\.lastContact \|\| item\.date \|\| ''\)/);
+  assert.match(hearthJs, /\[dateLabel, item\.context \|\| item\.source \|\| ''\]\.filter\(Boolean\)\.join\(' · '\)/);
+  assert.match(hearthJs, /if\(correspondenceActionId === 'not_executive_contact'\)\{[\s\S]{0,500}await handleCorrespondenceAction\(correspondenceActionId\)/);
+  assert.match(hearthJs, /timeoutMs:6000/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /action:'email:select'/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:\{email:selected/);
@@ -1069,6 +1073,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.correspondence-intelligence/);
   assert.match(hearthCss, /\.correspondence-list/);
   assert.match(hearthCss, /\.correspondence-brief/);
+  assert.match(hearthCss, /Executive Function usability contract: one smooth scroll owner, stable controls, readable rails/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-queue\{[\s\S]{0,180}max-height:none;[\s\S]{0,120}overflow:visible;/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-list\{[\s\S]{0,120}max-height:none;[\s\S]{0,120}overflow:visible;/);
 });
 
 test('Commitments remain internal evidence-backed follow-through, not a Hearth drawer', () => {
