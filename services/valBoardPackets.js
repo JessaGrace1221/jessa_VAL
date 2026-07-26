@@ -997,7 +997,7 @@ function createValBoardPacketsService({
     ]);
   }
   async function listPackets({limit=80,observerName='',sourceType='',status='active',includePrototype=false}={}){
-    const lim=Math.max(1,Math.min(Number(limit)||80,300));
+    const lim=Math.max(1,Math.min(Number(limit)||80,1000));
     let rows=[];
     if(hasPg()){
       const params=[tenantId(),userId()];

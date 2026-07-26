@@ -13,6 +13,7 @@ const routes=fs.readFileSync(path.join(root,'services','valIntelligenceSpineRout
 test('VAL Intelligence Spine schema creates durable reasoning tables',()=>{
   for(const table of [
     'event_intelligence_runs',
+    'val_board_briefing_runs',
     'observer_runs',
     'round_table_runs',
     'chief_of_staff_recommendations',

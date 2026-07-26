@@ -116,8 +116,8 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
       sourceId:String(packetValue(packet,'sourceId')||''),
       packetType:String(packetValue(packet,'packetType')||'learning_packet'),
       title:compactText(packet.title||'',180),
-      summary:compactText(packet.summary||'',500),
-      evidence:packetEvidence(packet).map(ref=>ref.quote).slice(0,4)
+      summary:compactText(packet.summary||'',320),
+      evidence:packetEvidence(packet).map(ref=>compactText(ref.quote,600)).slice(0,1)
     }));
     const result=parseJsonResponse(await callModel({
       system:[
@@ -142,7 +142,7 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         '',
         'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","watching":"one distinct sentence or empty","concern":"one distinct sentence or empty","question":"one concise question or empty","useful_context":["short grounded fact"],"evidence_quote":"exact supplied quote or empty","confidence":0.0}]}'
       ].join('\n'),
-      maxTokens:Math.min(1400,500+(packets.length*160)),
+      maxTokens:Math.min(1000,360+(packets.length*110)),
       temperature:0.1,
       json:true
     }),{reviews:[]});

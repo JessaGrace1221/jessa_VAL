@@ -10,10 +10,16 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
   const waitForDb = typeof deps.valDbReady === 'function' ? deps.valDbReady : async()=>{};
   const auditLog = typeof deps.auditLog === 'function' ? deps.auditLog : async()=>{};
   const completeCanonicalWorkItem = typeof deps.completeCanonicalWorkItem === 'function' ? deps.completeCanonicalWorkItem : null;
+  const scheduledOnly = deps.scheduledOnly === true;
 
   app.post('/api/val/events/intelligence-pass',async(req,res)=>{
     try{
       await waitForDb();
+      if(scheduledOnly)return res.status(409).json({
+        ok:false,
+        scheduled:true,
+        error:'The Board of Observers runs at the morning, midday, and end-of-day briefings.'
+      });
       const result=await spine.runIntelligencePass({
         event:req.body?.event||{type:req.body?.eventType||'manual',sourceType:req.body?.sourceType||'api',sourceId:req.body?.sourceId||''},
         req,
@@ -60,6 +66,11 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
       if(req.body?.roundTableRunId||req.body?.eventRunId){
         result=await spine.recommendChiefOfStaff({roundTableRunId:String(req.body.roundTableRunId||''),eventRunId:String(req.body.eventRunId||'')});
       }else{
+        if(scheduledOnly)return res.status(409).json({
+          ok:false,
+          scheduled:true,
+          error:'The Chief of Staff receives a new Board synthesis at the morning, midday, and end-of-day briefings.'
+        });
         const pass=await spine.runIntelligencePass({event:{type:'chief_recommendation_request',sourceType:'api'},req,includeExternal:!!req.body?.includeExternal});
         result=pass.recommendation;
       }
@@ -100,6 +111,11 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
   app.post('/api/val/events/intelligence-retry',async(req,res)=>{
     try{
       await waitForDb();
+      if(scheduledOnly)return res.status(409).json({
+        ok:false,
+        scheduled:true,
+        error:'Automatic and manual Board retries are disabled. Unreviewed packets remain available for the next scheduled briefing.'
+      });
       const result=await spine.retryFailedIntelligenceRuns({limit:req.body?.limit||10});
       await auditLog({req,action:'val_intelligence_delivery_retry',resourceType:'event_intelligence_run',metadata:result,success:result.ok}).catch(()=>{});
       res.status(result.ok?200:207).json(result);

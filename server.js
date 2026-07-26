@@ -62,7 +62,10 @@ const {createValExecutionReceiptService} = require('./services/valExecutionRecei
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
-const {createValBoardDeliveryQueue}=require('./services/valBoardDeliveryQueue');
+const {
+  currentBoardBriefingSlot,
+  nextBoardBriefingSlot
+}=require('./services/valBoardBriefingSchedule');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
 const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
 const {
@@ -169,9 +172,9 @@ const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',')
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
-const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-mini';
-const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||280);
-const VAL_BOARD_AUTOMATIC_RETRIES = String(process.env.VAL_BOARD_AUTOMATIC_RETRIES||'').toLowerCase()==='true';
+const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-nano';
+const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||42);
+const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -27049,15 +27052,23 @@ async function queueKnowledgeDocumentObserverDelivery({input={},result={}}={}){
   const category=document.documentCategory||document.document_category||metadata.documentCategory||sourceReceipt.documentCategory||sourceReceipt.document_category||'other';
   const packets=safeArray(result.sourcePackets);
   if(!aboutMeDocumentCategory(category)){
-    return {status:result.deduplicated?'already_delivered':'delivered',packetId:packets[0]?.id||'',packetIds:packets.map(packet=>packet.id),observerCount:14,modelBacked:true};
+    return {
+      status:result.deduplicated?'already_delivered':'queued_for_briefing',
+      packetId:packets[0]?.id||'',
+      packetIds:packets.map(packet=>packet.id),
+      observerCount:14,
+      modelBacked:true,
+      processingMode:'scheduled_briefing'
+    };
   }
   return {
-    status:result.deduplicated?'already_delivered':'processing',
+    status:result.deduplicated?'already_delivered':'queued_for_briefing',
     packetId:packets[0]?.id||'',
     packetIds:packets.map(packet=>packet.id),
     observerCount:DEFAULT_OBSERVERS.length,
     modelBacked:true,
-    message:'All 14 Observers are reading this About Me document.'
+    processingMode:'scheduled_briefing',
+    message:'This document is saved for all 14 Observers at the next Board briefing.'
   };
 }
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
@@ -32045,13 +32056,16 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
-async function boardObserverDailyBudget(){
+async function boardObserverDailyBudget(localDate=''){
   if(!pgPool)return {allowed:true,count:0,limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT};
+  const boardDate=String(localDate||currentBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.localDate||'');
   const result=await dbQuery(
     `select count(*)::int as count
      from observer_runs
-     where tenant_id=$1 and user_id=$2 and created_at>=date_trunc('day',now())`,
-    [tenantId(),currentUserId()]
+     where tenant_id=$1
+       and user_id=$2
+       and (created_at at time zone $3)::date=$4::date`,
+    [tenantId(),currentUserId(),CLIENT_CONFIG.timezone,boardDate]
   ).catch(error=>{
     console.warn('[val-board] daily reasoning budget check failed:',error.message);
     return {rows:[{count:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT}]};
@@ -32066,7 +32080,7 @@ async function boardObserverDailyBudget(){
 async function triggerBoardIntelligenceForPackets(packets=[],event={}){
   const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
   if(!livePackets.length||!valIntelligenceSpine?.runIntelligencePass)return null;
-  const budget=await boardObserverDailyBudget();
+  const budget=await boardObserverDailyBudget(event.localDate);
   if(!budget.allowed){
     console.warn(`[val-board] Observer review deferred at daily call limit ${budget.count}/${budget.limit}. Packets remain available for later review.`);
     return {ok:false,deferred:true,reason:'daily_observer_call_limit',budget,packetIds:livePackets.map(packet=>packet.id)};
@@ -32077,21 +32091,24 @@ async function triggerBoardIntelligenceForPackets(packets=[],event={}){
       type:event.type||'board_packet_received',
       sourceType:event.sourceType||first.sourceType||'board_packet',
       sourceId:event.sourceId||first.sourceId||first.id,
-      packetIds:livePackets.map(packet=>packet.id).slice(0,20)
+      packetIds:livePackets.map(packet=>packet.id).slice(0,VAL_BOARD_PACKETS_PER_BRIEFING),
+      briefingSlot:event.briefingSlot||'',
+      localDate:event.localDate||''
     }
   }).catch(error=>{
     console.warn('[val-board] intelligence pass deferred:',error.message);
     return null;
   });
 }
-const valBoardDeliveryQueue=createValBoardDeliveryQueue({
-  deliverBatch:triggerBoardIntelligenceForPackets,
-  batchSize:4,
-  delayMs:750,
-  logger:console
-});
 function queueBoardIntelligenceForPackets(packets=[],event={}){
-  valBoardDeliveryQueue.enqueue(packets,event);
+  const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
+  return {
+    status:'queued_for_briefing',
+    queued:livePackets.length,
+    packetIds:livePackets.map(packet=>packet.id),
+    sourceType:event.sourceType||livePackets[0]?.sourceType||'',
+    nextBriefing:nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.id||'morning'
+  };
 }
 
 function conversationTurnSourceRefs({selectedSourceContext={},sourceRefs=[]}={}){
@@ -32619,7 +32636,7 @@ const valCanonicalLineage=registerValCanonicalLineageRoutes(app,{
       noExternalAction:true
     }
   }),
-  runObserverBatch:(packets,event)=>triggerBoardIntelligenceForPackets(packets,{...event,packetIds:packets.map(packet=>packet.id)}),
+  runObserverBatch:(packets,event)=>queueBoardIntelligenceForPackets(packets,{...event,packetIds:packets.map(packet=>packet.id)}),
   valDbReady:()=>valDbReady,
   allowWrite:()=>!requestContext.getStore()?.publicHearthTest,
   auditLog,
@@ -34145,6 +34162,7 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   recordChiefOrdering:(id,input)=>valCanonicalWork.recordChiefOrdering(id,input),
   rebalanceChiefQueue:()=>valCanonicalWork.rebalanceChiefQueue(),
   completeCanonicalWorkItem:(id,input)=>valCanonicalWork.transition(id,input),
+  scheduledOnly:true,
   loaders:{
     loadTasks,
     listTeachValCoreMemory,
@@ -34159,24 +34177,181 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   }
 });
 let valIntelligenceMaintenanceRunning=false;
+
+async function claimScheduledBoardBriefing(slot){
+  if(!slot)return null;
+  if(pgPool){
+    const result=await dbQuery(
+      `insert into val_board_briefing_runs (
+         id,tenant_id,user_id,local_date,briefing_slot,timezone,status,packet_ids_json,started_at
+       ) values ($1,$2,$3,$4,$5,$6,'running','[]'::jsonb,now())
+       on conflict (tenant_id,user_id,local_date,briefing_slot) do nothing
+       returning *`,
+      [uuid('boardbriefing'),tenantId(),currentUserId(),slot.localDate,slot.id,slot.timeZone]
+    );
+    return result?.rows?.[0]||null;
+  }
+  const store=valStore();
+  if(!Array.isArray(store.boardBriefingRuns))store.boardBriefingRuns=[];
+  const existing=store.boardBriefingRuns.find(row=>
+    row.tenantId===tenantId()
+    && row.userId===currentUserId()
+    && row.localDate===slot.localDate
+    && row.briefingSlot===slot.id
+  );
+  if(existing)return null;
+  const row={
+    id:uuid('boardbriefing'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    localDate:slot.localDate,
+    briefingSlot:slot.id,
+    timezone:slot.timeZone,
+    status:'running',
+    packetIdsJson:[],
+    startedAt:new Date().toISOString()
+  };
+  store.boardBriefingRuns.unshift(row);
+  saveValStore(store);
+  return row;
+}
+
+async function finishScheduledBoardBriefing(id,{status='completed',packetIds=[],eventRunId='',errorMessage=''}={}){
+  if(pgPool){
+    const result=await dbQuery(
+      `update val_board_briefing_runs
+       set status=$1,
+           packet_ids_json=$2::jsonb,
+           event_run_id=$3,
+           error_message=$4,
+           completed_at=now()
+       where id=$5 and tenant_id=$6 and user_id=$7
+       returning *`,
+      [status,JSON.stringify(packetIds),eventRunId,errorMessage,id,tenantId(),currentUserId()]
+    );
+    return result?.rows?.[0]||null;
+  }
+  const store=valStore();
+  const row=safeArray(store.boardBriefingRuns).find(item=>item.id===id);
+  if(!row)return null;
+  Object.assign(row,{status,packetIdsJson:packetIds,eventRunId,errorMessage,completedAt:new Date().toISOString()});
+  saveValStore(store);
+  return row;
+}
+
+async function completedBoardPacketIds(){
+  if(pgPool){
+    const result=await dbQuery(
+      `select distinct packet->>'id' as packet_id
+       from event_intelligence_runs event_run
+       cross join lateral jsonb_array_elements(
+         case
+           when jsonb_typeof(event_run.context_packet_json->'boardPackets')='array'
+             then event_run.context_packet_json->'boardPackets'
+           else '[]'::jsonb
+         end
+       ) packet
+       where event_run.tenant_id=$1
+         and event_run.user_id=$2
+         and event_run.status='completed'`,
+      [tenantId(),currentUserId()]
+    );
+    return new Set(safeArray(result?.rows).map(row=>String(row.packet_id||'')).filter(Boolean));
+  }
+  const ids=safeArray(valStore().eventIntelligenceRuns)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.status==='completed')
+    .flatMap(row=>safeArray(row.contextPacketJson?.boardPackets).map(packet=>String(packet.id||'')));
+  return new Set(ids.filter(Boolean));
+}
+
+async function pendingScheduledBoardPackets(){
+  const [packets,completedIds]=await Promise.all([
+    valBoardPackets?.listPackets({limit:1000,status:'active'})||[],
+    completedBoardPacketIds()
+  ]);
+  return safeArray(packets)
+    .filter(packet=>packet&&!packet.prototype&&!completedIds.has(String(packet.id||'')))
+    .sort((a,b)=>String(a.createdAt||a.created_at||'').localeCompare(String(b.createdAt||b.created_at||'')))
+    .slice(0,VAL_BOARD_PACKETS_PER_BRIEFING);
+}
+
+async function runScheduledBoardBriefingIfDue({now=new Date()}={}){
+  const slot=currentBoardBriefingSlot({now,timeZone:CLIENT_CONFIG.timezone});
+  if(!slot)return {ok:true,skipped:true,reason:'before_first_briefing'};
+  const checkpoint=await claimScheduledBoardBriefing(slot);
+  if(!checkpoint)return {ok:true,skipped:true,reason:'briefing_already_claimed',slot};
+  const packets=await pendingScheduledBoardPackets();
+  const packetIds=packets.map(packet=>packet.id);
+  if(!packets.length){
+    await finishScheduledBoardBriefing(checkpoint.id,{status:'completed_no_packets'});
+    return {ok:true,slot,packetIds:[],observerCalls:0};
+  }
+  const result=await triggerBoardIntelligenceForPackets(packets,{
+    type:'scheduled_board_briefing',
+    sourceType:'board_briefing',
+    sourceId:slot.sourceId,
+    localDate:slot.localDate,
+    briefingSlot:slot.id
+  });
+  if(result?.ok){
+    await finishScheduledBoardBriefing(checkpoint.id,{
+      status:'completed',
+      packetIds,
+      eventRunId:result.eventRun?.id||''
+    });
+    return {ok:true,slot,packetIds,observerCalls:DEFAULT_OBSERVERS.length,eventRunId:result.eventRun?.id||''};
+  }
+  const status=result?.deferred?'deferred_budget':'failed';
+  const errorMessage=result?.reason||'The scheduled Board briefing did not complete.';
+  await finishScheduledBoardBriefing(checkpoint.id,{status,packetIds,errorMessage});
+  return {ok:false,slot,packetIds,observerCalls:0,error:errorMessage};
+}
+
+app.get('/api/val/board/briefing-status',async(req,res)=>{
+  try{
+    await valDbReady;
+    const next=nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone});
+    let runs=[];
+    if(pgPool){
+      const result=await dbQuery(
+        `select * from val_board_briefing_runs
+         where tenant_id=$1 and user_id=$2
+         order by local_date desc,started_at desc
+         limit 6`,
+        [tenantId(),currentUserId()]
+      );
+      runs=result?.rows||[];
+    }else{
+      runs=safeArray(valStore().boardBriefingRuns).slice(0,6);
+    }
+    res.json({
+      ok:true,
+      schedule:['06:00','12:00','17:00'],
+      timezone:CLIENT_CONFIG.timezone,
+      nextBriefing:next?.id||'morning',
+      packetsPerBriefing:VAL_BOARD_PACKETS_PER_BRIEFING,
+      dailyObserverCallLimit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
+      model:OPENAI_OBSERVER_MODEL,
+      runs
+    });
+  }catch(error){
+    res.status(500).json({ok:false,error:error.message});
+  }
+});
+
 async function runValIntelligenceMaintenance(){
   if(valIntelligenceMaintenanceRunning)return;
   valIntelligenceMaintenanceRunning=true;
   try{
-    await valBoardDeliveryQueue.whenIdle();
-    if(VAL_BOARD_AUTOMATIC_RETRIES){
-      await valTranscriptSourceProcessing.retryUndeliveredSources({limit:2});
-      await valBoardDeliveryQueue.whenIdle();
-      await valIntelligenceSpine.retryFailedIntelligenceRuns({limit:1});
-    }
+    await runScheduledBoardBriefingIfDue();
   }catch(error){
-    console.warn('[val-board] bounded intelligence maintenance failed:',error.message);
+    console.warn('[val-board] scheduled briefing failed:',error.message);
   }finally{
     valIntelligenceMaintenanceRunning=false;
   }
 }
-setTimeout(()=>{void runValIntelligenceMaintenance();},60000).unref();
-setInterval(()=>{void runValIntelligenceMaintenance();},5*60*1000).unref();
+setTimeout(()=>{void runValIntelligenceMaintenance();},45000).unref();
+setInterval(()=>{void runValIntelligenceMaintenance();},60*1000).unref();
 
 const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
   relationship_packet: [
