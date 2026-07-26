@@ -237,6 +237,35 @@ test('Tasks include every open transcript Action Item even when its owner still 
   assert.equal(result.filters.transcriptActionItems,'all_open');
 });
 
+test('Exact transcript Action Items replace conflicting canonical transcript fragments from the same source',async()=>{
+  const {service}=harness({
+    loadTranscriptTasks:async()=>[{
+      id:'transcript_task_1',
+      title:'Reach out to Mike to review the projections spreadsheet',
+      evidence_quote:'Jessa to reach out to Mike to review the projections spreadsheet.',
+      source_type:'transcript',
+      source_id:'transcript_1',
+      owner_type:'user',
+      owner_name:'Jessa',
+      status:'open',
+      workspace_kind:'transcript_task'
+    }]
+  });
+  await service.admit({
+    sourceProcessingRecordId:'source_record_1',
+    sourceType:'transcript',
+    sourceId:'transcript_1',
+    sourceFingerprint:'fingerprint_1',
+    title:'connect with you.',
+    summary:'A partial speech fragment.',
+    exactSourceQuote:'I will connect with you.',
+    ownership:'user'
+  });
+  const result=await service.taskProjection({limit:100});
+  assert.equal(result.tasks.length,1);
+  assert.equal(result.tasks[0].id,'transcript_task_1');
+});
+
 test('Tasks preload the immutable source packet for immediate Co-Work and prepared work',async()=>{
   const rawText=[
     'Mike: The dashboard needs pipeline projections, an owner, and open follow-up.',

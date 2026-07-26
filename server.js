@@ -31964,14 +31964,14 @@ app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
           and t.transcript_id=tt.transcript_id
           and t.tenant_id=$2 and t.user_id=$3
         returning tt.*
-      `,[taskId,tenantId(),currentUserId()]);
+      `,[taskId,tenantId(),VAL_USER_ID]);
       task=result.rows?.[0]?transcriptPgRow(result.rows[0]):null;
       if(task){
         await dbQuery(`
           update val_tasks
           set completed=true,completed_at=now(),completed_by=$1,updated_at=now()
           where user_id=$2 and details @> $3::jsonb
-        `,[String(req.body?.completedBy||'you'),currentUserId(),JSON.stringify([{transcriptTaskId:taskId}])]).catch(()=>{});
+        `,[String(req.body?.completedBy||'you'),VAL_USER_ID,JSON.stringify([{transcriptTaskId:taskId}])]).catch(()=>{});
       }
     }else{
       const store=valStore();
@@ -32907,7 +32907,7 @@ async function canonicalTranscriptTaskProjection({limit=500}={}){
         and lower(coalesce(tt.status,'created')) not in ('complete','completed','dismissed','deleted')
       order by tt.due_date asc nulls last, tt.created_at desc
       limit $3
-    `,[tenantId(),currentUserId(),bounded]);
+    `,[tenantId(),VAL_USER_ID,bounded]);
     rows=safeArray(result?.rows).map(transcriptPgRow);
   }else{
     const store=valStore();
@@ -32927,19 +32927,22 @@ async function canonicalTranscriptTaskProjection({limit=500}={}){
     const description=String(row.taskDescription||row.task_description||'').trim();
     const contextExcerpt=transcriptTaskContextExcerpt(row.rawText||row.raw_text||row.rawTranscript||'',sourceQuote);
     const ownerName=String(row.assignedToName||row.assigned_to_name||'').trim();
+    const ownerType=ownerName
+      ? (isOwnerRelationship({name:ownerName})?'user':'other')
+      : 'unknown';
     const taskId=String(row.taskId||row.task_id||'');
     return {
       id:taskId,
       title,
       description,
       evidence_quote:sourceQuote,
-      evidence_summary:description||sourceQuote,
+      evidence_summary:sourceQuote,
       source_type:'transcript',
       source_id:transcriptId,
       source_title:transcriptTitle,
       transcript_id:transcriptId,
       transcript_task_id:taskId,
-      owner_type:ownerName?'user':'unknown',
+      owner_type:ownerType,
       owner_name:ownerName||'Owner to confirm',
       status:'open',
       confidence:Number(row.confidence||0),

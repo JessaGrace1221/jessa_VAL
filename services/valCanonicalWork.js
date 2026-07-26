@@ -630,12 +630,18 @@ function createValCanonicalWorkService({
       task.source_id||task.transcript_id||'',
       normalizedKey(task.title||task.evidence_quote||'')
     ].join('|')));
+    const transcriptSources=new Set(transcriptTasks.map(task=>String(task.source_id||task.transcript_id||'')).filter(Boolean));
     const tasks=[
       ...transcriptTasks,
-      ...canonicalTasks.filter(task=>!transcriptKeys.has([
-        task.source_id||'',
-        normalizedKey(task.title||task.evidence_quote||'')
-      ].join('|')))
+      ...canonicalTasks.filter(task=>{
+        const sourceId=String(task.source_id||'');
+        const sourceType=String(task.source_type||'').toLowerCase();
+        if(sourceType==='transcript'&&sourceId&&transcriptSources.has(sourceId))return false;
+        return !transcriptKeys.has([
+          sourceId,
+          normalizedKey(task.title||task.evidence_quote||'')
+        ].join('|'));
+      })
     ];
     return {
       ok:true,
