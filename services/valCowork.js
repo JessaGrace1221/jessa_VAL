@@ -265,6 +265,55 @@ function coworkTurnLooksConversational(answer=''){
   if(/[?]\s*$/.test(text))return true;
   return /^(?:what|why|how|who|which|where|when|can|could|would|should|do you|are you|is there|tell me|show me|help me(?: understand)?|walk me through|talk me through|point out|explain|let'?s think|i (?:do not|don't) understand|i(?:'m| am) (?:not sure|unsure)|this feels wrong|that (?:does not|doesn't) seem right|give me your (?:read|take|thoughts?))\b/i.test(text);
 }
+function scopedConversationFallbackReply({workingBrief={},answer='',question=null}={}){
+  const text=String(answer||'').toLowerCase();
+  const title=compactText(
+    workingBrief.projectName || workingBrief.relationshipName ||
+    workingBrief.transcriptTitle || workingBrief.subject ||
+    workingBrief.title || 'this work',
+    180
+  );
+  const sourceLines=safeArray(workingBrief.sourceRefs)
+    .map((ref)=>compactText(ref?.quote_or_summary || ref?.quoteOrSummary || ref?.summary || ref,420))
+    .filter(Boolean)
+    .slice(0,3);
+  const objective=compactText(workingBrief.objective||'',420);
+  const completion=compactText(workingBrief.completionCondition||'',420);
+  const nextQuestion=compactText(question?.question||'',500);
+  const asksEvidence=/\b(evidence|source|proof|where.*come from|what do you know)\b/i.test(text);
+  const asksWhy=/\b(why|matter|important|point)\b/i.test(text);
+  const asksWhat=/\b(what|clarify|missing|first|next|see|notice|understand)\b/i.test(text);
+  if(asksEvidence){
+    return [
+      `Here is what I can actually point to for ${title}:`,
+      sourceLines.length ? sourceLines.map((line)=>'- '+line).join('\n') : '- This folder does not have a readable source receipt attached yet.',
+      '',
+      nextQuestion || 'Which part of that evidence do you want to examine more closely?'
+    ].join('\n');
+  }
+  if(asksWhy){
+    return [
+      objective || `The point of this conversation is to make ${title} clear enough to move.`,
+      completion ? `We will know it is ready when ${completion.charAt(0).toLowerCase()+completion.slice(1)}` : '',
+      sourceLines[0] ? `The source I am using is: ${sourceLines[0]}` : '',
+      '',
+      nextQuestion || 'What feels most consequential about this to you?'
+    ].filter(Boolean).join('\n');
+  }
+  if(asksWhat){
+    return [
+      `For ${title}, I would clarify this first:`,
+      nextQuestion || objective || 'the one missing fact that determines the next move.',
+      sourceLines[0] ? `What I already have: ${sourceLines[0]}` : '',
+      sourceLines[1] ? `I also have: ${sourceLines[1]}` : ''
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    `I have ${title} open and I did not change it.`,
+    objective ? `The work in front of us is ${objective.charAt(0).toLowerCase()+objective.slice(1)}` : '',
+    nextQuestion || 'What do you want to understand or move forward first?'
+  ].filter(Boolean).join('\n');
+}
 function workstreamTemplate(name='',brief={}){
   return {
     id:stableKey(`workstream_${name}`),
@@ -3203,6 +3252,7 @@ function createValCoworkService({
   async function respondScopedConversation(session,workItem,answer){
     const state={...(session.stateJson || {}),messages:safeArray(session.stateJson?.messages)};
     state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
+    const currentQuestion=safeArray(session.questionPlanJson).slice(-1)[0] || null;
     let reply='';
     try{
       reply=multilineText(await generateConversationReply({
@@ -3212,14 +3262,21 @@ function createValCoworkService({
         messages:state.messages
       }),6000);
     }catch(_){
-      reply='I have the right context open, but I could not finish that answer. I did not change the work. Ask me the same question in one shorter sentence.';
+      reply=scopedConversationFallbackReply({
+        workingBrief:session.workingBriefJson || {},
+        answer,
+        question:currentQuestion
+      });
     }
-    if(!reply)reply='I have the right context open, but I do not have enough evidence in it to answer that honestly. What is the one missing fact you want me to work from?';
+    if(!reply)reply=scopedConversationFallbackReply({
+      workingBrief:session.workingBriefJson || {},
+      answer,
+      question:currentQuestion
+    });
     state.messages.push({role:'assistant',content:reply,at:new Date().toISOString()});
     session.stateJson=state;
     session.updatedAt=new Date().toISOString();
     const saved=await saveSession(session);
-    const currentQuestion=safeArray(saved.questionPlanJson).slice(-1)[0] || null;
     return publicResult(saved,workItem,reply,currentQuestion);
   }
   async function openProjectNextMoveEntry(input={}){

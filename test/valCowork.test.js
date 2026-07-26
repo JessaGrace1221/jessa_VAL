@@ -416,6 +416,21 @@ test('every structured Co-Work entry can answer a scoped question without losing
   }
 });
 
+test('structured Co-Work remains source-grounded when the reasoning provider is unavailable',async()=>{
+  const {service}=serviceFor({generateConversationReply:async()=>{throw new Error('provider quota exceeded');}});
+  const opened=await service.openEntry({
+    entrypointId:'project.identity',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'identity'}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What should I clarify first?'});
+  assert.match(answered.message,/For Forever Freedom onboarding, I would clarify this first/);
+  assert.match(answered.message,/confirm or correct its name/i);
+  assert.match(answered.message,/What I already have:/);
+  assert.equal(answered.session.status,opened.session.status);
+  assert.equal(answered.workItem.status,opened.workItem.status);
+  assert.doesNotMatch(answered.message,/provider|quota|backend|shorter sentence/i);
+});
+
 test('Hearth exposes all unresolved tasks with source and prepared-work continuation paths',()=>{
   assert.match(hearthHtml,/class="task-companion-button"/);
   assert.match(hearth,/function openTaskWorkspace/);
