@@ -10038,14 +10038,9 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
     const calendarInvite = renderCorrespondenceCalendarInvite(message);
     if(calendarInvite){
       article.appendChild(calendarInvite);
-    }else if(message.bodyHtml){
-      const html = document.createElement('div');
-      html.className = 'correspondence-email-html';
-      html.innerHTML = message.bodyHtml;
-      article.appendChild(html);
     }else{
       const p = document.createElement('p');
-      p.textContent = message.body;
+      p.textContent = message.body || correspondenceReadableTextFromHtml(message.bodyHtml) || 'No readable email text is attached.';
       article.appendChild(p);
     }
     correspondenceThreadBody.appendChild(article);
@@ -10347,11 +10342,27 @@ function renderCorrespondenceWritingRuleSummary(){
 function renderCorrespondenceRulesPanel(){
   if(!correspondenceRulesList) return;
   correspondenceRulesList.innerHTML = '';
-  const rules = currentCorrespondenceRules.filter((rule) => rule.isActive !== false);
+  const systemRules = [
+    ['Unsubscribe stays out', 'Messages with unsubscribe, list-mail, newsletter, digest, or preference-management signals never enter Executive Inbox.'],
+    ['Reciprocity earns attention', 'A sender must exist in your sent mail before entering Executive Inbox, unless you explicitly mark them as an Executive contact.'],
+    ['Only actionable threads enter', 'The latest thread must need your reply, decision, approval, or be waiting on someone after you sent a request.'],
+    ['Your decisions persist', 'Resolved threads and contacts marked Not an executive contact remain outside the active queue.']
+  ];
+  systemRules.forEach(([name, description]) => {
+    const article = document.createElement('article');
+    article.className = 'correspondence-system-rule';
+    const title = document.createElement('strong');
+    title.textContent = name;
+    const meta = document.createElement('p');
+    meta.textContent = description;
+    article.append(title, meta);
+    correspondenceRulesList.appendChild(article);
+  });
+  const rules = currentCorrespondenceRules.filter((rule) => rule.isActive !== false && rule.is_active !== false);
   if(!rules.length){
     const empty = document.createElement('p');
     empty.className = 'correspondence-side-empty';
-    empty.textContent = 'No saved Executive Inbox rules yet.';
+    empty.textContent = 'No additional user-created rules yet. Choose Create Rule to add one.';
     correspondenceRulesList.appendChild(empty);
     return;
   }
@@ -10524,7 +10535,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
     correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : (selected.draftFailureMessage || 'No draft has been prepared for this conversation yet.')) : 'Select a conversation to edit the draft.';
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
-  document.querySelectorAll('.correspondence-actions [data-correspondence-action], .correspondence-intelligence [data-correspondence-action]').forEach((button) => {
+  document.querySelectorAll('.correspondence-actions [data-correspondence-action], .correspondence-decision-actions [data-correspondence-action], .correspondence-intelligence [data-correspondence-action]').forEach((button) => {
     const action = button.dataset.correspondenceAction;
     const isDraftSend = action === 'send' && button.closest('.correspondence-actions');
     const allowed = correspondenceSuggestedActions(selected).includes(action) || isDraftSend;

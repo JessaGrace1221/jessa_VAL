@@ -896,7 +896,12 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-drawer-cowork-icon/);
   assert.match(hearthHtml, /onclick="runCorrespondenceActionClick\(this,event\);return false;"/);
   assert.match(hearthHtml, /data-correspondence-action="not_executive_contact"/);
-  assert.match(hearthHtml, />Not executive contact</);
+  assert.match(hearthHtml, />Not an executive contact</);
+  assert.match(hearthHtml, /class="correspondence-decision-actions"/);
+  assert.match(hearthHtml, /data-correspondence-action="create_rule"[^>]*>Create Rule</);
+  assert.match(hearthJs, /Unsubscribe stays out/);
+  assert.match(hearthJs, /Reciprocity earns attention/);
+  assert.doesNotMatch(hearthJs, /html\.innerHTML = message\.bodyHtml/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Review Boundary/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Relationship Context/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Prepared Judgment/);
@@ -988,7 +993,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceFallbackMessage/);
   assert.match(hearthJs, /function sanitizeCorrespondenceEmailHtml/);
   assert.match(hearthJs, /bodyHtml: sanitizeCorrespondenceEmailHtml/);
-  assert.match(hearthJs, /correspondence-email-html/);
+  assert.match(hearthJs, /message\.body \|\| correspondenceReadableTextFromHtml\(message\.bodyHtml\)/);
   assert.match(hearthJs, /No readable email body is attached yet/);
   assert.match(hearthJs, /Latest email/);
   assert.match(hearthJs, /Previous emails in this thread/);

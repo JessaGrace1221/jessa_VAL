@@ -26,6 +26,10 @@ const {registerValEnvelopesRoutes} = require('./services/valEnvelopesRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
+const {
+  cachedSentHistory,
+  decideExecutiveInboxAdmission
+} = require('./services/valExecutiveInboxAdmission');
 const {registerValReadyForYouRoutes} = require('./services/valReadyForYouRoutes');
 const {ensureValMeetingPrepTables} = require('./services/valMeetingPrepSchema');
 const {registerValMeetingPrepRoutes} = require('./services/valMeetingPrepRoutes');
@@ -10024,36 +10028,107 @@ function executiveInboxCachedEmailFromClassification(result={},index=0){
     sourceRefs:classification.source_refs || classification.sourceRefs || context.source_refs || []
   };
 }
+function executiveInboxDraftConversationId(draft={}){
+  const source=draft.sourceContext||draft.source_context||{};
+  return String(
+    source.conversationId ||
+    source.conversation_id ||
+    source.sourceContext?.conversationId ||
+    source.source_context?.conversation_id ||
+    draft.conversationId ||
+    draft.conversation_id ||
+    ''
+  );
+}
+function executiveInboxNewestByConversation(rows=[]){
+  const byConversation=new Map();
+  safeArray(rows).forEach(row=>{
+    const context=row.context||row.contextJson||row.context_json||{};
+    const key=String(row.conversationId||row.unifiedConversationId||context.conversationId||row.threadId||row.emailThreadId||row.currentMessageId||row.id||'');
+    if(!key)return;
+    const previous=byConversation.get(key);
+    const rowTime=Date.parse(row.createdAt||row.created_at||'')||0;
+    const previousTime=Date.parse(previous?.createdAt||previous?.created_at||'')||0;
+    if(!previous||rowTime>=previousTime)byConversation.set(key,row);
+  });
+  return Array.from(byConversation.values());
+}
 async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
   const lim=Math.max(1,Math.min(Number(limit)||30,60));
   if(!valExecutiveInbox?.listHighSignalClassifications){
     return {ok:true,source:'canonical_executive_inbox_cached',items:[],queue:[],emails:[],needsReply:[],needsAttention:[],waitingOnResponse:[],draftSuggestions:[],lowPriority:[],errors:['Saved Executive Inbox index is unavailable.'],summary:{total:0,buckets:{},source:'cached_unavailable'}};
   }
   const timed=await Promise.race([
-    valExecutiveInbox.listHighSignalClassifications({limit:lim}).then(results=>({results})),
-    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,results:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
+    Promise.all([
+      valExecutiveInbox.listHighSignalClassifications({limit:Math.min(200,Math.max(lim*4,120))}),
+      valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]}))
+    ]).then(([results,draftResult])=>({results,drafts:safeArray(draftResult?.drafts)})),
+    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,results:[],drafts:[],error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
   ]);
-  const rows=safeArray(timed.results)
+  const suppressions=executiveInboxSuppressionRows();
+  const safeContacts=executiveInboxSafeContactRows();
+  const resolutions=executiveInboxResolutionRows();
+  const draftsByConversation=new Map();
+  safeArray(timed.drafts)
+    .filter(draft=>String(draft.status||'ready_for_review')==='ready_for_review'&&!executiveInboxDraftLooksGeneric(draft))
+    .forEach(draft=>{
+      const key=executiveInboxDraftConversationId(draft);
+      if(!key)return;
+      const previous=draftsByConversation.get(key);
+      const rowTime=Date.parse(draft.updatedAt||draft.updated_at||draft.createdAt||draft.created_at||'')||0;
+      const previousTime=Date.parse(previous?.updatedAt||previous?.updated_at||previous?.createdAt||previous?.created_at||'')||0;
+      if(!previous||rowTime>=previousTime)draftsByConversation.set(key,draft);
+    });
+  const diagnostics={indexed:safeArray(timed.results).length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const rows=executiveInboxNewestByConversation(timed.results)
     .filter((row)=>{
       const priority=String(row.priority_level || row.priorityLevel || 'unknown').toLowerCase();
       return priority !== 'suppressed' && executiveInboxPriorityScore(priority) >= 3;
     })
-    .map((row,index)=>executiveInboxCachedEmailFromClassification({
-      classification:{
+    .map((row,index)=>{
+      const classification={
         ...row,
         priority_level:row.priorityLevel||row.priority_level,
         why_now:row.whyNow||row.why_now,
         conversation_state:row.conversationState||row.conversation_state,
         source_refs:row.sourceRefs||row.source_refs
-      },
-      context:{
+      };
+      const context={
         ...(row.context||row.contextJson||row.context_json||{}),
         conversationId:row.conversationId||row.unifiedConversationId||'',
         threadId:row.threadId||row.emailThreadId||'',
         currentMessageId:row.currentMessageId||'',
         source_refs:row.sourceRefs||row.source_refs||[]
+      };
+      const email=executiveInboxCachedEmailFromClassification({classification,context},index);
+      const admission=decideExecutiveInboxAdmission({
+        email,
+        context,
+        suppressions,
+        safeContacts,
+        hasSentHistory:cachedSentHistory(context,email),
+        waitingOnOther:email.queueKind==='waiting_for_response',
+        clearAsk:executiveInboxInboundAskText(email),
+        resolved:executiveInboxResolved(email,resolutions)
+      });
+      diagnostics.deduplicated+=1;
+      if(!admission.admitted){
+        const key={
+          resolved_thread:'resolved',
+          manual_not_executive_contact:'suppressed',
+          unsubscribe_or_list_mail:'unsubscribeOrListMail',
+          no_outbox_history:'noOutboxHistory',
+          no_executive_action:'noExecutiveAction'
+        }[admission.rule];
+        if(key)diagnostics.filtered[key]+=1;
+        return null;
       }
-    },index));
+      const preparedDraft=email.queueKind==='waiting_for_response' ? null : draftsByConversation.get(email.conversationId);
+      if(preparedDraft)diagnostics.draftsAttached+=1;
+      diagnostics.admitted+=1;
+      return {...email,preparedDraft,executiveInboxAdmission:admission,reason:admission.reason};
+    })
+    .filter(Boolean);
   const items=rows.filter((item)=>item.messageId || item.threadId || item.conversationId || item.subject);
   const buckets=items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{});
   return {
@@ -10068,11 +10143,12 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
     needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
     waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
-    draftSuggestions:[],
+    draftSuggestions:items.filter(item=>item.preparedDraft),
     lowPriority:[],
     errors:timed.timeout?[timed.error]:[],
     providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
-    summary:{total:items.length,buckets,source:'cached_conversation_context',cacheOnly:true,activeWindow:'Saved conversations. Scan refreshes connected email.'}
+    summary:{total:items.length,buckets,source:'cached_conversation_context',cacheOnly:true,activeWindow:'Saved conversations rechecked through the current Executive Inbox admission rules.',executiveInboxDiagnostics:diagnostics},
+    diagnostics
   };
 }
 async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force}={}){
@@ -10097,7 +10173,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     fetchedMessages:rows.length,
     uniqueThreads:byThread.size,
     admitted:0,
-    filtered:{resolved:0,suppressed:0,oneSided:0,noRelationshipOrSentHistory:0,noAskOrKnownContact:0},
+    filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,noOutboxHistory:0,noExecutiveAction:0},
     providerCounts:{
       gmailRecent:data.providers?.gmail?.recentInboxCount||0,
       gmailUnread:data.providers?.gmail?.unreadCount||0,
@@ -10117,15 +10193,29 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
     const known=safeListed || await executiveInboxKnownContact(email,profilesPromise);
     const metrics=email.senderMetrics||{};
     const hasSent=Number(metrics.outboundToSenderCount||0)>0 || await executiveInboxHasAnySentMailTo(senderEmail,sentCache);
-    const oneSided=Number(metrics.inboundFromSenderCount||0)>=3&&!hasSent&&!known;
-    if(oneSided){diagnostics.filtered.oneSided+=1;return null;}
     const sentByOwner=emailWasSentByOwner(email);
     const waiting=sentByOwner&&executiveInboxSentRequestText(email);
     const ask=executiveInboxInboundAskText(email);
-    if(!waiting&&!known&&!hasSent){diagnostics.filtered.noRelationshipOrSentHistory+=1;return null;}
-    if(!waiting&&!known&&!ask){diagnostics.filtered.noAskOrKnownContact+=1;return null;}
+    const admission=decideExecutiveInboxAdmission({
+      email,
+      suppressions,
+      safeContacts,
+      hasSentHistory:hasSent,
+      waitingOnOther:waiting,
+      clearAsk:ask,
+      resolved:false
+    });
+    if(!admission.admitted){
+      const key={
+        unsubscribe_or_list_mail:'unsubscribeOrListMail',
+        no_outbox_history:'noOutboxHistory',
+        no_executive_action:'noExecutiveAction'
+      }[admission.rule];
+      if(key)diagnostics.filtered[key]+=1;
+      return null;
+    }
     const kind=waiting?'waiting_for_response':'needs_judgment';
-    const reason=executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
+    const reason=admission.reason || executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
     const status=waiting?'waiting_for_response':'ready_for_review';
     const preparedDraft=email.preparedDraft || (!waiting ? await prepareEmailDraftIfNeeded({
       ...email,
@@ -10143,13 +10233,10 @@ async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force
       reason,
       recommendedAction:waiting?'Waiting for response':'Review and respond if needed',
       executiveInboxAdmission:{
+        ...admission,
         kind,
         knownContact:known,
-        safeListed,
-        hasSentHistory:hasSent,
-        clearAsk:ask,
-        manualResolutionRequired:true,
-        reason
+        manualResolutionRequired:true
       }
     };
   });

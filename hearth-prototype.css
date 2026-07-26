@@ -17646,6 +17646,30 @@ html{
   color:rgba(39,39,42,.72)!important;
   font-weight:520;
 }
+.drawer-tray.correspondence-open .correspondence-decision-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  padding:0 0 4px;
+}
+.drawer-tray.correspondence-open .correspondence-decision-actions button{
+  min-height:34px;
+  padding:0 12px;
+  border:1px solid rgba(24,24,27,.1);
+  border-radius:8px!important;
+  background:rgba(255,255,255,.86);
+  color:rgba(27,31,26,.84);
+  font:500 .72rem/1 var(--body);
+  letter-spacing:0;
+}
+.drawer-tray.correspondence-open .correspondence-decision-actions button[data-correspondence-action="not_executive_contact"]{
+  color:#7d3039;
+}
+.drawer-tray.correspondence-open .correspondence-rules-list .correspondence-system-rule{
+  border-left:3px solid rgba(119,143,104,.58);
+  background:rgba(248,251,246,.94);
+}
 .drawer-tray.correspondence-open .correspondence-thread-body,
 .drawer-tray.correspondence-open .correspondence-email-html,
 .correspondence-rules-list,

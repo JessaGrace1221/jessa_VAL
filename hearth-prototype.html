@@ -661,6 +661,8 @@
           </div>
           <div class="correspondence-filter-actions">
             <button type="button" data-correspondence-tools-toggle aria-expanded="false" aria-controls="correspondence-tools-panel">Controls</button>
+            <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Rules</button>
+            <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create Rule</button>
             <button type="button" data-correspondence-sort data-correspondence-sort-mode="priority">Sort: Priority</button>
           </div>
         </div>
@@ -788,6 +790,11 @@
               <div><span>Source</span><strong data-correspondence-field="source">Gmail</strong></div>
               <div><span>Relationship</span><strong data-correspondence-field="relationship-state">Unlinked</strong></div>
             </div>
+            <div class="correspondence-decision-actions" aria-label="Executive Inbox contact decisions">
+              <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
+              <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not an executive contact</button>
+              <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
+            </div>
             <section class="correspondence-summary-card" aria-label="Conversation summary">
               <span>Conversation Summary</span>
               <p data-correspondence-field="decision-summary">Select a conversation to see why VAL put it here.</p>
@@ -808,9 +815,6 @@
               <button type="button" class="correspondence-discuss" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Discuss with VAL</button>
               <button type="button" data-correspondence-action="forward" onclick="runCorrespondenceActionClick(this,event);return false;">Forward</button>
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
-              <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
-              <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
-              <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not executive contact</button>
             </div>
             <div class="correspondence-draft-preview" data-correspondence-draft-preview>
               <label for="correspondence-draft-body">Draft</label>

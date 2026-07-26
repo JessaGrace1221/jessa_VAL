@@ -727,12 +727,51 @@ function createValExecutiveInboxService({
     return {ok:true,drafts:rows};
   }
   async function listHighSignalClassifications({limit=12}={}){
-    const lim=Math.max(1,Math.min(Number(limit)||12,50));
+    const lim=Math.max(1,Math.min(Number(limit)||12,200));
     if(hasPg()){
-      const r=await dbQuery(`select * from conversation_classifications where tenant_id=$1 and user_id=$2 and priority_level in ('critical','high','medium') order by case priority_level when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end, created_at desc limit $3`,[tenantId(),userId(),lim]);
+      const r=await dbQuery(`
+        with ranked as (
+          select *,
+            row_number() over (
+              partition by coalesce(
+                nullif(unified_conversation_id,''),
+                nullif(email_thread_id,''),
+                nullif(current_message_id,''),
+                id
+              )
+              order by created_at desc
+            ) as conversation_rank
+          from conversation_classifications
+          where tenant_id=$1 and user_id=$2
+        )
+        select *
+        from ranked
+        where conversation_rank=1
+          and priority_level in ('critical','high','medium')
+        order by
+          case priority_level when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end,
+          created_at desc
+        limit $3
+      `,[tenantId(),userId(),lim]);
       return r.rows.map(row=>({id:row.id,conversationId:row.unified_conversation_id,threadId:row.email_thread_id,currentMessageId:row.current_message_id,conversationState:row.conversation_state,relationshipTemperature:row.relationship_temperature,executiveMeaning:row.executive_meaning,priorityLevel:row.priority_level,whyNow:row.why_now,ifIgnored:row.if_ignored,ifDelayed:row.if_delayed,routing:jsonValue(row.routing_json,{}),approvalPolicy:row.approval_policy,unknowns:jsonValue(row.unknowns_json,[]),confidence:Number(row.confidence||0),sourceRefs:jsonValue(row.source_refs_json,[]),context:jsonValue(row.context_json,{}),createdAt:row.created_at?.toISOString?.()||row.created_at||''}));
     }
-    return store().conversationClassifications.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&priorityScore(r.priority_level||r.priorityLevel)>=3).slice(0,lim);
+    const newestByConversation=new Map();
+    store().conversationClassifications
+      .filter(r=>r.tenantId===tenantId()&&r.userId===userId())
+      .forEach(row=>{
+        const key=String(row.unified_conversation_id||row.conversationId||row.email_thread_id||row.threadId||row.current_message_id||row.currentMessageId||row.id||'').trim();
+        const current=newestByConversation.get(key);
+        if(!current||String(row.created_at||row.createdAt||'').localeCompare(String(current.created_at||current.createdAt||''))>0){
+          newestByConversation.set(key,row);
+        }
+      });
+    return [...newestByConversation.values()]
+      .filter(r=>priorityScore(r.priority_level||r.priorityLevel)>=3)
+      .sort((a,b)=>{
+        const priorityDelta=priorityScore(b.priority_level||b.priorityLevel)-priorityScore(a.priority_level||a.priorityLevel);
+        return priorityDelta||String(b.created_at||b.createdAt||'').localeCompare(String(a.created_at||a.createdAt||''));
+      })
+      .slice(0,lim);
   }
   async function listClassifications({limit=200}={}){
     const lim=Math.max(1,Math.min(Number(limit)||200,1000));

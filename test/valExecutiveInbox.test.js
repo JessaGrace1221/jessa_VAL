@@ -180,6 +180,10 @@ test('opening Executive Inbox reads the saved index instead of rerunning classif
   assert.match(queueSource,/listHighSignalClassifications/);
   assert.doesNotMatch(queueSource,/classifyBatch/);
   assert.match(queueSource,/Promise\.race/);
+  assert.match(server,/executiveInboxNewestByConversation/);
+  assert.match(server,/decideExecutiveInboxAdmission/);
+  assert.match(server,/valExecutiveInbox\.reviewDrafts\(\{limit:100\}\)/);
+  assert.match(server,/draftsByConversation\.get\(email\.conversationId\)/);
 });
 
 function fakeConversationService(){
