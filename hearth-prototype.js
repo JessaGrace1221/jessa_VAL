@@ -170,6 +170,7 @@ let currentTimelineReviewItems = [];
 let currentTimelineTranscriptItems = [];
 let currentTimelineTranscript = null;
 let timelineTranscriptPagination = {offset:0, limit:100, total:0, hasMore:false};
+let timelineTranscriptCounts = {total:0, needsReview:0, withOpenActions:0, failedProcessing:0};
 let timelineTranscriptOpenRequest = 0;
 let timelineTranscriptRefreshDays = 90;
 let timelineTranscriptsLoading = false;
@@ -182,7 +183,7 @@ let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
 let dismissedCorrespondenceRuleSuggestions = new Set();
-let currentCorrespondenceFilter = 'requires_reply';
+let currentCorrespondenceFilter = 'all';
 let currentCorrespondenceSort = 'priority';
 let correspondenceToolsOpen = false;
 let currentCorrespondenceScanDays = 14;
@@ -14490,10 +14491,6 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
     return;
   }
   try{
-    await Promise.all([
-      hydrateRelationshipIndex().catch(() => null),
-      hydrateProjectIndex().catch(() => null)
-    ]);
     const offset=append?currentTimelineTranscriptItems.length:0;
     const data = refresh
       ? await postJson('/api/val/transcripts/refresh', {days:timelineTranscriptRefreshDays, limit:50})
@@ -14502,10 +14499,13 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
       ? currentTimelineTranscriptItems.concat(Array.isArray(data.transcripts) ? data.transcripts : [])
       : (Array.isArray(data.transcripts) ? data.transcripts : []);
     timelineTranscriptPagination=data.pagination||{offset,limit:100,total:currentTimelineTranscriptItems.length,hasMore:false};
+    timelineTranscriptCounts=data.counts||{total:timelineTranscriptPagination.total||currentTimelineTranscriptItems.length,needsReview:0,withOpenActions:0,failedProcessing:0};
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
     resetTimelineTranscriptDetailScroll();
     if(openFirst && currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+    void hydrateRelationshipIndex().catch(() => null);
+    void hydrateProjectIndex().catch(() => null);
     const message = data.refresh?.message || data.refresh?.warning || '';
     if(message) setTimelineTranscriptActionStatus(message, data.refresh?.warning ? 'danger' : 'success');
   }catch(error){
@@ -14520,6 +14520,7 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
 async function deleteTimelineTranscript(transcriptId){
   const phrase=window.prompt?.('Delete this transcript from VAL? Type delete transcript to continue.','');
   if(String(phrase||'').trim().toLowerCase()!=='delete transcript')return;
+  setTimelineTranscriptActionStatus('Deleting transcript...','');
   const response=await fetch('/api/val/transcripts/'+encodeURIComponent(transcriptId),{
     method:'DELETE',
     credentials:'same-origin',
@@ -14528,9 +14529,26 @@ async function deleteTimelineTranscript(transcriptId){
   });
   const result=await response.json().catch(()=>({}));
   if(!response.ok||result.ok===false)throw new Error(result.error||'Transcript deletion failed.');
+  const deleted=currentTimelineTranscriptItems.find(item=>String(item.id)===String(transcriptId))||{};
   currentTimelineTranscriptItems=currentTimelineTranscriptItems.filter(item=>String(item.id)!==String(transcriptId));
+  timelineTranscriptPagination={
+    ...timelineTranscriptPagination,
+    total:Math.max(0,Number(timelineTranscriptPagination.total||timelineTranscriptCounts.total||0)-1),
+    hasMore:currentTimelineTranscriptItems.length<Math.max(0,Number(timelineTranscriptPagination.total||timelineTranscriptCounts.total||0)-1)
+  };
+  timelineTranscriptCounts={
+    ...timelineTranscriptCounts,
+    total:timelineTranscriptPagination.total,
+    needsReview:Math.max(0,Number(timelineTranscriptCounts.needsReview||0)-(Number(deleted.reviewCount||0)>0?1:0)),
+    withOpenActions:Math.max(0,Number(timelineTranscriptCounts.withOpenActions||0)-(Number(deleted.openActionCount||deleted.taskCount||0)>0?1:0)),
+    failedProcessing:Math.max(0,Number(timelineTranscriptCounts.failedProcessing||0)-(['failed','error'].includes(String(deleted.processingStatus||'').toLowerCase())?1:0))
+  };
   currentTimelineTranscript=null;
-  await loadTimelineTranscripts({openFirst:true,days:timelineTranscriptRefreshDays});
+  renderTimelineTranscriptStats({counts:timelineTranscriptCounts});
+  renderTimelineTranscriptList('');
+  if(currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+  else renderTimelineTranscriptEmpty();
+  setTimelineTranscriptActionStatus('Transcript deleted.','success');
 }
 
 function focusTimelineTranscriptSection(section){

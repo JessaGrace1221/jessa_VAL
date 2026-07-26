@@ -687,6 +687,17 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /Prepare email draft/);
   assert.match(hearthJs, /Open email draft/);
   assert.match(hearthJs, /function resetTimelineTranscriptDetailScroll/);
+  const loadTimelineTranscriptsBody = hearthJs.match(/async function loadTimelineTranscripts[\s\S]*?\n}\n\nasync function deleteTimelineTranscript/)?.[0] || '';
+  assert.ok(loadTimelineTranscriptsBody);
+  assert.doesNotMatch(loadTimelineTranscriptsBody, /await hydrateRelationshipIndex/);
+  assert.doesNotMatch(loadTimelineTranscriptsBody, /await hydrateProjectIndex/);
+  assert.match(loadTimelineTranscriptsBody, /void hydrateRelationshipIndex\(\)/);
+  assert.match(loadTimelineTranscriptsBody, /void hydrateProjectIndex\(\)/);
+  const deleteTimelineTranscriptBody = hearthJs.match(/async function deleteTimelineTranscript[\s\S]*?\n}\n\nfunction focusTimelineTranscriptSection/)?.[0] || '';
+  assert.ok(deleteTimelineTranscriptBody);
+  assert.doesNotMatch(deleteTimelineTranscriptBody, /loadTimelineTranscripts/);
+  assert.match(deleteTimelineTranscriptBody, /currentTimelineTranscriptItems=currentTimelineTranscriptItems\.filter/);
+  assert.match(deleteTimelineTranscriptBody, /Transcript deleted\./);
   const openTimelineTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
   assert.ok(openTimelineTranscriptBody);
   assert.doesNotMatch(openTimelineTranscriptBody, /scrollIntoView/);
@@ -1858,6 +1869,13 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
   assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=100&offset='/);
   assert.match(hearthJs, /data-transcript-load-more/);
   assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);
+  assert.match(server, /async function transcriptDrawerFastPayload/);
+  assert.match(listRoute, /transcriptDrawerFastPayload\(\{days,limit,offset\}\)/);
+  assert.match(server, /async function transcriptRecordById/);
+  const deleteTranscriptBody = server.match(/async function deleteTranscriptForUser[\s\S]*?\n}\nasync function clearAllTranscriptDataForTenant/)?.[0] || '';
+  assert.ok(deleteTranscriptBody);
+  assert.match(deleteTranscriptBody, /transcriptRecordById\(id\)/);
+  assert.doesNotMatch(deleteTranscriptBody, /transcriptArchiveRecords/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

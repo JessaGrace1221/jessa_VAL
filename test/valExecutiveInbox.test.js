@@ -33,7 +33,7 @@ test('Executive Inbox merges verified conversations into one durable queue per t
   assert.match(server,/async function mergeDurableExecutiveInboxQueue/);
   assert.match(server,/await mergeDurableExecutiveInboxQueue\(items\)/);
   assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/archive'/);
-  assert.match(server,/durable_verified_queue/);
+  assert.match(server,/durable_plus_classification_index/);
 });
 
 test('executive inbox routes are backend-only and mounted',()=>{
@@ -195,6 +195,18 @@ test('opening Executive Inbox reads the saved index instead of rerunning classif
   assert.match(server,/decideExecutiveInboxAdmission/);
   assert.match(server,/valExecutiveInbox\.reviewDrafts\(\{limit:100\}\)/);
   assert.match(server,/draftsByConversation\.get\(email\.conversationId\)/);
+  assert.match(server,/durableItems\.forEach/);
+  assert.match(server,/indexedRows\.forEach/);
+  assert.match(server,/sourceRowsByConversation/);
+  assert.match(server,/mergeDurableExecutiveInboxQueue\(historicalItems\)/);
+});
+
+test('Executive Inbox opens the complete admitted queue instead of only requires-reply items',()=>{
+  const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+  const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+  assert.match(hearthJs,/let currentCorrespondenceFilter = 'all';/);
+  assert.match(hearthHtml,/class="active" data-correspondence-filter="all"/);
+  assert.doesNotMatch(hearthHtml,/class="active" data-correspondence-filter="requires_reply"/);
 });
 
 function fakeConversationService(){

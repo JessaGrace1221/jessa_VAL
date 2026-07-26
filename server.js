@@ -10297,10 +10297,18 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
       };
       return {email:executiveInboxCachedEmailFromClassification({classification,context},index),context};
     });
-  const sourceRows=durableItems.length
-    ? durableItems.map(email=>({email,context:{current_message:email,sender_metrics:email.senderMetrics||{}}}))
-    : indexedRows;
-  const diagnostics={source:durableItems.length?'durable_verified_queue':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const sourceRowsByConversation=new Map();
+  durableItems.forEach(email=>{
+    const key=String(email.conversationId||email.threadId||email.messageId||email.id||'');
+    if(key)sourceRowsByConversation.set(key,{email,context:{current_message:email,sender_metrics:email.senderMetrics||{}},durable:true});
+  });
+  indexedRows.forEach(row=>{
+    const email=row.email||{};
+    const key=String(email.conversationId||email.threadId||email.messageId||email.id||'');
+    if(key&&!sourceRowsByConversation.has(key))sourceRowsByConversation.set(key,{...row,durable:false});
+  });
+  const sourceRows=Array.from(sourceRowsByConversation.values());
+  const diagnostics={source:durableItems.length?'durable_plus_classification_index':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
   const rows=sourceRows
     .map(({email,context})=>{
       const priorAdmission=email.executiveInboxAdmission||{};
@@ -10336,8 +10344,11 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     })
     .filter(Boolean);
   const items=rows.filter((item)=>item.messageId || item.threadId || item.conversationId || item.subject);
+  const durableConversationIds=new Set(durableItems.map(item=>String(item.conversationId||item.threadId||item.messageId||item.id||'')));
+  const historicalItems=items.filter(item=>!durableConversationIds.has(String(item.conversationId||item.threadId||item.messageId||item.id||'')));
+  if(historicalItems.length)await mergeDurableExecutiveInboxQueue(historicalItems);
   const buckets=items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{});
-  const total=await countDurableExecutiveInboxQueue({active:true}).catch(()=>items.length);
+  const total=items.length;
   return {
     ok:true,
     source:'canonical_executive_inbox_cached',
@@ -10355,7 +10366,7 @@ async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
     errors:timed.timeout?[timed.error]:[],
     providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
     pagination:{offset,limit:lim,total,hasMore:offset+items.length<total},
-    summary:{total,buckets,source:durableItems.length?'durable_verified_queue':'classification_fallback',cacheOnly:true,activeWindow:'Saved Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
+    summary:{total,buckets,source:durableItems.length?'durable_plus_classification_index':'classification_fallback',cacheOnly:true,activeWindow:'Saved Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
     diagnostics
   };
 }
@@ -26000,10 +26011,34 @@ async function clearTranscriptStaging(transcriptId){
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
   const store=valStore();for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'])store[key]=transcriptFileArray(store,key).filter(row=>row.transcriptId!==transcriptId);saveValStore(store);
 }
+async function transcriptRecordById(transcriptId=''){
+  const id=String(transcriptId||'').trim();
+  if(!id)return null;
+  if(DEMO_MODE){
+    return safeArray(requestContext.getStore()?.demoState?.transcripts).find(row=>String(row.id||row.transcriptId)===id)||null;
+  }
+  await valDbReady;
+  if(pgPool){
+    const archive=await dbQuery('select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and id=$2 limit 1',[VAL_USER_ID,id]);
+    if(archive.rows?.[0]){
+      const row=archive.rows[0];
+      return {id:row.id,type:row.type,title:row.title||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||''};
+    }
+    const indexed=await dbQuery('select transcript_id,source,meeting_title,meeting_datetime,created_at from transcripts where user_id=$1 and transcript_id=$2 limit 1',[VAL_USER_ID,id]);
+    if(indexed.rows?.[0]){
+      const row=indexed.rows[0];
+      return {id:row.transcript_id,type:'transcript',title:row.meeting_title||'',rawText:'',metadata:{source:row.source||'',timestamp:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||''},createdAt:row.created_at?.toISOString?.()||row.created_at||''};
+    }
+    return null;
+  }
+  return safeArray(valStore().transcripts).find(row=>String(row.id||row.transcriptId)===id)
+    || transcriptFileArray(valStore(),'transcriptIndex').find(row=>String(row.transcriptId||row.id)===id)
+    || null;
+}
 async function deleteTranscriptForUser(transcriptId=''){
   const id=String(transcriptId||'').trim();
   if(!id)throw new Error('transcriptId is required.');
-  const record=(await transcriptArchiveRecords(3650,1000)).find(item=>String(item.id)===id);
+  const record=await transcriptRecordById(id);
   if(!record)throw Object.assign(new Error('Transcript not found.'),{statusCode:404});
   const metadata=record.metadata||{};
   const sourceKey=String(metadata.documentId||metadata.sourceId||metadata.source_id||'').trim();
@@ -31583,6 +31618,112 @@ function normalizedTranscriptWebhookPayload(body={}){
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
+async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
+  if(!pgPool)return null;
+  const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
+  const safeOffset=Math.max(0,Number(offset)||0);
+  const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
+  const since=new Date(Date.now()-safeDays*24*60*60*1000).toISOString();
+  const [listResult,countResult]=await Promise.all([
+    dbQuery(`
+      select
+        t.transcript_id,
+        t.source,
+        t.meeting_title,
+        t.meeting_datetime,
+        t.calendar_event_id,
+        t.processing_status,
+        t.summary_status,
+        t.created_at,
+        t.updated_at,
+        coalesce(summary.executive_summary,'') as executive_summary,
+        coalesce(task_counts.task_count,0)::int as task_count,
+        (
+          coalesce(review_counts.participant_reviews,0)
+          + coalesce(review_counts.task_reviews,0)
+          + coalesce(review_counts.contact_reviews,0)
+        )::int as review_count
+      from transcripts t
+      left join lateral (
+        select executive_summary
+        from transcript_summaries
+        where transcript_id=t.transcript_id
+        order by created_at desc
+        limit 1
+      ) summary on true
+      left join lateral (
+        select count(*) filter (where lower(coalesce(status,'open')) not in ('done','completed','closed')) as task_count
+        from transcript_tasks
+        where transcript_id=t.transcript_id
+      ) task_counts on true
+      left join lateral (
+        select
+          (select count(*) from transcript_participants where transcript_id=t.transcript_id and needs_review=true) as participant_reviews,
+          (select count(*) from transcript_tasks where transcript_id=t.transcript_id and needs_approval=true) as task_reviews,
+          (select count(*) from transcript_contact_updates where transcript_id=t.transcript_id and approved=false) as contact_reviews
+      ) review_counts on true
+      where t.user_id=$1 and t.created_at >= $2
+        and t.transcript_id not like 'recovered_%'
+        and coalesce(t.source,'') not like 'recovered:%'
+      order by coalesce(t.meeting_datetime,t.created_at) desc
+      limit $3 offset $4
+    `,[VAL_USER_ID,since,safeLimit,safeOffset]),
+    dbQuery(`
+      select
+        count(*)::int as total,
+        count(*) filter (
+          where exists (select 1 from transcript_participants p where p.transcript_id=t.transcript_id and p.needs_review=true)
+             or exists (select 1 from transcript_tasks tt where tt.transcript_id=t.transcript_id and tt.needs_approval=true)
+             or exists (select 1 from transcript_contact_updates cu where cu.transcript_id=t.transcript_id and cu.approved=false)
+        )::int as needs_review,
+        count(*) filter (
+          where exists (
+            select 1 from transcript_tasks ot
+            where ot.transcript_id=t.transcript_id
+              and lower(coalesce(ot.status,'open')) not in ('done','completed','closed')
+          )
+        )::int as with_open_actions,
+        count(*) filter (
+          where lower(coalesce(t.processing_status,'')) in ('failed','error')
+             or lower(coalesce(t.summary_status,'')) in ('failed','error')
+        )::int as failed_processing
+      from transcripts t
+      where t.user_id=$1 and t.created_at >= $2
+        and t.transcript_id not like 'recovered_%'
+        and coalesce(t.source,'') not like 'recovered:%'
+    `,[VAL_USER_ID,since])
+  ]);
+  const transcripts=safeArray(listResult?.rows).map(row=>({
+    id:row.transcript_id,
+    transcriptId:row.transcript_id,
+    source:row.source||'transcript',
+    title:row.meeting_title||'Transcript',
+    meetingTitle:row.meeting_title||'Transcript',
+    createdAt:row.created_at?.toISOString?.()||row.created_at||'',
+    receivedAt:row.created_at?.toISOString?.()||row.created_at||'',
+    meetingDatetime:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||'',
+    processingStatus:row.processing_status||'',
+    summaryStatus:row.summary_status||'',
+    reviewStatus:Number(row.review_count||0)>0?'needs_review':'reviewed',
+    summary:{executiveSummary:row.executive_summary||''},
+    actionItems:[],
+    taskCount:Number(row.task_count||0),
+    openActionCount:Number(row.task_count||0),
+    reviewCount:Number(row.review_count||0)
+  }));
+  const countsRow=countResult?.rows?.[0]||{};
+  const total=Number(countsRow.total||0);
+  return {
+    transcripts,
+    pagination:{offset:safeOffset,limit:safeLimit,total,hasMore:safeOffset+transcripts.length<total},
+    counts:{
+      total,
+      needsReview:Number(countsRow.needs_review||0),
+      withOpenActions:Number(countsRow.with_open_actions||0),
+      failedProcessing:Number(countsRow.failed_processing||0)
+    }
+  };
+}
 async function transcriptDrawerListPayload({days=90,limit=50,offset=0,migrationRecords=null}={}){
   const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
   const safeOffset=Math.max(0,Number(offset)||0);
@@ -31616,9 +31757,11 @@ app.get('/api/val/transcripts',async(req,res)=>{
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||50));
     const offset=Math.max(0,Number(req.query.offset)||0);
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days,limit,offset});
-    const [archive,data]=await Promise.all([transcriptArchiveRecords(days,1000),transcriptIndexData().catch(()=>({transcripts:[]}))]);
-    const migrationRecords=mergeTranscriptMigrationRecords(archive,data);
-    const payload=await transcriptDrawerListPayload({days,limit,offset,migrationRecords});
+    const payload=await transcriptDrawerFastPayload({days,limit,offset})||await (async()=>{
+      const [archive,data]=await Promise.all([transcriptArchiveRecords(days,1000),transcriptIndexData().catch(()=>({transcripts:[]}))]);
+      const migrationRecords=mergeTranscriptMigrationRecords(archive,data);
+      return transcriptDrawerListPayload({days,limit,offset,migrationRecords});
+    })();
     res.json({ok:true,...payload});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -31634,7 +31777,7 @@ app.post('/api/val/transcripts/refresh',async(req,res)=>{
     }catch(error){
       refresh={attempted:true,days,message:'Transcript archive refreshed from saved records.',warning:error.message||'Live transcript refresh is unavailable right now.'};
     }
-    const payload=await transcriptDrawerListPayload({days,limit});
+    const payload=await transcriptDrawerFastPayload({days,limit,offset:0})||await transcriptDrawerListPayload({days,limit});
     await auditLog({req,action:'transcript_drawer_refreshed',resourceType:'transcript',metadata:{days,limit,refresh},success:!refresh.warning}).catch(()=>{});
     res.json({ok:true,...payload,refresh});
   }catch(e){console.error('[transcripts] refresh failed',e);res.status(500).json({ok:false,error:e.message});}
