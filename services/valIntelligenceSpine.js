@@ -415,6 +415,7 @@ function createValIntelligenceSpine({
   observerReasoner=null,
   chiefReasoner=null,
   admitCanonicalWork=null,
+  listCanonicalWork=null,
   recordChiefOrdering=null,
   rebalanceChiefQueue=null,
   loaders={}
@@ -1088,12 +1089,31 @@ function createValIntelligenceSpine({
         'learning_packet'
       ]);
       const workIdsByPacket=new Map();
+      if(typeof listCanonicalWork==='function'){
+        const existingWork=await listCanonicalWork({limit:500}).catch(error=>{
+          logger.warn?.('[val-chief] canonical work identity lookup failed:',error.message);
+          return null;
+        });
+        for(const item of safeArray(existingWork?.workItems||existingWork?.work_items)){
+          const packetId=String(item.boardPacketId||item.board_packet_id||'').trim();
+          if(
+            packetId
+            && !workIdsByPacket.has(packetId)
+            && !['complete','dismissed','superseded'].includes(String(item.lifecycleStatus||item.lifecycle_status||''))
+          )workIdsByPacket.set(packetId,String(item.id||''));
+        }
+      }
       for(const [index,packet] of safeArray(output.packetQueue).entries()){
         const packetId=String(packet.packetId||packet.packet_id||'').trim();
         const packetType=String(packet.packetType||packet.packet_type||'').trim();
         const existingWorkId=String(packet.canonicalWorkItemId||packet.canonical_work_item_id||'').trim();
         if(existingWorkId){
           workIdsByPacket.set(packetId,existingWorkId);
+          continue;
+        }
+        const matchedWorkId=workIdsByPacket.get(packetId);
+        if(matchedWorkId){
+          packet.canonicalWorkItemId=matchedWorkId;
           continue;
         }
         if(!packetId||nonAlignmentPacketTypes.has(packetType))continue;

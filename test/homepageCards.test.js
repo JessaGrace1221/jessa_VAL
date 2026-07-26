@@ -246,6 +246,8 @@ test('Chief of Staff Home witness is concrete and points to inspectable proof',(
   assert.match(server,/const dailyWitness=buildChiefDailyWitness\(chiefHomeItem\)/);
   assert.match(server,/chiefHeadline:dashboardShortText\(recommendation\.title/);
   assert.match(server,/\[candidate\.leadObserver\|\|candidate\.lead_observer\]/);
+  assert.match(server,/\$\{observerName\} brought this forward: \$\{findingSentence\}\./);
+  assert.match(server,/items\.findIndex\(candidate=>String\(candidate\.chiefQueuePacketId\|\|''\)\.trim\(\)===packetId\)===index/);
   assert.match(server,/I put the clearest next decision in Alignment\./);
   assert.match(server,/\$\{observerName\} has the source trail if you want the full context\./);
   assert.match(server,/GOALL is the thing to settle today/);

@@ -881,6 +881,58 @@ test('Chief of Staff materializes grounded actionable packets while keeping prep
   );
 });
 
+test('Chief of Staff reuses active canonical work by Board packet identity across recommendation reruns',async()=>{
+  let store={tasks:[]};
+  const admissions=[];
+  const recorded=[];
+  const packet={
+    id:'packet_existing_alignment',
+    sourceType:'email',
+    sourceId:'email_existing_alignment',
+    packetType:'email_attention_packet',
+    title:'Clarify the open decision',
+    summary:'Capacity found one unresolved timing decision.',
+    primaryObserversJson:['Capacity'],
+    routeObserversJson:[],
+    sourceRefsJson:[{source_type:'email',source_id:'email_existing_alignment',quote_or_summary:'We need the timing decision before Monday.',confidence:0.93}],
+    payloadJson:{projectName:'GOALL'},
+    prototype:false
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_reuse`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    admitCanonicalWork:async input=>{
+      admissions.push(input);
+      return {ok:true,workItem:{id:'work_should_not_be_created'}};
+    },
+    listCanonicalWork:async()=>({workItems:[{
+      id:'work_existing_alignment',
+      boardPacketId:'packet_existing_alignment',
+      lifecycleStatus:'open'
+    }]}),
+    recordChiefOrdering:async(id,input)=>recorded.push({id,input}),
+    rebalanceChiefQueue:async()=>({ok:true}),
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'board_packet_received',sourceType:'email',sourceId:'email_existing_alignment',packetIds:[packet.id]}
+  });
+  assert.equal(admissions.length,0);
+  assert.equal(recorded.length,1);
+  assert.equal(recorded[0].id,'work_existing_alignment');
+  assert.equal(result.recommendation.anxietyVsMomentumJson.current_packet.canonicalWorkItemId,'work_existing_alignment');
+});
+
 test('all 14 independent Observer reviews run with bounded concurrency',async()=>{
   let store={tasks:[]};
   let active=0;

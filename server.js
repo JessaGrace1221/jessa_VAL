@@ -24689,10 +24689,10 @@ function buildChiefDailyWitness(chiefItem={}){
     260
   ).replace(/^I\s+(?:am\s+)?(?:seeing|watching|noticing)\s+/i,'');
   if(!finding)return null;
-  const findingSentence=finding.charAt(0).toLowerCase()+finding.slice(1).replace(/[.!?]+$/,'');
+  const findingSentence=finding.replace(/[.!?]+$/,'');
   const first=observerName==='Board'
-    ? `The Board is showing me that ${findingSentence}.`
-    : `${observerName} is showing me that ${findingSentence}.`;
+    ? `The Board brought this forward: ${findingSentence}.`
+    : `${observerName} brought this forward: ${findingSentence}.`;
   const second='I put the clearest next decision in Alignment.';
   const third=`${observerName} has the source trail if you want the full context.`;
   return {
@@ -24765,7 +24765,11 @@ async function buildExecutiveBriefing(){
     .filter(item=>item.chief_recommendation_id&&item.chief_rank!==null&&item.chief_rank!==undefined&&Number.isFinite(Number(item.chief_rank)))
     .sort((a,b)=>Number(a.chief_rank)-Number(b.chief_rank))
     .map(item=>chiefItemsByWorkId.get([item.canonical_work_item_id||item.id,item.chief_recommendation_id].map(String).join(':')))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((item,index,items)=>{
+      const packetId=String(item.chiefQueuePacketId||'').trim();
+      return !packetId || items.findIndex(candidate=>String(candidate.chiefQueuePacketId||'').trim()===packetId)===index;
+    });
   const chiefHomeItem=chiefHomeItems[0]||null;
   const highest=chiefHomeItem||top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
   const momentum=dashboard.momentum.length?dashboard.momentum:(onboarding.momentum.length?onboarding.momentum:[
@@ -34111,6 +34115,7 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   observerReasoner:reasonBoardEvidenceForObserver,
   chiefReasoner:reasonChiefOfStaffRecommendation,
   admitCanonicalWork:input=>valCanonicalWork.admit(input),
+  listCanonicalWork:input=>valCanonicalWork.list(input),
   recordChiefOrdering:(id,input)=>valCanonicalWork.recordChiefOrdering(id,input),
   rebalanceChiefQueue:()=>valCanonicalWork.rebalanceChiefQueue(),
   completeCanonicalWorkItem:(id,input)=>valCanonicalWork.transition(id,input),
