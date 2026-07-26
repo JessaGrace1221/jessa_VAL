@@ -583,7 +583,9 @@ function createValIntelligenceSpine({
     }catch(e){context.teachVal=[];addUnknown('teach_val',e.message);}
 
     try{
-      const rows=await selectRows('transcripts',`select id,title,executive_summary,raw_text,created_at from transcripts where tenant_id=$1 and user_id=$2 order by created_at desc limit 8`,[tenantId(),userId()],row=>({id:row.id,title:row.title||'',summary:row.executive_summary||compactText(row.raw_text,600),createdAt:iso(row.created_at)}));
+      const rows=loaders.listRecentTranscripts
+        ? await loaders.listRecentTranscripts({limit:8})
+        : await selectRows('transcripts',`select transcript_id,meeting_title,raw_transcript,created_at from transcripts where tenant_id=$1 and user_id=$2 order by created_at desc limit 8`,[tenantId(),userId()],row=>({id:row.transcript_id,title:row.meeting_title||'',summary:compactText(row.raw_transcript,600),createdAt:iso(row.created_at)}));
       context.recentTranscripts=rows || safeArray(getStore().transcripts).slice(0,8);
       if(!context.recentTranscripts.length)addUnknown('recent_transcripts','No recent transcript rows were available.');
     }catch(e){context.recentTranscripts=[];addUnknown('recent_transcripts',e.message);}

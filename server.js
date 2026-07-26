@@ -26365,12 +26365,29 @@ async function ghlPlatformContext(query,dashboard,opts={}){
     notes?'Targeted GHL note and call transcript history:\n'+notes:''
   ].filter(Boolean).join('\n\n');
 }
+let valReasoningUnavailableUntil=0;
+let valReasoningUnavailableReason='';
+function valReasoningCapacityError(error){
+  return /(quota|billing|credit balance|plans & billing|insufficient credit)/i.test(String(error?.message||error||''));
+}
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
+  if(Date.now()<valReasoningUnavailableUntil){
+    throw new Error(`VAL reasoning providers are temporarily unavailable: ${valReasoningUnavailableReason||'provider capacity is unavailable'}`);
+  }
   try{
-    return await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+    valReasoningUnavailableUntil=0;
+    valReasoningUnavailableReason='';
+    return response;
   }catch(openAiError){
     const anthropicKey=await resolveAnthropicKey().catch(()=>'');
-    if(!anthropicKey)throw openAiError;
+    if(!anthropicKey){
+      if(valReasoningCapacityError(openAiError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason=openAiError.message;
+      }
+      throw openAiError;
+    }
     console.warn('[VAL model] OpenAI unavailable; using configured Anthropic fallback:',openAiError.message);
     const body={
       model:process.env.VAL_ANTHROPIC_MODEL||'claude-sonnet-4-20250514',
@@ -26391,9 +26408,18 @@ async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=fal
       ? await fetchWithTimeout('https://api.anthropic.com/v1/messages',options,timeoutMs,'Anthropic response')
       : await fetch('https://api.anthropic.com/v1/messages',options);
     const payload=await readJsonResponse(response);
-    if(!response.ok||payload.error)throw new Error(payload.error?.message||`Anthropic response failed (${response.status}).`);
+    if(!response.ok||payload.error){
+      const anthropicError=new Error(payload.error?.message||`Anthropic response failed (${response.status}).`);
+      if(valReasoningCapacityError(openAiError)&&valReasoningCapacityError(anthropicError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason='configured OpenAI and Anthropic capacity is unavailable';
+      }
+      throw anthropicError;
+    }
     const text=safeArray(payload.content).map(item=>item?.text||'').join('\n').trim();
     if(!text)throw new Error('Anthropic returned no response text.');
+    valReasoningUnavailableUntil=0;
+    valReasoningUnavailableReason='';
     return text;
   }
 }
@@ -33777,6 +33803,7 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   loaders:{
     loadTasks,
     listTeachValCoreMemory,
+    listRecentTranscripts:({limit=8}={})=>recentTranscripts(3650,limit),
     listRelationshipProfiles,
     listRecentConversationSummaries:valConversationIdentity.listRecentConversationSummaries,
     buildConversationContext:valConversationIdentity.buildConversationContext,

@@ -462,6 +462,31 @@ test('an intelligence pass reviews only the newly delivered packet IDs instead o
   assert.equal(context.recentBoardPacketCount,2);
 });
 
+test('shared Board context uses the canonical transcript loader when available',async()=>{
+  const store={boardPackets:[]};
+  let calls=0;
+  const service=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>Object.assign(store,s),
+    uuid:prefix=>`${prefix}_transcript_loader`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    loaders:{
+      listBoardPackets:async()=>[],
+      listRecentTranscripts:async({limit})=>{
+        calls++;
+        assert.equal(limit,8);
+        return [{id:'tr_real',title:'Real transcript',summary:'Exact source context.'}];
+      }
+    },
+    logger:{log(){},warn(){}}
+  });
+  const context=await service.buildSharedContextPacket({event:{type:'test'}});
+  assert.equal(calls,1);
+  assert.equal(context.recentTranscripts[0].id,'tr_real');
+});
+
 test('Chief of Staff orders Alignment from the highest evidence packet, not an abstract signal',async()=>{
   let store={tasks:[]};
   const packet={
