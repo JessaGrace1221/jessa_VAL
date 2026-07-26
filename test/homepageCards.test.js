@@ -145,7 +145,8 @@ test('Leverage prepared-work buttons persist edits and use approval gates',()=>{
 test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.match(server,/function buildDashboardIntelligence\(\{moves=\[\],profiles=\[\],onboarding,evidenceItems=\[\],drafts=\[\],readyForYouItems=\[\],freshTranscriptPacket=null\}=\{\}\)/);
   assert.match(server,/const readyQueueItems=dashboardNormalizeCardCollection\('ready_for_you',safeArray\(readyForYouItems\)\)/);
-  assert.match(server,/valReadyForYou\?\.buildQueue\?valReadyForYou\.buildQueue\(\{limit:20\}\)/);
+  assert.match(server,/valReadyForYou\?\.listItems\?valReadyForYou\.listItems\(\{limit:20\}\)/);
+  assert.doesNotMatch(server,/valReadyForYou\?\.buildQueue\?valReadyForYou\.buildQueue\(\{limit:20\}\)/);
   assert.match(server,/readyForYouItems=safeArray\(readyForYouQueue\?\.preparedItems\)\.length/);
   assert.match(server,/safeArray\(readyForYouQueue\.prepared_items\)/);
   assert.match(server,/buildDashboardIntelligence\(\{moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket\}\)/);
