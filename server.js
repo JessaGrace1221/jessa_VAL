@@ -34594,24 +34594,26 @@ async function applyCoworkRelationshipSection({relationshipId,relationshipName='
 }
 async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBrief={},messages=[]}={}){
   const isChief=entrypointId==='board.chief_of_staff';
+  const isObserver=entrypointId==='observer.discussion';
+  const isBoardConversation=isChief||isObserver;
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
   const selectedObserver=String(context.selectedObserver?.name||workingBrief.title||scopeId||'').replace(/\s+Observer$/i,'').trim();
-  const [liveBoardContext,latestObserverRuns]=await Promise.all([
-    valBoardPackets?.boardContext({
-      limit:80,
-      observerName:isChief?'':selectedObserver
-    }).catch(error=>{
-      console.warn('[val-board] observer chat context lookup failed:',error.message);
-      return null;
-    }),
-    valIntelligenceSpine?.listObserverRuns({
-      limit:isChief?42:10,
-      observerName:isChief?'':selectedObserver
-    }).catch(error=>{
-      console.warn('[val-board] observer reflection lookup failed:',error.message);
-      return [];
-    })
-  ]);
+  const [liveBoardContext,latestObserverRuns]=isBoardConversation ? await Promise.all([
+      valBoardPackets?.boardContext({
+        limit:80,
+        observerName:isChief?'':selectedObserver
+      }).catch(error=>{
+        console.warn('[val-board] observer chat context lookup failed:',error.message);
+        return null;
+      }),
+      valIntelligenceSpine?.listObserverRuns({
+        limit:isChief?42:10,
+        observerName:isChief?'':selectedObserver
+      }).catch(error=>{
+        console.warn('[val-board] observer reflection lookup failed:',error.message);
+        return [];
+      })
+    ]) : [null,[]];
   const observerEvidence=buildObserverEvidenceLedger(latestObserverRuns,{
     observerName:isChief?'':selectedObserver,
     limitPerObserver:isChief?12:35
@@ -34650,34 +34652,59 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
       observerCount:observerEvidence.observerCount
     }
   } : null;
-  const mergedContext={
+  const mergedContext=isBoardConversation ? {
     ...context,
     liveBoardPackets:packetContext
+  } : {
+    entrypointId,
+    scopeId,
+    title:workingBrief.title||workingBrief.projectName||workingBrief.relationshipName||workingBrief.transcriptTitle||workingBrief.subject||'Selected work',
+    objective:workingBrief.objective||'',
+    completionCondition:workingBrief.completionCondition||'',
+    approvalBoundary:workingBrief.approvalBoundary||'',
+    workingBrief
   };
   const conversation=safeArray(messages).slice(-18).map((message)=>({
     role:message.role==='assistant'?'assistant':'user',
     content:String(message.content||'').slice(0,5000)
   }));
-  const system=[
-    VAL_SYSTEM_PROMPT,
-    isChief
-      ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
-      : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
-    'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
-    'Use only the supplied Board packet, live Board packet context, and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
-    'Live Board packets are real system records. If no live packets are supplied, say what is missing instead of inventing activity.',
-    'Answer the user like a specific Board member, not like a generic assistant. First answer the exact question in plain language. Then give the evidence you are using. Then name the open question or unknown only if it matters.',
-    'When the user asks what relationship, project, risk, opportunity, capacity issue, or repair is involved, name the person/project/source if the packet context names one. If the packet only contains categories and no names, say that the named source is not attached yet instead of pretending.',
-    'Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review. Do not use vague phrases like "some things", "open loops", or "trust shifts" without the source that made you say it.',
-    'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
-    'Never claim an external action happened. Nothing leaves VAL from this conversation.',
-    'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
-  ].join('\n');
+  const system=isBoardConversation ? [
+      VAL_SYSTEM_PROMPT,
+      isChief
+        ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
+        : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
+      'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
+      'Use only the supplied Board packet, live Board packet context, and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
+      'Live Board packets are real system records. If no live packets are supplied, say what is missing instead of inventing activity.',
+      'Answer the user like a specific Board member, not like a generic assistant. First answer the exact question in plain language. Then give the evidence you are using. Then name the open question or unknown only if it matters.',
+      'When the user asks what relationship, project, risk, opportunity, capacity issue, or repair is involved, name the person/project/source if the packet context names one. If the packet only contains categories and no names, say that the named source is not attached yet instead of pretending.',
+      'Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review. Do not use vague phrases like "some things", "open loops", or "trust shifts" without the source that made you say it.',
+      'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
+      'Never claim an external action happened. Nothing leaves VAL from this conversation.',
+      'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
+    ].join('\n') : [
+      VAL_SYSTEM_PROMPT,
+      `You are Co-Work with VAL inside the exact ${entrypointId.replace(/[._]/g,' ')} context the user opened.`,
+      'The supplied Working Brief is the complete private folder for this turn. It contains the selected object, source receipts, linked packets, current state, objective, completion condition, and approval boundary.',
+      'Answer the executive\'s exact question first in natural language. Then point out the most useful pattern, tradeoff, risk, opportunity, or missing fact that is actually supported by this Working Brief.',
+      'End with one clear forward-moving question or next move only when it helps. Do not ask a question merely to sound conversational.',
+      'Do not expose packet field names, schemas, JSON, backend processes, or internal retrieval language. Do not make the user restate context already present in the Working Brief.',
+      'If the answer is not supported by the loaded sources, say exactly what is missing and ask for only that one thing. Never substitute generic Home context or another entity.',
+      'Stay inside the selected project, transcript, email thread, relationship, or section. If the user wants unrelated system-wide help, direct them to Home VAL in one sentence.',
+      'Do not mark work complete, apply an internal update, or claim an external action occurred during this conversational turn. The structured review and Apply flow remains separate.',
+      'Sound like a thoughtful human collaborator: direct, specific, warm, and concise. Avoid corporate filler and robotic phrases.'
+    ].join('\n');
   const packetMessage={
     role:'user',
     content:'Current private packet context:\n'+JSON.stringify(mergedContext).slice(0,28000)
   };
-  return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:950,temperature:0.32,timeoutMs:20000});
+  return callOpenAIResponses({
+    system,
+    messages:[packetMessage,...conversation],
+    maxTokens:isBoardConversation?950:750,
+    temperature:isBoardConversation?0.32:0.38,
+    timeoutMs:isBoardConversation?20000:12000
+  });
 }
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,

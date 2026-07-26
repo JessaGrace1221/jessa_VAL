@@ -52,6 +52,7 @@ const OBSERVER_ENTITY_STOPWORDS=new Set([
   'VAL','Board','Observer','Observers','Chief','Staff','Relationship','Relationships','Project','Projects','Capacity','Courage','Delight',
   'Meaning','Momentum','Commitment','Calendar','Environment','Witnessing','Executive','Inbox','Currently','Seeing','Watching','Evidence',
   'Concern','Question','Source','Trail','Home','GHL','CRM','HTML','CSS','SMS','Tone','Transcript','Calendar','The',
+  'Which','Signal','Changes','Current','Project Context','Work',
   'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'
 ]);
 function observerConversationEntityText(...values){
@@ -129,28 +130,41 @@ function observerConversationHumanReply({observerName='Observer',answer='',meani
   const observation=compactText(first.lensFinding || first.observation || first.seeing || first.concern || observerConversationReviewLine(first),520);
   const evidence=compactText(first.evidenceLine || first.line || first.evidence?.quoteOrSummary || first.evidence?.quote_or_summary || sourceTrail[0] || '',520);
   const wantsRepair=observerName==='Relationship' && /\b(repair|which relationship|who|person|tone|warmth|trust|distance|friction)\b/i.test(lower);
+  const observerQuestions={
+    'Executive Inbox':'Does this need your judgment, or can I help you close the loop without giving it more attention?',
+    Relationship:'What would repair or strengthen this relationship without making the interaction heavier than it needs to be?',
+    Project:'What is the smallest project decision that would make the next move unambiguous?',
+    Capacity:'What can come off your plate before we ask you to carry one more thing?',
+    Courage:'What are you avoiding saying because the honest version may create friction?',
+    Delight:'What would put some life back into this without reducing effectiveness?',
+    Opportunity:'Is this a real opening worth pursuing now, or merely an interesting possibility?',
+    Momentum:'What can move today without waiting for the entire answer?',
+    Meaning:'What larger commitment is this serving, and is that still true?',
+    Synchronicity:'What else has appeared recently that may be part of the same pattern?',
+    Commitment:'Which promise needs to be kept, renegotiated, or released?',
+    Calendar:'Does your calendar protect this priority, or quietly contradict it?',
+    Environment:'What in the surrounding system is making the right action easier or harder?',
+    Witnessing:'What do you notice in yourself when you read that back?'
+  };
   const lead=wantsRepair
-    ? (people.length ? `I would look at ${people[0]} first.` : 'I am not ready to name one relationship yet.')
-    : `${observerName} would start here.`;
-  const whyParts=[
-    observation,
-    people.length>1 ? `Other names in the same signal: ${people.slice(1).join(', ')}.` : '',
-    projects.length ? `Project context: ${projects.join(', ')}.` : '',
-    objects.length ? `Work involved: ${objects.join(', ')}.` : ''
+    ? (people.length ? `I would start with ${people[0]}.` : 'I do not have enough evidence to name the relationship yet.')
+    : (observation || evidence || `I do not have enough signal to make a ${observerName} claim yet.`);
+  const contextParts=[
+    people.length>1 ? `The same signal also names ${people.slice(1).join(', ')}.` : '',
+    projects.length ? `It is connected to ${projects.join(', ')}.` : '',
+    objects.length ? `The work in question is ${objects.join(', ')}.` : ''
   ].filter(Boolean);
+  const nextQuestion=wantsRepair
+    ? 'What would make this feel clear, respectful, and no longer dragged out?'
+    : (observerQuestions[observerName] || 'What changed here, and what would move this forward without adding noise?');
   return [
     lead,
+    observation && observation!==lead ? observation : '',
+    contextParts.length ? contextParts.join(' ') : '',
+    evidence && evidence!==lead ? `I am saying that because ${evidence}` : '',
+    sourceTrail.length>1 ? `I can also trace it to ${sourceTrail.slice(1,3).join(' ')}` : '',
     '',
-    'Why I am saying that:',
-    ...whyParts.map(line=>'- '+line),
-    '',
-    'Evidence I can point to:',
-    evidence ? '- '+evidence : '- The loaded packet did not attach a clean quote. I should not make a stronger claim without one.',
-    sourceTrail.length>1 ? sourceTrail.slice(1,4).map(line=>'- '+line).join('\n') : '',
-    '',
-    wantsRepair
-      ? 'What I would explore next: what would make this feel clear, respectful, and not dragged out?'
-      : 'What I would explore next: what changed, what matters, and what should stay out of your way?'
+    nextQuestion
   ].filter(Boolean).join('\n');
 }
 function observerConversationDirectReply({entrypointId='',workingBrief={},answer=''}={}){
@@ -244,6 +258,12 @@ function parseWorkstreamNames(answer=''){
 }
 function answerAcceptsProposal(answer=''){
   return /^(yes|yep|yeah|use (?:those|them|the suggestions)|looks right|that works|go ahead)\b/i.test(String(answer || '').trim());
+}
+function coworkTurnLooksConversational(answer=''){
+  const text=String(answer || '').trim();
+  if(!text)return false;
+  if(/[?]\s*$/.test(text))return true;
+  return /^(?:what|why|how|who|which|where|when|can|could|would|should|do you|are you|is there|tell me|show me|help me(?: understand)?|walk me through|talk me through|point out|explain|let'?s think|i (?:do not|don't) understand|i(?:'m| am) (?:not sure|unsure)|this feels wrong|that (?:does not|doesn't) seem right|give me your (?:read|take|thoughts?))\b/i.test(text);
 }
 function workstreamTemplate(name='',brief={}){
   return {
@@ -3180,6 +3200,28 @@ function createValCoworkService({
     const saved=await saveSession(session);
     return publicResult(saved,null,reply,null);
   }
+  async function respondScopedConversation(session,workItem,answer){
+    const state={...(session.stateJson || {}),messages:safeArray(session.stateJson?.messages)};
+    state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
+    let reply='';
+    try{
+      reply=multilineText(await generateConversationReply({
+        entrypointId:session.entrypointId,
+        scopeId:session.scopeId,
+        workingBrief:session.workingBriefJson || {},
+        messages:state.messages
+      }),6000);
+    }catch(_){
+      reply='I have the right context open, but I could not finish that answer. I did not change the work. Ask me the same question in one shorter sentence.';
+    }
+    if(!reply)reply='I have the right context open, but I do not have enough evidence in it to answer that honestly. What is the one missing fact you want me to work from?';
+    state.messages.push({role:'assistant',content:reply,at:new Date().toISOString()});
+    session.stateJson=state;
+    session.updatedAt=new Date().toISOString();
+    const saved=await saveSession(session);
+    const currentQuestion=safeArray(saved.questionPlanJson).slice(-1)[0] || null;
+    return publicResult(saved,workItem,reply,currentQuestion);
+  }
   async function openProjectNextMoveEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.next_move'];
     const scopeInput=input.scope || {};
@@ -4148,6 +4190,7 @@ function createValCoworkService({
     if(session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff') return respondObserverConversation(session,answer);
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    if(coworkTurnLooksConversational(answer)) return respondScopedConversation(session,workItem,answer);
     if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.onboarding') return respondProjectOnboarding(session,workItem,answer);
