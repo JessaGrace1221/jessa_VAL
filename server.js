@@ -24773,6 +24773,7 @@ function dashboardDraftQuality(draft={}){
   return {ready,problems,recipient:dashboardCleanText(recipient||ctx.contactName||''),context:dashboardShortText(ctx.transcriptTitle||ctx.meetingTitle||ctx.source||draft.draftType||'Draft', 'Draft', 90)};
 }
 function dashboardReadyDraft(draft={}){
+  if(!['draft','ready_for_review'].includes(String(draft.status||'draft')))return null;
   const quality=dashboardDraftQuality(draft);
   if(!quality.ready)return null;
   const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
@@ -25306,7 +25307,7 @@ function chiefRecommendationHomeItems(recommendation={}){
   return [chiefCandidateHomeItem(recommendation,{title:recommendation.title,summary:recommendation.recommendation,evidence:sourceRefs,packetId:''},0,sourceRefs)].filter(Boolean);
 }
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue,canonicalTaskQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:100}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.listItems?valReadyForYou.listItems({limit:20}).catch(error=>{console.warn('[ready-for-you] Home briefing queue read failed:',error.message);return null;}):Promise.resolve(null),valCanonicalWork?.taskProjection?valCanonicalWork.taskProjection({limit:500}).catch(error=>{console.warn('[canonical-work] Home Chief queue load failed:',error.message);return null;}):Promise.resolve(null)]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue,canonicalTaskQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:100}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.listItems?valReadyForYou.listItems({limit:20}).catch(error=>{console.warn('[ready-for-you] Home briefing queue read failed:',error.message);return null;}):Promise.resolve(null),valCanonicalWork?.taskProjection?valCanonicalWork.taskProjection({limit:500}).catch(error=>{console.warn('[canonical-work] Home Chief queue load failed:',error.message);return null;}):Promise.resolve(null)]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
   const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
   const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);

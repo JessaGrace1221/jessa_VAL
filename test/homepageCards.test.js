@@ -127,6 +127,16 @@ test('Leverage opens only reviewable prepared work products',()=>{
   assert.match(hearthPrototype,/No approval is requested from an empty packet/);
 });
 
+test('Home admits both editable and ready-for-review drafts into Leverage',()=>{
+  assert.match(server,/function dashboardReadyDraft\(draft=\{\}\)/);
+  assert.match(server,/\['draft','ready_for_review'\]\.includes\(String\(draft\.status\|\|'draft'\)\)/);
+  const briefingStart=server.indexOf('async function buildExecutiveBriefing');
+  const briefingEnd=server.indexOf('\nasync function',briefingStart+20);
+  const briefing=server.slice(briefingStart,briefingEnd>briefingStart?briefingEnd:briefingStart+12000);
+  assert.match(briefing,/listDrafts\(''\)/);
+  assert.doesNotMatch(briefing,/listDrafts\('draft'\)/);
+});
+
 test('Leverage prepared-work buttons persist edits and use approval gates',()=>{
   assert.match(hearthPrototype,/function leveragePreparedIdentifiers/);
   assert.match(hearthPrototype,/function leveragePreparedSendPayload/);

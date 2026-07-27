@@ -28,9 +28,14 @@ test('Observer accepts a model finding only with exact packet evidence',async()=
       status:'observed',
       observation:'Jessa made a concrete promise to finish the handoff.',
       watching:'I am watching whether the promised handoff gets a clear owner and finish.',
+      watching_evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.',
       concern:'This promise can become trust debt if it stays open.',
+      concern_evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.',
       question:'What would make this commitment unambiguous?',
-      useful_context:['The commitment belongs to GOALL.'],
+      useful_context:[{
+        fact:'The commitment belongs to GOALL.',
+        evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.'
+      }],
       evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.',
       confidence:0.91
     }]})
@@ -45,7 +50,39 @@ test('Observer accepts a model finding only with exact packet evidence',async()=
   assert.match(output.packetReviews[0].watching,/clear owner/i);
   assert.match(output.packetReviews[0].concern,/trust debt/i);
   assert.match(output.packetReviews[0].question,/unambiguous/i);
+  assert.equal(output.packetReviews[0].usefulContext[0],'The commitment belongs to GOALL.');
+  assert.equal(output.packetReviews[0].watchingEvidence.quoteOrSummary,'Jessa will finish the GOALL dashboard handoff for Mike.');
+  assert.equal(output.packetReviews[0].concernEvidence.quoteOrSummary,'Jessa will finish the GOALL dashboard handoff for Mike.');
   assert.equal(output.evidence[0].quote_or_summary,'Jessa will finish the GOALL dashboard handoff for Mike.');
+});
+
+test('unsupported secondary claims are not admitted into an Observer receipt',async()=>{
+  const reasoner=createEvidenceQualifiedObserverReasoner({
+    observerLenses:{Capacity:{lens:'load',sees:'load and tradeoffs'}},
+    callModel:async()=>JSON.stringify({reviews:[{
+      packetId:'packet_goall',
+      status:'observed',
+      observation:'The handoff is a concrete open commitment.',
+      evidence_quote:'Jessa will finish the GOALL dashboard handoff for Mike.',
+      watching:'Mike may be losing patience.',
+      concern:'The relationship is close to breaking.',
+      useful_context:['This belongs to a larger hidden project.'],
+      confidence:0.9
+    }]})
+  });
+  const output=await reasoner({
+    observerName:'Capacity',
+    contextPacket:{event:{packetIds:['packet_goall']},boardPackets:[packet()]},
+    deterministicOutput:{observer:'Capacity'}
+  });
+  const review=output.packetReviews[0];
+  assert.equal(review.status,'observed');
+  assert.equal(review.watching,'');
+  assert.equal(review.watchingEvidence,null);
+  assert.equal(review.concern,'');
+  assert.equal(review.concernEvidence,null);
+  assert.deepEqual(review.usefulContext,[]);
+  assert.deepEqual(review.usefulContextEvidence,[]);
 });
 
 test('invented or paraphrased evidence becomes an honest no-signal receipt',async()=>{
@@ -100,7 +137,10 @@ test('Observer can cite exact evidence from the complete packet chunk beyond the
       packetId:'packet_goall',
       status:'observed',
       observation:'The Monday check-in creates a concrete timing boundary.',
-      useful_context:['Projections are due before the check-in.'],
+      useful_context:[{
+        fact:'Projections are due before the check-in.',
+        evidence_quote:tailQuote
+      }],
       evidence_quote:tailQuote,
       confidence:0.9
     }]})
@@ -111,5 +151,6 @@ test('Observer can cite exact evidence from the complete packet chunk beyond the
     deterministicOutput:{observer:'Calendar'}
   });
   assert.equal(output.packetReviews[0].status,'observed');
+  assert.equal(output.packetReviews[0].usefulContext[0],'Projections are due before the check-in.');
   assert.equal(output.evidence[0].quote_or_summary,tailQuote);
 });

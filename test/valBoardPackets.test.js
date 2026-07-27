@@ -785,8 +785,12 @@ test('Observer cards expose an honest quiet state when no valid evidence qualifi
 
 test('Observer cards present distinct lens language instead of repeating one observation',()=>{
   assert.match(frontend,/function observerPresentation/);
-  assert.match(frontend,/review\.watching \|\| usefulContext\[0\]/);
-  assert.match(frontend,/review\.concern \|\| concernByObserver\[name\]/);
+  assert.match(frontend,/function observerGroundedWatching/);
+  assert.match(frontend,/review\.watching && review\.watchingEvidence\?\.quoteOrSummary/);
+  assert.doesNotMatch(frontend,/review\.watching \|\| usefulContext\[0\]/);
+  assert.match(frontend,/function observerGroundedConcern/);
+  assert.match(frontend,/review\.concern && review\.concernEvidence\?\.quoteOrSummary/);
+  assert.doesNotMatch(frontend,/review\.concern \|\| concernByObserver\[name\]/);
   assert.match(frontend,/review\.question \|\| observer\.stance/);
   assert.match(frontend,/Relationship:'I am watching for changes in trust, warmth, distance, and repair\.'/);
   assert.match(frontend,/Capacity:'Too many competing demands can reduce the quality of the next decision\.'/);

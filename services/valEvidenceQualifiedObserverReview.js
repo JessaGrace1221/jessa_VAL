@@ -132,15 +132,16 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         'Do not infer names, projects, motives, urgency, or relationships that the evidence does not state.',
         'Write as this Observer in concise, natural first-person language.',
         'observation states the concrete signal you see now.',
-        'watching states what you will continue monitoring through this lens.',
-        'concern states the supported risk, tension, or cost. Leave it empty when none is supported.',
+        'watching states what you will continue monitoring through this lens. Include watching_evidence_quote copied exactly from the supplied packet evidence or leave both fields empty.',
+        'concern states the supported risk, tension, or cost. Include concern_evidence_quote copied exactly from the supplied packet evidence or leave both fields empty.',
         'question states one useful question this Observer would explore with the user. Leave it empty when none is supported.',
+        'Every useful_context item must be an object with fact and evidence_quote. Copy evidence_quote exactly from the supplied packet evidence.',
         'Do not recommend an action. Do not expose chain-of-thought.'
       ].join('\n'),
       user:[
         JSON.stringify({packets:packetBriefs}),
         '',
-        'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","watching":"one distinct sentence or empty","concern":"one distinct sentence or empty","question":"one concise question or empty","useful_context":["short grounded fact"],"evidence_quote":"exact supplied quote or empty","confidence":0.0}]}'
+        'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","evidence_quote":"exact supplied quote or empty","watching":"one distinct sentence or empty","watching_evidence_quote":"exact supplied quote or empty","concern":"one distinct sentence or empty","concern_evidence_quote":"exact supplied quote or empty","question":"one concise question or empty","useful_context":[{"fact":"short grounded fact","evidence_quote":"exact supplied quote"}],"confidence":0.0}]}'
       ].join('\n'),
       maxTokens:Math.min(1000,360+(packets.length*110)),
       temperature:0.1,
@@ -152,6 +153,19 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
       const candidate=returned.get(packetId)||{};
       const evidenceRef=exactPacketEvidence(packet,candidate.evidence_quote);
       if(candidate.status!=='observed'||!evidenceRef)return noSignalReview(observerName,packet);
+      const watchingEvidenceRef=exactPacketEvidence(packet,candidate.watching_evidence_quote);
+      const concernEvidenceRef=exactPacketEvidence(packet,candidate.concern_evidence_quote);
+      const usefulContext=safeArray(candidate.useful_context).map(item=>{
+        if(!item||typeof item!=='object')return null;
+        const fact=compactText(item.fact,240);
+        const support=exactPacketEvidence(packet,item.evidence_quote);
+        return fact&&support?{
+          fact,
+          evidenceQuote:String(item.evidence_quote).trim(),
+          sourceType:support.sourceType,
+          sourceId:support.sourceId
+        }:null;
+      }).filter(Boolean).slice(0,6);
       const reviewedAt=new Date().toISOString();
       const evidence=[{
         source_type:evidenceRef.sourceType,
@@ -172,9 +186,20 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         seeing:compactText(candidate.observation,420),
         observation:compactText(candidate.observation,420),
         evidence,
-        usefulContext:safeArray(candidate.useful_context).map(item=>compactText(item,240)).filter(Boolean).slice(0,6),
-        watching:compactText(candidate.watching,280),
-        concern:compactText(candidate.concern,240),
+        usefulContext:usefulContext.map(item=>item.fact),
+        usefulContextEvidence:usefulContext,
+        watching:watchingEvidenceRef?compactText(candidate.watching,280):'',
+        watchingEvidence:watchingEvidenceRef?{
+          quoteOrSummary:String(candidate.watching_evidence_quote).trim(),
+          sourceType:watchingEvidenceRef.sourceType,
+          sourceId:watchingEvidenceRef.sourceId
+        }:null,
+        concern:concernEvidenceRef?compactText(candidate.concern,240):'',
+        concernEvidence:concernEvidenceRef?{
+          quoteOrSummary:String(candidate.concern_evidence_quote).trim(),
+          sourceType:concernEvidenceRef.sourceType,
+          sourceId:concernEvidenceRef.sourceId
+        }:null,
         question:compactText(candidate.question,200),
         confidence:Math.max(0.2,Math.min(0.95,Number(candidate.confidence)||0.65)),
         reflectionMode:'model_backed_evidence_review_v1',

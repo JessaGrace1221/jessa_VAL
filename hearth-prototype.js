@@ -27176,6 +27176,20 @@ function observerReviewSummaryLine(review = {}){
   return observerCompactLine(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 240);
 }
 
+function observerGroundedWatching(review = {}, fallback = ''){
+  if(review.watching && review.watchingEvidence?.quoteOrSummary) return observerCompactLine(review.watching, fallback, 220);
+  const evidence = review.evidence || {};
+  const title = observerCompactLine(evidence.packetTitle || evidence.packetType || 'this source', 'this source', 90);
+  const quote = observerCompactLine(evidence.quoteOrSummary || '', '', 150);
+  if(quote) return 'I am watching what changes next in “' + title + '.” The source currently says: “' + quote + '”';
+  return fallback;
+}
+
+function observerGroundedConcern(review = {}, fallback = ''){
+  if(review.concern && review.concernEvidence?.quoteOrSummary) return observerCompactLine(review.concern, fallback, 220);
+  return fallback;
+}
+
 function observerAgentDefinition(observer = {}){
   const name = String(observer?.name || observer || '').trim();
   const liveDefinition = observerBoardState.definitionsByObserver?.[name];
@@ -27242,7 +27256,6 @@ function observerAgentProof(observer = {}, {isChief=false,meaningfulReviews=[],c
 
 function observerPresentation(observer = {}, review = {}){
   const name = String(observer.name || '').trim();
-  const usefulContext = safeArray(review.usefulContext).map((item) => observerCompactLine(item, '', 190)).filter(Boolean);
   const watchingByObserver = {
     'Executive Inbox':'I am watching which human conversation now deserves executive attention.',
     Relationship:'I am watching for changes in trust, warmth, distance, and repair.',
@@ -27277,12 +27290,12 @@ function observerPresentation(observer = {}, review = {}){
   };
   return {
     watching:observerCompactLine(
-      review.watching || usefulContext[0] || watchingByObserver[name],
+      observerGroundedWatching(review, watchingByObserver[name]),
       'I am continuing to watch this evidence through my assigned lens.',
       220
     ),
     concern:observerCompactLine(
-      review.concern || concernByObserver[name],
+      observerGroundedConcern(review, concernByObserver[name]),
       'I am not holding a supported concern from this evidence.',
       200
     ),

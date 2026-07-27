@@ -46,8 +46,16 @@ function normalizeObserverEvidenceReview(run={},review={}){
     lensFinding:observed?compactText(review.observation||review.seeing||'',420):'No meaningful signal from my lens.',
     observation:observed?compactText(review.observation||review.seeing||'',420):'No meaningful signal from my lens.',
     usefulContext:safeArray(review.usefulContext||review.useful_context).map(item=>compactText(item,240)).filter(Boolean).slice(0,6),
+    usefulContextEvidence:safeArray(review.usefulContextEvidence||review.useful_context_evidence).map(item=>({
+      fact:compactText(item.fact,240),
+      evidenceQuote:compactText(item.evidenceQuote||item.evidence_quote,900),
+      sourceType:String(item.sourceType||item.source_type||'unknown'),
+      sourceId:String(item.sourceId||item.source_id||'')
+    })).filter(item=>item.fact&&item.evidenceQuote).slice(0,6),
     watching:compactText(review.watching||'',280),
+    watchingEvidence:review.watchingEvidence||review.watching_evidence||null,
     concern:compactText(review.concern||'',240),
+    concernEvidence:review.concernEvidence||review.concern_evidence||null,
     question:compactText(review.question||'',200),
     people:safeArray(review.people).map(item=>compactText(item,120)).filter(Boolean).slice(0,8),
     projects:safeArray(review.projects).map(item=>compactText(item,120)).filter(Boolean).slice(0,6),
