@@ -28402,9 +28402,20 @@ function orientHomeCoworkFromInput(){
 }
 
 const valStudioObserverDefaults = ['commitment','relationship','delight','synchronicity'];
+function valStudioDefaultSpec(){
+  return {
+    name:'New executive Environment',
+    outcome:'Turn a recurring source into a clear, governed result.',
+    purpose:'Remove repeated executive work without hiding judgment or taking unapproved action.',
+    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'immediate'},
+    observerIds:[...valStudioObserverDefaults],
+    connections:{emailProvider:'gmail',googleDocumentId:''},
+    approvals:{sendEmail:'required',appendGoogleDoc:'required'}
+  };
+}
 let valStudioState = {
   stage:0,
-  mode:'builder',
+  mode:'library',
   environmentId:'',
   environment:null,
   versionNumber:0,
@@ -28412,15 +28423,7 @@ let valStudioState = {
   environments:[],
   transcripts:[],
   lastTest:null,
-  spec:{
-    name:'MGSH meeting follow-through',
-    outcome:'Send every attendee the meeting Action Items and Key Points, then preserve the same source truth in the shared Google Doc.',
-    purpose:'Close the meeting loop immediately without asking the executive to repeat work Krisp already captured.',
-    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'immediate'},
-    observerIds:[...valStudioObserverDefaults],
-    connections:{emailProvider:'gmail',googleDocumentId:''},
-    approvals:{sendEmail:'required',appendGoogleDoc:'required'}
-  }
+  spec:valStudioDefaultSpec()
 };
 
 async function valStudioRequest(url,method='GET',body=null){
@@ -28675,13 +28678,74 @@ function valStudioTestResult(run={}){
   ].join('');
 }
 
+function valStudioEnvironmentStatus(environment={}){
+  if(environment.status==='active'&&environment.draftVersion)return {label:'Live · Draft changes',tone:'active-draft'};
+  if(environment.status==='active')return {label:'Live',tone:'live'};
+  if(environment.status==='needs_attention')return {label:'Needs attention',tone:'attention'};
+  if(environment.status==='paused')return {label:'Paused',tone:'paused'};
+  return {label:'Draft',tone:'draft'};
+}
+
+function valStudioResumeStage(spec={}){
+  if(!String(spec.name||'').trim()||!String(spec.outcome||'').trim()||!String(spec.purpose||'').trim())return 0;
+  if(!String(spec.trigger?.eventTitlePattern||'').trim()||spec.trigger?.eventTitleConfirmed!==true)return 1;
+  if(!safeArray(spec.observerIds).length)return 2;
+  if(!String(spec.connections?.emailProvider||'').trim()||!String(spec.connections?.googleDocumentId||'').trim())return 3;
+  return 4;
+}
+
+function valStudioLibraryView(){
+  const environments=safeArray(valStudioState.environments);
+  const liveCount=environments.filter(item=>item.status==='active').length;
+  const draftCount=environments.filter(item=>item.status==='draft'||item.draftVersion).length;
+  return [
+    '<div class="val-studio val-studio-library" data-val-studio>',
+      '<header class="val-studio-library-header">',
+        '<div><span>VAL Studio</span><strong>Environments</strong><p>Governed work VAL can recognize, reason through, and complete.</p></div>',
+        '<button type="button" data-val-studio-new>New Environment</button>',
+      '</header>',
+      environments.length?[
+        '<div class="val-studio-library-summary">',
+          '<span><strong>' + escapeHtml(String(environments.length)) + '</strong> Total</span>',
+          '<span><strong>' + escapeHtml(String(liveCount)) + '</strong> Live</span>',
+          '<span><strong>' + escapeHtml(String(draftCount)) + '</strong> Draft' + (draftCount===1?'':'s') + '</span>',
+        '</div>',
+        '<div class="val-studio-environment-list" aria-label="Your Environments">',
+          environments.map(environment=>{
+            const version=environment.draftVersion||environment.activeVersion||{};
+            const spec=version.specJson||{};
+            const state=valStudioEnvironmentStatus(environment);
+            const observers=safeArray(spec.observerIds);
+            return [
+              '<button type="button" class="val-studio-environment-row" data-val-studio-open="' + escapeHtml(environment.id||'') + '">',
+                '<span class="val-studio-environment-state ' + escapeHtml(state.tone) + '"><i aria-hidden="true"></i>' + escapeHtml(state.label) + '</span>',
+                '<span class="val-studio-environment-copy"><strong>' + escapeHtml(environment.name||spec.name||'Untitled Environment') + '</strong><small>' + escapeHtml(spec.outcome||'Outcome not defined yet.') + '</small></span>',
+                '<span class="val-studio-environment-meta"><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'Trigger not confirmed') + '</strong><small>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</small></span>',
+                '<span class="val-studio-environment-arrow" aria-hidden="true">→</span>',
+              '</button>'
+            ].join('');
+          }).join(''),
+        '</div>'
+      ].join(''):[
+        '<div class="val-studio-library-empty">',
+          '<span class="val-presence-mark"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span>',
+          '<strong>Your first Environment starts with a repeated outcome.</strong>',
+          '<p>Name the result you want VAL to carry, then choose the evidence, perspectives, and connected actions it may use.</p>',
+          '<button type="button" data-val-studio-new>Create Your First Environment</button>',
+        '</div>'
+      ].join(''),
+      '<footer class="val-studio-library-footer"><span>Every Environment is tested against real history before it can go live.</span><strong>The executive remains the governing authority.</strong></footer>',
+    '</div>'
+  ].join('');
+}
+
 function valStudioLiveView(){
   const spec=valStudioState.spec;
   const observers=valStudioSelectedObserverNames();
   return [
     '<div class="val-studio val-studio-live-home" data-val-studio>',
       '<header class="val-studio-header">',
-        '<div><span>VAL Studio</span><strong>' + escapeHtml(spec.name) + '</strong></div>',
+        '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(spec.name) + '</strong></div>',
         '<small class="val-studio-live-status"><i aria-hidden="true"></i>Live</small>',
       '</header>',
       '<div class="val-studio-live-layout">',
@@ -28715,6 +28779,13 @@ function valStudioLiveView(){
 
 function renderValStudio(){
   valStudioState.spec=valStudioCurrentSpec();
+  if(valStudioState.mode==='library'){
+    scraperPreviewList.hidden=false;
+    scraperPreviewList.classList.add('val-studio-surface');
+    scraperPreviewList.innerHTML=valStudioLibraryView();
+    wireValStudio();
+    return;
+  }
   if(valStudioState.mode==='live'){
     scraperPreviewList.hidden=false;
     scraperPreviewList.classList.add('val-studio-surface');
@@ -28733,7 +28804,7 @@ function renderValStudio(){
   scraperPreviewList.innerHTML=[
     '<div class="val-studio" data-val-studio>',
       '<header class="val-studio-header">',
-        '<div><span>VAL Studio</span><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
+        '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
         '<small>' + versionLabel + '</small>',
       '</header>',
       '<nav class="val-studio-steps" aria-label="Environment setup">',
@@ -28763,6 +28834,10 @@ async function saveValStudioDraft(){
   const payload=await valStudioRequest(url,valStudioState.environmentId?'PUT':'POST',{spec:valStudioState.spec});
   valStudioState.environmentId=payload.environment.id;
   valStudioState.environment=payload.environment;
+  valStudioState.environments=[
+    payload.environment,
+    ...safeArray(valStudioState.environments).filter(item=>item.id!==payload.environment.id)
+  ];
   valStudioState.versionNumber=payload.environment.draftVersion?.versionNumber||payload.environment.activeVersion?.versionNumber||1;
   valStudioState.activeVersionNumber=payload.environment.activeVersion?.versionNumber||valStudioState.activeVersionNumber||0;
   return payload;
@@ -28772,6 +28847,45 @@ function wireValStudio(){
   const root=scraperPreviewList.querySelector('[data-val-studio]');
   if(!root)return;
   root.addEventListener('click',event=>event.stopPropagation());
+  root.querySelector('[data-val-studio-library]')?.addEventListener('click',()=>{
+    valStudioState.mode='library';
+    renderValStudio();
+  });
+  root.querySelectorAll('[data-val-studio-new]').forEach(button=>button.addEventListener('click',()=>{
+    valStudioState.mode='builder';
+    valStudioState.stage=0;
+    valStudioState.environmentId='';
+    valStudioState.environment=null;
+    valStudioState.versionNumber=0;
+    valStudioState.activeVersionNumber=0;
+    valStudioState.lastTest=null;
+    valStudioState.spec=valStudioDefaultSpec();
+    renderValStudio();
+  }));
+  root.querySelectorAll('[data-val-studio-open]').forEach(button=>button.addEventListener('click',async()=>{
+    const environment=valStudioState.environments.find(item=>item.id===button.dataset.valStudioOpen);
+    if(!environment)return;
+    const version=environment.draftVersion||environment.activeVersion;
+    valStudioState.environment=environment;
+    valStudioState.environmentId=environment.id;
+    valStudioState.versionNumber=version?.versionNumber||1;
+    valStudioState.activeVersionNumber=environment.activeVersion?.versionNumber||0;
+    valStudioState.spec=version?.specJson||valStudioDefaultSpec();
+    valStudioState.lastTest=null;
+    valStudioState.mode=environment.status==='active'&&environment.activeVersion&&!environment.draftVersion?'live':'builder';
+    valStudioState.stage=environment.draftVersion?valStudioResumeStage(valStudioState.spec):0;
+    renderValStudio();
+    try{
+      const runs=await valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/runs?limit=10`);
+      if(valStudioState.environmentId!==environment.id||valStudioState.mode==='library')return;
+      valStudioState.lastTest=safeArray(runs.runs).find(run=>
+        run.testMode
+        &&run.status==='completed'
+        &&Number(run.versionNumber)===Number(version?.versionNumber)
+      )||null;
+      renderValStudio();
+    }catch(_error){}
+  }));
   root.querySelector('[data-val-studio-edit]')?.addEventListener('click',()=>{
     valStudioState.mode='builder';
     valStudioState.stage=0;
@@ -28835,6 +28949,10 @@ function wireValStudio(){
       const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/activate`,'POST',{});
       valStudioState.lastTest={...valStudioState.lastTest,activated:true};
       valStudioState.environment=result.environment;
+      valStudioState.environments=[
+        result.environment,
+        ...safeArray(valStudioState.environments).filter(item=>item.id!==result.environment.id)
+      ];
       valStudioState.versionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
       valStudioState.activeVersionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
       valStudioState.spec=result.environment.activeVersion?.specJson||valStudioState.spec;
@@ -28853,26 +28971,8 @@ async function hydrateValStudio(){
     ]);
     valStudioState.environments=safeArray(environmentPayload.environments);
     valStudioState.transcripts=safeArray(transcriptPayload.transcripts);
-    const existing=valStudioState.environments.find(item=>/MGSH meeting follow-through/i.test(item.name||''))||valStudioState.environments[0];
-    if(existing){
-      const version=existing.draftVersion||existing.activeVersion;
-      valStudioState.environment=existing;
-      valStudioState.environmentId=existing.id;
-      valStudioState.versionNumber=version?.versionNumber||1;
-      valStudioState.activeVersionNumber=existing.activeVersion?.versionNumber||0;
-      valStudioState.spec=version?.specJson||valStudioState.spec;
-      const runs=await valStudioRequest(`/api/val/environments/${encodeURIComponent(existing.id)}/runs?limit=10`);
-      valStudioState.lastTest=safeArray(runs.runs).find(run=>
-        run.testMode
-        &&run.status==='completed'
-        &&Number(run.versionNumber)===Number(version?.versionNumber)
-      )||null;
-      valStudioState.mode=existing.status==='active'&&existing.activeVersion&&!existing.draftVersion?'live':'builder';
-      valStudioState.stage=existing.draftVersion?4:0;
-    }else{
-      valStudioState.mode='builder';
-      valStudioState.stage=0;
-    }
+    valStudioState.mode='library';
+    valStudioState.stage=0;
     renderValStudio();
   }catch(error){
     if(status)status.innerHTML='<strong>VAL Studio could not load.</strong><span>'+escapeHtml(error.message)+'</span>';
@@ -28883,10 +28983,10 @@ function openTeachValSession(){
   closeCalendarPanel();
   setWorkspaceContent({
     lens: 'VAL Studio',
-    title: 'Create an Environment',
-    meaning: 'Compose a governed executive function from VAL’s Observers, connected evidence, and bounded actions.',
+    title: 'VAL Studio',
+    meaning: 'View and compose governed executive functions from VAL’s Observers, connected evidence, and bounded actions.',
     understanding: [],
-    recommendation: 'Begin with an outcome. VAL will shape the operating contract and prove it against real history before anything can go live.',
+    recommendation: 'Choose an existing Environment or begin a new one with the outcome you want VAL to carry.',
     actions: [],
     label: 'VAL Studio'
   });

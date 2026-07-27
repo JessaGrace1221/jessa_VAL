@@ -132,9 +132,16 @@ test('historical test proof reads like executive support instead of backend rece
   assert.doesNotMatch(hearth,/escapeHtml\(outputs\.googleDoc\?\.documentId\|\|'No document'\)/);
 });
 
-test('VAL Studio reopens an activated Environment as live instead of as an unfinished builder',()=>{
+test('VAL Studio opens as an Environment library and preserves live detail state',()=>{
+  assert.match(hearth,/function valStudioLibraryView\(\)/);
+  assert.match(hearth,/data-val-studio-new>New Environment/);
+  assert.match(hearth,/data-val-studio-open=/);
+  assert.match(hearth,/Your first Environment starts with a repeated outcome\./);
+  assert.match(hearth,/valStudioState\.mode='library'/);
+  assert.match(hearth,/function valStudioResumeStage\(spec=\{\}\)/);
+  assert.match(hearth,/environment\.draftVersion\?valStudioResumeStage\(valStudioState\.spec\):0/);
   assert.match(hearth,/function valStudioLiveView\(\)/);
-  assert.match(hearth,/existing\.status==='active'&&existing\.activeVersion&&!existing\.draftVersion\?'live':'builder'/);
+  assert.match(hearth,/environment\.status==='active'&&environment\.activeVersion&&!environment\.draftVersion\?'live':'builder'/);
   assert.match(hearth,/VAL is listening for the next matching meeting\./);
   assert.match(hearth,/The current version remains active until you deliberately replace it with another tested version\./);
   assert.match(hearth,/Make Environment Live/);
