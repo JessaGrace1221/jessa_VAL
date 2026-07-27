@@ -173,6 +173,7 @@ test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.match(server,/relationshipEmailIsGenericMailbox\(recipientAddress\)/);
   assert.match(server,/emailLooksTransactionalOrBulk\(sourceEmail\)/);
   assert.match(server,/artifactRequiresContact\(preparedArtifactKind\)&&!recipientEmails\.length/);
+  assert.match(server,/\^\(\?:reply\|follow_up\|holding\|clarification\|introduction\)\$/);
   assert.match(server,/buildDashboardIntelligence\(\{moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket\}\)/);
   assert.match(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\);/);
   assert.doesNotMatch(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\)\.concat\(briefingItems\(briefing\.watching\)\);/);

@@ -24764,7 +24764,7 @@ function dashboardDraftArtifactKind(draft={}){
   if(draft.draftType==='meeting_recap')return 'meeting_overview_email_draft';
   const source=draft.sourceContext||{};
   const rawKind=String(draft.draftType||'reply').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
-  return source.source==='executive_inbox_review_only'&&!(new RegExp('(?:^|_)email(?:_|$)').test(rawKind))
+  return (source.source==='executive_inbox_review_only'||/^(?:reply|follow_up|holding|clarification|introduction)$/.test(rawKind))&&!(new RegExp('(?:^|_)email(?:_|$)').test(rawKind))
     ?`email_${rawKind}_draft`
     :(rawKind||'internal_draft');
 }
@@ -24815,7 +24815,7 @@ function dashboardReadyDraft(draft={}){
   if(!['draft','ready_for_review'].includes(String(draft.status||'draft')))return null;
   const quality=dashboardDraftQuality(draft);
   if(!quality.ready)return null;
-  const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
+  const label=draft.subject||quality.recipient&&`Draft for ${quality.recipient}`||'Draft ready';
   const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
   const source=draft.sourceContext||{};
   const transcriptId=source.transcriptId||source.transcript_id||'';
@@ -24843,7 +24843,9 @@ function dashboardReadyDraft(draft={}){
     id:draft.id,
     draftId:draft.id,
     title:dashboardShortText(label,'Draft ready',80),
-    summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),
+    summary:quality.recipient
+      ?dashboardShortText(`Prepared for ${quality.recipient}. Review, edit, approve, or hold.`,'Review prepared draft.',140)
+      :dashboardShortText(quality.context||draft.body,'Review prepared draft.',140),
     reason_it_matters:dashboardShortText(source.meetingTitle||source.transcriptTitle||quality.context||'Prepared work is ready for review before anything is sent.','Prepared work is ready for review.',180),
     view:'drafts',
     target:{type:'draft',id:draft.id},
