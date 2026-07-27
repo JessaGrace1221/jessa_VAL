@@ -20,7 +20,10 @@ test('LinkedIn visibility refreshes real relationship post receipts and prepares
   assert.match(server,/if\(direct\.postsLastWeek\?\.length\)return direct/);
   assert.match(server,/if\(attendee\.strictLatest\)return direct/);
   assert.match(server,/strictLatest:true/);
-  assert.match(server,/metadata\.linkedinLastRefreshStatus==='error'\?\[\]:safeArray/);
+  assert.match(server,/function linkedInVerifiedCachedPosts/);
+  assert.match(server,/refreshAgeMs<10\*60\*1000/);
+  assert.match(server,/The last verified posts remain visible/);
+  assert.match(server,/storedPosts\.filter\(post=>post\?\.contentSource==='linkedin_public_profile'\)/);
   assert.match(server,/const observedAuthorName=/);
   assert.match(server,/latest public thinking/);
   assert.match(server,/readPublicLinkedInPost/);

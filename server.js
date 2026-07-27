@@ -17958,6 +17958,16 @@ function linkedinProfileUrl(profile={}){
 function linkedinProfileIsWatched(profile={}){
   return Boolean(linkedinProfileUrl(profile))&&profile.metadata?.linkedinWatch!==false;
 }
+function linkedInVerifiedCachedPosts(profile={}){
+  const metadata=profile.metadata||{};
+  const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
+  return safeArray(
+    receipts.linkedInLatestPosts||
+    metadata.linkedInLatestPosts||
+    metadata.linkedinLatestPosts||
+    metadata.linkedin_latest_posts
+  ).filter(post=>post?.contentSource==='linkedin_public_profile');
+}
 function publicLinkedInWatchedProfile(profile={}){
   const metadata=profile.metadata||{};
   const linkedinUrl=linkedinProfileUrl(profile);
@@ -18019,6 +18029,24 @@ async function refreshLinkedInVisibility({limit=20}={}){
   const results=await Promise.all(profiles.map(async profile=>{
     const checkedAt=new Date().toISOString();
     const linkedinUrl=linkedinProfileUrl(profile);
+    const existingMetadata=profile.metadata||{};
+    const previousCheckedAt=new Date(existingMetadata.linkedinLastCheckedAt||0).getTime();
+    const refreshAgeMs=Date.now()-previousCheckedAt;
+    const cachedVerifiedPosts=linkedInVerifiedCachedPosts(profile);
+    if(Number.isFinite(previousCheckedAt)&&previousCheckedAt>0&&refreshAgeMs<10*60*1000){
+      return {
+        profileId:profile.id,
+        name:profile.displayName,
+        linkedinUrl,
+        configured:true,
+        error:existingMetadata.linkedinLastRefreshStatus==='error'?(existingMetadata.linkedinLastRefreshMessage||'LinkedIn refresh is cooling down.'):'',
+        status:'cached',
+        checkedAt:existingMetadata.linkedinLastCheckedAt,
+        postCount:cachedVerifiedPosts.length,
+        draftCount:0,
+        cached:true
+      };
+    }
     const lookup=await lookupOutscraperLinkedIn({
       name:profile.displayName,
       email:relationshipProfilePrimaryEmail(profile),
@@ -18043,6 +18071,7 @@ async function refreshLinkedInVisibility({limit=20}={}){
       : profile.displayName;
     const metadata=profile.metadata||{};
     const sourceReceipts=metadata.sourceReceipts||{};
+    const verifiedPostsForReceipt=posts.length?posts:cachedVerifiedPosts;
     await saveRelationshipProfile({
       ...profile,
       displayName,
@@ -18056,15 +18085,15 @@ async function refreshLinkedInVisibility({limit=20}={}){
         linkedinLastCheckedAt:checkedAt,
         linkedinLastRefreshStatus:lookup.error?'error':(posts.length?'posts_found':'no_recent_posts'),
         linkedinLastRefreshMessage:lookup.error
-          ? `LinkedIn check needs attention: ${lookup.error}`
+          ? `LinkedIn check needs attention: ${lookup.error}${cachedVerifiedPosts.length?' The last verified posts remain visible.':''}`
           : (posts.length
             ? `${posts.length} current post${posts.length===1?'':'s'} found.`
             : 'Checked successfully. No current posts were returned for this profile.'),
-        linkedinLastPostCount:posts.length,
+        linkedinLastPostCount:lookup.error?cachedVerifiedPosts.length:posts.length,
         linkedinProvider:lookup.provider||'outscraper'
       }
     });
-    if(!posts.length)return {profileId:profile.id,name:displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:0,draftCount:0};
+    if(!posts.length)return {profileId:profile.id,name:displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:verifiedPostsForReceipt.length,draftCount:0,cached:Boolean(verifiedPostsForReceipt.length)};
     let draftCount=0;
     let draftError='';
     const latest=posts[0];
@@ -18151,12 +18180,15 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
     profiles.filter(profile=>profile.profileType==='person').forEach(profile=>{
       const metadata=profile.metadata||{};
       const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
-      const posts=metadata.linkedinLastRefreshStatus==='error'?[]:safeArray(
+      const storedPosts=safeArray(
         receipts.linkedInLatestPosts||
         metadata.linkedInLatestPosts||
         metadata.linkedinLatestPosts||
         metadata.linkedin_latest_posts
       );
+      const posts=metadata.linkedinLastRefreshStatus==='error'
+        ? storedPosts.filter(post=>post?.contentSource==='linkedin_public_profile')
+        : storedPosts;
       posts.slice(0,3).forEach((post,index)=>{
         const draft=linkedinDrafts.find(candidate=>{
           if(usedDrafts.has(candidate.id))return false;
