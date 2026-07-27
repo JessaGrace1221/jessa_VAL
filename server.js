@@ -8046,6 +8046,7 @@ function isPublicPath(req){
   if(isLocalVoicePreview) return true;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
+  if(p==='/api/val/ghl/voice-turn'&&req.method==='POST') return true;
   return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
@@ -8257,6 +8258,7 @@ app.get('/api/public-config',(req,res)=>{
     clientSlug: CLIENT_CONFIG.clientSlug,
     clientName: CLIENT_CONFIG.clientName,
     brandName: CLIENT_CONFIG.brandName,
+    voiceWidgetId: process.env.GHL_VOICE_WIDGET_ID || '6a6253197742c156ecacd8ca',
     featureFlags: clientFeatureLocks()
   });
 });

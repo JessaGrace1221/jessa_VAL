@@ -17400,13 +17400,16 @@ body.val-ghl-voice-active .val-cowork-voice-mark .val-presence-core{
   top:calc(50% + 108px);
   transform:translateX(-50%);
   margin:0;
-  color:rgba(255,251,244,.92);
+  color:rgba(255,253,248,1);
   font-family:Inter,system-ui,sans-serif;
-  font-size:.72rem;
-  font-weight:560;
-  letter-spacing:.08em;
+  font-size:.88rem;
+  font-weight:700;
+  letter-spacing:.05em;
   text-transform:uppercase;
-  text-shadow:0 0 18px rgba(255,236,202,.58),0 1px 8px rgba(27,36,26,.42);
+  text-shadow:
+    0 0 12px rgba(255,249,239,.96),
+    0 0 28px rgba(239,185,173,.78),
+    0 2px 10px rgba(27,36,26,.72);
   pointer-events:none;
 }
 body.val-ghl-voice-active .hearth-brand-cluster,
