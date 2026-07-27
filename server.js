@@ -25268,7 +25268,26 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     .filter(observer=>observer?.status!=='no_signal'&&observer?.finding)
     .map(observer=>({
       observer:String(observer.observer||'Observer'),
+      observerId:String(observer.observerId||observer.observer_id||''),
+      observerVersion:String(observer.observerVersion||observer.observer_version||''),
+      observerRunId:String(observer.observerRunId||observer.observer_run_id||''),
+      eventRunId:String(observer.eventRunId||observer.event_run_id||recommendation.eventRunId||recommendation.event_run_id||''),
+      promptKey:String(observer.promptKey||observer.prompt_key||''),
+      packetId:String(observer.packetId||observer.packet_id||packetId),
+      sourceType:String(observer.sourceType||observer.source_type||candidate.sourceType||candidate.source_type||''),
+      sourceId:String(observer.sourceId||observer.source_id||candidate.sourceId||candidate.source_id||''),
+      sourceProcessingRecordId:String(observer.sourceProcessingRecordId||observer.source_processing_record_id||candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),
+      canonicalWorkItemId:String(observer.canonicalWorkItemId||observer.canonical_work_item_id||candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),
+      status:String(observer.status||'observed'),
       finding:dashboardShortText(observer.finding,'',320),
+      watching:dashboardShortText(observer.watching,'',280),
+      concern:dashboardShortText(observer.concern,'',240),
+      question:dashboardShortText(observer.question,'',200),
+      people:safeArray(observer.people).map(String).filter(Boolean).slice(0,8),
+      projects:safeArray(observer.projects).map(String).filter(Boolean).slice(0,6),
+      decisionObjects:safeArray(observer.decisionObjects||observer.decision_objects).map(String).filter(Boolean).slice(0,6),
+      evidence:safeArray(observer.evidence).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary).slice(0,8),
+      reviewedAt:observer.reviewedAt||observer.reviewed_at||'',
       confidence:Math.max(0,Math.min(1,Number(observer.confidence)||0))
     }));
   return {

@@ -187,10 +187,29 @@ function publicObserverDefinitions(){
   }));
 }
 
+function publicObserverBlockDefinitions(){
+  return VAL_OBSERVER_REGISTRY.map(definition=>({
+    blockType:'observer',
+    definitionRef:`${definition.observerId}@${definition.version}`,
+    observerId:definition.observerId,
+    observerName:definition.observerName,
+    version:definition.version,
+    truthProtected:definition.truthProtected,
+    question:definition.question,
+    accepts:[...definition.reads],
+    triggers:['scheduled_briefing','explicit_refresh','witnessing_complete','approved_correction','authorized_source_run'],
+    emits:[definition.outputContract],
+    handoffs:['observer','round_table','chief_of_staff'],
+    externalActionPolicy:'never',
+    terminalStates:['observed','no_meaningful_signal','needs_context','retryable_failure','permanent_failure']
+  }));
+}
+
 module.exports={
   VAL_OBSERVER_REGISTRY,
   DEFAULT_OBSERVERS,
   OBSERVER_PACKET_LENSES,
   observerDefinition,
-  publicObserverDefinitions
+  publicObserverDefinitions,
+  publicObserverBlockDefinitions
 };

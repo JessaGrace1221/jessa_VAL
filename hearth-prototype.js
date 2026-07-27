@@ -27479,11 +27479,40 @@ function observerCardReviewFromVisibleContext(observer = {}, context = {}){
   };
 }
 
-function homeObserverProofReviews(observer = null, limit = 5){
+function homeExactObserverProofReviews(observer = null, briefing = executiveBriefingState || {}, limit = 8){
   if(!observer?.name) return [];
-  const meaningful = observerMeaningfulLiveReviews(observer.name, limit);
-  if(meaningful.length) return meaningful;
-  return observerLiveReviews(observer.name, limit);
+  const chiefItem = briefing?.chiefRecommendation || briefing?.highestLeverageMove || null;
+  const exactReceipts = safeArray(chiefItem?.observerFindings)
+    .filter((receipt) => receipt?.observer === observer.name)
+    .filter((receipt) => receipt.observerRunId && receipt.packetId)
+    .map((receipt) => ({
+      status:receipt.status || 'observed',
+      observerName:receipt.observer,
+      observerId:receipt.observerId || '',
+      observerVersion:receipt.observerVersion || '',
+      observerRunId:receipt.observerRunId,
+      eventRunId:receipt.eventRunId || '',
+      promptKey:receipt.promptKey || '',
+      packetId:receipt.packetId,
+      sourceType:receipt.sourceType || '',
+      sourceId:receipt.sourceId || '',
+      sourceProcessingRecordId:receipt.sourceProcessingRecordId || '',
+      canonicalWorkItemId:receipt.canonicalWorkItemId || '',
+      lensFinding:receipt.finding || '',
+      observation:receipt.finding || '',
+      watching:receipt.watching || '',
+      concern:receipt.concern || '',
+      question:receipt.question || '',
+      people:safeArray(receipt.people),
+      projects:safeArray(receipt.projects),
+      decisionObjects:safeArray(receipt.decisionObjects),
+      evidenceRefs:safeArray(receipt.evidence),
+      evidence:safeArray(receipt.evidence)[0] || null,
+      confidence:Number(receipt.confidence) || 0,
+      reviewedAt:receipt.reviewedAt || '',
+      exactChiefReceipt:true
+    }));
+  return exactReceipts.slice(0, limit);
 }
 
 function observerConversationContext(observer = null, role = 'observer'){
@@ -27554,7 +27583,7 @@ function homeObserverContextOpening(observer = null, briefing = executiveBriefin
   const observerName = observer?.name || 'this Observer';
   const evidenceSources = homeBriefingEvidenceSources(briefing || {});
   const sourceLines = evidenceSources.map(executiveEvidenceLine).filter(Boolean);
-  const proofReviews = homeObserverProofReviews(observer, 5);
+  const proofReviews = homeExactObserverProofReviews(observer, briefing, 5);
   const meaningfulProof = proofReviews.filter((review) => review.status === 'observed');
   const readLine = cleanVelocityPerspectiveLine(perspective.witness, 220) || homeObserverWatchingLine(observer, briefing || {});
   return [
@@ -27565,7 +27594,7 @@ function homeObserverContextOpening(observer = null, briefing = executiveBriefin
     meaningfulProof.length ? 'What ' + observerName + ' actually observed:' : 'What ' + observerName + ' checked:',
     proofReviews.length
       ? proofReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)).join('\n')
-      : '- The Observer packet reviews have not attached to this Home read yet, so I should not pretend there is proof.',
+      : '- The exact Observer receipt used by the Chief of Staff is not attached, so I should not substitute a different recent review.',
     '',
     sourceLines.length ? 'Source trail:' : 'Source trail missing:',
     sourceLines.length ? sourceLines.map((line) => '- ' + line).join('\n') : '- The originating source has not attached yet.',
@@ -27578,9 +27607,27 @@ function homeObserverContextPatch(observer = null, briefing = executiveBriefingS
   const perspective = chiefOfStaffPerspectiveFromBriefing(briefing || {});
   const evidenceSources = homeBriefingEvidenceSources(briefing || {});
   const observerName = observer?.name || 'Observer';
+  const exactProofReviews = homeExactObserverProofReviews(observer, briefing, 8);
+  const exactMeaningfulReviews = exactProofReviews.filter((review) => review.status === 'observed');
+  const leadReceipt = exactMeaningfulReviews[0] || exactProofReviews[0] || null;
   return {
     source:'home_full_context',
     homeFullContext:true,
+    selectedObserver:{
+      ...(observer || {}),
+      name:observerName,
+      currentlySeeing:leadReceipt?.observation || 'The exact Chief of Staff receipt is not attached.',
+      watching:leadReceipt?.watching || '',
+      concern:leadReceipt?.concern || '',
+      explore:leadReceipt?.question || '',
+      evidence:leadReceipt?.evidence?.quoteOrSummary || '',
+      evidenceItems:leadReceipt?.evidence?.quoteOrSummary ? [leadReceipt.evidence.quoteOrSummary] : [],
+      packetFrom:leadReceipt?.sourceType || '',
+      incomingObservation:leadReceipt?.observation || '',
+      liveReviews:exactProofReviews,
+      meaningfulReviews:exactMeaningfulReviews,
+      exactChiefReceipt:true
+    },
     chiefOfStaffRead:{
       headline:perspective.headline,
       witness:perspective.witness,
@@ -27595,16 +27642,34 @@ function homeObserverContextPatch(observer = null, briefing = executiveBriefingS
       summary:item.summary || item.reason_it_matters || item.reason || item.why || '',
       sourceRefs:item.sourceRefsJson || item.sourceRefs || item.source_refs || item.evidence || []
     })),
-    observerProofReviews:homeObserverProofReviews(observer, 8).map((review) => ({
+    observerProofReviews:exactProofReviews.map((review) => ({
       status:review.status || '',
       observerName:review.observerName || observerName,
+      observerId:review.observerId || '',
+      observerVersion:review.observerVersion || '',
+      observerRunId:review.observerRunId || '',
+      eventRunId:review.eventRunId || '',
+      promptKey:review.promptKey || '',
+      packetId:review.packetId || '',
+      sourceType:review.sourceType || '',
+      sourceId:review.sourceId || '',
+      sourceProcessingRecordId:review.sourceProcessingRecordId || '',
+      canonicalWorkItemId:review.canonicalWorkItemId || '',
       line:observerReviewNamedLine(review),
       evidenceLine:observerReviewEvidenceLine(review),
       people:safeArray(review.people),
       projects:safeArray(review.projects),
       decisionObjects:safeArray(review.decisionObjects),
       observation:review.observation || '',
-      lensFinding:review.lensFinding || ''
+      lensFinding:review.lensFinding || '',
+      watching:review.watching || '',
+      concern:review.concern || '',
+      question:review.question || '',
+      evidenceRefs:safeArray(review.evidenceRefs),
+      evidence:review.evidence || null,
+      confidence:Number(review.confidence) || 0,
+      reviewedAt:review.reviewedAt || '',
+      exactChiefReceipt:true
     })),
     openingAnswer:homeObserverContextOpening(observer, briefing)
   };

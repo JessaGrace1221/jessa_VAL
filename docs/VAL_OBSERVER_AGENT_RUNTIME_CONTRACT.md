@@ -233,6 +233,41 @@ Preparation, approval, and external-action blocks remain separate. This keeps
 Observer judgment reusable without turning every Observer into an unsafe general
 agent.
 
+### Reusable Observer Block
+
+Every Observer block exposes the same executable ports:
+
+```json
+{
+  "block_type": "observer",
+  "definition_ref": "capacity@v1",
+  "accepts": ["board_packet", "source_refs", "approved_memory"],
+  "triggers": ["scheduled_briefing", "explicit_refresh", "witnessing_complete", "approved_correction", "authorized_source_run"],
+  "emits": ["observer_receipt_v1"],
+  "handoffs": ["observer", "round_table", "chief_of_staff"],
+  "external_action_policy": "never",
+  "terminal_states": ["observed", "no_meaningful_signal", "needs_context", "retryable_failure", "permanent_failure"]
+}
+```
+
+The user may connect packet sources to an Observer and connect its receipt to
+another Observer, the Round Table, or the Chief of Staff. The user may not alter
+the Observer's protected truth, suppress evidence requirements, or connect an
+Observer directly to an external action.
+
+Every visible run of the block must expose:
+
+- the immutable definition and version that ran
+- the triggering packet and exact source references
+- the durable context categories that were admitted
+- the terminal receipt and timestamp
+- the next handoff and its receipt
+- any failure without translating it into a clean result
+
+Builder workflows persist these run receipts. A connection is not considered
+successful because an animation completed; it is successful only when the
+receiving block stores a receipt for the exact upstream run.
+
 ## Acceptance Tests
 
 The foundation is not complete until tests prove:

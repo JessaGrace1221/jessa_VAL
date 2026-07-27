@@ -905,7 +905,33 @@ function createValIntelligenceSpine({
           score:0
         };
         const confidence=Number(review.confidence||0);
-        current.observers.push({observer:observerName,lens:review.lens||'',status:review.status||'observed',finding:review.observation||review.seeing||'',confidence,primary:!!review.primary,triggered:!!review.triggered,people:safeArray(review.people),projects:safeArray(review.projects),decisionObjects:safeArray(review.decisionObjects)});
+        current.observers.push({
+          observer:observerName,
+          observerId:review.observerId||review.observer_id||run.outputJson?.observerDefinition?.observerId||'',
+          observerVersion:review.observerVersion||review.observer_version||run.outputJson?.observerDefinition?.observerVersion||'',
+          observerRunId:run.id||'',
+          eventRunId:run.eventRunId||run.event_run_id||'',
+          promptKey:run.promptKey||run.prompt_key||run.outputJson?.observerDefinition?.promptKey||'',
+          packetId,
+          sourceType:review.sourceType||review.source_type||'',
+          sourceId:review.sourceId||review.source_id||'',
+          sourceProcessingRecordId:review.sourceProcessingRecordId||review.source_processing_record_id||'',
+          canonicalWorkItemId:review.canonicalWorkItemId||review.canonical_work_item_id||'',
+          lens:review.lens||'',
+          status:review.status||'observed',
+          finding:review.observation||review.seeing||'',
+          watching:review.watching||'',
+          concern:review.concern||'',
+          question:review.question||'',
+          confidence,
+          primary:!!review.primary,
+          triggered:!!review.triggered,
+          people:safeArray(review.people),
+          projects:safeArray(review.projects),
+          decisionObjects:safeArray(review.decisionObjects),
+          evidence:safeArray(review.evidence).slice(0,8),
+          reviewedAt:review.reviewedAt||review.reviewed_at||run.createdAt||run.created_at||''
+        });
         if(review.primary)current.primaryObservers.push(observerName);
         if(review.triggered)current.triggeredObservers.push(observerName);
         const observed=review.status!=='no_signal';

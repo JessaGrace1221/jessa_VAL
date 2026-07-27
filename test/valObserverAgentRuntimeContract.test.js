@@ -13,7 +13,8 @@ const {
   VAL_OBSERVER_REGISTRY,
   DEFAULT_OBSERVERS,
   OBSERVER_PACKET_LENSES,
-  publicObserverDefinitions
+  publicObserverDefinitions,
+  publicObserverBlockDefinitions
 }=require('../services/valObserverRegistry');
 
 test('Observer agent runtime contract requires bounded, durable, inspectable execution',()=>{
@@ -53,8 +54,25 @@ test('all 14 Observer agents have one bounded executable definition',()=>{
   assert.equal(publicObserverDefinitions().length,14);
 });
 
+test('all Observer agents expose one builder-safe executable block contract',()=>{
+  const blocks=publicObserverBlockDefinitions();
+  assert.equal(blocks.length,14);
+  for(const block of blocks){
+    assert.equal(block.blockType,'observer');
+    assert.match(block.definitionRef,/@v1$/);
+    assert.deepEqual(block.accepts,['board_packet','source_refs','approved_memory']);
+    assert.deepEqual(block.emits,['observer_receipt_v1']);
+    assert.deepEqual(block.handoffs,['observer','round_table','chief_of_staff']);
+    assert.equal(block.externalActionPolicy,'never');
+    assert.ok(block.terminalStates.includes('no_meaningful_signal'));
+    assert.ok(block.terminalStates.includes('retryable_failure'));
+  }
+  assert.match(contract,/A connection is not considered[\s\S]*receiving block stores a receipt for the exact upstream run/);
+});
+
 test('Board cards visibly prove bounded role and completed review state',()=>{
   assert.match(routes,/definitions:publicObserverDefinitions\(\)/);
+  assert.match(routes,/blockDefinitions:publicObserverBlockDefinitions\(\)/);
   assert.match(hearthJs,/observerBoardState\.definitionsByObserver/);
   assert.match(hearthJs,/function observerAgentProof/);
   assert.match(hearthJs,/>What I Protect<\/em>/);

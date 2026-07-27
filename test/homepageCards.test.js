@@ -266,11 +266,15 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
   assert.match(hearthPrototype,/selectedName \+ ' can show the source trail behind this read\.'/);
   assert.match(hearthPrototype,/No single source-backed move has earned the room yet\./);
   assert.doesNotMatch(hearthPrototype,/has the source context behind/);
-  assert.match(hearthPrototype,/function homeObserverProofReviews/);
+  assert.match(hearthPrototype,/function homeExactObserverProofReviews/);
   assert.match(hearthPrototype,/function homeObserverContextPatch/);
   assert.match(hearthPrototype,/chiefOfStaffRead/);
   assert.match(hearthPrototype,/sourceTrail:evidenceSources\.map/);
-  assert.match(hearthPrototype,/observerProofReviews:homeObserverProofReviews\(observer, 8\)\.map/);
+  assert.match(hearthPrototype,/const exactProofReviews = homeExactObserverProofReviews\(observer, briefing, 8\)/);
+  assert.match(hearthPrototype,/observerProofReviews:exactProofReviews\.map/);
+  assert.match(hearthPrototype,/receipt\.observerRunId && receipt\.packetId/);
+  assert.match(hearthPrototype,/exactChiefReceipt:true/);
+  assert.doesNotMatch(hearthPrototype,/function homeObserverProofReviews/);
   assert.match(hearthPrototype,/What ' \+ observerName \+ ' actually observed/);
   assert.match(hearthPrototype,/async function openHomeObserverFullContext/);
   assert.match(hearthPrototype,/await Promise\.race\(\[\s*loadLiveObserverBoardContext\(\)/);
