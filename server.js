@@ -17971,6 +17971,8 @@ function linkedInVerifiedCachedPosts(profile={}){
 function publicLinkedInWatchedProfile(profile={}){
   const metadata=profile.metadata||{};
   const linkedinUrl=linkedinProfileUrl(profile);
+  const cachedVerifiedPosts=linkedInVerifiedCachedPosts(profile);
+  const refreshFailed=metadata.linkedinLastRefreshStatus==='error';
   return {
     id:profile.id,
     name:profile.displayName||linkedinWatchNameFromUrl(linkedinUrl),
@@ -17978,8 +17980,12 @@ function publicLinkedInWatchedProfile(profile={}){
     explicit:metadata.linkedinWatch===true,
     lastCheckedAt:metadata.linkedinLastCheckedAt||'',
     lastRefreshStatus:metadata.linkedinLastRefreshStatus||'not_checked',
-    lastRefreshMessage:metadata.linkedinLastRefreshMessage||'Ready to check for current posts.',
-    postCount:Number(metadata.linkedinLastPostCount||0),
+    lastRefreshMessage:refreshFailed&&cachedVerifiedPosts.length
+      ? `${metadata.linkedinLastRefreshMessage||'LinkedIn refresh is temporarily unavailable.'} The last ${cachedVerifiedPosts.length} verified post${cachedVerifiedPosts.length===1?' remains':'s remain'} visible.`
+      : (metadata.linkedinLastRefreshMessage||'Ready to check for current posts.'),
+    postCount:refreshFailed&&cachedVerifiedPosts.length
+      ? cachedVerifiedPosts.length
+      : Number(metadata.linkedinLastPostCount||0),
     provider:metadata.linkedinProvider||'outscraper'
   };
 }

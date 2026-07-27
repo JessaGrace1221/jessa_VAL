@@ -24,6 +24,8 @@ test('LinkedIn visibility refreshes real relationship post receipts and prepares
   assert.match(server,/refreshAgeMs<10\*60\*1000/);
   assert.match(server,/The last verified posts remain visible/);
   assert.match(server,/storedPosts\.filter\(post=>post\?\.contentSource==='linkedin_public_profile'\)/);
+  assert.match(server,/const cachedVerifiedPosts=linkedInVerifiedCachedPosts\(profile\)/);
+  assert.match(server,/verified post\$\{cachedVerifiedPosts\.length===1\?' remains':'s remain'\} visible/);
   assert.match(server,/const observedAuthorName=/);
   assert.match(server,/latest public thinking/);
   assert.match(server,/readPublicLinkedInPost/);
