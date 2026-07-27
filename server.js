@@ -15212,6 +15212,56 @@ async function enrichProspectWithApollo(p){
   };
 }
 
+function linkedInActivityDate(url=''){
+  const activityId=String(url||'').match(/activity-(\d{16,22})/i)?.[1]||'';
+  if(!activityId)return '';
+  try{
+    const milliseconds=Number(BigInt(activityId)>>22n);
+    const date=new Date(milliseconds);
+    return Number.isFinite(date.getTime())?date.toISOString():'';
+  }catch(_error){
+    return '';
+  }
+}
+
+async function lookupOutscraperLinkedInPersonalPosts(attendee={},profile={},personalLinkedIn=''){
+  const slug=String(personalLinkedIn||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]||'';
+  const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
+  const queries=[
+    slug?`site:linkedin.com/posts ${slug}`:'',
+    slug?`site:linkedin.com/feed/update ${slug}`:'',
+    name?`site:linkedin.com/posts "${name}"`:''
+  ].filter(Boolean);
+  const attempts=[];
+  const matches=[];
+  for(const query of queries.slice(0,2)){
+    const search=await lookupOutscraperGoogleSearch(query,{
+      timeoutMs:OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS,
+      label:'LinkedIn watched profile search'
+    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,query,error:error.message,results:[]}));
+    attempts.push({query,error:search.error||'',rawCount:Number(search.rawCount||0)});
+    matches.push(...safeArray(search.results)
+      .filter(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))
+      .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,{...attendee,linkedinUrl:personalLinkedIn},{},profile)));
+    if(matches.length>=3)break;
+  }
+  const posts=matches.map(result=>({
+    date:linkedInActivityDate(result.url),
+    text:dashboardShortText([result.title,result.snippet].filter(Boolean).join(': '),'',700),
+    url:result.url
+  })).filter(post=>post.text&&post.url).filter((post,index,array)=>array.findIndex(item=>item.url===post.url)===index)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
+    .slice(0,6);
+  const errors=attempts.map(attempt=>attempt.error).filter(Boolean);
+  return {
+    configured:attempts.length>0||!!OUTSCRAPER_API_KEY,
+    query:attempts.map(attempt=>attempt.query).join(' | '),
+    postsLastWeek:posts,
+    rawCount:attempts.reduce((sum,attempt)=>sum+attempt.rawCount,0),
+    error:posts.length?'':(errors[0]||'No public LinkedIn post results were returned for this personal profile.')
+  };
+}
+
 async function lookupOutscraperLinkedIn(attendee, profile){
   const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
   if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
@@ -15224,19 +15274,36 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
   const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
   const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
-  const query = personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || companyLinkedIn || organization || usableDomain || email;
+  if(/linkedin\.com\/in\//i.test(personalLinkedIn)){
+    return lookupOutscraperLinkedInPersonalPosts(attendee,profile,personalLinkedIn);
+  }
+  const companySlug=String(companyLinkedIn||personalLinkedIn||'').match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]||'';
+  const query = companySlug || [name, organization || usableDomain].filter(Boolean).join(' ') || name || organization || usableDomain || email;
   if(query) url.searchParams.set('query', query);
   url.searchParams.set('async','false');
   const response = await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts');
   const data = await readJsonResponse(response);
   if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
-  const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
-  const recentPosts = posts.slice(0,12).map(p=>({
+  const rows = Array.isArray(data.data) ? data.data.flat(6).filter(Boolean) : [];
+  const embeddedError=rows.find(row=>row&&typeof row==='object'&&!Array.isArray(row)&&row.error)?.error||'';
+  const posts=rows.flatMap(row=>{
+    if(!row||typeof row!=='object'||Array.isArray(row))return [];
+    return safeArray(row.posts||row.linkedin_posts||row.items).length
+      ? safeArray(row.posts||row.linkedin_posts||row.items)
+      : [row];
+  });
+  const recentPosts = posts.slice(0,24).map(p=>({
     date:p.date || p.posted_at || p.created_at || '',
     text:String(p.text || p.post_text || p.content || p.description || p.title || '').slice(0,700),
     url:p.url || p.post_url || p.link || ''
   })).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update|pulse)\//i.test(post.url||'')).slice(0,6);
-  return {configured:true, query, postsLastWeek:recentPosts, rawCount:posts.length};
+  return {
+    configured:true,
+    query,
+    postsLastWeek:recentPosts,
+    rawCount:posts.length,
+    error:recentPosts.length?'':(embeddedError||'Outscraper returned no readable LinkedIn posts for this company profile.')
+  };
 }
 
 function meetingPrepPublicSearchQueries(attendee={}, contact={}, profile={}){

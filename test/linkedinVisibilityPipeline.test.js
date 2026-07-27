@@ -10,6 +10,9 @@ const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 test('LinkedIn visibility refreshes real relationship post receipts and prepares review-only comments',()=>{
   assert.match(server,/async function refreshLinkedInVisibility/);
   assert.match(server,/lookupOutscraperLinkedIn/);
+  assert.match(server,/lookupOutscraperLinkedInPersonalPosts/);
+  assert.match(server,/linkedInActivityDate/);
+  assert.match(server,/embeddedError/);
   assert.match(server,/sourceReceipts:posts\.length\?\{\.\.\.sourceReceipts,linkedInLatestPosts:posts\}:sourceReceipts/);
   assert.match(server,/draftType:'linkedin_comment_draft'/);
   assert.match(server,/contactId:profile\.id/);
@@ -23,6 +26,7 @@ test('LinkedIn workspace loads saved receipts on open and refreshes only when ex
   assert.match(hearth,/data-linkedin-refresh/);
   assert.match(hearth,/hydrateLinkedInVisibility\(\{force:true,refresh:true\}\)/);
   assert.match(hearth,/await hydrateLinkedInVisibility\(\{force:true\}\)/);
+  assert.match(hearth,/timeoutMs:90000/);
   assert.match(hearth,/VAL never auto-publishes posts, comments, reactions, or DMs/);
 });
 

@@ -132,15 +132,20 @@ test('meeting prep resolves context from attendee transcripts without cross-atte
   assert.match(server,/broadCalendarMatch=!targetHasIdentity/);
 });
 
-test('meeting prep Outscraper LinkedIn lookup uses name and organization instead of raw email only',()=>{
+test('meeting prep Outscraper LinkedIn lookup separates personal-profile search from company scraping',()=>{
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
-  assert.doesNotMatch(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
-  assert.match(server,/const query = personalLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| companyLinkedIn \|\| organization \|\| usableDomain \|\| email/);
+  assert.match(server,/function linkedInActivityDate/);
+  assert.match(server,/async function lookupOutscraperLinkedInPersonalPosts/);
+  assert.match(server,/site:linkedin\.com\/posts \$\{slug\}/);
+  assert.match(server,/if\(\/linkedin\\\.com\\\/in\\\/\/i\.test\(personalLinkedIn\)\)/);
+  assert.match(server,/return lookupOutscraperLinkedInPersonalPosts\(attendee,profile,personalLinkedIn\)/);
+  assert.match(server,/const companySlug=String\(companyLinkedIn\|\|personalLinkedIn\|\|''\)\.match/);
+  assert.match(server,/const query = companySlug \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| organization \|\| usableDomain \|\| email/);
   assert.match(server,/OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS/);
   assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
+  assert.match(server,/const embeddedError=rows\.find/);
   assert.match(server,/filter\(post=>post\.text&&\/linkedin\\\.com\\\/\(posts\|feed\\\/update\|pulse\)\\\/\/i\.test\(post\.url\|\|''\)\)/);
   assert.doesNotMatch(server,/const weekAgo = Date\.now\(\) - 7\*24\*60\*60\*1000/);
-  assert.match(server,/return \{configured:true, query, postsLastWeek:recentPosts, rawCount:posts\.length\}/);
   assert.match(server,/await lookupOutscraperLinkedIn\(\{name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl/);
   assert.doesNotMatch(server,/cacheStatus:'deferred_to_recent_signal'/);
 });

@@ -18709,7 +18709,7 @@ async function hydrateLinkedInVisibility({force = false, refresh = false} = {}){
     if(refresh){
       linkedinVisibilityRefreshAttempted = true;
       await postJson('/api/val/linkedin/visibility/refresh', {limit:40}, {
-        timeoutMs:60000,
+        timeoutMs:90000,
         timeoutMessage:'VAL is still checking the support circle for current LinkedIn posts.'
       });
     }
