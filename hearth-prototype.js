@@ -19249,6 +19249,7 @@ function homeObserverKeywordScore(observerName = '', text = ''){
 
 function selectHomeObserverSignal(briefing = {}){
   const daily = briefing.dailyWitness || {};
+  if(daily.moment_type === 'chief_of_staff_quiet') return null;
   const explicitName = daily.observerName || daily.selectedObserver || daily.observer;
   const observers = observerBoardState?.observers || [];
   const text = homeObserverSignalText(briefing);
@@ -19272,11 +19273,13 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
     .filter((line) => !/\bverified\b.*\bsource\b/i.test(line));
   if(preparedLines.length >= 2){
     const permissionLine = cleanVelocityPerspectiveLine(daily.permission_line, 150);
+    const firstLineIsGreeting = /^Good (?:morning|afternoon|evening),\s+/i.test(preparedLines[0]);
+    const bodyLines = firstLineIsGreeting ? preparedLines.slice(1) : preparedLines;
     return {
-      headline: 'Good morning, ' + name + '.',
-      witness: preparedLines[0],
-      orientation: preparedLines[1],
-      permission: preparedLines[2] || permissionLine || 'Nothing sends, imports, or changes externally unless you approve it.'
+      headline: firstLineIsGreeting ? preparedLines[0] : 'Good morning, ' + name + '.',
+      witness: bodyLines[0],
+      orientation: bodyLines[1] || permissionLine || 'I will keep the desk clear until something earns your attention.',
+      permission: bodyLines[2] || permissionLine || 'Nothing sends, imports, or changes externally unless you approve it.'
     };
   }
   const observer = selectHomeObserverSignal(briefing);
@@ -19447,6 +19450,31 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   if(!evidence) return;
   if(observerBoardState.witnessingComplete === false){
     renderWitnessingPendingEvidence(observerBoardState);
+    return;
+  }
+  if(briefing?.dailyWitness?.moment_type === 'chief_of_staff_quiet'){
+    const generatedLine = status === 'loaded'
+      ? 'Last checked at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
+      : status === 'unavailable'
+        ? 'I cannot refresh the live read right now, so I am keeping Home clear.'
+        : 'I am still gathering the Home read.';
+    evidence.innerHTML = [
+      '<div>',
+        '<p class="evidence-label">Why Home is clear</p>',
+        '<ul>',
+          '<li>' + escapeHtml(generatedLine) + '</li>',
+          '<li>No source-backed Board deduction was strong enough to earn your attention.</li>',
+          '<li>Alignment stays clear until the Chief of Staff has one grounded move for you.</li>',
+        '</ul>',
+      '</div>',
+      '<div>',
+        '<p class="evidence-label">Evidence boundary</p>',
+        '<ul>',
+          '<li>No Observer or source is being named because no claim was admitted.</li>',
+          '<li>Prepared work remains available in Leverage without being presented as today’s priority.</li>',
+        '</ul>',
+      '</div>'
+    ].join('');
     return;
   }
   const velocityCount = homeAdmittedCount('velocity');

@@ -299,6 +299,15 @@ test('Chief of Staff Home witness is concrete and points to inspectable proof',(
   assert.doesNotMatch(server,/The Chief of Staff is watching the live evidence/);
 });
 
+test('quiet Chief state stays quiet across the Home message and its explanation',()=>{
+  assert.match(hearthPrototype,/if\(daily\.moment_type === 'chief_of_staff_quiet'\) return null/);
+  assert.match(hearthPrototype,/const firstLineIsGreeting = \/\^Good/);
+  assert.match(hearthPrototype,/briefing\?\.dailyWitness\?\.moment_type === 'chief_of_staff_quiet'/);
+  assert.match(hearthPrototype,/No source-backed Board deduction was strong enough to earn your attention\./);
+  assert.match(hearthPrototype,/No Observer or source is being named because no claim was admitted\./);
+  assert.match(hearthPrototype,/Prepared work remains available in Leverage without being presented as today’s priority\./);
+});
+
 test('Home Alignment can be fed by active Chief of Staff recommendations',()=>{
   assert.match(server,/function chiefRecommendationHomeItems/);
   assert.match(server,/valIntelligenceSpine\.listChiefRecommendations/);
