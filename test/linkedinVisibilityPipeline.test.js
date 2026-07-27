@@ -12,7 +12,18 @@ test('LinkedIn visibility refreshes real relationship post receipts and prepares
   assert.match(server,/lookupOutscraperLinkedIn/);
   assert.match(server,/lookupOutscraperLinkedInPersonalPosts/);
   assert.match(server,/linkedInActivityDate/);
+  assert.match(server,/linkedInStructuredPosts/);
+  assert.match(server,/lookupPublicLinkedInProfilePosts/);
+  assert.match(server,/provider:'linkedin_public_profile'/);
+  assert.match(server,/if\(direct\.postsLastWeek\?\.length\)return direct/);
+  assert.match(server,/if\(attendee\.strictLatest\)return direct/);
+  assert.match(server,/strictLatest:true/);
+  assert.match(server,/metadata\.linkedinLastRefreshStatus==='error'\?\[\]:safeArray/);
+  assert.match(server,/readPublicLinkedInPost/);
+  assert.match(server,/linkedin_public_metadata/);
   assert.match(server,/embeddedError/);
+  assert.match(server,/latest\.contentSource==='search_snippet'/);
+  assert.match(server,/linkedinLastRefreshStatus:'draft_error'/);
   assert.match(server,/sourceReceipts:posts\.length\?\{\.\.\.sourceReceipts,linkedInLatestPosts:posts\}:sourceReceipts/);
   assert.match(server,/draftType:'linkedin_comment_draft'/);
   assert.match(server,/contactId:profile\.id/);
@@ -37,6 +48,7 @@ test('Teach LinkedIn owns a durable profile watch list with inspectable refresh 
   assert.match(server,/app\.delete\('\/api\/val\/linkedin\/watched-profiles\/:id'/);
   assert.match(server,/linkedinLastRefreshStatus/);
   assert.match(server,/watchedProfiles/);
+  assert.match(server,/\['error','draft_error'\]\.includes\(profile\.lastRefreshStatus\)/);
   assert.match(hearth,/data-linkedin-watch-form/);
   assert.match(hearth,/data-linkedin-stop-watch/);
   assert.match(hearth,/Choose whose work VAL should watch/);

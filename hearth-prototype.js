@@ -18763,7 +18763,7 @@ function linkedinRefreshReceiptCopy(){
 }
 
 function linkedinWatchedProfileStatus(profile = {}){
-  if(profile.lastRefreshStatus === 'error') return profile.lastRefreshMessage || 'The last check needs attention.';
+  if(['error','draft_error'].includes(profile.lastRefreshStatus)) return profile.lastRefreshMessage || 'The last check needs attention.';
   if(profile.lastRefreshStatus === 'posts_found') return profile.lastRefreshMessage || 'Current posts found.';
   if(profile.lastRefreshStatus === 'no_recent_posts') return 'Checked. No current posts were returned.';
   return 'Ready to check.';

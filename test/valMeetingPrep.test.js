@@ -135,10 +135,15 @@ test('meeting prep resolves context from attendee transcripts without cross-atte
 test('meeting prep Outscraper LinkedIn lookup separates personal-profile search from company scraping',()=>{
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
   assert.match(server,/function linkedInActivityDate/);
+  assert.match(server,/function linkedInPublicMetaContent/);
+  assert.match(server,/async function readPublicLinkedInPost/);
+  assert.match(server,/function linkedInStructuredPosts/);
+  assert.match(server,/async function lookupPublicLinkedInProfilePosts/);
   assert.match(server,/async function lookupOutscraperLinkedInPersonalPosts/);
   assert.match(server,/site:linkedin\.com\/posts \$\{slug\}/);
   assert.match(server,/if\(\/linkedin\\\.com\\\/in\\\/\/i\.test\(personalLinkedIn\)\)/);
-  assert.match(server,/return lookupOutscraperLinkedInPersonalPosts\(attendee,profile,personalLinkedIn\)/);
+  assert.match(server,/const direct=await lookupPublicLinkedInProfilePosts\(personalLinkedIn\)/);
+  assert.match(server,/const fallback=await lookupOutscraperLinkedInPersonalPosts\(attendee,profile,personalLinkedIn\)/);
   assert.match(server,/const companySlug=String\(companyLinkedIn\|\|personalLinkedIn\|\|''\)\.match/);
   assert.match(server,/const query = companySlug \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| organization \|\| usableDomain \|\| email/);
   assert.match(server,/OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS/);

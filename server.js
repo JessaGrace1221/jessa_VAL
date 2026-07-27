@@ -15224,6 +15224,103 @@ function linkedInActivityDate(url=''){
   }
 }
 
+function linkedInPublicMetaContent(html='',name='description'){
+  const escaped=String(name||'description').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const patterns=[
+    new RegExp(`<meta[^>]+(?:property|name)=["'](?:og:)?${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`,'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["'](?:og:)?${escaped}["'][^>]*>`,'i')
+  ];
+  for(const pattern of patterns){
+    const match=String(html||'').match(pattern);
+    if(match?.[1])return decodeBasicHtml(match[1]).replace(/\s+/g,' ').trim();
+  }
+  return '';
+}
+
+async function readPublicLinkedInPost(post={}){
+  const url=String(post.url||'').trim();
+  if(!/linkedin\.com\/(posts|feed\/update)\//i.test(url))return {...post,contentSource:'search_snippet'};
+  try{
+    const response=await fetchWithTimeout(url,{
+      headers:{
+        'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+        'Accept-Language':'en-US,en;q=0.9'
+      }
+    },10000,'LinkedIn public post metadata');
+    if(!response.ok)return {...post,contentSource:'search_snippet'};
+    const html=await response.text();
+    const description=linkedInPublicMetaContent(html,'description');
+    return description.length>=60
+      ? {...post,text:description.slice(0,1200),contentSource:'linkedin_public_metadata'}
+      : {...post,contentSource:'search_snippet'};
+  }catch(_error){
+    return {...post,contentSource:'search_snippet'};
+  }
+}
+
+function linkedInStructuredPosts(html='',personalLinkedIn=''){
+  const profileSlug=String(personalLinkedIn||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+  const records=[];
+  const visit=(value)=>{
+    if(Array.isArray(value)){
+      value.forEach(visit);
+      return;
+    }
+    if(!value||typeof value!=='object')return;
+    const types=safeArray(value['@type']).concat(typeof value['@type']==='string'?[value['@type']]:[]);
+    if(types.some(type=>String(type).toLowerCase()==='discussionforumposting'))records.push(value);
+    if(value['@graph'])visit(value['@graph']);
+  };
+  for(const match of String(html||'').matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
+    try{visit(JSON.parse(match[1]));}catch(_error){}
+  }
+  return records.map(record=>{
+    const authorUrl=typeof record.author==='object'?String(record.author?.url||''):String(record.author||'');
+    const authorSlug=authorUrl.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+    const mainUrl=typeof record.mainEntityOfPage==='object'
+      ? String(record.mainEntityOfPage?.['@id']||record.mainEntityOfPage?.url||'')
+      : String(record.mainEntityOfPage||'');
+    return {
+      date:String(record.datePublished||record.dateCreated||linkedInActivityDate(mainUrl||record.url)||''),
+      text:String(record.text||record.articleBody||record.description||'').replace(/\s+/g,' ').trim().slice(0,5000),
+      url:String(record.url||mainUrl||'').trim(),
+      authorSlug,
+      contentSource:'linkedin_public_profile'
+    };
+  }).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update)\//i.test(post.url))
+    .filter(post=>!profileSlug||!post.authorSlug||post.authorSlug===profileSlug)
+    .filter((post,index,array)=>array.findIndex(item=>item.url===post.url)===index)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
+    .slice(0,6);
+}
+
+async function lookupPublicLinkedInProfilePosts(personalLinkedIn=''){
+  const profileUrl=normalizeLinkedInWatchUrl(personalLinkedIn);
+  if(!/linkedin\.com\/in\//i.test(profileUrl))return {configured:false,postsLastWeek:[],rawCount:0,error:'A personal LinkedIn profile URL is required.'};
+  try{
+    const response=await fetchWithTimeout(`${profileUrl}/recent-activity/all/`,{
+      redirect:'follow',
+      headers:{
+        'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+        'Accept-Language':'en-US,en;q=0.9'
+      }
+    },12000,'LinkedIn public profile activity');
+    if(!response.ok)return {configured:true,provider:'linkedin_public_profile',postsLastWeek:[],rawCount:0,error:`LinkedIn profile returned ${response.status}.`};
+    const html=await response.text();
+    const posts=linkedInStructuredPosts(html,profileUrl);
+    return {
+      configured:true,
+      provider:'linkedin_public_profile',
+      query:profileUrl,
+      postsLastWeek:posts,
+      rawCount:posts.length,
+      error:posts.length?'':'LinkedIn did not expose readable public posts for this profile.'
+    };
+  }catch(error){
+    return {configured:true,provider:'linkedin_public_profile',postsLastWeek:[],rawCount:0,error:error.message||'LinkedIn public profile could not be read.'};
+  }
+}
+
 async function lookupOutscraperLinkedInPersonalPosts(attendee={},profile={},personalLinkedIn=''){
   const slug=String(personalLinkedIn||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]||'';
   const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
@@ -15245,16 +15342,18 @@ async function lookupOutscraperLinkedInPersonalPosts(attendee={},profile={},pers
       .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,{...attendee,linkedinUrl:personalLinkedIn},{},profile)));
     if(matches.length>=3)break;
   }
-  const posts=matches.map(result=>({
+  const discoveredPosts=matches.map(result=>({
     date:linkedInActivityDate(result.url),
     text:dashboardShortText([result.title,result.snippet].filter(Boolean).join(': '),'',700),
     url:result.url
   })).filter(post=>post.text&&post.url).filter((post,index,array)=>array.findIndex(item=>item.url===post.url)===index)
     .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
     .slice(0,6);
+  const posts=await Promise.all(discoveredPosts.map(readPublicLinkedInPost));
   const errors=attempts.map(attempt=>attempt.error).filter(Boolean);
   return {
     configured:attempts.length>0||!!OUTSCRAPER_API_KEY,
+    provider:'outscraper_google_search',
     query:attempts.map(attempt=>attempt.query).join(' | '),
     postsLastWeek:posts,
     rawCount:attempts.reduce((sum,attempt)=>sum+attempt.rawCount,0),
@@ -15263,10 +15362,6 @@ async function lookupOutscraperLinkedInPersonalPosts(attendee={},profile={},pers
 }
 
 async function lookupOutscraperLinkedIn(attendee, profile){
-  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
-  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
-  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
-  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
   const organization = profile?.company || profile?.organization || profile?.metadata?.company || profile?.metadata?.organization || '';
   const email=normalizeContextEmail(attendee.email||relationshipProfilePrimaryEmail(profile)||'');
   const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
@@ -15275,8 +15370,18 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
   const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
   if(/linkedin\.com\/in\//i.test(personalLinkedIn)){
-    return lookupOutscraperLinkedInPersonalPosts(attendee,profile,personalLinkedIn);
+    const direct=await lookupPublicLinkedInProfilePosts(personalLinkedIn);
+    if(direct.postsLastWeek?.length)return direct;
+    if(attendee.strictLatest)return direct;
+    const fallback=await lookupOutscraperLinkedInPersonalPosts(attendee,profile,personalLinkedIn);
+    return fallback.postsLastWeek?.length
+      ? fallback
+      : {...fallback,error:fallback.error||direct.error};
   }
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
+  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
+  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
   const companySlug=String(companyLinkedIn||personalLinkedIn||'').match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]||'';
   const query = companySlug || [name, organization || usableDomain].filter(Boolean).join(' ') || name || organization || usableDomain || email;
   if(query) url.searchParams.set('query', query);
@@ -15299,6 +15404,7 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   })).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update|pulse)\//i.test(post.url||'')).slice(0,6);
   return {
     configured:true,
+    provider:'outscraper_linkedin_company_posts',
     query,
     postsLastWeek:recentPosts,
     rawCount:posts.length,
@@ -17885,7 +17991,9 @@ async function prepareLinkedInCommentDraft(profile={},post={}){
   try{parsed=typeof raw==='string'?JSON.parse(raw):raw||{};}catch(_){parsed={};}
   const body=String(parsed.body||parsed.comment||'').trim();
   const evidence=String(parsed.used_evidence||parsed.usedEvidence||'').trim();
-  if(body.length<18||!evidence||!postText.includes(evidence))return null;
+  const normalizedPostText=postText.replace(/\s+/g,' ').trim().toLowerCase();
+  const normalizedEvidence=evidence.replace(/\s+/g,' ').trim().toLowerCase();
+  if(body.length<18||normalizedEvidence.length<4||!normalizedPostText.includes(normalizedEvidence))return null;
   return {body,usedEvidence:evidence};
 }
 async function refreshLinkedInVisibility({limit=20}={}){
@@ -17904,7 +18012,8 @@ async function refreshLinkedInVisibility({limit=20}={}){
     const lookup=await lookupOutscraperLinkedIn({
       name:profile.displayName,
       email:relationshipProfilePrimaryEmail(profile),
-      linkedinUrl
+      linkedinUrl,
+      strictLatest:true
     },profile).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,postsLastWeek:[],rawCount:0}));
     const posts=safeArray(lookup.postsLastWeek).slice(0,3).map((post,index)=>({
       id:post.url||stableKey(`linkedin:${profile.id}:${post.date||index}`),
@@ -17912,6 +18021,7 @@ async function refreshLinkedInVisibility({limit=20}={}){
       text:String(post.text||'').trim(),
       summary:String(post.text||'').trim(),
       url:post.url||'',
+      contentSource:post.contentSource||'provider_post_body',
       source:'outscraper_linkedin_post'
     })).filter(post=>post.text&&post.url);
     const metadata=profile.metadata||{};
@@ -17933,7 +18043,7 @@ async function refreshLinkedInVisibility({limit=20}={}){
             ? `${posts.length} current post${posts.length===1?'':'s'} found.`
             : 'Checked successfully. No current posts were returned for this profile.'),
         linkedinLastPostCount:posts.length,
-        linkedinProvider:'outscraper'
+        linkedinProvider:lookup.provider||'outscraper'
       }
     });
     if(!posts.length)return {profileId:profile.id,name:profile.displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:0,draftCount:0};
@@ -17945,7 +18055,9 @@ async function refreshLinkedInVisibility({limit=20}={}){
       const known=context.latestLinkedInPost||{};
       return /linkedin_comment_draft/i.test(String(draft.draftType||''))&&String(known.url||context.postUrl||'')===String(latest.url||'');
     });
-    if(!alreadyPrepared){
+    if(!alreadyPrepared&&latest.contentSource==='search_snippet'){
+      draftError='Post found, but its readable body was not available. Open the post before asking VAL to draft a response.';
+    }else if(!alreadyPrepared){
       const prepared=await prepareLinkedInCommentDraft(profile,latest).catch((error)=>{
         draftError=error.message||'Draft preparation did not finish.';
         return null;
@@ -17967,7 +18079,27 @@ async function refreshLinkedInVisibility({limit=20}={}){
           }
         });
         draftCount=1;
+      }else if(!draftError){
+        draftError='VAL found the post but could not produce a draft grounded closely enough in its words.';
       }
+    }
+    if(draftError){
+      await saveRelationshipProfile({
+        ...profile,
+        metadataJson:{
+          ...metadata,
+          linkedinUrl,
+          linkedin_url:linkedinUrl,
+          linkedinWatch:metadata.linkedinWatch!==false,
+          sourceReceipts:{...sourceReceipts,linkedInLatestPosts:posts},
+          linkedInLatestPosts:posts,
+          linkedinLastCheckedAt:checkedAt,
+          linkedinLastRefreshStatus:'draft_error',
+          linkedinLastRefreshMessage:draftError,
+          linkedinLastPostCount:posts.length,
+          linkedinProvider:lookup.provider||'outscraper'
+        }
+      });
     }
     return {profileId:profile.id,name:profile.displayName,linkedinUrl,configured:true,error:draftError,status:draftError?'draft_error':'posts_found',checkedAt,postCount:posts.length,draftCount};
   }));
@@ -18001,7 +18133,7 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
     profiles.filter(profile=>profile.profileType==='person').forEach(profile=>{
       const metadata=profile.metadata||{};
       const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
-      const posts=safeArray(
+      const posts=metadata.linkedinLastRefreshStatus==='error'?[]:safeArray(
         receipts.linkedInLatestPosts||
         metadata.linkedInLatestPosts||
         metadata.linkedinLatestPosts||
@@ -18028,8 +18160,10 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
           whyItMatters:String(
             post.whyItMatters||
             post.why_it_matters||
-            profile.opportunities?.[0]||
-            profile.openLoops?.[0]||
+            profile.opportunities?.[0]?.content||
+            profile.opportunities?.[0]?.summary||
+            profile.openLoops?.[0]?.content||
+            profile.openLoops?.[0]?.summary||
             profile.summary||
             'This is current relationship context, not a generic visibility suggestion.'
           ).trim(),
@@ -18071,7 +18205,7 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
       refreshReceipt:{
         checked:watchedProfiles.filter(profile=>profile.lastCheckedAt).length,
         posts:watchedProfiles.reduce((sum,profile)=>sum+profile.postCount,0),
-        needsAttention:watchedProfiles.filter(profile=>profile.lastRefreshStatus==='error').length,
+        needsAttention:watchedProfiles.filter(profile=>['error','draft_error'].includes(profile.lastRefreshStatus)).length,
         lastCheckedAt:watchedProfiles.map(profile=>profile.lastCheckedAt).filter(Boolean).sort().at(-1)||''
       },
       noDemoData:true
