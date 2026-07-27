@@ -24768,7 +24768,8 @@ function dashboardDraftQuality(draft={}){
   if(/VAL:\s*I can start[^.]*live web access/i.test(body))problems.push('tool_fragment');
   if((body.match(/Next steps:/gi)||[]).length>1||body.length>3500)problems.push('too_noisy');
   const ctx=draft.sourceContext||{};
-  const recipient=ctx.recipient||ctx.recipientEmail||ctx.to||(Array.isArray(ctx.recipients)?ctx.recipients.join(', '):'');
+  const recipient=ctx.recipient?.email||ctx.recipient||ctx.recipientEmail||ctx.to||ctx.draftBrief?.recipient?.email||(Array.isArray(ctx.recipients)?ctx.recipients.join(', '):'');
+  if(draft.status==='ready_for_review'&&draft.draftType!=='meeting_recap'&&ctx.qa?.passes!==true)problems.push('missing_review_qa');
   const ready=!problems.length&&!!dashboardCleanText(subject||body);
   return {ready,problems,recipient:dashboardCleanText(recipient||ctx.contactName||''),context:dashboardShortText(ctx.transcriptTitle||ctx.meetingTitle||ctx.source||draft.draftType||'Draft', 'Draft', 90)};
 }
@@ -24780,9 +24781,18 @@ function dashboardReadyDraft(draft={}){
   const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
   const source=draft.sourceContext||{};
   const transcriptId=source.transcriptId||source.transcript_id||'';
+  const recipients=[
+    ...safeArray(source.recipients),
+    source.recipient?.email,
+    source.recipientEmail,
+    source.to,
+    source.draftBrief?.recipient?.email
+  ].map(value=>String(value||'').trim()).filter((value,index,list)=>value&&list.indexOf(value)===index);
+  const recipientEmail=recipients[0]||'';
   const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(draft.draftType||'internal_draft');
   return {
     id:draft.id,
+    draftId:draft.id,
     title:dashboardShortText(label,'Draft ready',80),
     summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),
     reason_it_matters:dashboardShortText(source.meetingTitle||source.transcriptTitle||quality.context||'Prepared work is ready for review before anything is sent.','Prepared work is ready for review.',180),
@@ -24790,16 +24800,21 @@ function dashboardReadyDraft(draft={}){
     target:{type:'draft',id:draft.id},
     draftType:draft.draftType,
     status:draft.status,
+    provider:draft.provider||'internal',
+    threadId:source.threadId||'',
+    messageId:source.currentMessageId||source.messageId||'',
+    to:recipientEmail,
+    recipientEmail,
     quality,
     sourceType:transcriptId?'transcript':'draft',
     sourceId:transcriptId||draft.id,
     sourceRefs:transcriptId?[{source_type:'transcript',source_id:transcriptId,quote_or_summary:source.meetingTitle||source.transcriptTitle||draft.subject||'Transcript-created draft',confidence:0.86}]:[{source_type:'draft',source_id:draft.id,quote_or_summary:draft.subject||'Prepared draft',confidence:0.78}],
     preparedArtifactKind:artifactKind,
-    preparedArtifact:{kind:artifactKind,title:draft.subject||label,body:draft.body||'',recipients:source.recipients||[],externalSend:false,reviewRequired:true},
+    preparedArtifact:{kind:artifactKind,draftId:draft.id,title:draft.subject||label,subject:draft.subject||label,body:draft.body||'',to:recipientEmail,recipientEmail,recipients,provider:draft.provider||'internal',threadId:source.threadId||'',messageId:source.currentMessageId||source.messageId||'',externalSend:false,reviewRequired:true},
     preparedWorkPacket:{prepared_work_type:artifactKind,trigger_source_id:transcriptId||draft.id,work_product:draft.body||draft.subject||label,approval_needed:true,execution_path:'review_then_send_email',can_val_act_status:'approval_required'},
     canValActStatus:'approval_required',
     homeAdmission:{preparedWorkPacketComplete:true},
-    metadata:{source:source.source||'internal_draft',transcriptId,preparedArtifactKind:artifactKind,noExternalAction:true,noExternalSend:true,recipients:source.recipients||[]},
+    metadata:{source:source.source||'internal_draft',draftId:draft.id,transcriptId,preparedArtifactKind:artifactKind,noExternalAction:true,noExternalSend:true,recipientEmail,recipients,provider:draft.provider||'internal',threadId:source.threadId||'',messageId:source.currentMessageId||source.messageId||''},
     portalPhrases:[...new Set(portalPhrases)].slice(0,5)
   };
 }
@@ -25052,9 +25067,9 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
     const detail=dashboardShortText((e.risks||[])[0]||(e.opportunities||[])[0]||e.summary||e.state,'Evidence-backed momentum signal.',120);
     return dashboardNormalizeCardItem('momentum',{id:e.id,title,summary:detail,detail,state,entity_type:e.target?.type||e.profileType||'entity',entity_id:e.id,momentum_direction:state,reason:detail,evidence:e.evidence||[],target:e.target||{type:'entity',id:e.id},createdAt:e.lastObservedAt});
   }).slice(0,4);
-  const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
+  const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,12);
   const readyQueueItems=dashboardNormalizeCardCollection('ready_for_you',safeArray(readyForYouItems));
-  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...(onboarding?.ready||[]),...readyQueueItems,...readyDrafts].filter(Boolean).slice(0,10))).slice(0,5);
+  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...readyQueueItems,...readyDrafts].filter(Boolean))).slice(0,12);
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;

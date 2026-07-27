@@ -19929,12 +19929,24 @@ function updatePreparedCount(count){
   leveragePreparedCount.textContent = safeCount + ' prepared';
 }
 
+function mergePreparedWorkQueues(...collections){
+  const seen = new Set();
+  return collections.flatMap((items) => briefingItems(items)).filter((item) => {
+    const ids = leveragePreparedIdentifiers(item);
+    const key = String(ids.draftId || (item.target?.type === 'draft' ? item.target.id : '') || ids.readyForYouId || item.id || '').trim();
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function hydrateLeverageFromReadyForYou(result = {}){
   const preparedItems = Array.isArray(result.preparedItems) ? result.preparedItems : (Array.isArray(result.prepared_items) ? result.prepared_items : []);
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
   const queueSource = preparedItems.length ? preparedItems : (allBuilt.length ? allBuilt : items);
-  const queueItems = queueSource.map(normalizeReadyForYouItem).filter((item) => item?.id);
+  const briefingPrepared = briefingItems(executiveBriefingState?.readyForYou);
+  const queueItems = mergePreparedWorkQueues(queueSource.map(normalizeReadyForYouItem), briefingPrepared).filter((item) => item?.id);
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
   setHomeRoomQueue('leverage', admittedQueueItems);
   const preparedCount = admittedQueueItems.length;

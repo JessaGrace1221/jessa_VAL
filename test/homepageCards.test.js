@@ -130,11 +130,19 @@ test('Leverage opens only reviewable prepared work products',()=>{
 test('Home admits both editable and ready-for-review drafts into Leverage',()=>{
   assert.match(server,/function dashboardReadyDraft\(draft=\{\}\)/);
   assert.match(server,/\['draft','ready_for_review'\]\.includes\(String\(draft\.status\|\|'draft'\)\)/);
+  assert.match(server,/ctx\.draftBrief\?\.recipient\?\.email/);
+  assert.match(server,/ctx\.qa\?\.passes!==true/);
+  assert.match(server,/draftId:draft\.id/);
+  assert.match(server,/recipientEmail/);
   const briefingStart=server.indexOf('async function buildExecutiveBriefing');
   const briefingEnd=server.indexOf('\nasync function',briefingStart+20);
   const briefing=server.slice(briefingStart,briefingEnd>briefingStart?briefingEnd:briefingStart+12000);
   assert.match(briefing,/listDrafts\(''\)/);
   assert.doesNotMatch(briefing,/listDrafts\('draft'\)/);
+  assert.match(server,/\[freshTranscriptPacket\?\.readyDraft,\.\.\.readyQueueItems,\.\.\.readyDrafts\]/);
+  assert.doesNotMatch(server,/\[freshTranscriptPacket\?\.readyDraft,\.\.\.\(onboarding\?\.ready\|\|\[\]\)/);
+  assert.match(hearthPrototype,/function mergePreparedWorkQueues/);
+  assert.match(hearthPrototype,/mergePreparedWorkQueues\(queueSource\.map\(normalizeReadyForYouItem\), briefingPrepared\)/);
 });
 
 test('Leverage prepared-work buttons persist edits and use approval gates',()=>{
