@@ -45,6 +45,7 @@ function fallbackChiefLanguage(packet={}){
   const title=compactText(packet.title||'Review the highest Board packet',180);
   const summary=compactText(packet.summary||'',320);
   const type=String(packet.packetType||packet.packet_type||'');
+  const sourceType=String(packet.sourceType||packet.source_type||'').toLowerCase();
   const observed=safeArray(packet.observers).filter(observer=>observer.status!=='no_signal');
   const leadObserver=groundedLeadObserver(packet,observed);
   if(type==='task_packet'){
@@ -62,6 +63,15 @@ function fallbackChiefLanguage(packet={}){
       recommendation:`Review "${title}" and decide whether to reply, hold, or close it.`,
       why:summary||'This communication has the strongest current source-backed attention signal.',
       action:`Review "${title}".`,
+      leadObserver
+    };
+  }
+  if(sourceType==='relationship_profile'||/relationship/.test(type)){
+    return {
+      title,
+      recommendation:`Decide whether to follow up on "${title}" or close the open response loop.`,
+      why:summary||'The relationship evidence shows an open response loop that may need a decision.',
+      action:`Decide whether to follow up on "${title}" or close the open response loop.`,
       leadObserver
     };
   }

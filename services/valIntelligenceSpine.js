@@ -1,5 +1,6 @@
 const {createValPromptRegistry} = require('./valPromptRegistry');
 const {fallbackChiefLanguage}=require('./valChiefOfStaffReasoning');
+const {assessAlignmentAdmission}=require('./valAlignmentAdmission');
 const {
   DEFAULT_OBSERVERS,
   OBSERVER_PACKET_LENSES,
@@ -949,6 +950,10 @@ function createValIntelligenceSpine({
           return fallbackRecommendation;
         })
       : fallbackRecommendation;
+    const packetEvidenceConfidence=Math.max(
+      0,
+      ...safeArray(packetChoice?.evidence).map(ref=>Number(ref.confidence)||0)
+    );
     const capacity=tensions.find(t=>t.observer==='Capacity');
     const top=capacity&&capacity.conviction>=0.74?capacity:(tensions[0]||null);
     const title=packetRecommendation?.title || (top?`Attend to ${top.signal}`:'Gather better evidence before choosing the next move');
@@ -966,8 +971,12 @@ function createValIntelligenceSpine({
       why:packetRecommendation?.why || (top?`${top.observer} had the strongest current conviction. The Round Table did not average the observers; it selected the signal most aligned with long-term momentum and current capacity.`:'The current evidence is too thin for a strong executive recommendation.'),
       confidence:packetRecommendation?.grounded
         ? packetRecommendation.confidence
-        : (packetChoice?Math.max(0.42,Math.min(0.94,Number(packetChoice.score||0)/(Math.max(1,packetChoice.observerCount)*4.8))):(top?Math.max(0.35,Math.min(0.92,(Number(top.confidence||0)+Number(top.conviction||0))/2)):0.28)),
+        : (packetChoice
+          ? Math.max(0.42,Math.min(0.82,packetEvidenceConfidence*0.8))
+          : (top?Math.max(0.35,Math.min(0.92,(Number(top.confidence||0)+Number(top.conviction||0))/2)):0.28)),
       opposingView:opposing?`What almost won instead: ${opposing.view}`:'No strong opposing view emerged.',
+      recommendationGrounded:Boolean(packetRecommendation?.grounded),
+      recommendationEvidenceQuote:packetRecommendation?.evidenceQuote||'',
       anxietyVsMomentum:{
         anxiety_signal:'Urgency may be over-weighted when evidence is thin.',
         momentum_signal:packetRecommendation?.action || (top?top.signal:'insufficient evidence'),
@@ -1022,16 +1031,6 @@ function createValIntelligenceSpine({
       for(const [index,packet] of safeArray(output.packetQueue).entries()){
         const packetId=String(packet.packetId||packet.packet_id||'').trim();
         const packetType=String(packet.packetType||packet.packet_type||'').trim();
-        const existingWorkId=String(packet.canonicalWorkItemId||packet.canonical_work_item_id||'').trim();
-        if(existingWorkId){
-          workIdsByPacket.set(packetId,existingWorkId);
-          continue;
-        }
-        const matchedWorkId=workIdsByPacket.get(packetId);
-        if(matchedWorkId){
-          packet.canonicalWorkItemId=matchedWorkId;
-          continue;
-        }
         if(!packetId||nonAlignmentPacketTypes.has(packetType))continue;
         const evidence=safeArray(packet.evidence);
         const exactSourceQuote=compactText(
@@ -1042,13 +1041,38 @@ function createValIntelligenceSpine({
           1200
         );
         if(!exactSourceQuote)continue;
-        const actionText=compactText(
-          index===0
-            ? (output.anxietyVsMomentum?.momentum_signal||output.recommendation||packet.title)
-            : `Review ${packet.title||'this Board signal'} and decide the next concrete step.`,
-          360
+        const fallback=fallbackChiefLanguage(packet);
+        const actionText=compactText(index===0
+          ? (output.anxietyVsMomentum?.momentum_signal||output.recommendation||packet.title)
+          : (fallback.action||fallback.recommendation||packet.title),360);
+        const objectText=compactText(packet.title||packet.summary||actionText,360);
+        const evidenceConfidence=Math.max(
+          0,
+          ...evidence.map(ref=>Number(ref.confidence)||0)
         );
-        if(!actionText)continue;
+        const alignmentConfidence=Number(index===0?output.confidence:evidenceConfidence)||0;
+        const alignmentAdmission=assessAlignmentAdmission({
+          actionText,
+          objectText,
+          exactSourceQuote,
+          sourceRefs:evidence,
+          confidence:alignmentConfidence
+        });
+        packet.alignmentAdmission=alignmentAdmission;
+        if(!alignmentAdmission.passed){
+          logger.log?.(`[val-chief] kept ${packetId} with the Board: ${alignmentAdmission.reason}`);
+          continue;
+        }
+        const existingWorkId=String(packet.canonicalWorkItemId||packet.canonical_work_item_id||'').trim();
+        if(existingWorkId){
+          workIdsByPacket.set(packetId,existingWorkId);
+          continue;
+        }
+        const matchedWorkId=workIdsByPacket.get(packetId);
+        if(matchedWorkId){
+          packet.canonicalWorkItemId=matchedWorkId;
+          continue;
+        }
         const admitted=await admitCanonicalWork({
           sourceProcessingRecordId:packet.sourceProcessingRecordId||packet.source_processing_record_id||'',
           sourceType:packet.sourceType||packet.source_type||'board_packet',
@@ -1058,7 +1082,7 @@ function createValIntelligenceSpine({
           ownership:'user',
           ownerName:'Executive',
           actionText,
-          objectText:packet.title||packet.summary||actionText,
+          objectText,
           outcomeText:packet.summary||actionText,
           title:actionText,
           summary:packet.summary||output.why||'The Chief of Staff selected this from source-backed Board review.',
@@ -1069,7 +1093,7 @@ function createValIntelligenceSpine({
           projectName:packet.projectName||packet.project_name||'',
           relationshipId:packet.relationshipId||packet.relationship_id||'',
           relationshipName:packet.relationshipName||packet.relationship_name||'',
-          confidence:Number(index===0?output.confidence:Math.min(0.85,Number(packet.score||0)/20))||0.65,
+          confidence:alignmentConfidence,
           boardPacketId:packetId,
           observerReceipts:safeArray(packet.observers),
           roundTableRunId:roundTable.id,
@@ -1077,6 +1101,7 @@ function createValIntelligenceSpine({
             source:'chief_of_staff_alignment',
             chiefQueueIndex:index,
             chiefPriorityMatches:safeArray(packet.chiefPriorityMatches),
+            alignmentAdmission,
             noExternalAction:true
           },
           notify:false

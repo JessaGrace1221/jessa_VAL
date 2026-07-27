@@ -48,6 +48,7 @@ const {createValSourceProcessingService,evidenceChunks} = require('./services/va
 const {createValCanonicalEmailIntake} = require('./services/valCanonicalEmailIntake');
 const {registerValCanonicalLineageRoutes} = require('./services/valCanonicalLineageRoutes');
 const {createChiefOfStaffReasoner} = require('./services/valChiefOfStaffReasoning');
+const {assessAlignmentAdmission} = require('./services/valAlignmentAdmission');
 const {createPreparedArtifactGenerator} = require('./services/valPreparedArtifactGenerator');
 const {ensureValCanonicalWorkTables} = require('./services/valCanonicalWorkSchema');
 const {verifyCanonicalLineageSchema} = require('./services/valCanonicalSchemaReadiness');
@@ -25288,7 +25289,24 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     recommendation.why||''
   ].filter(Boolean).join(' '), summary, 320);
   const envelope=chiefRecommendationEnvelope(candidate);
-  const confidence=Number(recommendation.confidence||0.72);
+  const candidateEvidenceConfidence=Math.max(0,...sourceRefs.map(ref=>Number(ref.confidence)||0));
+  const confidence=Number(index===0?recommendation.confidence:candidateEvidenceConfidence)||0;
+  const actionNeeded=dashboardShortText(
+    index===0
+      ? (recommendation.anxietyVsMomentumJson?.momentum_signal||recommendation.recommendation||title)
+      : (candidate.alignmentAction||candidate.alignment_action||title),
+    title,
+    360
+  );
+  const exactSourceQuote=sourceRefs[0]?.quote_or_summary||'';
+  const alignmentAdmission=assessAlignmentAdmission({
+    actionText:actionNeeded,
+    objectText:title,
+    exactSourceQuote,
+    sourceRefs,
+    confidence
+  });
+  if(!alignmentAdmission.passed)return null;
   const boardObservers=[candidate.leadObserver||candidate.lead_observer]
     .filter(Boolean)
     .concat(safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers))
@@ -25328,13 +25346,13 @@ function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackR
     whyNowPacket:{
       why_now:index===0?(recommendation.recommendation||title):title,
       decision_needed:recommendation.anxietyVsMomentumJson?.momentum_signal || summary,
-      action_needed:index===0?(recommendation.recommendation||title):summary,
+      action_needed:actionNeeded,
       cost_if_delayed:recommendation.anxietyVsMomentumJson?.anxiety_signal || 'This Board-selected move may remain an open loop.',
       evidence_refs:sourceRefs.length?sourceRefs:[{source_type:'chief_of_staff_recommendation',source_id:recommendation.id,quote_or_summary:why,confidence}],
       confidence
     },
-    homeAdmission:{whyNowPacketComplete:true},
-    metadata:{source:'chief_of_staff_recommendation',chiefRecommendationId:recommendation.id,chiefQueuePacketId:packetId,canonicalWorkItemId:String(candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),sourceProcessingRecordId:String(candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),roundTableRunId:recommendation.roundTableRunId||recommendation.round_table_run_id||'',eventRunId:recommendation.eventRunId||recommendation.event_run_id||'',chiefQueueIndex:index}
+    homeAdmission:{whyNowPacketComplete:alignmentAdmission.passed},
+    metadata:{source:'chief_of_staff_recommendation',chiefRecommendationId:recommendation.id,chiefQueuePacketId:packetId,canonicalWorkItemId:String(candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),sourceProcessingRecordId:String(candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),roundTableRunId:recommendation.roundTableRunId||recommendation.round_table_run_id||'',eventRunId:recommendation.eventRunId||recommendation.event_run_id||'',chiefQueueIndex:index,alignmentAdmission}
   };
 }
 function buildChiefDailyWitness(chiefItem={}){

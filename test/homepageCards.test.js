@@ -307,6 +307,10 @@ test('Home Alignment can be fed by active Chief of Staff recommendations',()=>{
   assert.match(server,/chiefRecommendation:chiefHomeItem\|\|null/);
   assert.match(server,/chiefRecommendationId:recommendation\.id/);
   assert.match(server,/Project context wins before relationship context/);
+  assert.match(server,/assessAlignmentAdmission/);
+  assert.match(server,/if\(!alignmentAdmission\.passed\)return null/);
+  assert.match(hearthPrototype,/const chiefItemReady = !isChiefItem/);
+  assert.match(hearthPrototype,/Number\(packet\.confidence\) >= 0\.6/);
 });
 
 test('Co-Work send reads the visible chatbar before any stale workspace input',()=>{

@@ -19697,9 +19697,28 @@ function whyNowPacketForHomeItem(item = {}){
 }
 
 function hasCompleteWhyNowPacket(item = {}){
-  if(homeAdmissionExplicitPass(item, 'whyNowPacketComplete')) return true;
   const packet = item.whyNowPacket || item.why_now_packet || whyNowPacketForHomeItem(item);
+  const sourceType = String(item.sourceType || item.source_type || item.metadata?.source || '').toLowerCase();
+  const isChiefItem = sourceType === 'chief_of_staff_recommendation' || Boolean(item.chiefRecommendationId || item.chief_recommendation_id);
+  const actionText = String(packet.action_needed || packet.decision_needed || '').replace(/\s+/g, ' ').trim();
+  const objectText = String(item.title || item.summary || '').replace(/\s+/g, ' ').trim();
+  const genericChiefLanguage = (value = '') => [
+    /\breview .+ before choosing an action\b/i,
+    /\binspect (?:the )?evidence\b.*\bchoose (?:the )?next move\b/i,
+    /\bdecide (?:on )?the next move\b/i,
+    /\bchoose (?:the )?next (?:move|step|action)\b/i,
+    /\breview .+\bdecide (?:on )?the next concrete step\b/i
+  ].some((pattern) => pattern.test(value));
+  const concreteAction = /\b(send|reply|follow up|close|finish|complete|confirm|decide|choose|approve|decline|hold|schedule|cancel|call|ask|tell|share|review|revise|clarify|resolve|prepare|draft|discuss|meet|handoff|hand off|assign|delegate|remove|update|deliver|create|build|submit|sign|pay|introduce|connect|nudge|pause|stop|start|continue|record|mark)\b/i.test(actionText);
+  const chiefItemReady = !isChiefItem || (
+    Number(packet.confidence) >= 0.6 &&
+    concreteAction &&
+    !genericChiefLanguage(actionText) &&
+    !genericChiefLanguage(objectText)
+  );
+  if(homeAdmissionExplicitPass(item, 'whyNowPacketComplete')) return chiefItemReady;
   return Boolean(
+    chiefItemReady &&
     packet.why_now &&
     (packet.decision_needed || packet.action_needed) &&
     (packet.cost_if_delayed || packet.deadline_or_timing_basis || packet.blocked_project_or_person) &&

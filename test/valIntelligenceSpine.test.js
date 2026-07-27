@@ -882,6 +882,61 @@ test('Chief of Staff materializes grounded actionable packets while keeping prep
   );
 });
 
+test('Chief of Staff keeps generic relationship observations out of Alignment',async()=>{
+  let store={tasks:[]};
+  const admissions=[];
+  const packet={
+    id:'packet_weak_relationship_loop',
+    sourceType:'relationship_profile',
+    sourceId:'relationship_bridget',
+    packetType:'relationship_packet',
+    title:'Bridget Biermann (3 of 3)',
+    summary:'',
+    primaryObserversJson:['Relationship'],
+    routeObserversJson:[],
+    sourceRefsJson:[{
+      source_type:'relationship_profile',
+      source_id:'relationship_bridget',
+      quote_or_summary:'Latest observation: Sent email appears to need a response and no later reply was found in the fetched window.',
+      confidence:1
+    }],
+    prototype:false
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_weak_relationship`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    chiefReasoner:async()=>({
+      title:'Bridget Biermann (3 of 3)',
+      recommendation:'Review "Bridget Biermann (3 of 3)" before choosing an action.',
+      why:'This packet has the strongest current source-backed Observer convergence.',
+      action:'Inspect the evidence for "Bridget Biermann (3 of 3)" and choose the next move.',
+      leadObserver:'Relationship',
+      confidence:0.42,
+      grounded:false
+    }),
+    admitCanonicalWork:async input=>{
+      admissions.push(input);
+      return {ok:true,workItem:{id:'work_should_not_exist'}};
+    },
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({
+    event:{type:'board_packet_received',sourceType:'relationship_profile',sourceId:packet.sourceId,packetIds:[packet.id]}
+  });
+  assert.equal(admissions.length,0);
+  assert.equal(result.recommendation.anxietyVsMomentumJson.current_packet.canonicalWorkItemId,'');
+});
+
 test('Chief of Staff reuses active canonical work by Board packet identity across recommendation reruns',async()=>{
   let store={tasks:[]};
   const admissions=[];
