@@ -3283,6 +3283,7 @@ button,a{font:inherit}
     grid-template-columns:1fr;
   }
 }
+
 .workspace-input-panel{
   display:grid;
   gap:10px;
@@ -18875,4 +18876,681 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
     width:100%;
     max-height:calc(100vh - 72px);
   }
+}
+
+/* Executive Functions inherit VAL Studio's calm operating grammar. */
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+){
+  position:fixed!important;
+  z-index:760!important;
+  left:50%!important;
+  right:auto!important;
+  top:50%!important;
+  bottom:auto!important;
+  width:min(1180px,92vw)!important;
+  height:min(880px,90vh)!important;
+  max-width:92vw!important;
+  max-height:90vh!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+  transform:translate(-50%,-50%)!important;
+  border:1px solid rgba(255,255,255,.54)!important;
+  border-radius:8px!important;
+  background:
+    linear-gradient(120deg,rgba(241,247,236,.3),rgba(255,255,255,.76) 46%,rgba(252,235,237,.28)),
+    rgba(255,255,255,.46)!important;
+  -webkit-backdrop-filter:blur(4px) saturate(1.02)!important;
+  backdrop-filter:blur(4px) saturate(1.02)!important;
+  box-shadow:0 28px 78px rgba(35,27,22,.17),inset 0 1px 0 rgba(255,255,255,.8)!important;
+}
+.retrieval-system:has(.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+)){
+  position:fixed!important;
+  inset:0!important;
+  width:auto!important;
+  transform:none!important;
+  perspective:none!important;
+}
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) > .source-detail[aria-hidden="false"]{
+  display:flex!important;
+  flex-direction:column!important;
+  gap:0!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  padding:0!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  background:transparent!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  box-shadow:none!important;
+  scrollbar-gutter:stable!important;
+  overscroll-behavior:contain!important;
+}
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) .source-detail-header{
+  position:sticky!important;
+  top:0!important;
+  z-index:80!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:26px!important;
+  flex:0 0 auto!important;
+  width:100%!important;
+  min-height:106px!important;
+  padding:22px 30px 20px!important;
+  box-sizing:border-box!important;
+  border:0!important;
+  border-bottom:1px solid rgba(50,70,55,.13)!important;
+  background:
+    linear-gradient(120deg,rgba(241,247,236,.24),rgba(255,255,255,.84) 48%,rgba(252,235,237,.22)),
+    rgba(255,255,255,.72)!important;
+  -webkit-backdrop-filter:blur(8px) saturate(1.03)!important;
+  backdrop-filter:blur(8px) saturate(1.03)!important;
+  box-shadow:none!important;
+}
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) .source-detail-header > div:first-child{
+  display:grid!important;
+  flex:1 1 auto!important;
+  gap:4px!important;
+  min-width:0!important;
+}
+.drawer-tray .source-detail-header .drawer-kicker{
+  display:block!important;
+  margin:0!important;
+  color:#72816d!important;
+  font:650 .58rem/1.2 var(--mono)!important;
+  letter-spacing:.12em!important;
+  text-transform:uppercase!important;
+}
+.drawer-tray .source-detail-header h3{
+  margin:0!important;
+  color:#1e2821!important;
+  font:560 1.42rem/1.18 var(--body)!important;
+  letter-spacing:0!important;
+}
+.drawer-tray .source-detail-header p:not(.drawer-kicker){
+  max-width:720px!important;
+  margin:2px 0 0!important;
+  color:rgba(35,47,38,.58)!important;
+  font:400 .7rem/1.45 var(--body)!important;
+  letter-spacing:0!important;
+}
+.drawer-tray.timeline-open .timeline-header-actions{
+  flex:0 0 auto!important;
+  margin-left:auto!important;
+}
+.drawer-tray :is(
+  .close-val-detail,
+  .close-document-detail,
+  .close-relationship-detail,
+  .close-project-detail,
+  .close-timeline-detail,
+  .close-correspondence-detail,
+  .close-commitment-detail,
+  .close-source-detail
+){
+  position:relative!important;
+  top:auto!important;
+  right:auto!important;
+  flex:0 0 30px!important;
+  align-self:center!important;
+  border-radius:6px!important;
+  background:rgba(255,255,255,.42)!important;
+}
+
+/* One content rhythm: quiet bands, crisp controls, no nested frosted layers. */
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) :is(
+  .correspondence-trust-receipt,
+  .correspondence-filterbar,
+  .correspondence-rulebar,
+  .correspondence-workbench,
+  .transcript-workbench,
+  .project-index-source,
+  .project-suggestions,
+  .project-create-toggle,
+  .project-create-form,
+  .project-rolodex,
+  .project-manager-dossier,
+  .relationship-folder-rail,
+  .relationship-intro-tabs,
+  .relationship-index-source,
+  .relationship-v1-panel,
+  .lead-sourcing-control-bar,
+  .lead-sourcing-drawer-workbench,
+  .lead-intelligence-hero,
+  .val-witnessing-entry,
+  .val-drawer-connections,
+  .commitment-summary-grid,
+  .commitment-workbench,
+  .document-status-panel,
+  .document-workbench
+){
+  flex:0 0 auto;
+  width:auto!important;
+  margin-left:30px!important;
+  margin-right:30px!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray:is(.project-open,.relationship-open,.source-open,.val-open) > .source-detail[aria-hidden="false"]{
+  padding-bottom:30px!important;
+}
+.drawer-tray.project-open :is(.project-index-source,.project-create-toggle){
+  margin-top:18px!important;
+}
+.drawer-tray.project-open .project-rolodex,
+.drawer-tray.relationship-open .relationship-v1-panel,
+.drawer-tray.source-open .lead-sourcing-drawer-workbench,
+.drawer-tray.val-open .val-witnessing-entry{
+  margin-top:18px!important;
+}
+.drawer-tray :is(
+  button,
+  input,
+  select,
+  textarea
+){
+  letter-spacing:0!important;
+}
+.drawer-tray :is(
+  .project-create-toggle,
+  .relationship-intro-tabs button,
+  .stewardship-network-actions button,
+  .stewardship-network-form-actions button,
+  .lead-sourcing-control-bar button,
+  .lead-sourcing-actions button,
+  .preview-choice,
+  .val-entry-actions button,
+  .timeline-header-actions button,
+  .correspondence-filter-actions button,
+  .correspondence-actions button,
+  .correspondence-decision-actions button,
+  .commitment-tabs button,
+  .commitment-brief button,
+  .document-library-controls button,
+  .document-brief button
+){
+  min-height:34px!important;
+  border-radius:6px!important;
+  font-family:var(--body)!important;
+  font-size:.66rem!important;
+  font-weight:560!important;
+}
+.drawer-tray :is(input,select,textarea){
+  border-radius:6px!important;
+  font-family:var(--body)!important;
+}
+
+/* Project Managers reads like an executive project index, including when quiet. */
+.drawer-tray.project-open .project-index-source{
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  color:rgba(49,64,53,.56)!important;
+  font-size:.63rem!important;
+  text-shadow:none!important;
+}
+.drawer-tray.project-open .project-create-toggle{
+  border-color:rgba(70,91,67,.36)!important;
+  background:linear-gradient(105deg,#70866c,#a4777d)!important;
+  color:#fff!important;
+  box-shadow:0 8px 20px rgba(70,82,66,.14)!important;
+}
+.drawer-tray.project-open .project-rolodex{
+  min-height:260px!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+}
+.drawer-tray.project-open .project-rolodex-empty,
+.drawer-tray.project-open .project-manager-empty{
+  display:grid!important;
+  place-items:center!important;
+  align-content:center!important;
+  gap:8px!important;
+  min-height:250px!important;
+  border:1px solid rgba(49,68,53,.12)!important;
+  border-radius:6px!important;
+  background:rgba(255,255,255,.5)!important;
+  color:#2c3b30!important;
+  padding:28px!important;
+  text-align:center!important;
+}
+
+/* Stewardship uses Studio's tab line and row-first index. */
+.drawer-tray.relationship-open .relationship-intro-tabs{
+  margin-top:18px!important;
+  border-bottom:1px solid rgba(50,70,55,.13)!important;
+}
+.drawer-tray.relationship-open .relationship-intro-tabs button{
+  min-height:42px!important;
+  padding:0 4px!important;
+  border:0!important;
+  border-bottom:2px solid transparent!important;
+  border-radius:0!important;
+  background:transparent!important;
+  color:rgba(31,42,34,.55)!important;
+}
+.drawer-tray.relationship-open .relationship-intro-tabs button.active{
+  border-bottom-color:#71846c!important;
+  background:linear-gradient(0deg,rgba(209,225,196,.26),transparent 70%)!important;
+  color:#243127!important;
+}
+.drawer-tray.relationship-open .relationship-index-source{
+  margin-top:14px!important;
+  padding:0!important;
+  background:transparent!important;
+  color:rgba(49,64,53,.56)!important;
+  text-shadow:none!important;
+}
+
+/* Transcripts keeps one quiet index beside one readable source brief. */
+.drawer-tray.timeline-open .transcript-workbench{
+  grid-template-columns:minmax(250px,.32fr) minmax(0,1fr)!important;
+  gap:0!important;
+  min-height:calc(100% - 106px)!important;
+  margin:0 30px!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+}
+.drawer-tray.timeline-open .transcript-index,
+.drawer-tray.timeline-open .transcript-detail-panel{
+  max-height:none!important;
+  min-height:520px!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  padding:22px 20px!important;
+}
+.drawer-tray.timeline-open .transcript-index{
+  border-right:1px solid rgba(50,70,55,.12)!important;
+  padding-left:0!important;
+}
+.drawer-tray.timeline-open .transcript-detail-panel{
+  padding-right:0!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row{
+  border-radius:0!important;
+  background:transparent!important;
+}
+
+/* Executive Inbox opens as a calm queue and selected conversation, not a dashboard wall. */
+.drawer-tray.correspondence-open .correspondence-trust-receipt{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:24px!important;
+  margin-top:18px!important;
+  padding:14px 16px!important;
+  border:0!important;
+  border-left:2px solid #778d72!important;
+  border-radius:0!important;
+  background:linear-gradient(90deg,rgba(211,226,199,.32),rgba(255,255,255,.2))!important;
+  box-shadow:none!important;
+}
+.drawer-tray.correspondence-open .correspondence-filterbar{
+  margin-top:12px!important;
+  padding:0 0 12px!important;
+  border:0!important;
+  border-bottom:1px solid rgba(50,70,55,.13)!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.drawer-tray.correspondence-open .correspondence-workbench{
+  grid-template-columns:minmax(260px,.34fr) minmax(0,1fr)!important;
+  gap:0!important;
+  min-height:520px!important;
+  margin-top:0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.drawer-tray.correspondence-open :is(
+  .correspondence-queue,
+  .correspondence-thread,
+  .correspondence-brief,
+  .correspondence-intelligence
+){
+  min-height:0!important;
+  border:0!important;
+  border-bottom:1px solid rgba(50,70,55,.1)!important;
+  border-radius:0!important;
+  background:rgba(255,255,255,.46)!important;
+  box-shadow:none!important;
+}
+.drawer-tray.correspondence-open .correspondence-queue{
+  grid-row:1 / span 3!important;
+  border-right:1px solid rgba(50,70,55,.12)!important;
+  background:transparent!important;
+  padding-left:0!important;
+}
+.drawer-tray.correspondence-open .correspondence-thread,
+.drawer-tray.correspondence-open .correspondence-brief,
+.drawer-tray.correspondence-open .correspondence-intelligence{
+  padding:22px 24px!important;
+}
+.drawer-tray.correspondence-open .correspondence-list button{
+  min-height:76px!important;
+  padding:13px 10px!important;
+  border-radius:0!important;
+}
+.drawer-tray.correspondence-open .correspondence-list button[aria-pressed="true"]{
+  background:linear-gradient(90deg,rgba(211,226,199,.32),rgba(241,205,209,.14))!important;
+  box-shadow:inset 2px 0 #71846c!important;
+}
+
+/* Lead Intelligence follows Studio's three-step contract without extra framing. */
+.drawer-tray.source-open .lead-sourcing-control-bar{
+  margin-top:18px!important;
+  padding-bottom:14px!important;
+  border-bottom:1px solid rgba(50,70,55,.13)!important;
+}
+.drawer-tray.source-open .lead-sourcing-control-bar button:first-child{
+  border-color:rgba(70,91,67,.36)!important;
+  background:linear-gradient(105deg,#70866c,#a4777d)!important;
+  color:#fff!important;
+}
+.drawer-tray.source-open .lead-sourcing-column{
+  border-radius:6px!important;
+  background:rgba(255,255,255,.5)!important;
+}
+
+/* VAL's own function is an intentional doorway, not a detached card. */
+.drawer-tray.val-open .val-witnessing-entry{
+  align-self:center!important;
+  width:min(720px,calc(100% - 60px))!important;
+  margin-top:clamp(42px,8vh,82px)!important;
+  padding:30px 34px!important;
+  border:1px solid rgba(49,68,53,.13)!important;
+  border-radius:6px!important;
+  background:
+    linear-gradient(115deg,rgba(213,227,202,.46),rgba(255,255,255,.62) 50%,rgba(249,220,223,.28))!important;
+}
+
+/* Alignment, Leverage, and all scoped Co-Work use the same executive proportions. */
+.desk-workspace:not(.observer-board-mode):not(.val-cowork-voice-active){
+  width:min(1180px,92vw)!important;
+  max-height:90vh!important;
+}
+.desk-workspace:not(.observer-board-mode):not(.val-cowork-voice-active) .workspace-panel{
+  border-radius:8px!important;
+  background:
+    linear-gradient(120deg,rgba(241,247,236,.3),rgba(255,255,255,.82) 46%,rgba(252,235,237,.28)),
+    rgba(255,255,255,.52)!important;
+  -webkit-backdrop-filter:blur(4px) saturate(1.02)!important;
+  backdrop-filter:blur(4px) saturate(1.02)!important;
+}
+.desk-workspace:not(.observer-board-mode):not(.val-cowork-voice-active) :is(
+  .workspace-left-panel,
+  .home-cowork-context,
+  .home-cowork-conversation,
+  .workspace-input-panel
+){
+  border-radius:6px!important;
+}
+
+@media(max-width:900px){
+  .drawer-tray:is(
+    .source-open,
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open,
+    .commitment-open,
+    .document-open,
+    .val-open
+  ){
+    width:calc(100vw - 24px)!important;
+    height:calc(100vh - 24px)!important;
+    max-width:none!important;
+    max-height:none!important;
+  }
+  .drawer-tray:is(
+    .source-open,
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open,
+    .commitment-open,
+    .document-open,
+    .val-open
+  ) .source-detail-header{
+    min-height:96px!important;
+    padding:18px!important;
+  }
+  .drawer-tray:is(
+    .source-open,
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open,
+    .commitment-open,
+    .document-open,
+    .val-open
+  ) :is(
+    .correspondence-trust-receipt,
+    .correspondence-filterbar,
+    .correspondence-rulebar,
+    .correspondence-workbench,
+    .transcript-workbench,
+    .project-index-source,
+    .project-suggestions,
+    .project-create-toggle,
+    .project-create-form,
+    .project-rolodex,
+    .project-manager-dossier,
+    .relationship-folder-rail,
+    .relationship-intro-tabs,
+    .relationship-index-source,
+    .relationship-v1-panel,
+    .lead-sourcing-control-bar,
+    .lead-sourcing-drawer-workbench,
+    .lead-intelligence-hero,
+    .val-witnessing-entry,
+    .val-drawer-connections
+  ){
+    margin-left:18px!important;
+    margin-right:18px!important;
+  }
+  .drawer-tray.timeline-open .transcript-workbench,
+  .drawer-tray.correspondence-open .correspondence-workbench{
+    display:block!important;
+  }
+  .drawer-tray.timeline-open .transcript-index,
+  .drawer-tray.correspondence-open .correspondence-queue{
+    border-right:0!important;
+    border-bottom:1px solid rgba(50,70,55,.12)!important;
+  }
+}
+
+/* Final cascade: function-specific Studio refinements. */
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) > .drawer-kicker{
+  display:none!important;
+}
+.drawer-tray.source-open > #source-detail[aria-hidden="false"]{
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  padding:0 0 30px!important;
+}
+.drawer-tray.relationship-open .stewardship-empty{
+  width:100%!important;
+  min-height:110px!important;
+  padding:20px 22px!important;
+  border:0!important;
+  border-left:2px solid rgba(119,141,114,.66)!important;
+  border-radius:0!important;
+  background:linear-gradient(90deg,rgba(211,226,199,.3),rgba(255,255,255,.2))!important;
+}
+.drawer-tray.timeline-open .timeline-status-header{
+  padding:0 0 12px!important;
+  border:0!important;
+  border-bottom:1px solid rgba(50,70,55,.11)!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.drawer-tray.timeline-open .timeline-status-header :is(span,strong),
+.drawer-tray.timeline-open .timeline-action-index-link strong{
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  text-shadow:none!important;
+}
+.drawer-tray.timeline-open .transcript-detail-empty{
+  display:grid;
+  place-items:center;
+  align-content:center;
+  min-height:420px;
+  color:rgba(49,64,53,.58);
+  text-align:center;
+}
+.drawer-tray.correspondence-open .correspondence-tabs{
+  display:flex!important;
+  align-items:stretch!important;
+  gap:18px!important;
+  border:0!important;
+  background:transparent!important;
+}
+.drawer-tray.correspondence-open .correspondence-tabs button{
+  min-height:38px!important;
+  padding:0 2px!important;
+  border:0!important;
+  border-bottom:2px solid transparent!important;
+  border-radius:0!important;
+  background:transparent!important;
+  color:rgba(31,42,34,.56)!important;
+  box-shadow:none!important;
+  font-weight:520!important;
+}
+.drawer-tray.correspondence-open .correspondence-tabs button.active{
+  border-bottom-color:#71846c!important;
+  background:linear-gradient(0deg,rgba(209,225,196,.24),transparent 72%)!important;
+  color:#243127!important;
+}
+.drawer-tray.correspondence-open .correspondence-tabs button span{
+  display:inline!important;
+  min-width:0!important;
+  margin-left:4px!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  color:inherit!important;
+  box-shadow:none!important;
+  text-shadow:none!important;
+}
+.drawer-tray.correspondence-open .correspondence-filter-actions{
+  display:flex!important;
+  align-items:center!important;
+  gap:8px!important;
+}
+.drawer-tray.correspondence-open .correspondence-filter-actions button{
+  border-color:rgba(49,68,53,.14)!important;
+  background:rgba(255,255,255,.48)!important;
+  color:#344537!important;
+  box-shadow:none!important;
+}
+.drawer-tray.correspondence-open .correspondence-filter-actions button[data-correspondence-action="create_rule"]{
+  border-color:rgba(70,91,67,.36)!important;
+  background:linear-gradient(105deg,#70866c,#a4777d)!important;
+  color:#fff!important;
+}
+.drawer-tray.correspondence-open .correspondence-scan-actions{
+  display:flex!important;
+  flex-wrap:wrap!important;
+  gap:7px!important;
+}
+.drawer-tray.correspondence-open .correspondence-scan-actions button{
+  width:auto!important;
+  min-height:32px!important;
+  padding:0 10px!important;
+  border-radius:6px!important;
+}
+.drawer-tray.source-open .lead-sourcing-column{
+  overflow:hidden!important;
+}
+.drawer-tray.source-open :is(.lead-stage-row,.preview-lead){
+  margin:0!important;
+  padding:18px 20px!important;
+  border:0!important;
+  border-top:1px solid rgba(50,70,55,.1)!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.drawer-tray.val-open .val-entry-actions button:first-child{
+  border-color:rgba(70,91,67,.36)!important;
+  background:linear-gradient(105deg,#70866c,#a4777d)!important;
+  color:#fff!important;
+  box-shadow:0 8px 20px rgba(70,82,66,.14)!important;
 }
