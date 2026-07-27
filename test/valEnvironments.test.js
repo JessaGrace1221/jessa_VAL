@@ -50,6 +50,7 @@ test('scheduled Observer model lane omits unsupported temperature before request
   assert.match(server,/async function callOpenAIResponses\(\{[^}]*omitTemperature=false/);
   assert.match(server,/if\(!omitTemperature\)body\.temperature=temperature/);
   assert.match(server,/omitTemperature:true,[\s\S]{0,180}model:OPENAI_OBSERVER_MODEL/);
+  assert.match(server,/const apiKey=String\(await resolveOpenAIKey\(\)\|\|''\)\.trim\(\)/);
 });
 
 test('Environment contract requires confirmed event, observers, sender, and document',()=>{

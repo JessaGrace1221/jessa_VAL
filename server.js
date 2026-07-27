@@ -27945,8 +27945,8 @@ async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSch
   if(Date.now()<boardNanoUnavailableUntil){
     throw new Error(`The scheduled Board nano lane is temporarily unavailable: ${boardNanoUnavailableReason||'OpenAI capacity is unavailable'}`);
   }
-  const apiKey=String(OPENAI_KEY||'').trim();
-  if(!apiKey)throw new Error('The scheduled Board requires the configured OpenAI platform key.');
+  const apiKey=String(await resolveOpenAIKey()||'').trim();
+  if(!apiKey)throw new Error('The scheduled Board requires a connected OpenAI key.');
   try{
     const response=await callOpenAIResponses({
       system,
