@@ -188,7 +188,8 @@ test('Home Leverage labels prepared work by its subject before its recipients',(
 
 test('Commitments drawer only labels concrete artifacts as prepared work',()=>{
   assert.match(hearthPrototype,/function taskWorkspaceAttachments/);
-  assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/build/);
+  assert.match(hearthPrototype,/getJson\('\/api\/val\/ready-for-you\?limit=25'/);
+  assert.doesNotMatch(hearthPrototype,/refreshPreparedWorkIncrementally/);
   assert.match(hearthPrototype,/preparedItems/);
   assert.match(hearthPrototype,/prepared_items/);
   assert.match(hearthPrototype,/allBuilt/);

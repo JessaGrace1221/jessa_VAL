@@ -27,7 +27,7 @@ test('ready for you routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/draft/);
   assert.match(routes,/function parseLimit\(value,defaultValue=3,max=25\)/);
   assert.match(routes,/service\.listItems\(\{limit:parseLimit\(req\.query\.limit,20,25\)/);
-  assert.match(routes,/materializeLimit:Math\.max\(0,Math\.min\(Number\(req\.body\?\.materializeLimit\?\?2\)/);
+  assert.match(routes,/materializeLimit:Math\.max\(0,Math\.min\(Number\(req\.body\?\.materializeLimit\?\?0\)/);
 });
 
 test('builds a judgment-only review queue and limits visible items to three',async()=>{

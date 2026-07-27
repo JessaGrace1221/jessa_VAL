@@ -20069,34 +20069,6 @@ async function hydratePreparedWorkQueue(){
   }catch(error){
     console.warn('Prepared work queue unavailable:', error.message);
   }
-  void refreshPreparedWorkIncrementally();
-}
-
-let preparedWorkRefreshPromise = null;
-function refreshPreparedWorkIncrementally({passes=3} = {}){
-  if(!canUseApi) return Promise.resolve(null);
-  if(preparedWorkRefreshPromise) return preparedWorkRefreshPromise;
-  preparedWorkRefreshPromise = (async()=>{
-    let latest = null;
-    for(let pass=0; pass<Math.max(1,Math.min(Number(passes)||3,5)); pass+=1){
-      latest = await postJson('/api/val/ready-for-you/build', {
-        limit:25,
-        materializeLimit:1
-      }, {
-        timeoutMs:60000,
-        timeoutMessage:'VAL is still preparing the next reviewable item.'
-      });
-      hydrateLeverageFromReadyForYou(latest);
-      if(!Number(latest?.generation?.generationBacklog||0)) break;
-    }
-    return latest;
-  })().catch(error=>{
-    console.warn('Incremental prepared work refresh unavailable:', error.message);
-    return null;
-  }).finally(()=>{
-    preparedWorkRefreshPromise = null;
-  });
-  return preparedWorkRefreshPromise;
 }
 
 function prototypeBriefing(){
@@ -27021,16 +26993,6 @@ async function openTaskWorkspace(){
       return id ? list.findIndex((candidate) => String(candidate?.id || candidate?.metadataJson?.commitmentId || candidate?.metadata_json?.commitment_id || '') === id) === index : true;
     });
     renderTaskWorkspace(Array.isArray(commitmentsResult?.tasks)?commitmentsResult.tasks:[],draftsResult?.drafts || [],readyItems);
-    void refreshPreparedWorkIncrementally({passes:3}).then((refreshed)=>{
-      if(!refreshed || !deskWorkspace.classList.contains('task-workspace-mode')) return;
-      const refreshedReadyItems = [
-        ...safeArray(refreshed.preparedItems),
-        ...safeArray(refreshed.prepared_items),
-        ...safeArray(refreshed.allBuilt),
-        ...safeArray(refreshed.items)
-      ];
-      renderTaskWorkspace(currentTaskWorkspaceTasks,currentTaskWorkspaceDrafts,refreshedReadyItems);
-    });
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;

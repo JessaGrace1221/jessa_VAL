@@ -32,7 +32,7 @@ function registerValReadyForYouRoutes(app,deps={}){
       await waitForDb();
       const result=await service.buildQueue({
         limit:parseLimit(req.body?.limit,20,25),
-        materializeLimit:Math.max(0,Math.min(Number(req.body?.materializeLimit??2)||0,5))
+        materializeLimit:Math.max(0,Math.min(Number(req.body?.materializeLimit??0)||0,5))
       });
       await auditLog({req,action:'ready_for_you_queue_built',resourceType:'ready_for_you_items',metadata:{count:result.allBuilt?.length||0,state:result.state,generation:result.generation||{},unknowns:result.unknowns||[]},success:true}).catch(()=>{});
       res.json(result);

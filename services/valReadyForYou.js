@@ -790,7 +790,17 @@ function createValReadyForYouService({
   }
   async function pgUpsert(item){
     const columns=['id','tenantId','userId','eventRunId','category','status','title','itemType','summary','whyUserIsSeeingThis','whyNow','readinessJson','whatValPrepared','whatUserNeedsToDo','whatValDid','whatOnlyUserCanDo','estimatedReviewMinutes','sourceRefsJson','confidence','requiresApproval','approvalPolicy','representationRisk','actionsJson','metadataJson','decisionJson','createdAt','updatedAt','reviewedAt','snoozedUntil'];
-    const values=columns.map(c=>item[c]);
+    const jsonColumns=new Set(['readinessJson','sourceRefsJson','actionsJson','metadataJson','decisionJson']);
+    const values=columns.map(c=>{
+      const value=item[c];
+      if(!jsonColumns.has(c))return value;
+      if(value==null)return JSON.stringify(c==='sourceRefsJson'||c==='actionsJson'?[]:{});
+      if(typeof value==='string'){
+        try{return JSON.stringify(JSON.parse(value));}
+        catch(_){return JSON.stringify(c==='sourceRefsJson'||c==='actionsJson'?[]:{});}
+      }
+      return JSON.stringify(value);
+    });
     const names=columns.map(toSnake);
     const params=columns.map((_,i)=>`$${i+1}`).join(',');
     const updates=names.filter(n=>!['id','tenant_id','user_id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');

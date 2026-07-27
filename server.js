@@ -185,6 +185,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-nano';
+const VAL_DAILY_AI_CALL_LIMIT = Math.max(1,Number(process.env.VAL_DAILY_AI_CALL_LIMIT)||(CLIENT_CONFIG.clientSlug==='jessa-val'?60:200));
 const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||42);
 const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
 const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
@@ -7788,6 +7789,16 @@ async function initValDb(){
       ip_address text,
       user_agent text,
       created_at timestamptz not null default now()
+    );
+    create table if not exists val_ai_daily_usage (
+      tenant_id text not null,
+      user_id text not null,
+      usage_date date not null default current_date,
+      call_count integer not null default 0,
+      input_tokens bigint not null default 0,
+      output_tokens bigint not null default 0,
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,usage_date)
     );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
@@ -27452,6 +27463,36 @@ let valReasoningUnavailableReason='';
 function valReasoningCapacityError(error){
   return /(quota|billing|credit balance|plans & billing|insufficient credit)/i.test(String(error?.message||error||''));
 }
+const localAiDailyUsage=new Map();
+async function reserveValAiCall(){
+  const scopeKey=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  if(pgPool){
+    const result=await dbQuery(
+      `insert into val_ai_daily_usage (tenant_id,user_id,usage_date,call_count,updated_at)
+       values ($1,$2,current_date,1,now())
+       on conflict (tenant_id,user_id,usage_date) do update
+       set call_count=val_ai_daily_usage.call_count+1,updated_at=now()
+       where val_ai_daily_usage.call_count < $3
+       returning call_count`,
+      [tenantId(),currentUserId(),VAL_DAILY_AI_CALL_LIMIT]
+    );
+    if(!result?.rows?.length)throw new Error(`VAL reached its daily AI safety limit (${VAL_DAILY_AI_CALL_LIMIT} calls). No additional paid model calls will run today.`);
+    return Number(result.rows[0].call_count)||1;
+  }
+  const next=(localAiDailyUsage.get(scopeKey)||0)+1;
+  if(next>VAL_DAILY_AI_CALL_LIMIT)throw new Error(`VAL reached its daily AI safety limit (${VAL_DAILY_AI_CALL_LIMIT} calls). No additional paid model calls will run today.`);
+  localAiDailyUsage.set(scopeKey,next);
+  return next;
+}
+async function recordValAiUsage(usage={}){
+  if(!pgPool)return;
+  await dbQuery(
+    `update val_ai_daily_usage
+     set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,updated_at=now()
+     where tenant_id=$3 and user_id=$4 and usage_date=current_date`,
+    [Number(usage.input_tokens)||0,Number(usage.output_tokens)||0,tenantId(),currentUserId()]
+  ).catch(error=>console.warn('[val-ai-usage] receipt persistence failed:',error.message));
+}
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model=''}){
   if(Date.now()<valReasoningUnavailableUntil){
     throw new Error(`VAL reasoning providers are temporarily unavailable: ${valReasoningUnavailableReason||'provider capacity is unavailable'}`);
@@ -27462,6 +27503,14 @@ async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=fal
     valReasoningUnavailableReason='';
     return response;
   }catch(openAiError){
+    const allowAnthropicFallback=String(process.env.VAL_ALLOW_ANTHROPIC_FALLBACK||'').toLowerCase()==='true';
+    if(!allowAnthropicFallback){
+      if(valReasoningCapacityError(openAiError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason=openAiError.message;
+      }
+      throw openAiError;
+    }
     const anthropicKey=await resolveAnthropicKey().catch(()=>'');
     if(!anthropicKey){
       if(valReasoningCapacityError(openAiError)){
@@ -27888,6 +27937,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   if(jsonSchema) body.text = {format:jsonSchema};
   else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
+    const dailyCallNumber=await reserveValAiCall();
     const options={
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -27898,6 +27948,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
       : await fetch('https://api.openai.com/v1/responses',options);
     const d=await readJsonResponse(r);
     if(!r.ok&&!d.error) throw new Error(`OpenAI response failed (${r.status}): ${d.raw||'upstream error'}`);
+    d.val_daily_call_number=dailyCallNumber;
     return d;
   };
   let d=await request();
@@ -27936,6 +27987,20 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     const reason=d.incomplete_details?.reason||'unknown reason';
     throw new Error('OpenAI response incomplete: '+reason+'.');
   }
+  const usage=d.usage||{};
+  await recordValAiUsage(usage);
+  console.log('[val-ai-usage]',JSON.stringify({
+    provider:'openai',
+    model:openAiModel,
+    inputTokens:Number(usage.input_tokens)||0,
+    outputTokens:Number(usage.output_tokens)||0,
+    totalTokens:Number(usage.total_tokens)||0,
+    dailyCallNumber:Number(d.val_daily_call_number)||0,
+    dailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    at:new Date().toISOString()
+  }));
   return responseText(d);
 }
 
