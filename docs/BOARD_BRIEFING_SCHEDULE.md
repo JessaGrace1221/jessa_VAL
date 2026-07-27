@@ -20,7 +20,8 @@ The default timezone is the VAL user's configured timezone.
 
 ## Cost Boundary
 
-- Model: `gpt-5-nano`
+- Observer model: `gpt-5-nano`
+- Chief of Staff synthesis model: `gpt-5.6-luna`
 - Provider lane: OpenAI only, using one configured platform credential
 - Maximum packets per briefing: 12
 - Observer calls per full briefing: 14, one per Observer
@@ -31,6 +32,8 @@ The default timezone is the VAL user's configured timezone.
 - Failed OpenAI calls do not fall back to Anthropic or another provider
 - Provider-capacity failures open a short circuit for the rest of that briefing
 - Manual Board reasoning and retry routes are disabled
+- The Board lane has a $0.05 soft warning and a $0.10 daily hard stop
+- The Board and all interactive work also share a $1.50 global daily hard stop
 
 Packets beyond a briefing's limit remain durable and wait for the next scheduled
 briefing.

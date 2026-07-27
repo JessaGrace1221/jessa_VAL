@@ -183,9 +183,24 @@ const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
 const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',').map(v=>v.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.6-luna';
+const OPENAI_EXTRACTION_MODEL = process.env.VAL_EXTRACTION_MODEL || 'gpt-5-nano';
+const OPENAI_DEEP_REVIEW_MODEL = process.env.VAL_DEEP_REVIEW_MODEL || 'gpt-5.6-terra';
 const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-nano';
-const VAL_DAILY_AI_CALL_LIMIT = Math.max(1,Number(process.env.VAL_DAILY_AI_CALL_LIMIT)||(CLIENT_CONFIG.clientSlug==='jessa-val'?60:200));
+const VAL_DAILY_AI_CALL_LIMIT = Math.max(1,Number(process.env.VAL_DAILY_AI_CALL_LIMIT)||200);
+const VAL_AI_DAILY_HARD_USD = Math.max(0.01,Number(process.env.VAL_AI_DAILY_HARD_USD)||1.50);
+const VAL_AI_INTERACTIVE_DAILY_SOFT_USD = Math.max(0.01,Number(process.env.VAL_AI_INTERACTIVE_DAILY_SOFT_USD)||0.75);
+const VAL_AI_INTERACTIVE_DAILY_HARD_USD = Math.max(
+  VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+  Number(process.env.VAL_AI_INTERACTIVE_DAILY_HARD_USD)||1.40
+);
+const VAL_AI_BOARD_DAILY_SOFT_USD = Math.max(0.01,Number(process.env.VAL_AI_BOARD_DAILY_SOFT_USD)||0.05);
+const VAL_AI_BOARD_DAILY_HARD_USD = Math.max(
+  VAL_AI_BOARD_DAILY_SOFT_USD,
+  Number(process.env.VAL_AI_BOARD_DAILY_HARD_USD)||0.10
+);
+const VAL_AI_BOARD_DAILY_CALL_LIMIT = Math.max(15,Number(process.env.VAL_AI_BOARD_DAILY_CALL_LIMIT)||45);
+const VAL_AI_DEEP_REVIEW_ENABLED = /^(1|true|yes)$/i.test(String(process.env.VAL_AI_DEEP_REVIEW_ENABLED||''));
 const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||42);
 const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
 const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
@@ -4096,7 +4111,7 @@ async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
     'Project Manager candidate actions must stay one of: yes_create_project, no_not_project, unsure_ask_user.'
   ].join('\n');
   const user=`Knowledge card: ${card.title||category}\nInternal extraction guidance:\n${promptUsed||card.prompt||''}\n\nUser-supplied context:\n${String(rawResponse).slice(0,30000)}`;
-  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true,task:'extraction'}).catch(()=>null);
   let parsed=null;
   try{parsed=raw?JSON.parse(raw):null;}catch(e){}
   if(!parsed){
@@ -5176,7 +5191,7 @@ async function summarizeTeachValInterview(transcript){
   const clean=String(transcript||'').trim();
   if(!clean) throw new Error('Add the voice interview transcript before saving this stage.');
   const system='Summarize a Teach VAL About You onboarding interview. Return strict JSON with keys: executive_profile, company_context, current_projects, important_relationships, lessons_learned, frustrations, preferences, process_gaps, priorities, raw_transcript.';
-  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true,task:'extraction'}).catch(()=>null);
   try{return raw?JSON.parse(raw):{raw_transcript:clean};}catch(e){return {executive_profile:{summary:clean.slice(0,800)},raw_transcript:clean};}
 }
 function teachValCompiledPayload({session,imports,items,testMode=false}){
@@ -7797,8 +7812,25 @@ async function initValDb(){
       call_count integer not null default 0,
       input_tokens bigint not null default 0,
       output_tokens bigint not null default 0,
+      reserved_cost_micros bigint not null default 0,
+      spent_cost_micros bigint not null default 0,
       updated_at timestamptz not null default now(),
       primary key (tenant_id,user_id,usage_date)
+    );
+    alter table val_ai_daily_usage add column if not exists reserved_cost_micros bigint not null default 0;
+    alter table val_ai_daily_usage add column if not exists spent_cost_micros bigint not null default 0;
+    create table if not exists val_ai_daily_lane_usage (
+      tenant_id text not null,
+      user_id text not null,
+      usage_date date not null default current_date,
+      lane text not null,
+      call_count integer not null default 0,
+      input_tokens bigint not null default 0,
+      output_tokens bigint not null default 0,
+      reserved_cost_micros bigint not null default 0,
+      spent_cost_micros bigint not null default 0,
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,usage_date,lane)
     );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
@@ -27464,41 +27496,279 @@ function valReasoningCapacityError(error){
   return /(quota|billing|credit balance|plans & billing|insufficient credit)/i.test(String(error?.message||error||''));
 }
 const localAiDailyUsage=new Map();
-async function reserveValAiCall(){
+const OPENAI_MODEL_PRICING_PER_MILLION={
+  'gpt-5-nano':{input:0.05,cachedInput:0.005,output:0.40},
+  'gpt-5.6-luna':{input:1.00,cachedInput:0.10,output:6.00},
+  'gpt-5.6-terra':{input:2.50,cachedInput:0.25,output:15.00},
+  'gpt-5.6-sol':{input:5.00,cachedInput:0.50,output:30.00},
+  'gpt-5.5':{input:5.00,cachedInput:0.50,output:30.00}
+};
+function valAiLane(value='interactive'){
+  const lane=String(value||'interactive').trim().toLowerCase();
+  return lane==='board'||lane==='deep_review'?lane:'interactive';
+}
+function valAiLaneBudget(lane='interactive'){
+  if(lane==='board')return {
+    softUsd:VAL_AI_BOARD_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_BOARD_DAILY_HARD_USD,
+    callLimit:VAL_AI_BOARD_DAILY_CALL_LIMIT
+  };
+  if(lane==='deep_review')return {
+    softUsd:VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_INTERACTIVE_DAILY_HARD_USD,
+    callLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+  return {
+    softUsd:VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_INTERACTIVE_DAILY_HARD_USD,
+    callLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+}
+function valAiModelPricing(model=''){
+  const clean=String(model||'').trim().toLowerCase();
+  const exact=OPENAI_MODEL_PRICING_PER_MILLION[clean];
+  if(exact)return exact;
+  const family=Object.keys(OPENAI_MODEL_PRICING_PER_MILLION).find(key=>clean.startsWith(`${key}-`));
+  return family?OPENAI_MODEL_PRICING_PER_MILLION[family]:OPENAI_MODEL_PRICING_PER_MILLION['gpt-5.6-sol'];
+}
+function valAiEstimatedInputTokens(system='',messages=[]){
+  const chars=String(system||'').length+safeArray(messages).reduce((sum,message)=>sum+String(message?.content||'').length,0);
+  return Math.max(1,Math.ceil(chars/4));
+}
+function valAiCostMicros({model='',inputTokens=0,cachedInputTokens=0,outputTokens=0}={}){
+  const pricing=valAiModelPricing(model);
+  const cached=Math.max(0,Math.min(Number(cachedInputTokens)||0,Number(inputTokens)||0));
+  const uncached=Math.max(0,(Number(inputTokens)||0)-cached);
+  const usd=(uncached*pricing.input+cached*pricing.cachedInput+(Number(outputTokens)||0)*pricing.output)/1_000_000;
+  return Math.max(0,Math.ceil(usd*1_000_000));
+}
+function valAiReservationMicros({model='',system='',messages=[],maxTokens=0}={}){
+  return valAiCostMicros({
+    model,
+    inputTokens:valAiEstimatedInputTokens(system,messages),
+    outputTokens:Math.max(1,Number(maxTokens)||1)
+  });
+}
+function valAiBudgetError({lane,budget,global=false}={}){
+  const label=global?'daily AI':lane==='board'?'scheduled Board':lane==='deep_review'?'Deep Review':'interactive VAL';
+  const limit=global?VAL_AI_DAILY_HARD_USD:budget.hardUsd;
+  return new Error(`${label} reached its $${Number(limit).toFixed(2)} daily safety budget. No additional paid model calls will run in this lane today.`);
+}
+async function releaseValAiReservation({lane='interactive',reservedCostMicros=0,releaseLane=true}={}){
+  const reserved=Math.max(0,Number(reservedCostMicros)||0);
+  if(!reserved)return;
+  if(pgPool){
+    await dbQuery(
+      `update val_ai_daily_usage
+       set reserved_cost_micros=greatest(0,reserved_cost_micros-$1),updated_at=now()
+       where tenant_id=$2 and user_id=$3 and usage_date=current_date`,
+      [reserved,tenantId(),currentUserId()]
+    ).catch(()=>{});
+    if(releaseLane){
+      await dbQuery(
+        `update val_ai_daily_lane_usage
+         set reserved_cost_micros=greatest(0,reserved_cost_micros-$1),updated_at=now()
+         where tenant_id=$2 and user_id=$3 and usage_date=current_date and lane=$4`,
+        [reserved,tenantId(),currentUserId(),lane]
+      ).catch(()=>{});
+    }
+    return;
+  }
+  const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  const state=localAiDailyUsage.get(key)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  state.reservedCostMicros=Math.max(0,state.reservedCostMicros-reserved);
+  if(releaseLane&&state.lanes[lane])state.lanes[lane].reservedCostMicros=Math.max(0,state.lanes[lane].reservedCostMicros-reserved);
+  localAiDailyUsage.set(key,state);
+}
+async function reserveValAiCall({lane='interactive',model='',system='',messages=[],maxTokens=0}={}){
+  lane=valAiLane(lane);
+  if(lane==='deep_review'&&!VAL_AI_DEEP_REVIEW_ENABLED){
+    throw new Error('Deep Review is off. It must be explicitly enabled before VAL can use the Terra reasoning lane.');
+  }
+  const budget=valAiLaneBudget(lane);
+  const reservedCostMicros=valAiReservationMicros({model,system,messages,maxTokens});
+  const globalHardMicros=Math.round(VAL_AI_DAILY_HARD_USD*1_000_000);
+  const laneHardMicros=Math.round(budget.hardUsd*1_000_000);
   const scopeKey=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
   if(pgPool){
-    const result=await dbQuery(
-      `insert into val_ai_daily_usage (tenant_id,user_id,usage_date,call_count,updated_at)
-       values ($1,$2,current_date,1,now())
+    const globalResult=await dbQuery(
+      `insert into val_ai_daily_usage (tenant_id,user_id,usage_date,call_count,reserved_cost_micros,updated_at)
+       values ($1,$2,current_date,1,$3,now())
        on conflict (tenant_id,user_id,usage_date) do update
-       set call_count=val_ai_daily_usage.call_count+1,updated_at=now()
-       where val_ai_daily_usage.call_count < $3
-       returning call_count`,
-      [tenantId(),currentUserId(),VAL_DAILY_AI_CALL_LIMIT]
+       set call_count=val_ai_daily_usage.call_count+1,
+           reserved_cost_micros=val_ai_daily_usage.reserved_cost_micros+$3,
+           updated_at=now()
+       where val_ai_daily_usage.call_count < $4
+         and val_ai_daily_usage.spent_cost_micros+val_ai_daily_usage.reserved_cost_micros+$3 <= $5
+       returning call_count,spent_cost_micros,reserved_cost_micros`,
+      [tenantId(),currentUserId(),reservedCostMicros,VAL_DAILY_AI_CALL_LIMIT,globalHardMicros]
     );
-    if(!result?.rows?.length)throw new Error(`VAL reached its daily AI safety limit (${VAL_DAILY_AI_CALL_LIMIT} calls). No additional paid model calls will run today.`);
-    return Number(result.rows[0].call_count)||1;
+    if(!globalResult?.rows?.length)throw valAiBudgetError({lane,budget,global:true});
+    const laneResult=await dbQuery(
+      `insert into val_ai_daily_lane_usage (tenant_id,user_id,usage_date,lane,call_count,reserved_cost_micros,updated_at)
+       values ($1,$2,current_date,$3,1,$4,now())
+       on conflict (tenant_id,user_id,usage_date,lane) do update
+       set call_count=val_ai_daily_lane_usage.call_count+1,
+           reserved_cost_micros=val_ai_daily_lane_usage.reserved_cost_micros+$4,
+           updated_at=now()
+       where val_ai_daily_lane_usage.call_count < $5
+         and val_ai_daily_lane_usage.spent_cost_micros+val_ai_daily_lane_usage.reserved_cost_micros+$4 <= $6
+       returning call_count,spent_cost_micros,reserved_cost_micros`,
+      [tenantId(),currentUserId(),lane,reservedCostMicros,budget.callLimit,laneHardMicros]
+    );
+    if(!laneResult?.rows?.length){
+      await releaseValAiReservation({lane,reservedCostMicros,releaseLane:false});
+      throw valAiBudgetError({lane,budget});
+    }
+    return {
+      dailyCallNumber:Number(globalResult.rows[0].call_count)||1,
+      laneCallNumber:Number(laneResult.rows[0].call_count)||1,
+      lane,
+      budget,
+      reservedCostMicros
+    };
   }
-  const next=(localAiDailyUsage.get(scopeKey)||0)+1;
-  if(next>VAL_DAILY_AI_CALL_LIMIT)throw new Error(`VAL reached its daily AI safety limit (${VAL_DAILY_AI_CALL_LIMIT} calls). No additional paid model calls will run today.`);
-  localAiDailyUsage.set(scopeKey,next);
-  return next;
+  const state=localAiDailyUsage.get(scopeKey)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  const laneState=state.lanes[lane]||{callCount:0,reservedCostMicros:0,spentCostMicros:0,inputTokens:0,outputTokens:0};
+  if(state.callCount+1>VAL_DAILY_AI_CALL_LIMIT||state.spentCostMicros+state.reservedCostMicros+reservedCostMicros>globalHardMicros){
+    throw valAiBudgetError({lane,budget,global:true});
+  }
+  if(laneState.callCount+1>budget.callLimit||laneState.spentCostMicros+laneState.reservedCostMicros+reservedCostMicros>laneHardMicros){
+    throw valAiBudgetError({lane,budget});
+  }
+  state.callCount+=1;
+  state.reservedCostMicros+=reservedCostMicros;
+  laneState.callCount+=1;
+  laneState.reservedCostMicros+=reservedCostMicros;
+  state.lanes[lane]=laneState;
+  localAiDailyUsage.set(scopeKey,state);
+  return {dailyCallNumber:state.callCount,laneCallNumber:laneState.callCount,lane,budget,reservedCostMicros};
 }
-async function recordValAiUsage(usage={}){
-  if(!pgPool)return;
-  await dbQuery(
-    `update val_ai_daily_usage
-     set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,updated_at=now()
-     where tenant_id=$3 and user_id=$4 and usage_date=current_date`,
-    [Number(usage.input_tokens)||0,Number(usage.output_tokens)||0,tenantId(),currentUserId()]
-  ).catch(error=>console.warn('[val-ai-usage] receipt persistence failed:',error.message));
+async function recordValAiUsage({usage={},reservation={},model=''}={}){
+  const inputTokens=Number(usage.input_tokens)||0;
+  const outputTokens=Number(usage.output_tokens)||0;
+  const cachedInputTokens=Number(usage.input_tokens_details?.cached_tokens)||0;
+  const spentCostMicros=valAiCostMicros({model,inputTokens,cachedInputTokens,outputTokens});
+  const reservedCostMicros=Math.max(0,Number(reservation.reservedCostMicros)||0);
+  const lane=valAiLane(reservation.lane);
+  if(pgPool){
+    const results=await Promise.all([
+      dbQuery(
+        `update val_ai_daily_usage
+         set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,
+             reserved_cost_micros=greatest(0,reserved_cost_micros-$3),
+             spent_cost_micros=spent_cost_micros+$4,updated_at=now()
+         where tenant_id=$5 and user_id=$6 and usage_date=current_date`,
+        [inputTokens,outputTokens,reservedCostMicros,spentCostMicros,tenantId(),currentUserId()]
+      ),
+      dbQuery(
+        `update val_ai_daily_lane_usage
+         set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,
+             reserved_cost_micros=greatest(0,reserved_cost_micros-$3),
+             spent_cost_micros=spent_cost_micros+$4,updated_at=now()
+         where tenant_id=$5 and user_id=$6 and usage_date=current_date and lane=$7
+         returning spent_cost_micros`,
+        [inputTokens,outputTokens,reservedCostMicros,spentCostMicros,tenantId(),currentUserId(),lane]
+      )
+    ]).catch(error=>console.warn('[val-ai-usage] receipt persistence failed:',error.message));
+    const laneSpentMicros=Number(results?.[1]?.rows?.[0]?.spent_cost_micros)||0;
+    const laneSoftMicros=Math.round(valAiLaneBudget(lane).softUsd*1_000_000);
+    if(laneSpentMicros>=laneSoftMicros){
+      console.warn(`[val-ai-budget] ${lane} crossed its $${valAiLaneBudget(lane).softUsd.toFixed(2)} daily soft budget at $${(laneSpentMicros/1_000_000).toFixed(4)}.`);
+    }
+  }else{
+    const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+    const state=localAiDailyUsage.get(key);
+    const laneState=state?.lanes?.[lane];
+    if(state&&laneState){
+      state.inputTokens=(state.inputTokens||0)+inputTokens;
+      state.outputTokens=(state.outputTokens||0)+outputTokens;
+      state.reservedCostMicros=Math.max(0,state.reservedCostMicros-reservedCostMicros);
+      state.spentCostMicros+=spentCostMicros;
+      laneState.inputTokens+=inputTokens;
+      laneState.outputTokens+=outputTokens;
+      laneState.reservedCostMicros=Math.max(0,laneState.reservedCostMicros-reservedCostMicros);
+      laneState.spentCostMicros+=spentCostMicros;
+      localAiDailyUsage.set(key,state);
+    }
+  }
+  return {inputTokens,outputTokens,cachedInputTokens,spentCostMicros,lane};
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model=''}){
+function valAiBudgetRow(row={},lane=''){
+  const budget=lane?valAiLaneBudget(lane):null;
+  const spentCostUsd=(Number(row.spent_cost_micros||row.spentCostMicros)||0)/1_000_000;
+  const reservedCostUsd=(Number(row.reserved_cost_micros||row.reservedCostMicros)||0)/1_000_000;
+  return {
+    lane:lane||undefined,
+    callCount:Number(row.call_count||row.callCount)||0,
+    inputTokens:Number(row.input_tokens||row.inputTokens)||0,
+    outputTokens:Number(row.output_tokens||row.outputTokens)||0,
+    spentCostUsd,
+    reservedCostUsd,
+    projectedCostUsd:spentCostUsd+reservedCostUsd,
+    softBudgetUsd:budget?.softUsd,
+    hardBudgetUsd:budget?.hardUsd,
+    softWarning:!!budget&&spentCostUsd+reservedCostUsd>=budget.softUsd,
+    stopped:!!budget&&spentCostUsd+reservedCostUsd>=budget.hardUsd
+  };
+}
+async function valAiBudgetStatus(){
+  const models={
+    extraction:OPENAI_EXTRACTION_MODEL,
+    boardObservers:OPENAI_OBSERVER_MODEL,
+    chiefOfStaff:OPENAI_CHAT_MODEL,
+    interactive:OPENAI_CHAT_MODEL,
+    deepReview:OPENAI_DEEP_REVIEW_MODEL
+  };
+  if(pgPool){
+    const [globalResult,laneResult]=await Promise.all([
+      dbQuery(
+        `select * from val_ai_daily_usage
+         where tenant_id=$1 and user_id=$2 and usage_date=current_date`,
+        [tenantId(),currentUserId()]
+      ),
+      dbQuery(
+        `select * from val_ai_daily_lane_usage
+         where tenant_id=$1 and user_id=$2 and usage_date=current_date
+         order by lane`,
+        [tenantId(),currentUserId()]
+      )
+    ]);
+    const global=valAiBudgetRow(globalResult?.rows?.[0]||{});
+    return {
+      date:new Date().toISOString().slice(0,10),
+      global:{...global,hardBudgetUsd:VAL_AI_DAILY_HARD_USD,stopped:global.projectedCostUsd>=VAL_AI_DAILY_HARD_USD},
+      lanes:['board','interactive','deep_review'].map(lane=>valAiBudgetRow(
+        safeArray(laneResult?.rows).find(row=>row.lane===lane)||{},
+        lane
+      )),
+      models,
+      deepReviewEnabled:VAL_AI_DEEP_REVIEW_ENABLED,
+      emergencyCallLimit:VAL_DAILY_AI_CALL_LIMIT
+    };
+  }
+  const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  const state=localAiDailyUsage.get(key)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  const global=valAiBudgetRow(state);
+  return {
+    date:new Date().toISOString().slice(0,10),
+    global:{...global,hardBudgetUsd:VAL_AI_DAILY_HARD_USD,stopped:global.projectedCostUsd>=VAL_AI_DAILY_HARD_USD},
+    lanes:['board','interactive','deep_review'].map(lane=>valAiBudgetRow(state.lanes?.[lane]||{},lane)),
+    models,
+    deepReviewEnabled:VAL_AI_DEEP_REVIEW_ENABLED,
+    emergencyCallLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+}
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',task='conversation',lane='interactive',deepReviewApproved=false}){
   if(Date.now()<valReasoningUnavailableUntil){
     throw new Error(`VAL reasoning providers are temporarily unavailable: ${valReasoningUnavailableReason||'provider capacity is unavailable'}`);
   }
+  const selectedLane=task==='deep_review'?'deep_review':valAiLane(lane);
+  if(selectedLane==='deep_review'&&!deepReviewApproved)throw new Error('Deep Review requires explicit user approval for this request.');
+  const selectedModel=String(model||'').trim()
+    ||(task==='extraction'?OPENAI_EXTRACTION_MODEL:selectedLane==='deep_review'?OPENAI_DEEP_REVIEW_MODEL:OPENAI_CHAT_MODEL);
   try{
-    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs,model});
+    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs,model:selectedModel,lane:selectedLane});
     valReasoningUnavailableUntil=0;
     valReasoningUnavailableReason='';
     return response;
@@ -27915,7 +28185,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,omitTemperature=false,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,omitTemperature=false,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true,lane='interactive'}){
   let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
   const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -27937,7 +28207,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   if(jsonSchema) body.text = {format:jsonSchema};
   else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
-    const dailyCallNumber=await reserveValAiCall();
+    const reservation=await reserveValAiCall({lane,model:openAiModel,system:body.instructions,messages:preparedMessages,maxTokens});
     const options={
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -27947,8 +28217,14 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
       ? await fetchWithTimeout('https://api.openai.com/v1/responses',options,timeoutMs,'OpenAI response')
       : await fetch('https://api.openai.com/v1/responses',options);
     const d=await readJsonResponse(r);
+    if(!r.ok||d.error){
+      await releaseValAiReservation({
+        lane:reservation.lane,
+        reservedCostMicros:reservation.reservedCostMicros
+      });
+    }
     if(!r.ok&&!d.error) throw new Error(`OpenAI response failed (${r.status}): ${d.raw||'upstream error'}`);
-    d.val_daily_call_number=dailyCallNumber;
+    d.val_ai_reservation=reservation;
     return d;
   };
   let d=await request();
@@ -27988,15 +28264,23 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     throw new Error('OpenAI response incomplete: '+reason+'.');
   }
   const usage=d.usage||{};
-  await recordValAiUsage(usage);
+  const usageReceipt=await recordValAiUsage({usage,reservation:d.val_ai_reservation||{},model:openAiModel});
   console.log('[val-ai-usage]',JSON.stringify({
     provider:'openai',
     model:openAiModel,
-    inputTokens:Number(usage.input_tokens)||0,
-    outputTokens:Number(usage.output_tokens)||0,
+    lane:usageReceipt.lane,
+    inputTokens:usageReceipt.inputTokens,
+    cachedInputTokens:usageReceipt.cachedInputTokens,
+    outputTokens:usageReceipt.outputTokens,
     totalTokens:Number(usage.total_tokens)||0,
-    dailyCallNumber:Number(d.val_daily_call_number)||0,
-    dailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
+    reservedCostUsd:Number(d.val_ai_reservation?.reservedCostMicros||0)/1_000_000,
+    spentCostUsd:usageReceipt.spentCostMicros/1_000_000,
+    dailyCallNumber:Number(d.val_ai_reservation?.dailyCallNumber)||0,
+    laneCallNumber:Number(d.val_ai_reservation?.laneCallNumber)||0,
+    emergencyDailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
+    globalHardBudgetUsd:VAL_AI_DAILY_HARD_USD,
+    laneSoftBudgetUsd:d.val_ai_reservation?.budget?.softUsd||0,
+    laneHardBudgetUsd:d.val_ai_reservation?.budget?.hardUsd||0,
     tenantId:tenantId(),
     userId:currentUserId(),
     at:new Date().toISOString()
@@ -28023,6 +28307,7 @@ async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSch
       timeoutMs,
       model:OPENAI_OBSERVER_MODEL,
       apiKey,
+      lane:'board',
       allowPlatformFallback:false,
       allowCompatibilityRetries:false
     });
@@ -31540,7 +31825,7 @@ async function inferGhlActionFromChat(text){
     'For contact.create/contact.upsert params may include firstName,lastName,name,email,phone,companyName,source,tags,note,city,state,country,website,customFields.',
     'For updates/tags/notes/tasks/opportunities include the needed IDs when supplied. If an ID is missing but an email/name is supplied for tagging/note/task/update, return contact.search instead.'
   ].join('\n');
-  const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true,task:'extraction'}).catch(()=>null);
   if(!raw) return null;
   const parsed=extractJsonObject(raw);
   if(!parsed.shouldExecute) return null;
@@ -31885,7 +32170,7 @@ async function processTranscriptPayload(payload){
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
   const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Use this layered transcript process internally before producing JSON: identify decisions, commitments, relationship signals, project signals, prepared-work opportunities, and evidence quotes before naming any task.','A transcript snippet is not an action item. Only name a task when a real actor, concrete action, outcome, and exact source quote are present.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
-  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
+  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true,task:'extraction'});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
@@ -35524,7 +35809,7 @@ registerValExecutiveInstructionRoutes(app,{
   auditLog
 });
 const reasonChiefOfStaffRecommendation=createChiefOfStaffReasoner({
-  callModel:callBoardNanoModel,
+  callModel:args=>callValModel({...args,lane:'board'}),
   logger:console
 });
 valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
@@ -35721,6 +36006,15 @@ app.get('/api/val/board/briefing-status',async(req,res)=>{
       launchHold:VAL_BOARD_LAUNCH_HOLD,
       runs
     });
+  }catch(error){
+    res.status(500).json({ok:false,error:error.message});
+  }
+});
+
+app.get('/api/val/ai-budget',async(req,res)=>{
+  try{
+    await valDbReady;
+    res.json({ok:true,...await valAiBudgetStatus()});
   }catch(error){
     res.status(500).json({ok:false,error:error.message});
   }
