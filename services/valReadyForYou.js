@@ -793,6 +793,8 @@ function createValReadyForYouService({
     const jsonColumns=new Set(['readinessJson','sourceRefsJson','actionsJson','metadataJson','decisionJson']);
     const values=columns.map(c=>{
       const value=item[c];
+      if(c==='eventRunId')return String(value||'').trim()||null;
+      if(c==='estimatedReviewMinutes')return Math.max(1,Number(value)||2);
       if(!jsonColumns.has(c))return value;
       if(value==null)return JSON.stringify(c==='sourceRefsJson'||c==='actionsJson'?[]:{});
       if(typeof value==='string'){
