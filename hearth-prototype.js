@@ -15320,6 +15320,9 @@ function setRoomCopy(state){
       room.insertBefore(list, actionButton);
     }
     actionButton.hidden = !roomHasAction;
+    actionButton.disabled = !roomHasAction;
+    actionButton.style.display = roomHasAction ? '' : 'none';
+    actionButton.setAttribute('aria-hidden', roomHasAction ? 'false' : 'true');
     actionButton.innerHTML = roomHasAction ? content.card.action + ' <b>&rarr;</b>' : '';
     if(name === 'alignment' && roomHasAction){
       const doneButton = document.createElement('button');

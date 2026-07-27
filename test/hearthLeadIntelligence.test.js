@@ -2306,6 +2306,8 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
     /const roomHasAction = name !== 'alignment' \|\| queue\.length > 0/,
     /actionButton\.hidden = !roomHasAction/,
+    /actionButton\.disabled = !roomHasAction/,
+    /actionButton\.style\.display = roomHasAction \? '' : 'none'/,
     /if\(name === 'alignment' && roomHasAction\)/,
     /No meaningful movement earned Home/,
     /No action needs you right now/,
