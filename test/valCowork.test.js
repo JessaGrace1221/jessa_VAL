@@ -438,7 +438,8 @@ test('Hearth exposes all unresolved tasks with source and prepared-work continua
   assert.match(hearth,/Open your tasks/);
   assert.match(hearth,/Every transcript Action Item stays here until it is done/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
-  assert.match(hearth,/postJson\('\/api\/val\/ready-for-you\/build',\{limit:25\}/);
+  assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=25'/);
+  assert.match(hearth,/function refreshPreparedWorkIncrementally/);
   assert.match(hearth,/function openTaskSourceTranscript/);
   assert.match(hearth,/function openTaskPreparedWork/);
   assert.match(hearth,/taskCompanionButton\?\.addEventListener\('click', openTaskWorkspace\)/);

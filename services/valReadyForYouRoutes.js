@@ -30,13 +30,26 @@ function registerValReadyForYouRoutes(app,deps={}){
   app.post('/api/val/ready-for-you/build',async(req,res)=>{
     try{
       await waitForDb();
-      const result=await service.buildQueue({limit:parseLimit(req.body?.limit,20,25)});
-      await auditLog({req,action:'ready_for_you_queue_built',resourceType:'ready_for_you_items',metadata:{count:result.allBuilt?.length||0,state:result.state,unknowns:result.unknowns||[]},success:true}).catch(()=>{});
+      const result=await service.buildQueue({
+        limit:parseLimit(req.body?.limit,20,25),
+        materializeLimit:Math.max(0,Math.min(Number(req.body?.materializeLimit??2)||0,5))
+      });
+      await auditLog({req,action:'ready_for_you_queue_built',resourceType:'ready_for_you_items',metadata:{count:result.allBuilt?.length||0,state:result.state,generation:result.generation||{},unknowns:result.unknowns||[]},success:true}).catch(()=>{});
       res.json(result);
     }catch(e){
       await auditLog({req,action:'ready_for_you_queue_build_failed',resourceType:'ready_for_you_items',metadata:{error:e.message},success:false}).catch(()=>{});
       res.status(500).json({ok:false,error:e.message});
     }
+  });
+
+  app.patch('/api/val/ready-for-you/:id/draft',async(req,res)=>{
+    try{
+      await waitForDb();
+      const item=await service.updatePreparedArtifact(req.params.id,req.body||{});
+      if(!item)return res.status(404).json({ok:false,error:'Prepared draft not found'});
+      await auditLog({req,action:'ready_for_you_draft_edited',resourceType:'ready_for_you_item',resourceId:req.params.id,metadata:{externalAction:false},success:true}).catch(()=>{});
+      res.json({ok:true,item,no_external_action:true});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
   app.post('/api/val/ready-for-you/:id/approve',async(req,res)=>{

@@ -698,6 +698,7 @@ function observeHearthClickContracts(){
 let linkedinVisibilityItems = [];
 let linkedinVisibilityLoaded = false;
 let linkedinVisibilityRequest = null;
+let linkedinVisibilityRefreshAttempted = false;
 
 const meetingPrep = {
   lens: 'Meeting Prep',
@@ -9503,7 +9504,7 @@ async function hydrateDocumentDrawer(){
   try{
     const [documents, ready, onboarding] = await Promise.all([
       getJson('/api/val/documents?limit=120').catch(() => ({documents:[]})),
-      postJson('/api/val/ready-for-you/build', {limit:5}).catch(() => ({items:[]})),
+      getJson('/api/val/ready-for-you?limit=5', {cache:'no-store'}).catch(() => ({items:[]})),
       getJson('/api/teach-val/onboarding').catch(() => ({}))
     ]);
     const byId = new Map();
@@ -18672,11 +18673,20 @@ async function hydrateLinkedInVisibility({force = false} = {}){
     return linkedinVisibilityItems;
   }
   if(linkedinVisibilityRequest && !force) return linkedinVisibilityRequest;
-  linkedinVisibilityRequest = getJson('/api/val/linkedin/visibility', {
-    cache:'no-store',
-    timeoutMs:5000,
-    timeoutMessage:'Live LinkedIn relationship context is still loading.'
-  }).then((data) => {
+  linkedinVisibilityRequest = (async()=>{
+    if(force){
+      linkedinVisibilityRefreshAttempted = true;
+      await postJson('/api/val/linkedin/visibility/refresh', {limit:8}, {
+        timeoutMs:60000,
+        timeoutMessage:'VAL is still checking the support circle for current LinkedIn posts.'
+      });
+    }
+    return getJson('/api/val/linkedin/visibility', {
+      cache:'no-store',
+      timeoutMs:8000,
+      timeoutMessage:'Live LinkedIn relationship context is still loading.'
+    });
+  })().then((data) => {
     linkedinVisibilityItems = Array.isArray(data?.items) ? data.items : [];
     linkedinVisibilityLoaded = true;
     updateLinkedInWidget();
@@ -18720,6 +18730,7 @@ function renderLinkedInEngagementList(){
           '<span>Visibility Desk</span>',
           '<strong>' + linkedinVisibilityItems.length + ' prepared drafts</strong>',
           '<p>VAL prepared support, not publishing. Copy only what still feels true.</p>',
+          '<button type="button" data-linkedin-refresh>Refresh posts</button>',
         '</div>',
         '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
         linkedinVisibilityItems.length ? linkedinVisibilityItems.map((item, index) => (
@@ -18763,7 +18774,7 @@ function renderLinkedInEngagementList(){
 }
 
 async function openLinkedInEngagementWorkspace(){
-  const loading = !linkedinVisibilityLoaded;
+  const loading = !linkedinVisibilityLoaded || !linkedinVisibilityRefreshAttempted;
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
     title: loading ? 'Checking live LinkedIn context.' : linkedinVisibilityItems.length + ' live visibility item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' ready.',
@@ -18785,7 +18796,7 @@ async function openLinkedInEngagementWorkspace(){
   renderLinkedInEngagementList();
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
   if(loading){
-    await hydrateLinkedInVisibility();
+    await hydrateLinkedInVisibility({force:!linkedinVisibilityRefreshAttempted});
     return openLinkedInEngagementWorkspace();
   }
 }
@@ -19970,16 +19981,39 @@ function hydrateLeverageFromReadyForYou(result = {}){
 async function hydratePreparedWorkQueue(){
   if(!canUseApi) return;
   try{
-    const result = await postJson('/api/val/ready-for-you/build', {limit:20});
+    const result = await getJson('/api/val/ready-for-you?limit=25', {cache:'no-store'});
     hydrateLeverageFromReadyForYou(result);
   }catch(error){
-    try{
-      const fallback = await getJson('/api/val/ready-for-you?limit=25');
-      hydrateLeverageFromReadyForYou(fallback);
-    }catch(inner){
-      console.warn('Prepared work queue unavailable:', inner.message || error.message);
-    }
+    console.warn('Prepared work queue unavailable:', error.message);
   }
+  void refreshPreparedWorkIncrementally();
+}
+
+let preparedWorkRefreshPromise = null;
+function refreshPreparedWorkIncrementally({passes=3} = {}){
+  if(!canUseApi) return Promise.resolve(null);
+  if(preparedWorkRefreshPromise) return preparedWorkRefreshPromise;
+  preparedWorkRefreshPromise = (async()=>{
+    let latest = null;
+    for(let pass=0; pass<Math.max(1,Math.min(Number(passes)||3,5)); pass+=1){
+      latest = await postJson('/api/val/ready-for-you/build', {
+        limit:25,
+        materializeLimit:1
+      }, {
+        timeoutMs:60000,
+        timeoutMessage:'VAL is still preparing the next reviewable item.'
+      });
+      hydrateLeverageFromReadyForYou(latest);
+      if(!Number(latest?.generation?.generationBacklog||0)) break;
+    }
+    return latest;
+  })().catch(error=>{
+    console.warn('Incremental prepared work refresh unavailable:', error.message);
+    return null;
+  }).finally(()=>{
+    preparedWorkRefreshPromise = null;
+  });
+  return preparedWorkRefreshPromise;
 }
 
 function prototypeBriefing(){
@@ -25547,10 +25581,12 @@ async function savePreparedLeverageEdits(){
   if(activeHomeWorkspace?.workspace) activeHomeWorkspace.workspace.draftBody = body;
   if(canUseApi && ids.draftId){
     await postJson('/api/val/drafts/' + encodeURIComponent(ids.draftId), {body}, {method:'PATCH'}).catch(() => null);
+  }else if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/draft', {body}, {method:'PATCH'}).catch(() => null);
   }
   renderHomeActionResult('save_prepared_edits', {
-    status: ids.draftId ? 'draft_edits_saved' : 'local_edits_saved',
-    message: ids.draftId ? 'VAL saved the edits to the prepared draft.' : 'VAL saved the edited prepared work locally for review.'
+    status: ids.draftId || ids.readyForYouId ? 'draft_edits_saved' : 'local_edits_saved',
+    message: ids.draftId || ids.readyForYouId ? 'VAL saved the edits to the prepared draft and will learn from the final approved version.' : 'VAL saved the edited prepared work locally for review.'
   });
 }
 
@@ -26890,7 +26926,7 @@ async function openTaskWorkspace(){
     const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
       getJson('/api/val/work-items/tasks?limit=500',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Tasks are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
-      postJson('/api/val/ready-for-you/build',{limit:25},{timeoutMs:12000,timeoutMessage:'Prepared work is taking too long to refresh.'})
+      getJson('/api/val/ready-for-you?limit=25',{cache:'no-store'})
     ]);
     const readyItems = [
       ...safeArray(readyResult?.preparedItems),
@@ -26902,6 +26938,16 @@ async function openTaskWorkspace(){
       return id ? list.findIndex((candidate) => String(candidate?.id || candidate?.metadataJson?.commitmentId || candidate?.metadata_json?.commitment_id || '') === id) === index : true;
     });
     renderTaskWorkspace(Array.isArray(commitmentsResult?.tasks)?commitmentsResult.tasks:[],draftsResult?.drafts || [],readyItems);
+    void refreshPreparedWorkIncrementally({passes:3}).then((refreshed)=>{
+      if(!refreshed || !deskWorkspace.classList.contains('task-workspace-mode')) return;
+      const refreshedReadyItems = [
+        ...safeArray(refreshed.preparedItems),
+        ...safeArray(refreshed.prepared_items),
+        ...safeArray(refreshed.allBuilt),
+        ...safeArray(refreshed.items)
+      ];
+      renderTaskWorkspace(currentTaskWorkspaceTasks,currentTaskWorkspaceDrafts,refreshedReadyItems);
+    });
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;
@@ -30070,6 +30116,16 @@ deskWorkspace.addEventListener('click', async (event) => {
     setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
     return;
   }
+  const linkedinRefresh = event.target.closest('[data-linkedin-refresh]');
+  if(linkedinRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    linkedinRefresh.disabled = true;
+    linkedinRefresh.textContent = 'Checking';
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList();
+    return;
+  }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -30120,6 +30176,16 @@ async function handleScraperPreviewClick(event){
     event.preventDefault();
     event.stopPropagation();
     setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
+    return;
+  }
+  const linkedinRefresh = event.target.closest('[data-linkedin-refresh]');
+  if(linkedinRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    linkedinRefresh.disabled = true;
+    linkedinRefresh.textContent = 'Checking';
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList();
     return;
   }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');

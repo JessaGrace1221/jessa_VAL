@@ -24,9 +24,10 @@ test('ready for you routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/approve/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/reject/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/snooze/);
+  assert.match(routes,/\/api\/val\/ready-for-you\/:id\/draft/);
   assert.match(routes,/function parseLimit\(value,defaultValue=3,max=25\)/);
   assert.match(routes,/service\.listItems\(\{limit:parseLimit\(req\.query\.limit,20,25\)/);
-  assert.match(routes,/service\.buildQueue\(\{limit:parseLimit\(req\.body\?\.limit,20,25\)/);
+  assert.match(routes,/materializeLimit:Math\.max\(0,Math\.min\(Number\(req\.body\?\.materializeLimit\?\?2\)/);
 });
 
 test('builds a judgment-only review queue and limits visible items to three',async()=>{
@@ -655,4 +656,89 @@ test('canonical prepared work is generated once per immutable source version',as
   assert.equal(store.readyForYouItems.length,1);
   assert.match(store.readyForYouItems[0].metadataJson.preparedArtifact.html,/GOALL Dashboard/);
   assert.equal(store.readyForYouItems[0].metadataJson.preparedBoardReceiptId,'source_prepared_1');
+});
+
+test('canonical preparation is bounded and resumes from the next unprepared item',async()=>{
+  let store={readyForYouItems:[]};
+  let generationCount=0;
+  const tasks=Array.from({length:4},(_,index)=>({
+    id:`work_${index+1}`,
+    canonical_work_item_id:`work_${index+1}`,
+    title:`Build dashboard ${index+1} in HTML`,
+    description:'Prepare the source-backed iframe dashboard.',
+    evidence_quote:`Jessa: Please build dashboard ${index+1} in HTML for the CRM iframe.`,
+    source_type:'transcript',
+    source_id:`tr_${index+1}`,
+    source_refs:[{source_type:'transcript',source_id:`tr_${index+1}`,quote_or_summary:`Jessa: Please build dashboard ${index+1} in HTML for the CRM iframe.`,confidence:0.9}],
+    status:'open',
+    confidence_score:0.9,
+    workingBrief:{
+      workType:'html_page_draft',
+      contextLines:[`Jessa: Please build dashboard ${index+1} in HTML for the CRM iframe.`],
+      sourceContext:{immutableSourceVersions:[{sourceVersion:1,sourceFingerprint:`fp_${index+1}`}]}
+    },
+    source_packets:[{source_title:`Transcript ${index+1}`,source_version:1,source_fingerprint:`fp_${index+1}`,context_excerpt:`Jessa: Please build dashboard ${index+1} in HTML for the CRM iframe.`}]
+  }));
+  const service=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    canonicalWorkService:{
+      taskProjection:async()=>({ok:true,tasks}),
+      attachPreparedArtifact:async()=>({ok:true})
+    },
+    generatePreparedArtifact:async({artifact,workItem})=>{
+      generationCount+=1;
+      return {ok:true,artifact:{...artifact,html:`<!doctype html><html><body><h1>${workItem.id}</h1><p>Complete reviewable dashboard grounded in the source packet.</p></body></html>`,generatedFromCanonicalPacket:true,usedEvidence:[workItem.evidence_quote]}};
+    },
+    listDrafts:async()=>[]
+  });
+  const first=await service.buildQueue({limit:25,materializeLimit:1});
+  assert.equal(generationCount,1);
+  assert.equal(first.generation.materializedCount,1);
+  assert.equal(first.generation.generationBacklog,3);
+  const second=await service.buildQueue({limit:25,materializeLimit:1});
+  assert.equal(generationCount,2);
+  assert.equal(second.generation.materializedCount,1);
+  assert.equal(second.generation.generationBacklog,2);
+  assert.equal(store.readyForYouItems.filter(item=>item.metadataJson?.generatedFromCanonicalPacket).length,2);
+});
+
+test('editing canonical prepared work persists the final draft and emits learning feedback',async()=>{
+  let store={readyForYouItems:[]};
+  const edits=[];
+  const service=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    afterDraftEdit:async payload=>edits.push(payload)
+  });
+  await service.saveItem({
+    id:'ready_edit',
+    tenantId:'tenant',
+    userId:'user',
+    status:'ready_for_review',
+    type:'prepared_work',
+    itemType:'prepared_work',
+    title:'Follow-up',
+    summary:'Prepared follow-up',
+    sourceRefsJson:[],
+    metadataJson:{
+      preparedArtifactKind:'email_draft',
+      preparedWorkAdmission:'admitted',
+      preparedArtifact:{kind:'email_draft',title:'Follow-up',subject:'Following up',body:'Original prepared message with enough content to review.',recipientName:'Michele',recipientEmail:'michele@example.com'}
+    },
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  });
+  const saved=await service.updatePreparedArtifact('ready_edit',{body:'Edited final message in Jessa voice, ready for approval and sending.'});
+  assert.match(saved.metadataJson.preparedArtifact.body,/Edited final message/);
+  assert.equal(saved.metadataJson.userEdited,true);
+  assert.equal(edits.length,1);
+  assert.match(edits[0].beforeArtifact.body,/Original prepared/);
+  assert.match(edits[0].afterArtifact.body,/Edited final/);
 });

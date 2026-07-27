@@ -625,6 +625,7 @@ function createValReadyForYouService({
   canonicalWorkService=null,
   generatePreparedArtifact=null,
   afterPreparedItem=null,
+  afterDraftEdit=null,
   afterDecision=null,
   listDrafts=null,
   loadTasks=null,
@@ -738,18 +739,25 @@ function createValReadyForYouService({
     }
     return store().readyForYouItems.find(item=>item.id===id&&item.tenantId===tenantId()&&item.userId===userId())||null;
   }
-  async function materializeCanonicalCandidate(candidate={},workItem={}){
-    if(!candidate||candidate.type==='prepared_work_needs_information'||typeof generatePreparedArtifact!=='function')return candidate;
-    const metadata=candidate.metadataJson||{};
-    const artifact=metadata.preparedArtifact||{};
-    if(!artifact.kind)return candidate;
-    const sourceVersionKey=preparedSourceVersionKey(candidate);
+  async function reusableCanonicalCandidate(candidate={}){
+    if(!candidate?.id)return null;
     const existing=await storedItem(candidate.id);
+    const sourceVersionKey=preparedSourceVersionKey(candidate);
     if(
       existing?.metadataJson?.generatedFromCanonicalPacket
       && existing.metadataJson.preparedSourceVersionKey===sourceVersionKey
       && readyItemHasConcretePreparedWork(existing)
     )return existing;
+    return null;
+  }
+  async function materializeCanonicalCandidate(candidate={},workItem={},options={}){
+    if(!candidate||candidate.type==='prepared_work_needs_information'||typeof generatePreparedArtifact!=='function')return candidate;
+    const metadata=candidate.metadataJson||{};
+    const artifact=metadata.preparedArtifact||{};
+    if(!artifact.kind)return candidate;
+    const sourceVersionKey=preparedSourceVersionKey(candidate);
+    const existing=options.existing||await reusableCanonicalCandidate(candidate);
+    if(existing)return existing;
     const generated=await generatePreparedArtifact({artifact,workItem});
     if(!generated?.ok){
       return preparedWorkTaskFromReadyItem(candidate,{
@@ -778,6 +786,48 @@ function createValReadyForYouService({
       }
     };
     return enforcePreparedWorkAdmission(next);
+  }
+  async function updatePreparedArtifact(id,changes={}){
+    const existing=await storedItem(id);
+    if(!existing)return null;
+    const metadata=existing.metadataJson||{};
+    const artifact=metadata.preparedArtifact||{};
+    if(!readyItemHasConcretePreparedWork(existing)||!artifact.kind)return null;
+    const before={...artifact};
+    const kind=String(artifact.kind||metadata.preparedArtifactKind||'prepared_work');
+    const usesHtml=kind==='html_page_draft';
+    const content=String(
+      usesHtml
+        ? (changes.html??changes.body??artifact.html??artifact.body??'')
+        : (changes.body??changes.content??artifact.body??artifact.content??'')
+    ).trim();
+    if(!content)return existing;
+    const nextArtifact={
+      ...artifact,
+      ...(changes.title?{title:String(changes.title).trim()}:{ }),
+      ...(changes.subject?{subject:String(changes.subject).trim()}:{ }),
+      ...(usesHtml?{html:content}:{body:content}),
+      userEdited:true,
+      editedAt:new Date().toISOString()
+    };
+    const saved=await saveItem({
+      ...existing,
+      title:nextArtifact.title||existing.title,
+      summary:compactText(content,500),
+      whatValPrepared:compactText(content,1200),
+      metadataJson:{
+        ...metadata,
+        preparedArtifact:nextArtifact,
+        preparedArtifactKind:kind,
+        userEdited:true,
+        editedAt:nextArtifact.editedAt
+      },
+      updatedAt:nextArtifact.editedAt
+    });
+    if(typeof afterDraftEdit==='function'){
+      await afterDraftEdit({item:saved,beforeArtifact:before,afterArtifact:nextArtifact});
+    }
+    return saved;
   }
   async function prepareCanonicalWorkItem(workItemId){
     if(!canonicalWorkService?.taskProjection)return {ok:false,error:'Canonical work is unavailable.'};
@@ -839,10 +889,13 @@ function createValReadyForYouService({
     }
     return {...result,items,receiptAware:true,preparedCount:preparedWorkCount(items)};
   }
-  async function collectCandidates(){
+  async function collectCandidates({materializeLimit=2}={}){
     const sc=scope();
     const candidates=[];
     const unknowns=[];
+    const generationLimit=Math.max(0,Math.min(Number(materializeLimit)||0,5));
+    let materializedCount=0;
+    let generationBacklog=0;
     try{
       if(executiveInboxService?.reviewDrafts){
         const result=await executiveInboxService.reviewDrafts({limit:10,status:''});
@@ -879,7 +932,22 @@ function createValReadyForYouService({
         const result=await canonicalWorkService.taskProjection({limit:120});
         for(const commitment of safeArray(result.tasks)){
           const item=commitmentPreparedWorkCandidate(commitment,uuid,sc);
-          if(item)candidates.push(await materializeCanonicalCandidate(item,commitment));
+          if(!item)continue;
+          if(item.type==='prepared_work_needs_information'||typeof generatePreparedArtifact!=='function'){
+            candidates.push(item);
+            continue;
+          }
+          const existing=await reusableCanonicalCandidate(item);
+          if(existing){
+            candidates.push(existing);
+            continue;
+          }
+          if(materializedCount<generationLimit){
+            candidates.push(await materializeCanonicalCandidate(item,commitment));
+            materializedCount+=1;
+          }else{
+            generationBacklog+=1;
+          }
         }
       }else if(commitmentsService?.list){
         const result=await commitmentsService.list({limit:60,ownerType:'user'});
@@ -926,10 +994,10 @@ function createValReadyForYouService({
       await persistAdmissionTask(admitted,unknowns);
       if(!byId.has(admitted.id))byId.set(admitted.id,admitted);
     }
-    return {candidates:[...byId.values()],unknowns};
+    return {candidates:[...byId.values()],unknowns,materializedCount,generationBacklog};
   }
-  async function buildQueue({limit=20}={}){
-    const {candidates,unknowns}=await collectCandidates();
+  async function buildQueue({limit=20,materializeLimit=2}={}){
+    const {candidates,unknowns,materializedCount,generationBacklog}=await collectCandidates({materializeLimit});
     const cappedLimit=Math.max(1,Math.min(Number(limit)||20,25));
     const actionable=candidates
       .filter(item=>item.requiresApproval||['ready_for_review','needs_context','ready'].includes(item.status))
@@ -938,7 +1006,19 @@ function createValReadyForYouService({
     const saved=[];
     for(const item of actionable) saved.push(await saveItem(item));
     const preparedItems=saved.filter(readyItemHasConcretePreparedWork);
-    return {ok:true,state:saved.length?'has_items':'caught_up',message:saved.length?'Ready for review.':"I'm caught up.",items:saved.slice(0,3),allBuilt:saved,preparedItems,prepared_items:preparedItems,preparedCount:preparedItems.length,unknowns,caughtUp:saved.length===0};
+    return {
+      ok:true,
+      state:saved.length?'has_items':'caught_up',
+      message:saved.length?'Ready for review.':"I'm caught up.",
+      items:saved.slice(0,3),
+      allBuilt:saved,
+      preparedItems,
+      prepared_items:preparedItems,
+      preparedCount:preparedItems.length,
+      generation:{materializedCount,generationBacklog,complete:generationBacklog===0},
+      unknowns,
+      caughtUp:saved.length===0
+    };
   }
   async function updateState(id,{status,decision={},snoozedUntil=null}={}){
     const reviewedAt=new Date().toISOString();
@@ -970,6 +1050,8 @@ function createValReadyForYouService({
     listItemsWithReceipts,
     buildQueue,
     saveItem,
+    getItem:storedItem,
+    updatePreparedArtifact,
     approve:(id,decision={})=>updateState(id,{status:'approved',decision:{...decision,external_action:false}}),
     reject:(id,decision={})=>updateState(id,{status:'rejected',decision:{...decision,external_action:false}}),
     snooze:(id,{until='',minutes=60,reason=''}={})=>{

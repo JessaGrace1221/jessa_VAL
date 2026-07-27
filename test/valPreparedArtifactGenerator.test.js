@@ -73,3 +73,28 @@ test('packet text preserves every source version attached to one work item',()=>
   assert.match(value,/\[Source 1: GOALL dashboard meeting\]/);
   assert.match(value,/\[Source 2: GOALL follow-up email\]/);
 });
+
+test('prepared artifact generation receives only approved draft learning as style guidance',async()=>{
+  let supplied=null;
+  const generate=createPreparedArtifactGenerator({
+    loadDraftLearning:async()=>[{
+      artifactKind:'html_page_draft',
+      outcome:'approved_and_sent',
+      subject:'A prior approved dashboard',
+      finalDraft:'A concise prior approved artifact with clear hierarchy and direct executive language.'
+    }],
+    callModel:async input=>{
+      supplied=JSON.parse(input.user);
+      return {
+        status:'ready_for_review',
+        title:'GOALL Pipeline Dashboard',
+        html:'<!doctype html><html><body><main><h1>GOALL Pipeline Dashboard</h1><p>Pipeline projections, owner, follow-up, and weekly status.</p></main></body></html>',
+        used_evidence:['Jessa: I will build the dashboard in HTML and CSS for the CRM iframe.']
+      };
+    }
+  });
+  const result=await generate({artifact:{kind:'html_page_draft'},workItem:workItem()});
+  assert.equal(result.ok,true);
+  assert.equal(supplied.approvedDraftLearning.length,1);
+  assert.match(supplied.approvedDraftLearning[0].finalDraft,/clear hierarchy/);
+});

@@ -84,6 +84,13 @@ let valEnvelopes = null;
 function safeArray(value){
   return Array.isArray(value) ? value : [];
 }
+function jsonRecord(value){
+  if(value&&typeof value==='object')return value;
+  if(typeof value==='string'){
+    try{return JSON.parse(value);}catch(_){return {};}
+  }
+  return {};
+}
 
 function compactText(value='',limit=900){
   return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
@@ -17691,6 +17698,113 @@ async function listDrafts(status=''){
   }
   return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
 }
+async function prepareLinkedInCommentDraft(profile={},post={}){
+  const postText=String(post.text||post.summary||post.title||'').trim();
+  if(!postText)return null;
+  const learning=await listDraftLearningExamples({artifactKind:'linkedin_comment_draft',limit:6}).catch(()=>[]);
+  const raw=await callValModel({
+    system:[
+      'Write one review-only LinkedIn comment for the account owner.',
+      'Respond to the specific idea in the post. Sound human, warm, intelligent, and concise.',
+      'Use 1 to 4 sentences. Do not summarize the whole post.',
+      'Do not use generic applause, networking language, a sales pitch, invented familiarity, or a call to action.',
+      'Approved examples may guide voice and rhythm only; never reuse their facts or names.',
+      'Nothing is posted or sent. Return strict JSON with body and used_evidence.'
+    ].join('\n'),
+    user:JSON.stringify({
+      person:profile.displayName||profile.name||'',
+      relationshipContext:String(profile.summary||'').slice(0,1200),
+      post:{text:postText.slice(0,5000),url:post.url||'',date:post.date||''},
+      approvedDraftLearning:learning.map(item=>({outcome:item.outcome,finalDraft:item.finalDraft})),
+      required:{body:'complete comment draft',used_evidence:'one exact phrase from the post'}
+    }),
+    maxTokens:600,
+    temperature:0.28,
+    json:true,
+    timeoutMs:20000
+  });
+  let parsed={};
+  try{parsed=typeof raw==='string'?JSON.parse(raw):raw||{};}catch(_){parsed={};}
+  const body=String(parsed.body||parsed.comment||'').trim();
+  const evidence=String(parsed.used_evidence||parsed.usedEvidence||'').trim();
+  if(body.length<18||!evidence||!postText.includes(evidence))return null;
+  return {body,usedEvidence:evidence};
+}
+async function refreshLinkedInVisibility({limit=8}={}){
+  const profiles=(await listRelationshipProfiles({limit:600}))
+    .filter(profile=>profile.profileType==='person')
+    .filter(profile=>String(profile.linkedinUrl||profile.linkedin_url||profile.metadata?.linkedinUrl||profile.metadata?.linkedin_url||'').trim())
+    .sort((a,b)=>{
+      const priority=profile=>Number(Boolean(profile.metadata?.linkedinSupport||profile.metadata?.supportCircle||profile.metadata?.vip))*10+Number(profile.confidence||0);
+      return priority(b)-priority(a);
+    })
+    .slice(0,Math.max(1,Math.min(Number(limit)||8,12)));
+  const existingDrafts=await listDrafts();
+  const results=await Promise.all(profiles.map(async profile=>{
+    const lookup=await lookupOutscraperLinkedIn({
+      name:profile.displayName,
+      email:relationshipProfilePrimaryEmail(profile),
+      linkedinUrl:profile.linkedinUrl||profile.linkedin_url
+    },profile).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,postsLastWeek:[],rawCount:0}));
+    const posts=safeArray(lookup.postsLastWeek).slice(0,3).map((post,index)=>({
+      id:post.url||stableKey(`linkedin:${profile.id}:${post.date||index}`),
+      date:post.date||'',
+      text:String(post.text||'').trim(),
+      summary:String(post.text||'').trim(),
+      url:post.url||'',
+      source:'outscraper_linkedin_post'
+    })).filter(post=>post.text&&post.url);
+    if(!posts.length)return {profileId:profile.id,name:profile.displayName,configured:lookup.configured!==false,error:lookup.error||'',postCount:0,draftCount:0};
+    const metadata=profile.metadata||{};
+    const sourceReceipts=metadata.sourceReceipts||{};
+    await saveRelationshipProfile({
+      ...profile,
+      metadataJson:{
+        ...metadata,
+        sourceReceipts:{...sourceReceipts,linkedInLatestPosts:posts},
+        linkedInLatestPosts:posts,
+        linkedinLastCheckedAt:new Date().toISOString(),
+        linkedinProvider:'outscraper'
+      }
+    });
+    let draftCount=0;
+    const latest=posts[0];
+    const alreadyPrepared=existingDrafts.some(draft=>{
+      const context=draft.sourceContext||{};
+      const known=context.latestLinkedInPost||{};
+      return /linkedin_comment_draft/i.test(String(draft.draftType||''))&&String(known.url||context.postUrl||'')===String(latest.url||'');
+    });
+    if(!alreadyPrepared){
+      const prepared=await prepareLinkedInCommentDraft(profile,latest).catch(()=>null);
+      if(prepared){
+        await saveInternalDraft({
+          draftType:'linkedin_comment_draft',
+          provider:'internal',
+          subject:`LinkedIn comment for ${profile.displayName||profile.email||'relationship'}`,
+          body:prepared.body,
+          status:'ready_for_review',
+          sourceContext:{
+            source:'linkedin_visibility_refresh',
+            contact:{id:profile.id,name:profile.displayName,email:profile.email,linkedinUrl:profile.linkedinUrl},
+            latestLinkedInPost:latest,
+            usedEvidence:prepared.usedEvidence,
+            noExternalAction:true
+          }
+        });
+        draftCount=1;
+      }
+    }
+    return {profileId:profile.id,name:profile.displayName,configured:true,error:'',postCount:posts.length,draftCount};
+  }));
+  return {
+    ok:true,
+    checked:profiles.length,
+    postCount:results.reduce((sum,row)=>sum+Number(row.postCount||0),0),
+    draftCount:results.reduce((sum,row)=>sum+Number(row.draftCount||0),0),
+    configured:results.some(row=>row.configured),
+    results
+  };
+}
 app.get('/api/val/drafts',async(req,res)=>{
   try{
     let drafts=await listDrafts(req.query.status||'');
@@ -17779,12 +17893,41 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+app.post('/api/val/linkedin/visibility/refresh',async(req,res)=>{
+  try{
+    const refreshed=await refreshLinkedInVisibility({limit:req.body?.limit||8});
+    const profiles=await listRelationshipProfiles({limit:300});
+    const drafts=await listDrafts();
+    await auditLog({
+      req,
+      action:'linkedin_visibility_refreshed',
+      resourceType:'linkedin_visibility',
+      metadata:{checked:refreshed.checked,postCount:refreshed.postCount,draftCount:refreshed.draftCount},
+      success:true
+    }).catch(()=>{});
+    res.json({...refreshed,profilesChecked:profiles.length,draftsAvailable:drafts.filter(draft=>/linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||''))).length,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,noExternalAction:true});
+  }
+});
 app.post('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,draft:await saveInternalDraft(req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/drafts/:id',async(req,res)=>{
   try{
     const existing=(await listDrafts()).find(d=>d.id===req.params.id);
     if(!existing)return res.status(404).json({ok:false,error:'Draft not found'});
-    res.json({ok:true,draft:await saveInternalDraft({...existing,...req.body,id:req.params.id})});
+    const draft=await saveInternalDraft({...existing,...req.body,id:req.params.id});
+    if(String(existing.body||'').trim()!==String(draft.body||'').trim()){
+      await recordDraftLearning({
+        outcome:'edited_saved',
+        artifactKind:draft.draftType||'internal_draft',
+        subject:draft.subject,
+        originalBody:existing.body,
+        finalBody:draft.body,
+        draftId:draft.id,
+        sourceRefs:draft.sourceContext?.sourceRefs||[]
+      }).catch(()=>{});
+    }
+    res.json({ok:true,draft});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/gmail/drafts',async(req,res)=>{
@@ -21574,6 +21717,81 @@ async function saveMemoryItem(payload){
     saveValStore(store);
   }
   return {id};
+}
+function draftLearningFingerprint(value=''){
+  return crypto.createHash('sha256').update(String(value||'')).digest('hex').slice(0,24);
+}
+async function recordDraftLearning({
+  outcome='edited_saved',
+  artifactKind='prepared_work',
+  subject='',
+  originalBody='',
+  finalBody='',
+  draftId='',
+  readyForYouId='',
+  sourceRefs=[]
+}={}){
+  const finalText=String(finalBody||'').trim();
+  if(!finalText)return null;
+  const originalText=String(originalBody||'').trim();
+  const id=`draft_learning_${draftLearningFingerprint([
+    tenantId(),
+    currentUserId(),
+    outcome,
+    draftId,
+    readyForYouId,
+    finalText
+  ].join('|'))}`;
+  const payload={
+    outcome,
+    artifactKind,
+    subject:String(subject||'').trim(),
+    originalDraft:originalText.slice(0,12000),
+    finalDraft:finalText.slice(0,12000),
+    changed:originalText!==finalText
+  };
+  return saveMemoryItem({
+    id,
+    kind:'draft_learning',
+    summary:`${String(outcome||'draft feedback').replace(/_/g,' ')}: ${subject||artifactKind||'prepared work'}`,
+    rawText:JSON.stringify(payload),
+    importance:outcome==='approved_and_sent'?5:outcome==='approved'?4:3,
+    metadata:{
+      source:'prepared_work_feedback',
+      outcome,
+      artifactKind,
+      subject:String(subject||'').trim(),
+      draftId,
+      readyForYouId,
+      sourceRefs:safeArray(sourceRefs).slice(0,12),
+      changed:payload.changed,
+      tenantId:tenantId(),
+      userId:currentUserId()
+    }
+  });
+}
+async function listDraftLearningExamples({artifactKind='',limit=8}={}){
+  const rows=await recentMemoryItems(3650,400).catch(()=>[]);
+  const requested=String(artifactKind||'').trim();
+  return rows
+    .filter(row=>row.kind==='draft_learning')
+    .map(row=>{
+      let data={};
+      try{data=JSON.parse(row.rawText||'{}');}catch(_){data={};}
+      return {
+        artifactKind:data.artifactKind||row.metadata?.artifactKind||'',
+        outcome:data.outcome||row.metadata?.outcome||'',
+        subject:data.subject||row.metadata?.subject||'',
+        finalDraft:data.finalDraft||''
+      };
+    })
+    .filter(row=>row.finalDraft)
+    .sort((a,b)=>{
+      const score=value=>value==='approved_and_sent'?3:value==='approved'?2:1;
+      return score(b.outcome)-score(a.outcome);
+    })
+    .filter(row=>!requested||row.artifactKind===requested||['email_draft','introduction_email_draft'].includes(requested)&&['email_draft','introduction_email_draft'].includes(row.artifactKind))
+    .slice(0,Math.max(1,Math.min(Number(limit)||8,12)));
 }
 const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
 const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
@@ -33465,6 +33683,7 @@ const valDocuments = registerValDocumentsRoutes(app,{
 });
 const generatePreparedArtifact=createPreparedArtifactGenerator({
   callModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json,timeoutMs:45000}),
+  loadDraftLearning:listDraftLearningExamples,
   logger:console
 });
 const valReadyForYou = registerValReadyForYouRoutes(app,{
@@ -33506,10 +33725,33 @@ const valReadyForYou = registerValReadyForYouRoutes(app,{
       }
     });
   },
+  afterDraftEdit:async({item,beforeArtifact,afterArtifact}={})=>{
+    await recordDraftLearning({
+      outcome:'edited_saved',
+      artifactKind:afterArtifact?.kind||item?.metadataJson?.preparedArtifactKind||'prepared_work',
+      subject:afterArtifact?.subject||afterArtifact?.title||item?.title||'',
+      originalBody:beforeArtifact?.html||beforeArtifact?.body||beforeArtifact?.content||'',
+      finalBody:afterArtifact?.html||afterArtifact?.body||afterArtifact?.content||'',
+      readyForYouId:item?.id||'',
+      sourceRefs:item?.sourceRefsJson||[]
+    });
+  },
   afterDecision:async({item,status,decision,reviewedAt,snoozedUntil}={})=>{
     const metadata=item?.metadataJson||item?.metadata_json||{};
     const canonicalWorkItemId=metadata.canonicalWorkItemId||metadata.canonical_work_item_id||'';
     const eventType=`prepared_artifact_${String(status||'decision').replace(/[^a-z0-9]+/gi,'_').toLowerCase()}`;
+    if(status==='approved'){
+      const artifact=metadata.preparedArtifact||{};
+      await recordDraftLearning({
+        outcome:'approved',
+        artifactKind:artifact.kind||metadata.preparedArtifactKind||'prepared_work',
+        subject:artifact.subject||artifact.title||item.title||'',
+        originalBody:artifact.html||artifact.body||artifact.content||'',
+        finalBody:artifact.html||artifact.body||artifact.content||'',
+        readyForYouId:item.id,
+        sourceRefs:item.sourceRefsJson||item.source_refs_json||[]
+      }).catch(()=>{});
+    }
     if(canonicalWorkItemId&&valCanonicalWork?.recordDecision){
       await valCanonicalWork.recordDecision(canonicalWorkItemId,{
         eventType,
@@ -34892,10 +35134,29 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
   userId:currentUserId,
   valDbReady:()=>valDbReady,
   executedBy:()=>currentUserId(),
-  afterExternalActionPacket:async(packetsOrPacket)=>{
+  afterExternalActionPacket:async(packetsOrPacket,{phase=''}={})=>{
     const sourcePackets=safeArray(packetsOrPacket).length?safeArray(packetsOrPacket):(packetsOrPacket?[packetsOrPacket]:[]);
     for(const packet of sourcePackets){
       await processExternalActionBoardEvidence(packet);
+      if(phase==='executed'&&['send_email','send_sms'].includes(packet.actionType||packet.action_type)){
+        const sourceContext=jsonRecord(packet.sourceContextJson||packet.source_context_json);
+        const payload=jsonRecord(packet.payloadPreviewJson||packet.payload_preview_json);
+        const draftId=sourceContext.draftId||sourceContext.draft_id||'';
+        const readyForYouId=sourceContext.readyForYouId||sourceContext.ready_for_you_id||sourceContext.readyForYouItemId||'';
+        const internalDraft=draftId?(await listDrafts()).find(draft=>String(draft.id)===String(draftId)):null;
+        const readyItem=readyForYouId&&valReadyForYou?.getItem?await valReadyForYou.getItem(readyForYouId):null;
+        const readyArtifact=readyItem?.metadataJson?.preparedArtifact||{};
+        await recordDraftLearning({
+          outcome:'approved_and_sent',
+          artifactKind:(packet.actionType||packet.action_type)==='send_sms'?'sms_draft':(readyArtifact.kind||internalDraft?.draftType||'email_draft'),
+          subject:payload.subject||readyArtifact.subject||readyArtifact.title||internalDraft?.subject||packet.whyThisActionExists||'',
+          originalBody:readyArtifact.html||readyArtifact.body||readyArtifact.content||internalDraft?.body||'',
+          finalBody:payload.body||payload.message||payload.text||payload.bodyPreview||'',
+          draftId,
+          readyForYouId,
+          sourceRefs:packet.sourceRefsJson||packet.source_refs_json||[]
+        }).catch(()=>{});
+      }
     }
   },
 	  executionAdapters:{

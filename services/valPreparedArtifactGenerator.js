@@ -36,13 +36,21 @@ function validateGeneratedArtifact(result={},workItem={}){
   if(!grounded)return {ok:false,missingInformation:['The generated artifact did not preserve an exact, inspectable source citation.']};
   return {ok:true,body,usedEvidence:used};
 }
-function createPreparedArtifactGenerator({callModel,logger=console}={}){
+function createPreparedArtifactGenerator({callModel,loadDraftLearning,logger=console}={}){
   return async function generate({artifact={},workItem={}}={}){
     if(typeof callModel!=='function')return {ok:false,missingInformation:['Prepared-work generation is unavailable.']};
     const sourcePacket=packetText(workItem);
     if(!sourcePacket)return {ok:false,missingInformation:['The immutable source packet is missing.']};
     const kind=String(artifact.kind||'document_draft');
     try{
+      const approvedDraftLearning=typeof loadDraftLearning==='function'
+        ? safeArray(await loadDraftLearning({artifactKind:kind,limit:8})).map(example=>({
+            artifactKind:example.artifactKind||'',
+            outcome:example.outcome||'',
+            subject:compactText(example.subject||'',240),
+            finalDraft:String(example.finalDraft||example.finalBody||'').trim().slice(0,5000)
+          })).filter(example=>example.finalDraft)
+        : [];
       const raw=await callModel({
         system:[
           'You prepare reviewable work for an executive from a canonical evidence packet.',
@@ -52,6 +60,7 @@ function createPreparedArtifactGenerator({callModel,logger=console}={}){
           'If an essential fact is absent, return needs_information and name only the missing facts.',
           'For HTML, return complete iframe-ready HTML in the html field. For all other work, return the complete editable draft in body.',
           'Copy at least one exact supporting sentence into used_evidence.',
+          'Approved draft examples may guide voice, structure, pacing, and judgment only. Never reuse their names, facts, dates, prices, promises, or recipient details.',
           'Nothing is sent, published, scheduled, or changed externally.',
           'Return strict JSON only.'
         ].join('\n'),
@@ -71,6 +80,7 @@ function createPreparedArtifactGenerator({callModel,logger=console}={}){
           project:workItem.project_name||workItem.projectName||workItem.workingBrief?.projectName||'',
           relationship:workItem.relationship_name||workItem.relationshipName||workItem.workingBrief?.relationshipName||'',
           exactEvidence:exactEvidencePool(workItem),
+          approvedDraftLearning,
           canonicalSourcePacket:sourcePacket
         }),
         maxTokens:kind==='html_page_draft'?6000:2600,
