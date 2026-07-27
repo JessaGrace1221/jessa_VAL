@@ -704,7 +704,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   const openTimelineTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
   assert.ok(openTimelineTranscriptBody);
   assert.doesNotMatch(openTimelineTranscriptBody, /scrollIntoView/);
-  assert.match(hearthJs, /drawerTray\?\.scrollTo\?\.\(\{top:0, left:0\}\)/);
+  assert.match(hearthJs, /node\.scrollTop = 0/);
   assert.match(openTimelineTranscriptBody, /timelineTranscriptOpenRequest/);
   assert.doesNotMatch(openTimelineTranscriptBody, /renderTimelineTranscriptDetail\(\{\.\.\.cached/);
   assert.doesNotMatch(hearthJs, /VAL Action Items/);

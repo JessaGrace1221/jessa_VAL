@@ -57,3 +57,26 @@ test('Executive Inbox converts HTML found in either email body field to readable
   assert.match(js, /p\.textContent = correspondenceReadableEmailBody\(message\.body, message\.bodyHtml\)/);
   assert.doesNotMatch(js, /p\.textContent = message\.body \|\| correspondenceReadableTextFromHtml/);
 });
+
+test('Transcripts reset selected details to the top and keep title counts in stable rows', () => {
+  assert.match(js, /function resetTimelineTranscriptDetailScroll\(\)/);
+  assert.match(js, /node\.scrollTop = 0/);
+  assert.match(js, /window\.requestAnimationFrame\(resetTimelineTranscriptDetailScroll\)/);
+  assert.match(css, /Transcript reading position and Network index clarity/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel,[\s\S]*overflow-anchor:none!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index > \.timeline-status-header\{[\s\S]*grid-template-columns:minmax\(0,1fr\)!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*padding:clamp\(34px,3\.2vw,46px\)!important/);
+});
+
+test('Stewardship Network index contains only names and context refresh actions', () => {
+  const rowRenderer = js.slice(
+    js.indexOf('function appendRelationshipRolodexRow'),
+    js.indexOf('function stewardshipRelationshipPhone')
+  );
+  assert.ok(rowRenderer);
+  assert.match(rowRenderer, /button\.append\(name\)/);
+  assert.match(rowRenderer, /enrich\.textContent = 'Refresh context'/);
+  assert.doesNotMatch(rowRenderer, /rolodex-(?:status|why|open|next|evidence)/);
+  assert.doesNotMatch(rowRenderer, /relationship-enrichment-receipt/);
+  assert.match(css, /\.drawer-tray\.relationship-open \.relationship-rolodex-row\{[\s\S]*grid-template-columns:minmax\(0,1fr\) auto!important/);
+});

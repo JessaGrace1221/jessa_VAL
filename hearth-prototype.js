@@ -3169,23 +3169,7 @@ function appendRelationshipRolodexRow(item){
   const name = document.createElement('span');
   name.className = 'rolodex-name';
   name.textContent = item.name;
-  const status = document.createElement('span');
-  status.className = 'rolodex-status';
-  status.textContent = relationshipCleanSourceText(item.profile.role || item.company || 'Network', 90);
-  const why = document.createElement('span');
-  why.className = 'rolodex-why';
-  why.textContent = 'Needs: ' + stewardshipNeeds(item.profile)[0];
-  const open = document.createElement('span');
-  open.className = 'rolodex-open';
-  open.textContent = 'Offers: ' + stewardshipOffers(item.profile)[0];
-  const next = document.createElement('span');
-  next.className = 'rolodex-next';
-  const best = stewardshipBestMatches(item.profile, 1)[0];
-  next.textContent = best ? 'Best match: ' + best.item.name : 'Best match: not ready yet';
-  const evidence = document.createElement('span');
-  evidence.className = 'rolodex-evidence';
-  evidence.textContent = 'Evidence: ' + stewardshipEvidence(item.profile)[0];
-  button.append(name, status, why, open, next, evidence);
+  button.append(name);
   row.insertBefore(button, row.firstChild);
   const enrichment = item.profile.relationshipEnrichment || item.profile.relationship_enrichment || {};
   const actions = document.createElement('div');
@@ -3193,18 +3177,11 @@ function appendRelationshipRolodexRow(item){
   const enrich = document.createElement('button');
   enrich.type = 'button';
   enrich.dataset.stewardshipEnrichPerson = item.id;
-  enrich.textContent = enrichment.status === 'complete' ? 'Refresh saved context' : "Enrich this relationship's context";
+  enrich.textContent = 'Refresh context';
   enrich.setAttribute('title', enrichment.status === 'complete'
     ? 'Run Outscraper again only if you want to refresh the saved public context for ' + item.name + '.'
     : 'Use Outscraper once to save public context for ' + item.name + ' and reuse it in meeting preparation.');
   actions.appendChild(enrich);
-  if(enrichment.status === 'complete' && enrichment.completedAt){
-    const receipt = document.createElement('span');
-    receipt.className = 'relationship-enrichment-receipt';
-    const date = new Date(enrichment.completedAt);
-    receipt.textContent = 'Context saved ' + (Number.isNaN(date.getTime()) ? 'for meeting prep.' : date.toLocaleDateString());
-    actions.appendChild(receipt);
-  }
   row.appendChild(actions);
   relationshipRolodex.appendChild(row);
 }
@@ -14594,11 +14571,18 @@ function renderTimelineTranscriptDetail(transcript = {}){
 }
 
 function resetTimelineTranscriptDetailScroll(){
-  drawerTray?.scrollTo?.({top:0, left:0});
-  document.querySelector('#timeline-detail')?.scrollTo?.({top:0, left:0});
-  document.querySelector('.transcript-detail-panel')?.scrollTo?.({top:0, left:0});
-  timelineReviewCards?.scrollTo?.({top:0, left:0});
-  transcriptDetail?.scrollTo?.({top:0, left:0});
+  const scrollNodes = [
+    drawerTray,
+    document.querySelector('#timeline-detail'),
+    document.querySelector('.drawer-tray.timeline-open .transcript-detail-panel'),
+    timelineReviewCards,
+    transcriptDetail
+  ].filter(Boolean);
+  [...new Set(scrollNodes)].forEach((node) => {
+    node.scrollTop = 0;
+    node.scrollLeft = 0;
+    node.scrollTo?.({top:0, left:0, behavior:'auto'});
+  });
 }
 
 async function openTimelineTranscript(transcriptId){
@@ -14616,6 +14600,7 @@ async function openTimelineTranscript(transcriptId){
     renderTimelineTranscriptDetail(data.transcript);
     window.requestAnimationFrame(() => {
       resetTimelineTranscriptDetailScroll();
+      window.requestAnimationFrame(resetTimelineTranscriptDetailScroll);
     });
   }catch(error){
     if(requestId !== timelineTranscriptOpenRequest) return;
