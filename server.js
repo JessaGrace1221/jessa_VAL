@@ -151,7 +151,8 @@ function clientFeatureLocks(){
   const greg = clientLooksLikeGreg();
   return {
     projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
-    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
+    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg,
+    pipelineCommandRoom: IS_MARK_GOALL_DEPLOYMENT
   };
 }
 function requestBaseUrl(req=null){
@@ -8259,6 +8260,7 @@ app.get('/api/public-config',(req,res)=>{
     clientName: CLIENT_CONFIG.clientName,
     brandName: CLIENT_CONFIG.brandName,
     voiceWidgetId: process.env.GHL_VOICE_WIDGET_ID || '6a6253197742c156ecacd8ca',
+    pipelineDashboardUrl: process.env.VAL_PIPELINE_DASHBOARD_URL || (IS_MARK_GOALL_DEPLOYMENT?'https://mark-goall-val-production.up.railway.app/call-center-dashboards':''),
     featureFlags: clientFeatureLocks()
   });
 });
