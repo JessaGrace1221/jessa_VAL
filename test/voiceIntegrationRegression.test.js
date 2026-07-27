@@ -63,7 +63,9 @@ test('voice waits for Deepgram before falling back to browser speech',()=>{
 });
 
 test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=>{
-  assert.match(hearth,/const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca'/);
+  assert.match(hearth,/let VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca'/);
+  assert.match(server,/voiceWidgetId: process\.env\.GHL_VOICE_WIDGET_ID \|\| '6a6253197742c156ecacd8ca'/);
+  assert.match(hearth,/if\(config\?\.voiceWidgetId\) VAL_GHL_VOICE_WIDGET_ID = String\(config\.voiceWidgetId\)\.trim\(\)/);
   assert.match(hearth,/const VAL_GHL_WIDGET_LOADER_SRC = 'https:\/\/widgets\.leadconnectorhq\.com\/loader\.js'/);
   assert.match(hearth,/function valGhlVoiceWidgetApi/);
   assert.match(hearth,/window\.leadConnector\?\.chatWidget/);
@@ -91,7 +93,8 @@ test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=
   assert.match(hearthCss,/pointer-events:auto!important/);
   assert.match(hearthCss,/pointer-events:none!important/);
   assert.match(hearthCss,/\.val-cowork-voice-hint/);
-  assert.match(hearthCss,/color:rgba\(255,251,244,\.92\)/);
+  assert.match(hearth,/Talk to VAL/);
+  assert.match(hearthCss,/color:rgba\(255,253,248,1\)/);
 });
 
 test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
@@ -194,6 +197,7 @@ test('Home VAL voice supports source questions and spoken approval handoff',()=>
 
 test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/app\.post\('\/api\/val\/ghl\/voice-turn'/);
+  assert.match(server,/p==='\/api\/val\/ghl\/voice-turn'&&req\.method==='POST'/);
   assert.match(server,/function ghlVoiceUserMessage/);
   assert.match(server,/body\.parameters/);
   assert.match(server,/body\.args/);

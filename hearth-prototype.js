@@ -262,7 +262,7 @@ const isLocalPrototypeHost = /^(?:localhost|127\.0\.0\.1)$/.test(location.hostna
 const mockScrapers = prototypeParams.has('mockScrapers');
 const mockBriefing = isLocalPrototypeHost && prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
-const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
+let VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
 const VAL_GHL_WIDGET_LOADER_SRC = 'https://widgets.leadconnectorhq.com/loader.js';
 const VAL_GHL_WIDGET_RESOURCE_SRC = 'https://widgets.leadconnectorhq.com/chat-widget/loader.js';
 const clientFeatureLocks = {
@@ -16989,7 +16989,7 @@ function renderValCoworkVoicePanel(){
           '<span class="val-presence-core">VAL</span>',
         '</span>',
       '</div>',
-      '<p class="val-cowork-voice-hint" aria-hidden="true">Speak with VAL</p>',
+      '<p class="val-cowork-voice-hint" aria-hidden="true">Talk to VAL</p>',
     '</section>',
       '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
   ].join(''));
@@ -18235,6 +18235,7 @@ async function hydrateClientConfig(){
   try{
     const config = await getJson('/api/public-config', {cache:'no-store'}).catch(() => getJson('/api/config', {cache:'no-store'}));
     const flags = config?.featureFlags || {};
+    if(config?.voiceWidgetId) VAL_GHL_VOICE_WIDGET_ID = String(config.voiceWidgetId).trim();
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
   }catch(error){
