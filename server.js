@@ -27866,7 +27866,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,omitTemperature=false,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true}){
   let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
   const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -27882,9 +27882,9 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
     input:preparedMessages,
-    max_output_tokens:maxTokens,
-    temperature
+    max_output_tokens:maxTokens
   };
+  if(!omitTemperature)body.temperature=temperature;
   if(jsonSchema) body.text = {format:jsonSchema};
   else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
@@ -27952,7 +27952,7 @@ async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSch
       system,
       messages:[{role:'user',content:user}],
       maxTokens,
-      temperature:undefined,
+      omitTemperature:true,
       json,
       jsonSchema,
       timeoutMs,

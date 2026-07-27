@@ -46,6 +46,12 @@ test('Environment transcript intake includes canonical resolved participants as 
   assert.match(server,/transcriptCalendarEventCompatible\(transcript,linked\)/);
 });
 
+test('scheduled Observer model lane omits unsupported temperature before requesting',()=>{
+  assert.match(server,/async function callOpenAIResponses\(\{[^}]*omitTemperature=false/);
+  assert.match(server,/if\(!omitTemperature\)body\.temperature=temperature/);
+  assert.match(server,/omitTemperature:true,[\s\S]{0,180}model:OPENAI_OBSERVER_MODEL/);
+});
+
 test('Environment contract requires confirmed event, observers, sender, and document',()=>{
   assert.equal(validateEnvironmentSpec(validSpec()).ok,true);
   const invalid=normalizeEnvironmentSpec({name:'Incomplete'});
