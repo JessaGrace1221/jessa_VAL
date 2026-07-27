@@ -19707,7 +19707,8 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
 }
 .drawer-tray.timeline-open .timeline-source-receipt[data-transcript-section="action-items"] .timeline-source-lines > div,
 .drawer-tray.timeline-open .timeline-source-receipt[data-transcript-section="key-points"] .timeline-source-lines > div{
-  padding:14px 0!important;
+  box-sizing:border-box!important;
+  padding:14px 16px!important;
 }
 .drawer-tray.timeline-open .transcript-index > .timeline-status-header{
   display:grid!important;

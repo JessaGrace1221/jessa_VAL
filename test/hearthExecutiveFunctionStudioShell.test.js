@@ -69,6 +69,7 @@ test('Transcripts reset selected details to the top and keep title counts in sta
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*padding:clamp\(34px,3\.2vw,46px\)!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*align-content:start!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.timeline-source-receipt\[data-transcript-section="action-items"\],[\s\S]*padding:26px 28px 28px!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-source-receipt\[data-transcript-section="action-items"\] \.timeline-source-lines > div,[\s\S]*box-sizing:border-box!important;[\s\S]*padding:14px 16px!important/);
 });
 
 test('Stewardship Network index contains only names and context refresh actions', () => {
