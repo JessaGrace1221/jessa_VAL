@@ -49,6 +49,7 @@ const {createValCanonicalEmailIntake} = require('./services/valCanonicalEmailInt
 const {registerValCanonicalLineageRoutes} = require('./services/valCanonicalLineageRoutes');
 const {createChiefOfStaffReasoner} = require('./services/valChiefOfStaffReasoning');
 const {assessAlignmentAdmission} = require('./services/valAlignmentAdmission');
+const {assessChiefWelcome} = require('./services/valChiefWelcomeAdmission');
 const {createPreparedArtifactGenerator} = require('./services/valPreparedArtifactGenerator');
 const {ensureValCanonicalWorkTables} = require('./services/valCanonicalWorkSchema');
 const {verifyCanonicalLineageSchema} = require('./services/valCanonicalSchemaReadiness');
@@ -63,7 +64,7 @@ const {createValExternalActionExecutor} = require('./services/valExternalActionE
 const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
-const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
+const {isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {
   currentBoardBriefingSlot,
   nextBoardBriefingSlot
@@ -24988,56 +24989,6 @@ function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
     readyDraft:recapDraft?dashboardReadyDraft(recapDraft):transcriptMeetingOverviewFallbackDraft(transcript,sourceRef)
   };
 }
-function buildFreshTranscriptDailyWitness(transcript={},packet={}){
-  if(!transcript?.id||!packet?.velocity)return null;
-  const label=transcriptHomeLabel(transcript);
-  const summary=transcriptHomeSummary(transcript);
-  const nextMove=transcriptHomeNextMove(transcript);
-  const observerName=transcriptHomeObserverName(transcript,nextMove);
-  const envelope=transcriptHomeProjectEnvelope(transcript);
-  const text=[summary,nextMove].join(' ');
-  let first=`${label} changed what deserves attention today.`;
-  let second='The useful move is to decide the next clean step while the context is fresh.';
-  if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
-    first='The operating system is asking for a cleaner path.';
-    second='The operating system wants cleaner pathways and fewer carried details.';
-  }else if(/\bGOALL\b|Goal Agency|dashboard|projections|Mike/i.test(text)){
-    first='GOALL is the thing to settle today.';
-    second='Mike needs the dashboard/projections handoff clarified before Monday turns it into another open loop.';
-  }else if(/happy|good|resolved|ready|complete/i.test(text)){
-    first='One thread is no longer asking to be carried.';
-    second='The room feels lighter because one thread is no longer asking to be carried.';
-  }
-  const sourceLabel=`Source: ${label}.`;
-  const third=`${observerName} has the proof; open Full Context if you want to inspect the source before acting.`;
-  return {
-    display_greeting:[first,second,third].filter(Boolean).join('\n'),
-    greeting_lines:[first,second,third].filter(Boolean),
-    perspective:first,
-    observerName,
-    permission_line:packet.readyDraft
-      ? `${sourceLabel} I also prepared the meeting overview for review in Leverage.`
-      : `${sourceLabel} Nothing external happens unless you approve it.`,
-    moment_type:'fresh_transcript',
-    what_was_witnessed:summary,
-    what_it_cost_or_represented:nextMove,
-    evidence:[packet.velocity],
-    confidence:0.9,
-    voice_note:'recognize',
-    internalUnderstanding:{
-      greeting_context:'Fresh transcript processed and promoted to Home.',
-      current_day_state:'fresh_transcript',
-      observed_pattern:summary,
-      envelope,
-      confidence:0.9,
-      evidence:[packet.velocity],
-      prepared_work:packet.readyDraft?[packet.readyDraft]:[],
-      suggested_tone:'warm',
-      things_intentionally_not_mentioned:[]
-    },
-    generatedAt:new Date().toISOString()
-  };
-}
 function dashboardCardEvidenceFromMove(move={}){
   const items=[];
   for(const id of Array.isArray(move.sourceEvidenceIds)?move.sourceEvidenceIds:[])items.push({id,sourceType:'evidence',title:'Evidence record',summary:'Stored evidence linked to this signal.'});
@@ -25359,9 +25310,9 @@ function buildChiefDailyWitness(chiefItem={}){
   if(!chiefItem?.chiefRecommendationId||!chiefItem?.canonicalWorkItemId)return null;
   const observerName=String(chiefItem.boardObservers?.[0]||chiefItem.observerFindings?.[0]?.observer||'Board').trim();
   const finding=dashboardShortText(
-    chiefItem.chiefHeadline
-    || chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
+    chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
     || chiefItem.observerFindings?.[0]?.finding
+    || chiefItem.chiefHeadline
     || chiefItem.why
     || chiefItem.summary
     || '',
@@ -25370,15 +25321,20 @@ function buildChiefDailyWitness(chiefItem={}){
   ).replace(/^I\s+(?:am\s+)?(?:seeing|watching|noticing)\s+/i,'');
   if(!finding)return null;
   const findingSentence=finding.replace(/[.!?]+$/,'');
-  const first=observerName==='Board'
-    ? `The Board brought this forward: ${findingSentence}.`
-    : `${observerName} brought this forward: ${findingSentence}.`;
+  const welcomeAdmission=assessChiefWelcome({
+    observerName,
+    finding:findingSentence,
+    sourceRefs:chiefItem.sourceRefs,
+    confidence:chiefItem.confidence
+  });
+  if(!welcomeAdmission.passed)return null;
+  const first=`Good ${new Date().getHours()<12?'morning':(new Date().getHours()<17?'afternoon':'evening')}, ${String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there'}.`;
+  const observerBrief=`${observerName} is seeing ${findingSentence.charAt(0).toLowerCase()}${findingSentence.slice(1)}.`;
   const second='I put the clearest next decision in Alignment.';
-  const third=`${observerName} has the source trail if you want the full context.`;
   return {
-    display_greeting:[first,second,third].join('\n'),
-    greeting_lines:[first,second,third],
-    perspective:first,
+    display_greeting:[first,observerBrief,second].join('\n'),
+    greeting_lines:[first,observerBrief,second],
+    perspective:observerBrief,
     observerName,
     permission_line:'Nothing sends, imports, or changes externally unless you approve it.',
     moment_type:'chief_of_staff_briefing',
@@ -25396,9 +25352,41 @@ function buildChiefDailyWitness(chiefItem={}){
       evidence:[chiefItem],
       prepared_work:[],
       suggested_tone:'direct',
-      things_intentionally_not_mentioned:[]
+      things_intentionally_not_mentioned:[],
+      welcomeAdmission
     },
     generatedAt:new Date().toISOString()
+  };
+}
+function buildQuietChiefDailyWitness(){
+  const date=new Date();
+  const name=String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there';
+  const first=`Good ${date.getHours()<12?'morning':(date.getHours()<17?'afternoon':'evening')}, ${name}.`;
+  const second='Nothing from the Board has earned your attention yet.';
+  const third='I will keep the desk clear until something does.';
+  return {
+    display_greeting:[first,second,third].join('\n'),
+    greeting_lines:[first,second,third],
+    perspective:second,
+    observerName:'Chief of Staff',
+    permission_line:'No action is being assigned.',
+    moment_type:'chief_of_staff_quiet',
+    what_was_witnessed:'No source-backed Board deduction passed the Chief of Staff welcome gate.',
+    what_it_cost_or_represented:'Home stays quiet rather than filling the room with activity.',
+    evidence:[],
+    confidence:1,
+    voice_note:'quiet',
+    internalUnderstanding:{
+      greeting_context:'No source-backed Board brief earned Home.',
+      current_day_state:'chief_of_staff_quiet',
+      observed_pattern:'',
+      confidence:1,
+      evidence:[],
+      prepared_work:[],
+      suggested_tone:'direct',
+      things_intentionally_not_mentioned:['Fresh transcript activity and ungrounded Observer language do not become the Welcome message.']
+    },
+    generatedAt:date.toISOString()
   };
 }
 function chiefRecommendationHomeItems(recommendation={}){
@@ -25465,8 +25453,7 @@ async function buildExecutiveBriefing(){
   ].filter(Boolean).slice(0,5);
   const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
   const dailyWitness=buildChiefDailyWitness(chiefHomeItem)
-    || buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
-    || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
+    || buildQuietChiefDailyWitness();
   return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,chiefRecommendation:chiefHomeItem||null,chiefAlignmentQueue:chiefHomeItems,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){

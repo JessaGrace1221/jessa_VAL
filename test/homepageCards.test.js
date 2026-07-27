@@ -282,16 +282,20 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
 
 test('Chief of Staff Home witness is concrete and points to inspectable proof',()=>{
   assert.match(server,/function buildChiefDailyWitness/);
+  assert.match(server,/function buildQuietChiefDailyWitness/);
   assert.match(server,/const dailyWitness=buildChiefDailyWitness\(chiefHomeItem\)/);
   assert.match(server,/chiefHeadline:dashboardShortText\(recommendation\.title/);
   assert.match(server,/\[candidate\.leadObserver\|\|candidate\.lead_observer\]/);
-  assert.match(server,/\$\{observerName\} brought this forward: \$\{findingSentence\}\./);
+  assert.match(server,/assessChiefWelcome/);
+  assert.match(server,/\$\{observerName\} is seeing \$\{findingSentence\.charAt\(0\)\.toLowerCase\(\)\}\$\{findingSentence\.slice\(1\)\}\./);
   assert.match(server,/items\.findIndex\(candidate=>String\(candidate\.chiefQueuePacketId\|\|''\)\.trim\(\)===packetId\)===index/);
   assert.match(server,/I put the clearest next decision in Alignment\./);
-  assert.match(server,/\$\{observerName\} has the source trail if you want the full context\./);
-  assert.match(server,/GOALL is the thing to settle today/);
-  assert.match(server,/Mike needs the dashboard\/projections handoff clarified/);
-  assert.match(server,/open Full Context if you want to inspect the source before acting/);
+  assert.match(server,/Nothing from the Board has earned your attention yet\./);
+  assert.match(server,/I will keep the desk clear until something does\./);
+  assert.doesNotMatch(server,/buildFreshTranscriptDailyWitness\(recentTranscriptsForHome\[0\],freshTranscriptPacket\)/);
+  assert.doesNotMatch(server,/GOALL is the thing to settle today/);
+  assert.doesNotMatch(server,/Mike needs the dashboard\/projections handoff clarified/);
+  assert.doesNotMatch(server,/open Full Context if you want to inspect the source before acting/);
   assert.doesNotMatch(server,/The Chief of Staff is watching the live evidence/);
 });
 
