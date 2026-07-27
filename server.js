@@ -24783,9 +24783,17 @@ function dashboardDraftQuality(draft={}){
   const sourceId=inbound.messageId||inbound.id||ctx.currentMessageId||ctx.messageId||ctx.threadId||ctx.transcriptId||ctx.transcript_id||'';
   const sourceExcerpt=inbound.bodyText||inbound.bodyPreview||inbound.snippet||inbound.subject||ctx.meetingTitle||ctx.transcriptTitle||'';
   const executiveInboxDraft=ctx.source==='executive_inbox_review_only';
+  const sourceEmail={
+    from:inbound.from||ctx.draftBrief?.recipient||ctx.recipient||{},
+    subject:inbound.subject||draft.subject||'',
+    snippet:inbound.snippet||'',
+    bodyPreview:inbound.bodyPreview||'',
+    bodyText:inbound.bodyText||'',
+    headers
+  };
   if(executiveInboxDraft&&!recipient)problems.push('missing_recipient');
   if(executiveInboxDraft&&!sourceRefs.length&&!(sourceId&&dashboardCleanText(sourceExcerpt)))problems.push('missing_source_evidence');
-  if(executiveInboxDraft&&(headers.listUnsubscribe||headers.listId||headers.xCampaign||/\b(unsubscribe|newsletter|digest|promotional email)\b/i.test(sourceExcerpt)))problems.push('bulk_or_subscription_mail');
+  if(executiveInboxDraft&&(relationshipEmailHasUnsubscribeSignal(sourceEmail)||relationshipEmailHasBulkSignal(sourceEmail)||emailLooksAutomatedSystemNotice(sourceEmail)||emailLooksTransactionalOrBulk(sourceEmail)))problems.push('bulk_or_subscription_mail');
   if(/\bThank you for sending this over\b[\s\S]*\bcome back with the clean next step\b/i.test(body))problems.push('generic_placeholder_reply');
   if(draft.status==='ready_for_review'&&draft.draftType!=='meeting_recap'&&ctx.qa?.passes!==true)problems.push('missing_review_qa');
   const ready=!problems.length&&!!dashboardCleanText(subject||body);

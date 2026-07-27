@@ -168,6 +168,9 @@ test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.match(server,/readyForYouItems=Array\.isArray\(readyForYouQueue\?\.preparedItems\)/);
   assert.match(server,/readyForYouQueue\.prepared_items/);
   assert.match(server,/outcome:'approved_and_sent'/);
+  assert.match(server,/relationshipEmailHasUnsubscribeSignal\(sourceEmail\)/);
+  assert.match(server,/relationshipEmailHasBulkSignal\(sourceEmail\)/);
+  assert.match(server,/emailLooksTransactionalOrBulk\(sourceEmail\)/);
   assert.match(server,/buildDashboardIntelligence\(\{moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket\}\)/);
   assert.match(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\);/);
   assert.doesNotMatch(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\)\.concat\(briefingItems\(briefing\.watching\)\);/);
