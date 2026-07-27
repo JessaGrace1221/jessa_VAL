@@ -15284,6 +15284,7 @@ function linkedInStructuredPosts(html='',personalLinkedIn=''){
       date:String(record.datePublished||record.dateCreated||linkedInActivityDate(mainUrl||record.url)||''),
       text:String(record.text||record.articleBody||record.description||'').replace(/\s+/g,' ').trim().slice(0,5000),
       url:String(record.url||mainUrl||'').trim(),
+      authorName:typeof record.author==='object'?String(record.author?.name||'').trim():'',
       authorSlug,
       contentSource:'linkedin_public_profile'
     };
@@ -15298,13 +15299,22 @@ async function lookupPublicLinkedInProfilePosts(personalLinkedIn=''){
   const profileUrl=normalizeLinkedInWatchUrl(personalLinkedIn);
   if(!/linkedin\.com\/in\//i.test(profileUrl))return {configured:false,postsLastWeek:[],rawCount:0,error:'A personal LinkedIn profile URL is required.'};
   try{
-    const response=await fetchWithTimeout(`${profileUrl}/recent-activity/all/`,{
-      redirect:'follow',
-      headers:{
-        'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
-        'Accept-Language':'en-US,en;q=0.9'
-      }
-    },12000,'LinkedIn public profile activity');
+    let response;
+    for(let attempt=0;attempt<3;attempt+=1){
+      if(attempt)await sleep(1800*attempt);
+      response=await fetchWithTimeout(`${profileUrl}/recent-activity/all/`,{
+        redirect:'follow',
+        headers:{
+          'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+          'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language':'en-US,en;q=0.9',
+          'Cache-Control':'no-cache',
+          'Referer':'https://www.linkedin.com/'
+        }
+      },12000,'LinkedIn public profile activity');
+      if(response.status!==999)break;
+      await response.text().catch(()=>{});
+    }
     if(!response.ok)return {configured:true,provider:'linkedin_public_profile',postsLastWeek:[],rawCount:0,error:`LinkedIn profile returned ${response.status}.`};
     const html=await response.text();
     const posts=linkedInStructuredPosts(html,profileUrl);
@@ -18021,13 +18031,21 @@ async function refreshLinkedInVisibility({limit=20}={}){
       text:String(post.text||'').trim(),
       summary:String(post.text||'').trim(),
       url:post.url||'',
+      authorName:String(post.authorName||'').trim(),
       contentSource:post.contentSource||'provider_post_body',
       source:'outscraper_linkedin_post'
     })).filter(post=>post.text&&post.url);
+    const urlSlug=String(linkedinUrl).match(/linkedin\.com\/(?:in|company)\/([^/?#]+)/i)?.[1]?.replace(/[-_]/g,'').toLowerCase()||'';
+    const currentNameKey=String(profile.displayName||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const observedAuthorName=String(posts[0]?.authorName||'').trim();
+    const displayName=observedAuthorName&&(currentNameKey===urlSlug||(!String(profile.displayName||'').includes(' ')&&observedAuthorName.includes(' ')))
+      ? observedAuthorName
+      : profile.displayName;
     const metadata=profile.metadata||{};
     const sourceReceipts=metadata.sourceReceipts||{};
     await saveRelationshipProfile({
       ...profile,
+      displayName,
       metadataJson:{
         ...metadata,
         linkedinUrl,
@@ -18046,7 +18064,7 @@ async function refreshLinkedInVisibility({limit=20}={}){
         linkedinProvider:lookup.provider||'outscraper'
       }
     });
-    if(!posts.length)return {profileId:profile.id,name:profile.displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:0,draftCount:0};
+    if(!posts.length)return {profileId:profile.id,name:displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:0,draftCount:0};
     let draftCount=0;
     let draftError='';
     const latest=posts[0];
@@ -18067,12 +18085,12 @@ async function refreshLinkedInVisibility({limit=20}={}){
           draftType:'linkedin_comment_draft',
           contactId:profile.id,
           provider:'internal',
-          subject:`LinkedIn comment for ${profile.displayName||profile.email||'relationship'}`,
+          subject:`LinkedIn comment for ${displayName||profile.email||'relationship'}`,
           body:prepared.body,
           status:'ready_for_review',
           sourceContext:{
             source:'linkedin_visibility_refresh',
-            contact:{id:profile.id,name:profile.displayName,email:profile.email,linkedinUrl:profile.linkedinUrl},
+            contact:{id:profile.id,name:displayName,email:profile.email,linkedinUrl:profile.linkedinUrl},
             latestLinkedInPost:latest,
             usedEvidence:prepared.usedEvidence,
             noExternalAction:true
@@ -18101,7 +18119,7 @@ async function refreshLinkedInVisibility({limit=20}={}){
         }
       });
     }
-    return {profileId:profile.id,name:profile.displayName,linkedinUrl,configured:true,error:draftError,status:draftError?'draft_error':'posts_found',checkedAt,postCount:posts.length,draftCount};
+    return {profileId:profile.id,name:displayName,linkedinUrl,configured:true,error:draftError,status:draftError?'draft_error':'posts_found',checkedAt,postCount:posts.length,draftCount};
   }));
   return {
     ok:true,
@@ -18164,8 +18182,7 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
             profile.opportunities?.[0]?.summary||
             profile.openLoops?.[0]?.content||
             profile.openLoops?.[0]?.summary||
-            profile.summary||
-            'This is current relationship context, not a generic visibility suggestion.'
+            `This is ${profile.displayName||'this relationship'}'s latest public thinking. Review whether your perspective would add something specific before commenting.`
           ).trim(),
           draftComment:draft?.body||'',
           draftId:draft?.id||'',

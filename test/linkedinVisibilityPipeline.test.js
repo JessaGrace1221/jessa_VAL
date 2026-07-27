@@ -15,10 +15,14 @@ test('LinkedIn visibility refreshes real relationship post receipts and prepares
   assert.match(server,/linkedInStructuredPosts/);
   assert.match(server,/lookupPublicLinkedInProfilePosts/);
   assert.match(server,/provider:'linkedin_public_profile'/);
+  assert.match(server,/attempt<3/);
+  assert.match(server,/response\.status!==999/);
   assert.match(server,/if\(direct\.postsLastWeek\?\.length\)return direct/);
   assert.match(server,/if\(attendee\.strictLatest\)return direct/);
   assert.match(server,/strictLatest:true/);
   assert.match(server,/metadata\.linkedinLastRefreshStatus==='error'\?\[\]:safeArray/);
+  assert.match(server,/const observedAuthorName=/);
+  assert.match(server,/latest public thinking/);
   assert.match(server,/readPublicLinkedInPost/);
   assert.match(server,/linkedin_public_metadata/);
   assert.match(server,/embeddedError/);
