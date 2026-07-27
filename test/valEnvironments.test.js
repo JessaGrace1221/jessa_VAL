@@ -117,6 +117,10 @@ test('historical testing proves exact outputs and never performs an external act
   assert.equal(result.no_external_action,true);
   assert.equal(result.run.status,'completed');
   assert.deepEqual(previewed.sort(),['commitment','delight','relationship','synchronicity']);
+  const activated=await service.activate(draft.environment.id);
+  assert.equal(activated.environment.status,'active');
+  assert.equal(activated.environment.draftVersion,null);
+  assert.equal(activated.environment.activeVersion.state,'active');
 });
 
 test('historical test proof reads like executive support instead of backend receipts',()=>{
@@ -126,6 +130,15 @@ test('historical test proof reads like executive support instead of backend rece
   assert.match(hearth,/Google Doc destination confirmed/);
   assert.match(hearth,/A document retry will never resend the email\./);
   assert.doesNotMatch(hearth,/escapeHtml\(outputs\.googleDoc\?\.documentId\|\|'No document'\)/);
+});
+
+test('VAL Studio reopens an activated Environment as live instead of as an unfinished builder',()=>{
+  assert.match(hearth,/function valStudioLiveView\(\)/);
+  assert.match(hearth,/existing\.status==='active'&&existing\.activeVersion&&!existing\.draftVersion\?'live':'builder'/);
+  assert.match(hearth,/VAL is listening for the next matching meeting\./);
+  assert.match(hearth,/The current version remains active until you deliberately replace it with another tested version\./);
+  assert.match(hearth,/Make Environment Live/);
+  assert.match(hearth,/Live v.*remains active/);
 });
 
 test('activation is blocked until the exact draft version has a successful test',async()=>{

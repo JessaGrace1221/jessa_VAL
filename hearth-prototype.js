@@ -28404,8 +28404,11 @@ function orientHomeCoworkFromInput(){
 const valStudioObserverDefaults = ['commitment','relationship','delight','synchronicity'];
 let valStudioState = {
   stage:0,
+  mode:'builder',
   environmentId:'',
+  environment:null,
   versionNumber:0,
+  activeVersionNumber:0,
   environments:[],
   transcripts:[],
   lastTest:null,
@@ -28466,7 +28469,25 @@ function valStudioCurrentSpec(){
 function valStudioSelectedObserverNames(){
   const selected=new Set(valStudioState.spec.observerIds||[]);
   const observers=observerBoardState?.observers||[];
-  return observers.filter(observer=>selected.has(String(observer.name||'').toLowerCase())).map(observer=>observer.name);
+  const names=observers.filter(observer=>selected.has(String(observer.name||'').toLowerCase())).map(observer=>observer.name);
+  if(names.length)return names;
+  const labels={
+    executive_inbox:'Executive Inbox',
+    commitment:'Commitment',
+    relationship:'Relationship',
+    delight:'Delight',
+    synchronicity:'Synchronicity',
+    capacity:'Capacity',
+    courage:'Courage',
+    momentum:'Momentum',
+    project:'Project',
+    meaning:'Meaning',
+    opportunity:'Opportunity',
+    calendar:'Calendar',
+    environment:'Environment',
+    witnessing:'Witnessing'
+  };
+  return Array.from(selected).map(id=>labels[id]||id).filter(Boolean);
 }
 
 function valStudioRecurringTitleSuggestion(value=''){
@@ -28603,9 +28624,14 @@ function valStudioStagePanel(){
       '</select></label>',
       '<div class="val-studio-test-actions">',
         '<button type="button" data-val-studio-test>Test with Historical Evidence</button>',
-        lastTest?.status==='completed'?'<button type="button" data-val-studio-activate>Make This Environment Live</button>':'',
       '</div>',
       '<div data-val-studio-status>' + (lastTest?valStudioTestResult(lastTest):'') + '</div>',
+      lastTest?.status==='completed'?[
+        '<div class="val-studio-activation">',
+          '<div><span>Ready</span><strong>The Environment has passed its historical test.</strong><p>Make it live and VAL will recognize the next matching Krisp transcript automatically.</p></div>',
+          '<button type="button" data-val-studio-activate>Make Environment Live</button>',
+        '</div>'
+      ].join(''):'',
     '</section>'
   ].join('');
 }
@@ -28649,16 +28675,66 @@ function valStudioTestResult(run={}){
   ].join('');
 }
 
+function valStudioLiveView(){
+  const spec=valStudioState.spec;
+  const observers=valStudioSelectedObserverNames();
+  return [
+    '<div class="val-studio val-studio-live-home" data-val-studio>',
+      '<header class="val-studio-header">',
+        '<div><span>VAL Studio</span><strong>' + escapeHtml(spec.name) + '</strong></div>',
+        '<small class="val-studio-live-status"><i aria-hidden="true"></i>Live</small>',
+      '</header>',
+      '<div class="val-studio-live-layout">',
+        '<section class="val-studio-live-overview">',
+          '<div class="val-studio-live-heading">',
+            '<span>Active Environment</span>',
+            '<h3>' + escapeHtml(spec.name) + '</h3>',
+            '<p>' + escapeHtml(spec.outcome) + '</p>',
+          '</div>',
+          '<div class="val-studio-live-contract">',
+            '<article><span>Begins when</span><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'The confirmed recurring event arrives') + '</strong><p>Krisp transcript received</p></article>',
+            '<article><span>Round Table</span><strong>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</strong><p>' + escapeHtml(observers.join(', ')) + '</p></article>',
+            '<article><span>Produces</span><strong>Email + shared record</strong><p>Exact Action Items and Key Points</p></article>',
+            '<article><span>Protection</span><strong>Email succeeds first</strong><p>A document retry never resends the email.</p></article>',
+          '</div>',
+          '<div class="val-studio-live-note"><strong>VAL is listening for the next matching meeting.</strong><span>The current version remains active until you deliberately replace it with another tested version.</span></div>',
+        '</section>',
+        '<aside class="val-studio-canvas">',
+          '<p class="val-studio-eyebrow">Live Structure</p>',
+          valStudioVisualMap(),
+          '<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>',
+        '</aside>',
+      '</div>',
+      '<footer class="val-studio-live-footer">',
+        '<div><strong>Active version ' + escapeHtml(String(valStudioState.activeVersionNumber||valStudioState.versionNumber||1)) + '</strong><span>Running from the confirmed contract above.</span></div>',
+        '<button type="button" data-val-studio-edit>Edit Environment</button>',
+      '</footer>',
+    '</div>'
+  ].join('');
+}
+
 function renderValStudio(){
   valStudioState.spec=valStudioCurrentSpec();
+  if(valStudioState.mode==='live'){
+    scraperPreviewList.hidden=false;
+    scraperPreviewList.classList.add('val-studio-surface');
+    scraperPreviewList.innerHTML=valStudioLiveView();
+    wireValStudio();
+    return;
+  }
   const stages=['Outcome','Evidence','Round Table','Actions','Test'];
+  const hasActiveVersion=Boolean(valStudioState.environment?.activeVersion);
+  const hasSavedDraft=Boolean(valStudioState.environment?.draftVersion);
+  const versionLabel=hasActiveVersion
+    ?'Live v'+escapeHtml(String(valStudioState.activeVersionNumber||1))+' remains active · '+(hasSavedDraft?'Editing draft v'+escapeHtml(String(valStudioState.versionNumber||1)):'Changes not saved')
+    :(valStudioState.environmentId?'Draft version '+escapeHtml(String(valStudioState.versionNumber||1)):'New Environment');
   scraperPreviewList.hidden=false;
   scraperPreviewList.classList.add('val-studio-surface');
   scraperPreviewList.innerHTML=[
     '<div class="val-studio" data-val-studio>',
       '<header class="val-studio-header">',
         '<div><span>VAL Studio</span><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
-        '<small>' + (valStudioState.environmentId?'Draft version '+escapeHtml(String(valStudioState.versionNumber||1)):'New Environment') + '</small>',
+        '<small>' + versionLabel + '</small>',
       '</header>',
       '<nav class="val-studio-steps" aria-label="Environment setup">',
         stages.map((label,index)=>'<button type="button" data-val-studio-stage="' + index + '" class="' + (index===valStudioState.stage?'active':'') + '"><span>0' + (index+1) + '</span>' + label + '</button>').join(''),
@@ -28686,7 +28762,9 @@ async function saveValStudioDraft(){
   const url=valStudioState.environmentId?`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}`:'/api/val/environments';
   const payload=await valStudioRequest(url,valStudioState.environmentId?'PUT':'POST',{spec:valStudioState.spec});
   valStudioState.environmentId=payload.environment.id;
+  valStudioState.environment=payload.environment;
   valStudioState.versionNumber=payload.environment.draftVersion?.versionNumber||payload.environment.activeVersion?.versionNumber||1;
+  valStudioState.activeVersionNumber=payload.environment.activeVersion?.versionNumber||valStudioState.activeVersionNumber||0;
   return payload;
 }
 
@@ -28694,6 +28772,13 @@ function wireValStudio(){
   const root=scraperPreviewList.querySelector('[data-val-studio]');
   if(!root)return;
   root.addEventListener('click',event=>event.stopPropagation());
+  root.querySelector('[data-val-studio-edit]')?.addEventListener('click',()=>{
+    valStudioState.mode='builder';
+    valStudioState.stage=0;
+    valStudioState.lastTest=null;
+    valStudioState.spec=valStudioState.environment?.activeVersion?.specJson||valStudioState.spec;
+    renderValStudio();
+  });
   root.querySelectorAll('[data-val-studio-stage]').forEach(button=>button.addEventListener('click',async()=>{
     valStudioState.spec=valStudioCurrentSpec();
     valStudioState.stage=Number(button.dataset.valStudioStage)||0;
@@ -28749,8 +28834,12 @@ function wireValStudio(){
       if(status)status.innerHTML='<p class="val-studio-running">Confirming the tested version...</p>';
       const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/activate`,'POST',{});
       valStudioState.lastTest={...valStudioState.lastTest,activated:true};
-      if(status)status.innerHTML='<div class="val-studio-live"><strong>This Environment is live.</strong><span>VAL will recognize the confirmed recurring event when the next Krisp transcript arrives.</span></div>';
+      valStudioState.environment=result.environment;
       valStudioState.versionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
+      valStudioState.activeVersionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
+      valStudioState.spec=result.environment.activeVersion?.specJson||valStudioState.spec;
+      valStudioState.mode='live';
+      renderValStudio();
     }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
   });
 }
@@ -28767,11 +28856,22 @@ async function hydrateValStudio(){
     const existing=valStudioState.environments.find(item=>/MGSH meeting follow-through/i.test(item.name||''))||valStudioState.environments[0];
     if(existing){
       const version=existing.draftVersion||existing.activeVersion;
+      valStudioState.environment=existing;
       valStudioState.environmentId=existing.id;
       valStudioState.versionNumber=version?.versionNumber||1;
+      valStudioState.activeVersionNumber=existing.activeVersion?.versionNumber||0;
       valStudioState.spec=version?.specJson||valStudioState.spec;
       const runs=await valStudioRequest(`/api/val/environments/${encodeURIComponent(existing.id)}/runs?limit=10`);
-      valStudioState.lastTest=safeArray(runs.runs).find(run=>run.testMode&&run.status==='completed')||null;
+      valStudioState.lastTest=safeArray(runs.runs).find(run=>
+        run.testMode
+        &&run.status==='completed'
+        &&Number(run.versionNumber)===Number(version?.versionNumber)
+      )||null;
+      valStudioState.mode=existing.status==='active'&&existing.activeVersion&&!existing.draftVersion?'live':'builder';
+      valStudioState.stage=existing.draftVersion?4:0;
+    }else{
+      valStudioState.mode='builder';
+      valStudioState.stage=0;
     }
     renderValStudio();
   }catch(error){
