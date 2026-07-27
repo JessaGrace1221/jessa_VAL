@@ -201,6 +201,7 @@ function registerValExternalActionsRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  Object.defineProperty(service,'executor',{value:executor,enumerable:false,configurable:false});
   return service;
 }
 

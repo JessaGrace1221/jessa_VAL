@@ -62,6 +62,8 @@ const {ensureValExternalActionTables} = require('./services/valExternalActionsSc
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
 const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
+const {ensureValEnvironmentTables} = require('./services/valEnvironmentsSchema');
+const {registerValEnvironmentsRoutes} = require('./services/valEnvironmentsRoutes');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
@@ -7841,6 +7843,7 @@ async function initValDb(){
   await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
+  await ensureValEnvironmentTables({dbQuery,logger:console});
   await ensureValExecutiveInboxQueueTables({dbQuery,logger:console});
   await dbQuery(`
     update transcript_tasks
@@ -32559,12 +32562,20 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
     try{
       const processed=await processTranscriptPayload({...payload,savedTranscriptId:saved.id,meetingMatch});
       await updateTranscriptMetadata(saved.id,{analysis:processed.analysis,summary:processed.analysis?.summary||'',actionItems:processed.analysis?.actionItems||[],people:processed.analysis?.people||[],reviewStatus:'needs_review',processedAt:new Date().toISOString()});
-      return res.status(200).json({ok:true,...saved,...processed,saved:true,processed:true});
+      setImmediate(()=>{
+        valEnvironments.processTranscript(saved.id).then(result=>{
+          if(result.matched)console.log('[environments] transcript processed',{transcriptId:saved.id,matched:result.matched});
+        }).catch(error=>console.error('[environments] transcript processing failed',{transcriptId:saved.id,error:error.message}));
+      });
+      return res.status(200).json({ok:true,...saved,...processed,saved:true,processed:true,environmentProcessingQueued:true});
     }catch(processError){
       console.error('[transcripts] processing failed after durable save',{id:saved.id,error:processError.message});
       const fallback={executiveSummary:transcriptText.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Processing failed; transcript retained for review.',keyDecisions:[],openQuestions:[],relationshipUpdates:[]};
       await saveTranscriptSummary(saved.id,fallback).catch(()=>{});await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});await logTranscriptAction(saved.id,'failed_action','pipeline','failed',processError.message).catch(()=>{});
-      return res.status(200).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch});
+      setImmediate(()=>{
+        valEnvironments.processTranscript(saved.id).catch(error=>console.error('[environments] saved fallback transcript processing failed',{transcriptId:saved.id,error:error.message}));
+      });
+      return res.status(200).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch,environmentProcessingQueued:true});
     }
   }catch(e){console.error('[transcripts] save failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -35240,6 +35251,18 @@ async function executeCalendarHoldPacket({packet,payload}){
   const created=await api.createTaskBlock(task,{start,end,calendarId:payload.calendarId||'primary',durationMinutes:duration,focus:true});
   return {providerResponseId:created.eventId||'',providerResponseSummary:`Created private ${created.provider||provider} calendar hold.`,raw:created};
 }
+async function executeGoogleDocAppendPacket({packet,payload}){
+  const documentId=String(payload.documentId||payload.document_id||packet.targetId||'').trim();
+  const content=String(payload.content||payload.body||payload.bodyPreview||'').trim();
+  if(!documentId)throw new Error('Google Doc append requires a document ID.');
+  if(!content)throw new Error('Google Doc append requires content.');
+  const result=await updateGoogleDoc({documentId,content,mode:'append'});
+  return {
+    providerResponseId:result.id||documentId,
+    providerResponseSummary:`Appended the meeting overview to ${result.title||'the selected Google Doc'}.`,
+    raw:result
+  };
+}
 const valExternalActions = registerValExternalActionsRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -35282,11 +35305,132 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
 	    send_email:executeEmailSendPacket,
 	    send_sms:executeSmsPacket,
 	    create_crm_note:executeCrmNotePacket,
-    create_crm_task:executeCrmTaskPacket,
-    create_calendar_hold:executeCalendarHoldPacket
+	    create_crm_task:executeCrmTaskPacket,
+	    create_calendar_hold:executeCalendarHoldPacket,
+	    append_google_doc:executeGoogleDocAppendPacket
   },
   auditLog,
   logger:console
+});
+const valEnvironments = registerValEnvironmentsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  externalActions:valExternalActions,
+  onNeedsAttention:async({environment,source,run,reason})=>{
+    if(!valCanonicalWork?.admit)return null;
+    const title=`Resolve ${environment.name}`;
+    const exactSourceQuote=String(reason||'This Environment needs attention.').trim();
+    return valCanonicalWork.admit({
+      sourceType:'environment_run',
+      sourceId:run.id,
+      workType:'environment_attention',
+      ownership:'self',
+      ownerId:currentUserId(),
+      ownerName:currentValUser()?.name||currentValUser()?.fullName||'Executive',
+      actionText:'Resolve',
+      objectText:environment.name,
+      outcomeText:'Restore the Environment so its configured follow-through can complete.',
+      title,
+      summary:`${environment.name} paused because ${reason}`,
+      exactSourceQuote,
+      sourceRefs:[{
+        sourceType:'transcript',
+        sourceId:source.id,
+        quoteOrSummary:exactSourceQuote,
+        confidence:1,
+        createdAt:new Date().toISOString()
+      }],
+      confidence:1,
+      metadata:{
+        environmentId:environment.id,
+        environmentRunId:run.id,
+        failureReason:reason,
+        notifyChiefOfStaff:true,
+        pausedVisibly:true
+      }
+    });
+  },
+  loadTranscript:async transcriptId=>{
+    const indexed=await transcriptIndexData(transcriptId);
+    const row=indexed.transcripts.find(item=>String(item.transcriptId||item.id)===String(transcriptId));
+    if(!row)return null;
+    const detail=await transcriptWithCalendarInvitees(transcriptDetailFromIndex(indexed,row));
+    const exact=transcriptSourceReceipt(detail);
+    return {
+      id:detail.id||detail.transcriptId||transcriptId,
+      title:detail.title||detail.meetingTitle||'Meeting',
+      occurredAt:detail.meetingDatetime||detail.createdAt||'',
+      attendees:detail.attendees||[],
+      actionItems:exact.actionItems,
+      keyPoints:exact.keyPoints,
+      exactBody:exact.body,
+      sourceUrl:detail.sourceUrl||detail.downloadUrl||'',
+      rawText:detail.transcriptText||detail.rawTranscript||'',
+      executiveEmails:[
+        currentValUser()?.email,
+        currentValUser()?.emailAddress
+      ].filter(Boolean)
+    };
+  },
+  previewObserver:async({observer,source,exactSections,runId})=>{
+    const evidenceQuote=compactText(exactSections.body,2600);
+    const packet={
+      id:`${runId}_${observer.observerId}_source`,
+      sourceType:'transcript',
+      sourceId:source.id,
+      packetType:'environment_test_packet',
+      title:source.title,
+      summary:evidenceQuote.slice(0,520),
+      payloadJson:{evidenceContent:evidenceQuote},
+      sourceRefsJson:[{
+        source_type:'transcript',
+        source_id:source.id,
+        quote_or_summary:evidenceQuote,
+        confidence:1,
+        created_at:source.occurredAt||new Date().toISOString()
+      }],
+      createdAt:source.occurredAt||new Date().toISOString()
+    };
+    const output=await reasonBoardEvidenceForObserver({
+      observerName:observer.observerName,
+      promptKey:observer.promptKey||'event_intelligence_pass',
+      contextPacket:{
+        event:{type:'environment_historical_test',sourceType:'transcript',sourceId:source.id,packetIds:[packet.id]},
+        boardPackets:[packet]
+      },
+      deterministicOutput:{
+        observer:observer.observerName,
+        observation:'No meaningful signal from my lens.',
+        evidence:[],
+        confidence:0.9,
+        conviction:0,
+        packetReviews:[],
+        packet_reviews:[]
+      }
+    });
+    const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||{};
+    return {
+      type:'observer_receipt_v1',
+      observerId:observer.observerId,
+      observerName:observer.observerName,
+      definitionRef:observer.definitionRef,
+      status:review.status==='observed'?'observed':'no_meaningful_signal',
+      observation:review.observation||output.observation||'No meaningful signal from my lens.',
+      watching:review.watching||'',
+      concern:review.concern||'',
+      question:review.question||'',
+      evidence:safeArray(review.evidence||output.evidence),
+      confidence:Number(review.confidence??output.confidence??0),
+      externalActionPolicy:'never'
+    };
+  }
 });
 registerValExecutiveInstructionRoutes(app,{
   valDbReady:()=>valDbReady,

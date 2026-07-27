@@ -28439,32 +28439,392 @@ function orientHomeCoworkFromInput(){
   ].join('');
 }
 
+const valStudioObserverDefaults = ['commitment','relationship','delight','synchronicity'];
+let valStudioState = {
+  stage:0,
+  environmentId:'',
+  versionNumber:0,
+  environments:[],
+  transcripts:[],
+  lastTest:null,
+  spec:{
+    name:'MGSH meeting follow-through',
+    outcome:'Send every attendee the meeting Action Items and Key Points, then preserve the same source truth in the shared Google Doc.',
+    purpose:'Close the meeting loop immediately without asking the executive to repeat work Krisp already captured.',
+    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'immediate'},
+    observerIds:[...valStudioObserverDefaults],
+    connections:{emailProvider:'gmail',googleDocumentId:''},
+    approvals:{sendEmail:'required',appendGoogleDoc:'required'}
+  }
+};
+
+async function valStudioRequest(url,method='GET',body=null){
+  const response=await fetch(url,{
+    method,
+    headers:body?{'Content-Type':'application/json'}:undefined,
+    body:body?JSON.stringify(body):undefined,
+    credentials:'same-origin'
+  });
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload.ok===false)throw new Error(payload.error||`VAL Studio request failed (${response.status}).`);
+  return payload;
+}
+
+function valStudioCurrentSpec(){
+  const root=scraperPreviewList.querySelector('[data-val-studio]');
+  if(!root)return valStudioState.spec;
+  const field=name=>root.querySelector(`[name="${name}"]`);
+  const checked=name=>Boolean(field(name)?.checked);
+  const value=name=>String(field(name)?.value||'').trim();
+  const has=name=>Boolean(field(name));
+  const observerFields=Array.from(root.querySelectorAll('[name="observerId"]'));
+  return {
+    ...valStudioState.spec,
+    name:has('environmentName')?(value('environmentName')||valStudioState.spec.name):valStudioState.spec.name,
+    outcome:has('environmentOutcome')?(value('environmentOutcome')||valStudioState.spec.outcome):valStudioState.spec.outcome,
+    purpose:has('environmentPurpose')?(value('environmentPurpose')||valStudioState.spec.purpose):valStudioState.spec.purpose,
+    trigger:{
+      type:'krisp_transcript_received',
+      eventTitlePattern:has('eventTitlePattern')?value('eventTitlePattern'):valStudioState.spec.trigger.eventTitlePattern,
+      eventTitleConfirmed:has('eventTitleConfirmed')?checked('eventTitleConfirmed'):valStudioState.spec.trigger.eventTitleConfirmed,
+      mode:'immediate'
+    },
+    observerIds:observerFields.length?observerFields.filter(input=>input.checked).map(input=>input.value):valStudioState.spec.observerIds,
+    connections:{
+      emailProvider:has('emailProvider')?(value('emailProvider')||'gmail'):valStudioState.spec.connections.emailProvider,
+      googleDocumentId:has('googleDocumentId')?value('googleDocumentId'):valStudioState.spec.connections.googleDocumentId
+    },
+    approvals:{
+      sendEmail:has('emailPreauthorized')?(checked('emailPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.sendEmail,
+      appendGoogleDoc:has('docPreauthorized')?(checked('docPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.appendGoogleDoc
+    }
+  };
+}
+
+function valStudioSelectedObserverNames(){
+  const selected=new Set(valStudioState.spec.observerIds||[]);
+  const observers=observerBoardState?.observers||[];
+  return observers.filter(observer=>selected.has(String(observer.name||'').toLowerCase())).map(observer=>observer.name);
+}
+
+function valStudioRecurringTitleSuggestion(value=''){
+  return String(value||'')
+    .replace(/\s*[-|]\s*(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?\b.*$/i,'')
+    .replace(/\s*[-|]\s*(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?.*$/i,'')
+    .replace(/\s*[-|]\s*\d{1,2}\/\d{1,2}(?:\/\d{2,4})?.*$/,'')
+    .trim();
+}
+
+function valStudioVisualMap(){
+  const names=valStudioSelectedObserverNames();
+  return [
+    '<div class="val-studio-map" aria-label="Environment map">',
+      '<div class="val-studio-source-node">',
+        '<span>Trigger</span>',
+        '<strong>Krisp transcript</strong>',
+        '<small>' + escapeHtml(valStudioState.spec.trigger.eventTitlePattern||'Recurring event to confirm') + '</small>',
+      '</div>',
+      '<div class="val-studio-flow-line source-flow" aria-hidden="true"></div>',
+      '<div class="val-studio-round-table">',
+        '<span class="val-studio-round-ring" aria-hidden="true"></span>',
+        '<strong>Round Table</strong>',
+        '<small>Observes</small>',
+        names.map((name,index)=>(
+          '<span class="val-studio-observer-node node-' + index + '" title="' + escapeHtml(name) + '">' +
+            '<i></i><b>' + escapeHtml(name) + '</b>' +
+          '</span>'
+        )).join(''),
+      '</div>',
+      '<div class="val-studio-chief-node">',
+        '<span>Chief of Staff</span>',
+        '<strong>Consults</strong>',
+        '<small>The Environment governs.</small>',
+      '</div>',
+      '<div class="val-studio-action-rail">',
+        '<span>Produces</span>',
+        '<strong>Email</strong>',
+        '<strong>Google Doc</strong>',
+      '</div>',
+    '</div>'
+  ].join('');
+}
+
+function valStudioStagePanel(){
+  const spec=valStudioState.spec;
+  const transcripts=valStudioState.transcripts;
+  const stage=valStudioState.stage;
+  if(stage===0)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Outcome</p>',
+      '<h3>What should happen without consuming another executive hour?</h3>',
+      '<label><span>Environment name</span><input name="environmentName" type="text" value="' + escapeHtml(spec.name) + '"></label>',
+      '<label><span>Outcome</span><textarea name="environmentOutcome">' + escapeHtml(spec.outcome) + '</textarea></label>',
+      '<label><span>Purpose</span><textarea name="environmentPurpose">' + escapeHtml(spec.purpose) + '</textarea></label>',
+      '<div class="val-studio-learning-rule">',
+        '<div><strong>Something VAL should understand differently?</strong><p>Every durable learning candidate still requires review before it changes future judgment.</p></div>',
+        '<button type="button" data-val-studio-teach>Teach VAL a correction</button>',
+      '</div>',
+    '</section>'
+  ].join('');
+  if(stage===1)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Evidence</p>',
+      '<h3>Which recurring event begins this Environment?</h3>',
+      '<label><span>Start with a real transcript</span>',
+        '<select name="historicalTranscript">',
+          '<option value="">Select a recent Krisp transcript</option>',
+          transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
+        '</select>',
+      '</label>',
+      '<label><span>Recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="VAL will suggest this from the transcript"></label>',
+      '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>This is the recurring event VAL should recognize.</span></label>',
+      '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL sends Krisp’s Action Items and Key Points exactly as received. It may add headings and one short introduction. It may not rewrite the source.</p></div>',
+    '</section>'
+  ].join('');
+  if(stage===2){
+    const selected=new Set(spec.observerIds||[]);
+    const definitions=[
+      ['executive_inbox','Executive Inbox','Does this need human judgment?'],
+      ['commitment','Commitment','What was promised?'],
+      ['relationship','Relationship','What changed between people?'],
+      ['delight','Delight','Where is life here?'],
+      ['synchronicity','Synchronicity','What is repeating?'],
+      ['capacity','Capacity','What does this cost?'],
+      ['courage','Courage','What is being avoided?'],
+      ['momentum','Momentum','What is moving now?'],
+      ['project','Project','What project does this move?'],
+      ['meaning','Meaning','Why does this matter?'],
+      ['opportunity','Opportunity','What opening is present?'],
+      ['calendar','Calendar','When does this matter?'],
+      ['environment','Environment','What condition changes this?'],
+      ['witnessing','Witnessing','What did the executive already reveal?']
+    ];
+    return [
+      '<section class="val-studio-stage-panel">',
+        '<p class="val-studio-eyebrow">Round Table</p>',
+        '<h3>Choose the perspectives that should observe each meeting.</h3>',
+        '<div class="val-studio-observer-picker">',
+          definitions.map(([id,name,question])=>(
+            '<label class="val-studio-observer-choice">' +
+              '<input name="observerId" type="checkbox" value="' + id + '" ' + (selected.has(id)?'checked':'') + '>' +
+              '<span><strong>' + name + '</strong><small>' + question + '</small></span>' +
+            '</label>'
+          )).join(''),
+        '</div>',
+        '<div class="val-studio-chief-advice"><span>Chief of Staff</span><p>Commitment and Relationship belong here. Delight and Synchronicity can notice what a mechanical follow-up would miss. I would keep all four for the first test.</p></div>',
+      '</section>'
+    ].join('');
+  }
+  if(stage===3)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Actions</p>',
+      '<h3>Connect the places this Environment is allowed to act.</h3>',
+      '<div class="val-studio-two-fields">',
+        '<label><span>Send from</span><select name="emailProvider"><option value="gmail" ' + (spec.connections.emailProvider==='gmail'?'selected':'') + '>Connected Gmail</option><option value="outlook" ' + (spec.connections.emailProvider==='outlook'?'selected':'') + '>Connected Outlook</option></select></label>',
+        '<label><span>Google Doc ID</span><input name="googleDocumentId" type="text" value="' + escapeHtml(spec.connections.googleDocumentId||'') + '" placeholder="Paste the existing document ID"></label>',
+      '</div>',
+      '<div class="val-studio-action-contract">',
+        '<div><span>Email</span><strong>All attendees</strong><small>One message. Every attendee except the executive.</small><label class="val-studio-confirm"><input name="emailPreauthorized" type="checkbox" ' + (spec.approvals.sendEmail==='preauthorized'?'checked':'') + '><span>Allow automatically for this recipient type</span></label></div>',
+        '<div><span>Google Doc</span><strong>Append after email</strong><small>If this fails, retry the document only. Never resend the email.</small><label class="val-studio-confirm"><input name="docPreauthorized" type="checkbox" ' + (spec.approvals.appendGoogleDoc==='preauthorized'?'checked':'') + '><span>Allow automatically for this document</span></label></div>',
+      '</div>',
+    '</section>'
+  ].join('');
+  const lastTest=valStudioState.lastTest;
+  return [
+    '<section class="val-studio-stage-panel val-studio-test-panel">',
+      '<p class="val-studio-eyebrow">Test and Activate</p>',
+      '<h3>Prove the Environment with real history before it can go live.</h3>',
+      '<p class="val-studio-test-boundary">The test shows the source, every Observer receipt, the Round Table, Chief advice, recipients, and exact proposed outputs. No external actions occur.</p>',
+      '<label><span>Historical evidence</span><select name="testTranscriptId">',
+        '<option value="">Select the MGSH transcript to test</option>',
+        transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
+      '</select></label>',
+      '<div class="val-studio-test-actions">',
+        '<button type="button" data-val-studio-test>Test with Historical Evidence</button>',
+        lastTest?.status==='completed'?'<button type="button" data-val-studio-activate>Make This Environment Live</button>':'',
+      '</div>',
+      '<div data-val-studio-status>' + (lastTest?valStudioTestResult(lastTest):'') + '</div>',
+    '</section>'
+  ].join('');
+}
+
+function valStudioTestResult(run={}){
+  const receipts=safeArray(run.receiptsJson||run.receipts_json);
+  const observers=receipts.filter(receipt=>receipt.type==='observer_receipt_v1');
+  const outputs=run.outputsJson||run.outputs_json||{};
+  return [
+    '<div class="val-studio-test-result">',
+      '<div class="val-studio-test-banner"><strong>Historical test complete</strong><span>No External Actions Occurred</span></div>',
+      '<div class="val-studio-receipt-list">',
+        observers.map(receipt=>(
+          '<article><span>' + escapeHtml(receipt.observerName||'Observer') + '</span>' +
+          '<strong>' + escapeHtml(receipt.status==='observed'?'Observed':'No meaningful signal') + '</strong>' +
+          '<p>' + escapeHtml(receipt.observation||'') + '</p></article>'
+        )).join(''),
+      '</div>',
+      '<div class="val-studio-output-proof">',
+        '<article><span>Email recipients</span><strong>' + escapeHtml(outputs.email?.to||'No recipients') + '</strong><p>' + escapeHtml(outputs.email?.subject||'') + '</p></article>',
+        '<article><span>Google Doc</span><strong>' + escapeHtml(outputs.googleDoc?.documentId||'No document') + '</strong><p>Append only after email succeeds.</p></article>',
+      '</div>',
+    '</div>'
+  ].join('');
+}
+
+function renderValStudio(){
+  valStudioState.spec=valStudioCurrentSpec();
+  const stages=['Outcome','Evidence','Round Table','Actions','Test'];
+  scraperPreviewList.hidden=false;
+  scraperPreviewList.classList.add('val-studio-surface');
+  scraperPreviewList.innerHTML=[
+    '<div class="val-studio" data-val-studio>',
+      '<header class="val-studio-header">',
+        '<div><span>VAL Studio</span><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
+        '<small>' + (valStudioState.environmentId?'Draft version '+escapeHtml(String(valStudioState.versionNumber||1)):'New Environment') + '</small>',
+      '</header>',
+      '<nav class="val-studio-steps" aria-label="Environment setup">',
+        stages.map((label,index)=>'<button type="button" data-val-studio-stage="' + index + '" class="' + (index===valStudioState.stage?'active':'') + '"><span>0' + (index+1) + '</span>' + label + '</button>').join(''),
+      '</nav>',
+      '<div class="val-studio-layout">',
+        '<div class="val-studio-editor">' + valStudioStagePanel() + '</div>',
+        '<aside class="val-studio-canvas">',
+          '<p class="val-studio-eyebrow">Live Structure</p>',
+          valStudioVisualMap(),
+          '<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>',
+        '</aside>',
+      '</div>',
+      '<footer class="val-studio-footer">',
+        '<button type="button" data-val-studio-back ' + (valStudioState.stage===0?'disabled':'') + '>Back</button>',
+        '<span data-val-studio-save-status>Changes stay in Draft until tested.</span>',
+        valStudioState.stage<4?'<button type="button" data-val-studio-next>Continue</button>':'',
+      '</footer>',
+    '</div>'
+  ].join('');
+  wireValStudio();
+}
+
+async function saveValStudioDraft(){
+  valStudioState.spec=valStudioCurrentSpec();
+  const url=valStudioState.environmentId?`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}`:'/api/val/environments';
+  const payload=await valStudioRequest(url,valStudioState.environmentId?'PUT':'POST',{spec:valStudioState.spec});
+  valStudioState.environmentId=payload.environment.id;
+  valStudioState.versionNumber=payload.environment.draftVersion?.versionNumber||payload.environment.activeVersion?.versionNumber||1;
+  return payload;
+}
+
+function wireValStudio(){
+  const root=scraperPreviewList.querySelector('[data-val-studio]');
+  if(!root)return;
+  root.addEventListener('click',event=>event.stopPropagation());
+  root.querySelectorAll('[data-val-studio-stage]').forEach(button=>button.addEventListener('click',async()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    valStudioState.stage=Number(button.dataset.valStudioStage)||0;
+    renderValStudio();
+  }));
+  root.querySelector('[data-val-studio-back]')?.addEventListener('click',()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    valStudioState.stage=Math.max(0,valStudioState.stage-1);
+    renderValStudio();
+  });
+  root.querySelector('[data-val-studio-next]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-save-status]');
+    try{
+      valStudioState.spec=valStudioCurrentSpec();
+      if(status)status.textContent='Saving the Environment contract...';
+      await saveValStudioDraft();
+      valStudioState.stage=Math.min(4,valStudioState.stage+1);
+      renderValStudio();
+    }catch(error){if(status)status.textContent=error.message;}
+  });
+  root.querySelector('[data-val-studio-teach]')?.addEventListener('click',event=>{
+    const action={label: 'Teach VAL a correction',workflow:'teach:extract'};
+    void handleWorkflowAction(action.workflow,event.currentTarget);
+  });
+  root.querySelector('[name="historicalTranscript"]')?.addEventListener('change',event=>{
+    const transcript=valStudioState.transcripts.find(item=>String(item.id||item.transcriptId)===event.target.value);
+    const titleInput=root.querySelector('[name="eventTitlePattern"]');
+    if(transcript&&titleInput){
+      titleInput.value=valStudioRecurringTitleSuggestion(transcript.title||transcript.meetingTitle||'');
+      root.querySelector('[name="eventTitleConfirmed"]').checked=false;
+    }
+  });
+  root.querySelectorAll('input,textarea,select').forEach(field=>field.addEventListener('change',()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    const canvas=root.querySelector('.val-studio-canvas');
+    if(canvas)canvas.innerHTML='<p class="val-studio-eyebrow">Live Structure</p>'+valStudioVisualMap()+'<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>';
+  }));
+  root.querySelector('[data-val-studio-test]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-status]');
+    const transcriptId=root.querySelector('[name="testTranscriptId"]')?.value||'';
+    try{
+      if(!transcriptId)throw new Error('Choose the historical MGSH transcript first.');
+      if(status)status.innerHTML='<p class="val-studio-running">Each selected Observer is reviewing the exact source...</p>';
+      await saveValStudioDraft();
+      const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/test`,'POST',{transcriptId});
+      valStudioState.lastTest=result.run;
+      renderValStudio();
+    }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
+  });
+  root.querySelector('[data-val-studio-activate]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-status]');
+    try{
+      if(status)status.innerHTML='<p class="val-studio-running">Confirming the tested version...</p>';
+      const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/activate`,'POST',{});
+      valStudioState.lastTest={...valStudioState.lastTest,activated:true};
+      if(status)status.innerHTML='<div class="val-studio-live"><strong>This Environment is live.</strong><span>VAL will recognize the confirmed recurring event when the next Krisp transcript arrives.</span></div>';
+      valStudioState.versionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
+    }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
+  });
+}
+
+async function hydrateValStudio(){
+  const status=scraperPreviewList.querySelector('[data-val-studio-loading]');
+  try{
+    const [environmentPayload,transcriptPayload]=await Promise.all([
+      valStudioRequest('/api/val/environments?limit=20'),
+      valStudioRequest('/api/val/transcripts?days=3650&limit=100')
+    ]);
+    valStudioState.environments=safeArray(environmentPayload.environments);
+    valStudioState.transcripts=safeArray(transcriptPayload.transcripts);
+    const existing=valStudioState.environments.find(item=>/MGSH meeting follow-through/i.test(item.name||''))||valStudioState.environments[0];
+    if(existing){
+      const version=existing.draftVersion||existing.activeVersion;
+      valStudioState.environmentId=existing.id;
+      valStudioState.versionNumber=version?.versionNumber||1;
+      valStudioState.spec=version?.specJson||valStudioState.spec;
+      const runs=await valStudioRequest(`/api/val/environments/${encodeURIComponent(existing.id)}/runs?limit=10`);
+      valStudioState.lastTest=safeArray(runs.runs).find(run=>run.testMode&&run.status==='completed')||null;
+    }
+    renderValStudio();
+  }catch(error){
+    if(status)status.innerHTML='<strong>VAL Studio could not load.</strong><span>'+escapeHtml(error.message)+'</span>';
+  }
+}
+
 function openTeachValSession(){
   closeCalendarPanel();
   setWorkspaceContent({
-    lens: teachValSession.lens,
-    title: teachValSession.title,
-    meaning: teachValSession.meaning,
-    understanding: teachValSession.understanding,
-    recommendation: teachValSession.recommendation,
-    actions: [
-      {label: 'Extract teaching signal', workflow: 'teach:extract'},
-      {label: 'Build review updates', workflow: 'teach:review'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-    ],
+    lens: 'VAL Studio',
+    title: 'Create an Environment',
+    meaning: 'Compose a governed executive function from VAL’s Observers, connected evidence, and bounded actions.',
+    understanding: [],
+    recommendation: 'Begin with an outcome. VAL will shape the operating contract and prove it against real history before anything can go live.',
+    actions: [],
     label: 'VAL Studio'
   });
-  renderWorkspaceInput({
-    label: 'Teach VAL a correction',
-    placeholder: "Example: This wasn't useful because... / Show me more like this... / I would have handled this differently...",
-    helper: 'Teaching is one part of VAL Studio. Every durable learning candidate still requires review before it becomes part of VAL.',
-    mode: 'teach'
-  });
+  if(workspaceGrid)workspaceGrid.hidden=true;
+  if(judgmentSequence)judgmentSequence.innerHTML='';
+  if(agencyNote)agencyNote.textContent='';
+  workspaceActions.innerHTML='';
+  workspaceInputPanel.hidden=true;
+  scraperPreviewList.hidden=false;
+  scraperPreviewList.classList.add('val-studio-surface');
+  scraperPreviewList.innerHTML='<div class="val-studio-loading" data-val-studio-loading><span class="val-presence-mark"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><strong>Opening VAL Studio</strong><span>Loading Environments and real transcript evidence.</span></div>';
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
+  void hydrateValStudio();
 }
 
 function openWorkspace(roomName){
@@ -30004,7 +30364,7 @@ agendaItems.forEach((item) => {
 });
 observerBoardButton?.addEventListener('click', openObserverBoard);
 coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(coworkNotebook));
-teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
+teachPen.addEventListener('click', openTeachValSession);
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
 workspaceInputPanel.addEventListener('submit', async (event) => {
   const openAiSetupForm = event.target.closest('[data-val-openai-setup-form]');

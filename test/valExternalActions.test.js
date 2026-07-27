@@ -351,6 +351,59 @@ test('global SMS send gate creates one approved packet and requires final confir
   assert.equal(store.valExecutionReceipts[0].status,'succeeded');
 });
 
+test('Google Doc append cannot run before its Environment email dependency',async()=>{
+  let store={valExternalActionPackets:[
+    {
+      id:'environment_email',
+      tenantId:'tenant',
+      userId:'user',
+      status:'approved_local_only',
+      actionType:'send_email',
+      targetSystem:'gmail',
+      targetId:'meeting',
+      payloadPreviewJson:{to:'team@example.com',subject:'Meeting overview',body:'Overview'},
+      sourceRefsJson:[{source_type:'transcript',source_id:'t1',quote_or_summary:'Overview',confidence:1}],
+      approvalPolicy:'approval_required',
+      representationRisk:'high',
+      financialOrLegalRisk:'low',
+      relationshipRisk:'low',
+      sourceContextJson:{source:'val_environment'}
+    },
+    {
+      id:'environment_doc',
+      tenantId:'tenant',
+      userId:'user',
+      status:'approved_local_only',
+      actionType:'append_google_doc',
+      targetSystem:'google_docs',
+      targetId:'doc_1',
+      payloadPreviewJson:{documentId:'doc_1',content:'Overview'},
+      sourceRefsJson:[{source_type:'transcript',source_id:'t1',quote_or_summary:'Overview',confidence:1}],
+      approvalPolicy:'approval_required',
+      representationRisk:'medium',
+      financialOrLegalRisk:'low',
+      relationshipRisk:'low',
+      sourceContextJson:{source:'val_environment',dependsOnPacketId:'environment_email'}
+    }
+  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
+  const packetService=createValExternalActionsService({hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},tenantId:()=>'tenant',userId:()=>'user',uuid:prefix=>`${prefix}_dependency`});
+  let docCalls=0;
+  const executor=createValExternalActionExecutor({
+    packetService,
+    adapters:{append_google_doc:async()=>{docCalls++;return {providerResponseId:'doc_1',providerResponseSummary:'Appended'};}}
+  });
+  const blocked=await executor.execute('environment_doc',{finalConfirmation:true});
+  assert.equal(blocked.ok,false);
+  assert.deepEqual(blocked.risk_check.errors,['prior_action_not_completed']);
+  assert.equal(docCalls,0);
+  await packetService.updatePacket('environment_email',{status:'executed',executedAt:new Date().toISOString()});
+  await packetService.updatePacket('environment_doc',{status:'approved_local_only',failureReason:''});
+  const completed=await executor.execute('environment_doc',{finalConfirmation:true});
+  assert.equal(completed.ok,true);
+  assert.equal(completed.executed,true);
+  assert.equal(docCalls,1);
+});
+
 test('executor safely fails with receipt, then retries with same idempotency key',async()=>{
   let store={valExternalActionPackets:[
     {id:'exec_missing_adapter',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'create_crm_note',targetSystem:'CRM',targetId:'crm_1',payloadPreviewJson:{note:'Note'},sourceRefsJson:[{source_type:'review_update',source_id:'u1',quote_or_summary:'Note',confidence:0.7}],whyThisActionExists:'Create CRM note.',whatWillHappen:'Create note.',whatWillNotHappen:'No other action.',riskLevel:'low',approvalPolicy:'approval_required',representationRisk:'medium',financialOrLegalRisk:'low',relationshipRisk:'low',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}

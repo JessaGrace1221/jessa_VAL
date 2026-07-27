@@ -24,7 +24,7 @@ function normalizeSourceRef(ref={}){
 }
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180);}
 function allowedAction(type){
-  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
+  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','append_google_doc','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
 }
 function externalActionForInstruction(action=''){
   const map={
@@ -403,6 +403,41 @@ function createValExternalActionsService({
     packet.whatWillNotHappen='VAL will not send any other SMS, email, CRM update, calendar event, tag, stage movement, publishing, or external write from this packet.';
     return upsertPacket(packet);
   }
+  async function createGoogleDocAppendPacket(payload={}){
+    const documentId=compactText(payload.documentId||payload.document_id||payload.targetId||'',320);
+    const content=String(payload.content||payload.body||payload.bodyPreview||'').trim();
+    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const packet=basePacket({
+      uuid,
+      scope:scope(),
+      source:'environment_action',
+      actionType:'append_google_doc',
+      targetSystem:'google_docs',
+      targetId:documentId,
+      title:payload.title||'Append meeting overview to Google Doc',
+      summary:payload.why||payload.summary||'Append the exact meeting overview to the selected Google Doc.',
+      payload:{
+        documentId,
+        content,
+        bodyPreview:compactText(content,1200),
+        mode:'append',
+        externalWrite:true,
+        requiresFreshApproval:true
+      },
+      refs:refs.length?refs:[normalizeSourceRef({
+        sourceType:sourceContext.source||'environment',
+        sourceId:sourceContext.sourceId||sourceContext.environmentRunId||payload.id||'',
+        quoteOrSummary:compactText(payload.title||content,300),
+        confidence:0.95
+      })],
+      approvalPolicy:'approval_required',
+      sourceContext:{...sourceContext,source:'environment_action',finalApprovalSurface:payload.finalApprovalSurface||'val_environment'}
+    });
+    packet.whatWillHappen='After approval, VAL will append exactly this meeting overview to the selected Google Doc and save an execution receipt.';
+    packet.whatWillNotHappen='VAL will not replace existing document content, resend the meeting email, or change any other connected system.';
+    return upsertPacket(packet);
+  }
   async function auditForPacket(id,{limit=50}={}){
     const lim=Math.max(1,Math.min(Number(limit)||50,200));
     if(hasPg()){
@@ -414,7 +449,7 @@ function createValExternalActionsService({
       .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
       .slice(0,lim);
   }
-  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,createSmsSendPacket,collectCandidates,preparePacketFromPreparedArtifact};
+  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,createSmsSendPacket,createGoogleDocAppendPacket,collectCandidates,preparePacketFromPreparedArtifact};
 }
 
 module.exports={createValExternalActionsService,allowedAction,riskFromText,approvalFor};
