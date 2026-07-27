@@ -1304,8 +1304,8 @@ button,a{font:inherit}
 .val-studio-error{color:#8a3d43}
 .val-studio-test-result{
   display:grid;
-  gap:10px;
-  max-height:280px;
+  gap:12px;
+  max-height:360px;
   overflow:auto;
   padding-right:4px;
 }
@@ -1320,8 +1320,48 @@ button,a{font:inherit}
 }
 .val-studio-test-banner strong,
 .val-studio-live strong{font-size:.72rem}
+.val-studio-test-banner p{
+  margin:4px 0 0;
+  max-width:560px;
+  color:rgba(37,50,41,.65);
+  font-size:.64rem;
+  line-height:1.45;
+}
 .val-studio-test-banner span,
 .val-studio-live span{color:rgba(37,50,41,.58);font-size:.62rem}
+.val-studio-test-summary,
+.val-studio-quiet-receipt,
+.val-studio-chief-receipt{
+  padding:12px 14px;
+  border-left:2px solid rgba(116,137,112,.55);
+  background:rgba(255,255,255,.4);
+}
+.val-studio-test-summary span,
+.val-studio-chief-receipt span{
+  display:block;
+  color:#907178;
+  font:620 .52rem/1.2 var(--mono);
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.val-studio-test-summary strong,
+.val-studio-quiet-receipt strong,
+.val-studio-chief-receipt strong{
+  display:block;
+  margin-top:5px;
+  color:#2c3b30;
+  font-size:.7rem;
+  line-height:1.45;
+}
+.val-studio-test-summary p,
+.val-studio-quiet-receipt p,
+.val-studio-chief-receipt p{
+  margin:5px 0 0;
+  color:rgba(44,59,48,.64);
+  font-size:.63rem;
+  line-height:1.45;
+}
+.val-studio-quiet-receipt{border-left-color:rgba(144,113,120,.4)}
 .val-studio-receipt-list,
 .val-studio-output-proof{
   display:grid;
@@ -1357,6 +1397,13 @@ button,a{font:inherit}
   color:rgba(44,59,48,.62);
   font-size:.62rem;
   line-height:1.4;
+}
+.val-studio-output-proof small{
+  display:block;
+  margin-top:7px;
+  color:rgba(44,59,48,.48);
+  font-size:.56rem;
+  line-height:1.35;
 }
 @media(max-width:900px){
   .desk-workspace:has(.val-studio-surface){width:94vw}

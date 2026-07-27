@@ -28613,20 +28613,37 @@ function valStudioStagePanel(){
 function valStudioTestResult(run={}){
   const receipts=safeArray(run.receiptsJson||run.receipts_json);
   const observers=receipts.filter(receipt=>receipt.type==='observer_receipt_v1');
+  const observed=observers.filter(receipt=>receipt.status==='observed');
+  const quiet=observers.filter(receipt=>receipt.status!=='observed');
+  const roundTable=receipts.find(receipt=>receipt.type==='round_table_receipt_v1')||{};
+  const chief=receipts.find(receipt=>receipt.type==='chief_advisory_receipt_v1')||{};
   const outputs=run.outputsJson||run.outputs_json||{};
+  const input=run.inputJson||run.input_json||{};
+  const recipients=String(outputs.email?.to||'').split(',').map(value=>value.trim()).filter(Boolean);
+  const meetingTitle=input.title||outputs.email?.subject||'the selected meeting';
+  const observerWord=observed.length===1?'Observer':'Observers';
+  const quietNames=quiet.map(receipt=>receipt.observerName).filter(Boolean);
   return [
     '<div class="val-studio-test-result">',
-      '<div class="val-studio-test-banner"><strong>Historical test complete</strong><span>No External Actions Occurred</span></div>',
-      '<div class="val-studio-receipt-list">',
-        observers.map(receipt=>(
-          '<article><span>' + escapeHtml(receipt.observerName||'Observer') + '</span>' +
-          '<strong>' + escapeHtml(receipt.status==='observed'?'Observed':'No meaningful signal') + '</strong>' +
-          '<p>' + escapeHtml(receipt.observation||'') + '</p></article>'
-        )).join(''),
-      '</div>',
+      '<div class="val-studio-test-banner"><div><strong>This Environment understood the assignment.</strong><p>Using ' + escapeHtml(meetingTitle) + ', VAL proved the complete follow-through without sending or changing anything.</p></div><span>Safe historical test</span></div>',
+      '<section class="val-studio-test-summary">',
+        '<span>What VAL will do</span>',
+        '<strong>Send the exact Krisp Action Items and Key Points to ' + escapeHtml(String(recipients.length)) + ' attendee' + (recipients.length===1?'':'s') + ', then preserve the same overview in the connected Google Doc.</strong>',
+        '<p>Email must succeed before the document is updated. A document retry will never resend the email.</p>',
+      '</section>',
+      observed.length?'<div class="val-studio-receipt-list val-studio-observed-list">' +
+        observed.map(receipt=>{
+          const evidence=safeArray(receipt.evidence)[0];
+          return '<article><span>' + escapeHtml(receipt.observerName||'Observer') + ' noticed</span>' +
+            '<strong>' + escapeHtml(receipt.observation||'Source-backed signal found.') + '</strong>' +
+            (evidence?.quote_or_summary?'<p>From the meeting: “' + escapeHtml(evidence.quote_or_summary) + '”</p>':'') + '</article>';
+        }).join('') +
+      '</div>':'',
+      quiet.length?'<div class="val-studio-quiet-receipt"><strong>' + escapeHtml(quietNames.join(' and ')||String(quiet.length)+' selected Observers') + ' stayed quiet.</strong><p>They reviewed the meeting and found nothing strong enough to claim through their lenses. VAL will not invent meaning where the evidence does not support it.</p></div>':'',
+      '<div class="val-studio-chief-receipt"><span>Chief of Staff</span><strong>' + escapeHtml(observed.length?observed.length+' '+observerWord+' found something worth carrying forward.':'The source is complete and no Observer interpretation needs to be added.') + '</strong><p>' + escapeHtml(chief.recommendation||roundTable.conclusion||'The Environment is ready for your decision.') + '</p></div>',
       '<div class="val-studio-output-proof">',
-        '<article><span>Email recipients</span><strong>' + escapeHtml(outputs.email?.to||'No recipients') + '</strong><p>' + escapeHtml(outputs.email?.subject||'') + '</p></article>',
-        '<article><span>Google Doc</span><strong>' + escapeHtml(outputs.googleDoc?.documentId||'No document') + '</strong><p>Append only after email succeeds.</p></article>',
+        '<article><span>Email delivery</span><strong>' + escapeHtml(recipients.length?recipients.length+' confirmed attendee'+(recipients.length===1?'':'s'):'Recipients need attention') + '</strong><p>' + escapeHtml(recipients.join(', ')||'No recipients were found.') + '</p><small>' + escapeHtml(outputs.email?.subject||'') + '</small></article>',
+        '<article><span>Shared record</span><strong>' + escapeHtml(outputs.googleDoc?.documentId?'Google Doc destination confirmed':'Google Doc needs attention') + '</strong><p>' + escapeHtml(outputs.googleDoc?.documentId?'The same meeting overview will be appended only after the email succeeds.':'Connect the destination document before activation.') + '</p></article>',
       '</div>',
     '</div>'
   ].join('');

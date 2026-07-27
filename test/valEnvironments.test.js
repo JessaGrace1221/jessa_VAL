@@ -14,6 +14,7 @@ const {VAL_ENVIRONMENTS_SQL}=require('../services/valEnvironmentsSchema');
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valEnvironmentsRoutes.js'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 
 function validSpec(){
   return normalizeEnvironmentSpec({
@@ -116,6 +117,15 @@ test('historical testing proves exact outputs and never performs an external act
   assert.equal(result.no_external_action,true);
   assert.equal(result.run.status,'completed');
   assert.deepEqual(previewed.sort(),['commitment','delight','relationship','synchronicity']);
+});
+
+test('historical test proof reads like executive support instead of backend receipts',()=>{
+  assert.match(hearth,/This Environment understood the assignment\./);
+  assert.match(hearth,/What VAL will do/);
+  assert.match(hearth,/VAL will not invent meaning where the evidence does not support it\./);
+  assert.match(hearth,/Google Doc destination confirmed/);
+  assert.match(hearth,/A document retry will never resend the email\./);
+  assert.doesNotMatch(hearth,/escapeHtml\(outputs\.googleDoc\?\.documentId\|\|'No document'\)/);
 });
 
 test('activation is blocked until the exact draft version has a successful test',async()=>{
