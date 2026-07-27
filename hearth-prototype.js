@@ -20744,7 +20744,7 @@ async function runCowork(mode, messageOverride = ''){
     clearProgressTimers();
     if(keepHomeCoworkOpen){
       const recoveryMessage = valCoworkVoiceState.active
-        ? (error.message || 'I heard you, but that turn did not complete. Ask me one smaller thing and I’ll stay with you.')
+        ? (error.message || 'I heard you, but the connection dropped before I could answer. Your message is still here; try that once more.')
         : 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.';
       appendHomeCoworkMessage('val', recoveryMessage, {silentVoice:!valCoworkVoiceState.active});
       return;

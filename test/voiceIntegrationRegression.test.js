@@ -122,6 +122,9 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(server,/Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context/);
   assert.match(server,/calendar, appointments, schedule, or meetings/);
   assert.match(server,/maxTokens:voiceMode\?260:520/);
+  assert.match(server,/VAL’s reasoning connection needs attention right now/);
+  assert.match(server,/You do not need to shorten or repeat it/);
+  assert.doesNotMatch(server,/did not get a clean fast response/);
   assert.match(server,/saveDeferred:true/);
   assert.match(server,/fastHearthChat:true/);
   assert.match(hearth,/timeoutMs: actionPrepLane \? 14000 : \(voiceFastLane \? 22000 : 28000\)/);

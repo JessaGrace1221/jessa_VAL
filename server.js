@@ -8138,6 +8138,7 @@ app.get('/api/health',(req,res)=>{
   const payload=statusPayload();
   res.status(payload.readiness.ok?200:503).json(payload);
 });
+app.get('/favicon.ico',(req,res)=>res.status(204).end());
 app.get('/health',(req,res)=>{
   const payload=statusPayload();
   res.status(payload.readiness.ok?200:503).json(payload);
@@ -37332,9 +37333,14 @@ async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=fals
     const calendarFallback=hearthFastCalendarFallback(lastUser,dashboard);
     if(calendarFallback) return calendarFallback;
     console.warn('Fast Hearth chat fallback:',error.message);
+    const capacityUnavailable=valReasoningCapacityError(error);
     return voiceMode
-      ? 'I am here. I did not get a clean fast response, so ask me one smaller thing and I will stay with you.'
-      : 'I am here. I did not get a clean fast response on that pass, so give me one smaller thread and I will stay with it.';
+      ? capacityUnavailable
+        ? 'I heard you, but my reasoning connection needs attention right now. Your message is still here. You do not need to repeat it.'
+        : 'I heard you, but the connection dropped before I could answer. Stay with me and try that once more.'
+      : capacityUnavailable
+        ? 'I heard you, but VAL’s reasoning connection needs attention right now. Your message is still here. You do not need to shorten or repeat it.'
+        : 'I heard you, but the connection dropped before I could answer. Your message is still here; try Send once more.';
   }
 }
 function sendFastHearthChatNow(res,{content,messages,conversationId,conversationTitle,channel,projectContext,extra={}}){
