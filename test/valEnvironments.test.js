@@ -48,7 +48,7 @@ test('Environment transcript intake includes canonical resolved participants as 
 
 test('scheduled Observer model lane omits unsupported temperature before requesting',()=>{
   assert.match(server,/async function callOpenAIResponses\(\{[^}]*omitTemperature=false/);
-  assert.match(server,/if\(!omitTemperature\)body\.temperature=temperature/);
+  assert.match(server,/if\(!omitTemperature&&!reasoningEffort\)body\.temperature=temperature/);
   assert.match(server,/omitTemperature:true,[\s\S]{0,180}model:OPENAI_OBSERVER_MODEL/);
   assert.match(server,/const apiKey=String\(await resolveOpenAIKey\(\)\|\|''\)\.trim\(\)/);
 });

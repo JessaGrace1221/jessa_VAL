@@ -143,7 +143,7 @@ function createEvidenceQualifiedObserverReasoner({callModel,observerLenses={},ab
         '',
         'Return strict JSON: {"reviews":[{"packetId":"...","status":"observed|no_meaningful_signal","observation":"one concrete sentence","evidence_quote":"exact supplied quote or empty","watching":"one distinct sentence or empty","watching_evidence_quote":"exact supplied quote or empty","concern":"one distinct sentence or empty","concern_evidence_quote":"exact supplied quote or empty","question":"one concise question or empty","useful_context":[{"fact":"short grounded fact","evidence_quote":"exact supplied quote"}],"confidence":0.0}]}'
       ].join('\n'),
-      maxTokens:Math.min(1000,360+(packets.length*110)),
+      maxTokens:Math.min(3200,600+(packets.length*180)),
       temperature:0.1,
       json:true
     }),{reviews:[]});

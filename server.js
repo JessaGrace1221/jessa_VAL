@@ -28185,6 +28185,13 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
+function valAiReasoningEffort(model='',lane='interactive'){
+  const normalized=String(model||'').toLowerCase();
+  if(/^gpt-5-(nano|mini)(?:$|-)/.test(normalized))return 'minimal';
+  if(/^gpt-5\.6(?:$|-)/.test(normalized))return 'low';
+  return '';
+}
+
 async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,omitTemperature=false,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true,lane='interactive'}){
   let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
   const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
@@ -28203,7 +28210,9 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     input:preparedMessages,
     max_output_tokens:maxTokens
   };
-  if(!omitTemperature)body.temperature=temperature;
+  const reasoningEffort=valAiReasoningEffort(openAiModel,lane);
+  if(reasoningEffort)body.reasoning={effort:reasoningEffort};
+  if(!omitTemperature&&!reasoningEffort)body.temperature=temperature;
   if(jsonSchema) body.text = {format:jsonSchema};
   else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
@@ -28227,9 +28236,42 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     d.val_ai_reservation=reservation;
     return d;
   };
+  const accountResponse=async payload=>{
+    if(payload.val_ai_usage_receipt)return payload.val_ai_usage_receipt;
+    const usage=payload.usage||{};
+    const usageReceipt=await recordValAiUsage({usage,reservation:payload.val_ai_reservation||{},model:openAiModel});
+    payload.val_ai_usage_receipt=usageReceipt;
+    console.log('[val-ai-usage]',JSON.stringify({
+      provider:'openai',
+      model:openAiModel,
+      lane:usageReceipt.lane,
+      responseStatus:payload.status||'completed',
+      incompleteReason:payload.incomplete_details?.reason||'',
+      inputTokens:usageReceipt.inputTokens,
+      cachedInputTokens:usageReceipt.cachedInputTokens,
+      outputTokens:usageReceipt.outputTokens,
+      totalTokens:Number(usage.total_tokens)||0,
+      reservedCostUsd:Number(payload.val_ai_reservation?.reservedCostMicros||0)/1_000_000,
+      spentCostUsd:usageReceipt.spentCostMicros/1_000_000,
+      dailyCallNumber:Number(payload.val_ai_reservation?.dailyCallNumber)||0,
+      laneCallNumber:Number(payload.val_ai_reservation?.laneCallNumber)||0,
+      emergencyDailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
+      globalHardBudgetUsd:VAL_AI_DAILY_HARD_USD,
+      laneSoftBudgetUsd:payload.val_ai_reservation?.budget?.softUsd||0,
+      laneHardBudgetUsd:payload.val_ai_reservation?.budget?.hardUsd||0,
+      tenantId:tenantId(),
+      userId:currentUserId(),
+      at:new Date().toISOString()
+    }));
+    return usageReceipt;
+  };
   let d=await request();
   if(allowCompatibilityRetries&&d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
+    d=await request();
+  }
+  if(allowCompatibilityRetries&&d.error && /reasoning|effort/i.test(d.error.message||'')){
+    delete body.reasoning;
     d=await request();
   }
   if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
@@ -28253,6 +28295,10 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
       delete body.temperature;
       d=await request();
     }
+    if(allowCompatibilityRetries&&d.error && /reasoning|effort/i.test(d.error.message||'')){
+      delete body.reasoning;
+      d=await request();
+    }
     if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
       body.text={format:{type:'json_object'}};
       d=await request();
@@ -28261,30 +28307,40 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   if(d.error) throw new Error(d.error.message);
   if(d.status==='incomplete'){
     const reason=d.incomplete_details?.reason||'unknown reason';
-    throw new Error('OpenAI response incomplete: '+reason+'.');
+    await accountResponse(d);
+    if(reason==='max_output_tokens'){
+      const retryMaxTokens=Math.min(12000,Math.max((Number(maxTokens)||1200)*2,(Number(maxTokens)||1200)+800));
+      if(retryMaxTokens<=Number(body.max_output_tokens||0)){
+        throw new Error('VAL could not finish the response within its protected output limit: '+reason+'.');
+      }
+      body.max_output_tokens=retryMaxTokens;
+      body.instructions=[
+        body.instructions,
+        json||jsonSchema
+          ? 'The prior attempt reached its output ceiling. Return the complete strict JSON result now. Keep every field concise. Do not add prose outside the JSON.'
+          : 'The prior attempt reached its output ceiling. Answer the original request again as one complete, concise response. Preserve required facts and actions; remove repetition and optional background first.'
+      ].filter(Boolean).join('\n\n');
+      let retry=await request();
+      if(allowCompatibilityRetries&&retry.error&&/temperature/i.test(retry.error.message||'')){
+        delete body.temperature;
+        retry=await request();
+      }
+      if(allowCompatibilityRetries&&retry.error&&/reasoning|effort/i.test(retry.error.message||'')){
+        delete body.reasoning;
+        retry=await request();
+      }
+      if(retry.error)throw new Error(retry.error.message);
+      await accountResponse(retry);
+      if(retry.status==='incomplete'){
+        const retryReason=retry.incomplete_details?.reason||reason;
+        throw new Error('VAL could not finish the response within its protected output limit: '+retryReason+'.');
+      }
+      d=retry;
+    }else{
+      throw new Error('OpenAI response incomplete: '+reason+'.');
+    }
   }
-  const usage=d.usage||{};
-  const usageReceipt=await recordValAiUsage({usage,reservation:d.val_ai_reservation||{},model:openAiModel});
-  console.log('[val-ai-usage]',JSON.stringify({
-    provider:'openai',
-    model:openAiModel,
-    lane:usageReceipt.lane,
-    inputTokens:usageReceipt.inputTokens,
-    cachedInputTokens:usageReceipt.cachedInputTokens,
-    outputTokens:usageReceipt.outputTokens,
-    totalTokens:Number(usage.total_tokens)||0,
-    reservedCostUsd:Number(d.val_ai_reservation?.reservedCostMicros||0)/1_000_000,
-    spentCostUsd:usageReceipt.spentCostMicros/1_000_000,
-    dailyCallNumber:Number(d.val_ai_reservation?.dailyCallNumber)||0,
-    laneCallNumber:Number(d.val_ai_reservation?.laneCallNumber)||0,
-    emergencyDailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
-    globalHardBudgetUsd:VAL_AI_DAILY_HARD_USD,
-    laneSoftBudgetUsd:d.val_ai_reservation?.budget?.softUsd||0,
-    laneHardBudgetUsd:d.val_ai_reservation?.budget?.hardUsd||0,
-    tenantId:tenantId(),
-    userId:currentUserId(),
-    at:new Date().toISOString()
-  }));
+  await accountResponse(d);
   return responseText(d);
 }
 

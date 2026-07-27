@@ -33,6 +33,14 @@ it reaches OpenAI when that reservation would cross either its lane budget or
 the global budget. After a successful response, VAL replaces the reservation
 with the actual token cost.
 
+If a valid response reaches `max_output_tokens`, VAL records that paid attempt
+and makes at most one compact retry with a larger bounded allowance. The retry
+is reserved against the same lane and global hard budgets. VAL does not loop or
+treat an incomplete paid request as free.
+
+Reasoning-enabled GPT-5 requests omit unsupported temperature controls on their
+first attempt instead of paying the latency cost of a predictable rejected call.
+
 Explicit pricing can be overridden only by changing code after reviewing current
 OpenAI pricing. Unknown model names are costed at the expensive Sol rate so an
 unrecognized model cannot bypass the budget.

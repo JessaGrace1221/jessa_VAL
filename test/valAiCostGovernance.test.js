@@ -46,3 +46,13 @@ test('the scheduled Board uses Nano while the Chief uses Luna in the Board lane'
   assert.match(server,/callModel:args=>callValModel\(\{\.\.\.args,lane:'board'\}\)/);
   assert.match(server,/VAL_AI_BOARD_DAILY_CALL_LIMIT[^;]*45/);
 });
+
+test('bounded responses retry once without escaping cost accounting',()=>{
+  assert.match(server,/function valAiReasoningEffort/);
+  assert.match(server,/if\(!omitTemperature&&!reasoningEffort\)body\.temperature=temperature/);
+  assert.match(server,/if\(reason==='max_output_tokens'\)/);
+  assert.match(server,/const retryMaxTokens=Math\.min\(12000/);
+  assert.match(server,/await accountResponse\(d\)/);
+  assert.match(server,/await accountResponse\(retry\)/);
+  assert.match(server,/VAL could not finish the response within its protected output limit/);
+});
