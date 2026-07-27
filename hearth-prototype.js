@@ -643,7 +643,7 @@ const hearthClickContractRegistry = [
   {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
   {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
-  {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
+  {selector:'.teach-pen', contract:'home.val_studio', packet:'val_os_packet', rule:'VAL Studio governance and reviewed learning prompts', actions:'Shape VAL, review learning, and manage connected context', never:'Do not save durable memory or activate workflows without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
   {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Chief of Staff Alignment action rule', actions:'Co-work with VAL on the current action only', never:'Do not draft, send, create tasks, or expose Leverage prepared work from Alignment'},
@@ -1084,16 +1084,16 @@ const coworkSession = {
 };
 
 const teachValSession = {
-  lens: 'Teach VAL',
-  title: 'Help VAL understand your judgment.',
-  meaning: 'This is where you tune what VAL notices, protects, prepares, and leaves quiet.',
+  lens: 'VAL Studio',
+  title: 'Shape how VAL understands and works with you.',
+  meaning: 'This is where you shape what VAL notices, connect the context it can use, and review what it learns.',
   understanding: [
     "This wasn't useful.",
     'Show me more like this.',
     'I would have handled this differently.',
     'You understood correctly.'
   ],
-  recommendation: 'Choose the sentence closest to what you mean. VAL should learn your judgment, not just your preferences.',
+  recommendation: 'Teach VAL a correction now. Observer systems and connected workflows will be composed here as VAL Studio grows.',
   actions: ["This wasn't useful", 'Show me more like this', 'I would have handled this differently', 'You understood correctly']
 };
 
@@ -28223,12 +28223,12 @@ function openTeachValSession(){
       {label: 'Build review updates', workflow: 'teach:review'},
       {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
-    label: 'Teach VAL workspace'
+    label: 'VAL Studio'
   });
   renderWorkspaceInput({
-    label: 'Teach VAL',
+    label: 'Teach VAL a correction',
     placeholder: "Example: This wasn't useful because... / Show me more like this... / I would have handled this differently...",
-    helper: 'Teach VAL creates reviewable learning candidates. Sensitive or durable memory should be confirmed before it becomes part of VAL.',
+    helper: 'Teaching is one part of VAL Studio. Every durable learning candidate still requires review before it becomes part of VAL.',
     mode: 'teach'
   });
   hearth.dataset.distance = 'judgment';
