@@ -696,6 +696,8 @@ function observeHearthClickContracts(){
 }
 
 let linkedinVisibilityItems = [];
+let linkedinWatchedProfiles = [];
+let linkedinVisibilityReceipt = {};
 let linkedinVisibilityLoaded = false;
 let linkedinVisibilityRequest = null;
 let linkedinVisibilityRefreshAttempted = false;
@@ -18693,18 +18695,20 @@ function updateLinkedInWidget(){
   if(linkedinReadyCount) linkedinReadyCount.textContent = linkedinVisibilityLoaded ? String(linkedinVisibilityItems.length) : '—';
 }
 
-async function hydrateLinkedInVisibility({force = false} = {}){
+async function hydrateLinkedInVisibility({force = false, refresh = false} = {}){
   if(!canUseApi){
     linkedinVisibilityItems = [];
+    linkedinWatchedProfiles = [];
+    linkedinVisibilityReceipt = {};
     linkedinVisibilityLoaded = true;
     updateLinkedInWidget();
     return linkedinVisibilityItems;
   }
   if(linkedinVisibilityRequest && !force) return linkedinVisibilityRequest;
   linkedinVisibilityRequest = (async()=>{
-    if(force){
+    if(refresh){
       linkedinVisibilityRefreshAttempted = true;
-      await postJson('/api/val/linkedin/visibility/refresh', {limit:8}, {
+      await postJson('/api/val/linkedin/visibility/refresh', {limit:40}, {
         timeoutMs:60000,
         timeoutMessage:'VAL is still checking the support circle for current LinkedIn posts.'
       });
@@ -18716,11 +18720,15 @@ async function hydrateLinkedInVisibility({force = false} = {}){
     });
   })().then((data) => {
     linkedinVisibilityItems = Array.isArray(data?.items) ? data.items : [];
+    linkedinWatchedProfiles = Array.isArray(data?.watchedProfiles) ? data.watchedProfiles : [];
+    linkedinVisibilityReceipt = data?.refreshReceipt || {};
     linkedinVisibilityLoaded = true;
     updateLinkedInWidget();
     return linkedinVisibilityItems;
   }).catch((error) => {
     linkedinVisibilityItems = [];
+    linkedinWatchedProfiles = [];
+    linkedinVisibilityReceipt = {error:error.message};
     linkedinVisibilityLoaded = true;
     updateLinkedInWidget();
     console.warn('[hearth] LinkedIn visibility context unavailable', error.message);
@@ -18733,7 +18741,7 @@ async function hydrateLinkedInVisibility({force = false} = {}){
 
 function setLinkedInVisibilityPage(page = 'posts'){
   if(!scraperPreviewList) return;
-  const activePage = page === 'instructions' ? 'instructions' : 'posts';
+  const activePage = ['profiles','instructions'].includes(page) ? page : 'posts';
   scraperPreviewList.querySelectorAll('[data-linkedin-page]').forEach((button) => {
     const isActive = button.dataset.linkedinPage === activePage;
     button.classList.toggle('active', isActive);
@@ -18744,20 +18752,38 @@ function setLinkedInVisibilityPage(page = 'posts'){
   });
 }
 
-function renderLinkedInEngagementList(){
+function linkedinRefreshReceiptCopy(){
+  if(linkedinVisibilityReceipt.error) return linkedinVisibilityReceipt.error;
+  const checked = Number(linkedinVisibilityReceipt.checked || 0);
+  const posts = Number(linkedinVisibilityReceipt.posts || 0);
+  if(!linkedinWatchedProfiles.length) return 'Add the LinkedIn profiles VAL should watch. Nothing is checked until you ask.';
+  if(!checked) return linkedinWatchedProfiles.length + ' profile' + (linkedinWatchedProfiles.length === 1 ? ' is' : 's are') + ' ready. Refresh when you want VAL to check for current posts.';
+  if(!posts) return 'Checked ' + checked + ' profile' + (checked === 1 ? '' : 's') + '. LinkedIn returned no current posts, so VAL did not invent drafts.';
+  return 'Checked ' + checked + ' profile' + (checked === 1 ? '' : 's') + ' and found ' + posts + ' current post' + (posts === 1 ? '' : 's') + '.';
+}
+
+function linkedinWatchedProfileStatus(profile = {}){
+  if(profile.lastRefreshStatus === 'error') return profile.lastRefreshMessage || 'The last check needs attention.';
+  if(profile.lastRefreshStatus === 'posts_found') return profile.lastRefreshMessage || 'Current posts found.';
+  if(profile.lastRefreshStatus === 'no_recent_posts') return 'Checked. No current posts were returned.';
+  return 'Ready to check.';
+}
+
+function renderLinkedInEngagementList(activePage = 'posts'){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.add('linkedin-preview-list');
   scraperPreviewList.innerHTML = [
     '<div class="linkedin-engagement-shell" aria-label="LinkedIn visibility workspace">',
       '<div class="linkedin-engagement-nav" role="tablist" aria-label="LinkedIn visibility sections">',
-        '<button type="button" class="active" role="tab" aria-selected="true" data-linkedin-page="posts">Posts</button>',
+        '<button type="button" role="tab" aria-selected="false" data-linkedin-page="posts">Drafts</button>',
+        '<button type="button" role="tab" aria-selected="false" data-linkedin-page="profiles">Profiles</button>',
         '<button type="button" role="tab" aria-selected="false" data-linkedin-page="instructions">Instructions</button>',
       '</div>',
       '<section class="linkedin-page linkedin-posts-page" data-linkedin-panel="posts" aria-label="Prepared LinkedIn posts">',
         '<div class="linkedin-engagement-summary">',
           '<span>Visibility Desk</span>',
           '<strong>' + linkedinVisibilityItems.length + ' prepared drafts</strong>',
-          '<p>VAL prepared support, not publishing. Copy only what still feels true.</p>',
+          '<p>' + escapeHtml(linkedinRefreshReceiptCopy()) + '</p>',
           '<button type="button" data-linkedin-refresh>Refresh posts</button>',
         '</div>',
         '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
@@ -18776,8 +18802,30 @@ function renderLinkedInEngagementList(){
               (item.postUrl ? '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' : '') +
             '</div>' +
           '</article>'
-        )).join('') : '<article class="linkedin-engagement-empty"><strong>No live LinkedIn receipts are attached yet.</strong><p>VAL will show a post or prepared comment only when it comes from a connected relationship source. No demo posts are being substituted.</p></article>',
+        )).join('') : '<article class="linkedin-engagement-empty"><strong>No reviewable drafts yet.</strong><p>' + escapeHtml(linkedinRefreshReceiptCopy()) + ' No demo posts are being substituted.</p><button type="button" data-linkedin-page="profiles">Review profiles VAL watches</button></article>',
         '</div>',
+      '</section>',
+      '<section class="linkedin-page linkedin-profiles-page" data-linkedin-panel="profiles" aria-label="Profiles VAL watches" hidden>',
+        '<article class="linkedin-watch-lead">',
+          '<span>Teach LinkedIn</span>',
+          '<strong>Choose whose work VAL should watch.</strong>',
+          '<p>Add a profile once. VAL keeps the URL here and checks it only when you choose Refresh posts.</p>',
+        '</article>',
+        '<form class="linkedin-watch-form" data-linkedin-watch-form>',
+          '<label><span>Name</span><input type="text" name="name" autocomplete="off" placeholder="Person or organization"></label>',
+          '<label><span>LinkedIn URL</span><input type="url" name="linkedinUrl" autocomplete="url" placeholder="https://www.linkedin.com/in/name" required></label>',
+          '<button type="submit">Add profile</button>',
+        '</form>',
+        '<p class="linkedin-watch-status" data-linkedin-watch-status>' + escapeHtml(linkedinRefreshReceiptCopy()) + '</p>',
+        '<div class="linkedin-watch-list" aria-label="Watched LinkedIn profiles">',
+          linkedinWatchedProfiles.length ? linkedinWatchedProfiles.map((profile) => (
+            '<article class="linkedin-watch-item">' +
+              '<div><span>Watching</span><strong>' + escapeHtml(profile.name || 'LinkedIn profile') + '</strong><a href="' + escapeHtml(profile.linkedinUrl) + '" target="_blank" rel="noopener">' + escapeHtml(profile.linkedinUrl) + '</a><small>' + escapeHtml(linkedinWatchedProfileStatus(profile)) + '</small></div>' +
+              '<button type="button" data-linkedin-stop-watch="' + escapeHtml(profile.id) + '">Stop watching</button>' +
+            '</article>'
+          )).join('') : '<article class="linkedin-engagement-empty"><strong>No profiles are being watched.</strong><p>Add the first LinkedIn URL above. VAL will not substitute suggested or demo profiles.</p></article>',
+        '</div>',
+        '<button type="button" class="linkedin-style-teach" data-workflow-action="valOnboarding:linkedin_strategy">Teach writing style</button>',
       '</section>',
       '<section class="linkedin-page linkedin-instructions-page" data-linkedin-panel="instructions" aria-label="LinkedIn instructions" hidden>',
         '<article class="linkedin-instruction-lead">',
@@ -18798,11 +18846,11 @@ function renderLinkedInEngagementList(){
       '</section>',
     '</div>'
   ].join('');
-  setLinkedInVisibilityPage('posts');
+  setLinkedInVisibilityPage(activePage);
 }
 
-async function openLinkedInEngagementWorkspace(){
-  const loading = !linkedinVisibilityLoaded || !linkedinVisibilityRefreshAttempted;
+async function openLinkedInEngagementWorkspace({page = 'posts'} = {}){
+  const loading = !linkedinVisibilityLoaded;
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
     title: loading ? 'Checking live LinkedIn context.' : linkedinVisibilityItems.length + ' live visibility item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' ready.',
@@ -18815,17 +18863,61 @@ async function openLinkedInEngagementWorkspace(){
     recommendation: 'Review for voice, copy only what feels true, then open LinkedIn manually.',
     actions: [
       {label: 'Co-Work with VAL', workflow: 'cowork:think'},
-      {label: 'Teach LinkedIn style', workflow: 'valOnboarding:linkedin_strategy'},
+      {label: 'Teach LinkedIn', workflow: 'linkedin:profiles'},
       {label: 'Back to Home', workflow: 'cancel:meeting'}
     ],
     label: 'LinkedIn visibility workspace'
   });
   deskWorkspace.classList.add('linkedin-visibility-mode');
-  renderLinkedInEngagementList();
+  renderLinkedInEngagementList(page);
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
   if(loading){
-    await hydrateLinkedInVisibility({force:!linkedinVisibilityRefreshAttempted});
-    return openLinkedInEngagementWorkspace();
+    await hydrateLinkedInVisibility({force:true});
+    return openLinkedInEngagementWorkspace({page});
+  }
+}
+
+async function addLinkedInWatchedProfile(form){
+  const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+  const formData = new FormData(form);
+  const payload = {
+    name:String(formData.get('name') || '').trim(),
+    linkedinUrl:String(formData.get('linkedinUrl') || '').trim()
+  };
+  if(status) status.textContent = 'Saving this profile...';
+  try{
+    const result = await postJson('/api/val/linkedin/watched-profiles', payload, {
+      timeoutMs:15000,
+      timeoutMessage:'Saving this LinkedIn profile took longer than expected.'
+    });
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList('profiles');
+    const nextStatus = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(nextStatus) nextStatus.textContent = result.message || 'Profile saved. Refresh when you want VAL to check it.';
+  }catch(error){
+    if(status) status.textContent = error.message || 'VAL could not save that LinkedIn profile.';
+  }
+}
+
+async function stopLinkedInWatchedProfile(profileId, button){
+  if(!profileId) return;
+  button.disabled = true;
+  button.textContent = 'Removing';
+  try{
+    const result = await postJson('/api/val/linkedin/watched-profiles/' + encodeURIComponent(profileId), {}, {
+      method:'DELETE',
+      timeoutMs:15000,
+      timeoutMessage:'Updating this LinkedIn profile took longer than expected.'
+    });
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList('profiles');
+    const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(status) status.textContent = result.message || 'Profile removed from the watch list.';
+  }catch(error){
+    button.disabled = false;
+    button.textContent = 'Stop watching';
+    const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(status) status.textContent = error.message || 'VAL could not update that profile.';
   }
 }
 
@@ -23826,6 +23918,10 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'contactOpen'){
     openCanonicalRelationshipFile(type);
+    return;
+  }
+  if(command === 'linkedin' && type === 'profiles'){
+    await openLinkedInEngagementWorkspace({page:'profiles'});
     return;
   }
   if(valWitnessingWorkflowCommands.has(command)){
@@ -30866,6 +30962,13 @@ workspaceInputPanel.addEventListener('change', async (event) => {
 });
 
 scraperPreviewList?.addEventListener('submit', (event) => {
+  const linkedinWatchForm = event.target.closest('[data-linkedin-watch-form]');
+  if(linkedinWatchForm){
+    event.preventDefault();
+    event.stopPropagation();
+    void addLinkedInWatchedProfile(linkedinWatchForm);
+    return;
+  }
   handleHomeCoworkFormSubmit(event);
 });
 scraperPreviewList?.addEventListener('input', handleHomeCoworkInput);
@@ -30904,8 +31007,15 @@ deskWorkspace.addEventListener('click', async (event) => {
     event.stopPropagation();
     linkedinRefresh.disabled = true;
     linkedinRefresh.textContent = 'Checking';
-    await hydrateLinkedInVisibility({force:true});
-    renderLinkedInEngagementList();
+    await hydrateLinkedInVisibility({force:true,refresh:true});
+    renderLinkedInEngagementList('posts');
+    return;
+  }
+  const linkedinStopWatch = event.target.closest('[data-linkedin-stop-watch]');
+  if(linkedinStopWatch){
+    event.preventDefault();
+    event.stopPropagation();
+    await stopLinkedInWatchedProfile(linkedinStopWatch.dataset.linkedinStopWatch, linkedinStopWatch);
     return;
   }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
@@ -30966,8 +31076,15 @@ async function handleScraperPreviewClick(event){
     event.stopPropagation();
     linkedinRefresh.disabled = true;
     linkedinRefresh.textContent = 'Checking';
-    await hydrateLinkedInVisibility({force:true});
-    renderLinkedInEngagementList();
+    await hydrateLinkedInVisibility({force:true,refresh:true});
+    renderLinkedInEngagementList('posts');
+    return;
+  }
+  const linkedinStopWatch = event.target.closest('[data-linkedin-stop-watch]');
+  if(linkedinStopWatch){
+    event.preventDefault();
+    event.stopPropagation();
+    await stopLinkedInWatchedProfile(linkedinStopWatch.dataset.linkedinStopWatch, linkedinStopWatch);
     return;
   }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
