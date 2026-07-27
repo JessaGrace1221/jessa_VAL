@@ -24791,9 +24791,11 @@ function dashboardDraftQuality(draft={}){
     bodyText:inbound.bodyText||'',
     headers
   };
-  if(executiveInboxDraft&&!recipient)problems.push('missing_recipient');
+  const recipientAddress=normalizeExecutiveEmailAddress(inbound.from?.email||ctx.draftBrief?.recipient?.email||ctx.recipient?.email||ctx.recipientEmail||ctx.to||'');
+  const outboundEmailDraft=executiveInboxDraft||draft.draftType==='meeting_recap';
+  if(outboundEmailDraft&&!recipient)problems.push('missing_recipient');
   if(executiveInboxDraft&&!sourceRefs.length&&!(sourceId&&dashboardCleanText(sourceExcerpt)))problems.push('missing_source_evidence');
-  if(executiveInboxDraft&&(relationshipEmailHasUnsubscribeSignal(sourceEmail)||relationshipEmailHasBulkSignal(sourceEmail)||emailLooksAutomatedSystemNotice(sourceEmail)||emailLooksTransactionalOrBulk(sourceEmail)))problems.push('bulk_or_subscription_mail');
+  if(executiveInboxDraft&&(relationshipEmailIsGenericMailbox(recipientAddress)||relationshipEmailHasUnsubscribeSignal(sourceEmail)||relationshipEmailHasBulkSignal(sourceEmail)||emailLooksAutomatedSystemNotice(sourceEmail)||emailLooksTransactionalOrBulk(sourceEmail)))problems.push('bulk_or_subscription_mail');
   if(/\bThank you for sending this over\b[\s\S]*\bcome back with the clean next step\b/i.test(body))problems.push('generic_placeholder_reply');
   if(draft.status==='ready_for_review'&&draft.draftType!=='meeting_recap'&&ctx.qa?.passes!==true)problems.push('missing_review_qa');
   const ready=!problems.length&&!!dashboardCleanText(subject||body);
