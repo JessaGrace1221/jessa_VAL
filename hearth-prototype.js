@@ -9909,7 +9909,7 @@ function correspondenceFallbackMessage(item = activeCorrespondenceItem){
     item.threadMessages?.[0]?.body,
     item.evidence?.[0],
     item.summary
-  ].map((value) => correspondenceCompactText(value, 3600)).find(Boolean) || '';
+  ].map((value) => correspondenceReadableEmailBody(value, '')).find(Boolean) || '';
 }
 
 function correspondenceFallbackSender(item = activeCorrespondenceItem){
@@ -9927,11 +9927,30 @@ function correspondenceReadableTextFromHtml(value = ''){
   if(!value) return '';
   const template = document.createElement('template');
   template.innerHTML = String(value || '');
+  template.content.querySelectorAll('script,style,noscript,template').forEach((node) => node.remove());
+  template.content.querySelectorAll('br').forEach((node) => node.replaceWith('\n'));
+  template.content.querySelectorAll('p,div,li,tr,blockquote,h1,h2,h3,h4').forEach((node) => node.insertAdjacentText('afterend', ' '));
   return correspondenceCompactText(template.content.textContent || '', 2400);
 }
 
+function correspondenceReadableEmailBody(body = '', bodyHtml = ''){
+  const rawBody = String(body || '').trim();
+  const bodyContainsMarkup = /<\/?[a-z][\s\S]*?>/i.test(rawBody);
+  const bodyContainsEntities = /&(?:nbsp|amp|lt|gt|quot|apos|#\d+|#x[a-f0-9]+);/i.test(rawBody);
+  if(rawBody && (bodyContainsMarkup || bodyContainsEntities)){
+    let readableBody = correspondenceReadableTextFromHtml(rawBody);
+    if(/<\/?[a-z][\s\S]*?>/i.test(readableBody)){
+      readableBody = correspondenceReadableTextFromHtml(readableBody);
+    }
+    if(readableBody) return readableBody;
+  }
+  return correspondenceCompactText(rawBody, 3600)
+    || correspondenceReadableTextFromHtml(bodyHtml)
+    || '';
+}
+
 function correspondenceCalendarInviteDetails(message = {}){
-  const text = correspondenceReadableTextFromHtml(message.bodyHtml) || correspondenceCompactText(message.body || '', 2400);
+  const text = correspondenceReadableEmailBody(message.body, message.bodyHtml);
   if(!/this event has been updated|zoom link|view all guest info|changed:\s*description|guests/i.test(text)) return null;
   const normalized = text.replace(/\s+/g, ' ').trim();
   const zoom = normalized.match(/https?:\/\/[^\s<>"']+/i)?.[0] || '';
@@ -10001,7 +10020,7 @@ function correspondenceConversationSummary(item = activeCorrespondenceItem){
   const latest = messages[0] || {};
   const sender = latest.from || correspondenceFallbackSender(item);
   const title = correspondenceCompactText(item.title || item.subject || 'this conversation', 140);
-  const latestText = correspondenceMeaningfulSentences(latest.body || correspondenceReadableTextFromHtml(latest.bodyHtml) || correspondenceFallbackMessage(item), 2);
+  const latestText = correspondenceMeaningfulSentences(correspondenceReadableEmailBody(latest.body, latest.bodyHtml) || correspondenceFallbackMessage(item), 2);
   if(/^updated invitation|^invitation:/i.test(title)){
     return latestText
       ? sender + ' sent a calendar update for "' + title + '". The visible change is: ' + latestText
@@ -10152,7 +10171,7 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
       article.appendChild(calendarInvite);
     }else{
       const p = document.createElement('p');
-      p.textContent = message.body || correspondenceReadableTextFromHtml(message.bodyHtml) || 'No readable email text is attached.';
+      p.textContent = correspondenceReadableEmailBody(message.body, message.bodyHtml) || 'No readable email text is attached.';
       article.appendChild(p);
     }
     correspondenceThreadBody.appendChild(article);

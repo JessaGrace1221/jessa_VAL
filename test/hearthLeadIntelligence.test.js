@@ -1019,7 +1019,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceFallbackMessage/);
   assert.match(hearthJs, /function sanitizeCorrespondenceEmailHtml/);
   assert.match(hearthJs, /bodyHtml: sanitizeCorrespondenceEmailHtml/);
-  assert.match(hearthJs, /message\.body \|\| correspondenceReadableTextFromHtml\(message\.bodyHtml\)/);
+  assert.match(hearthJs, /correspondenceReadableEmailBody\(message\.body, message\.bodyHtml\)/);
   assert.match(hearthJs, /No readable email body is attached yet/);
   assert.match(hearthJs, /Latest email/);
   assert.match(hearthJs, /Previous emails in this thread/);

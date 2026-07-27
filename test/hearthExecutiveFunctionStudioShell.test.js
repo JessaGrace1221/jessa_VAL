@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
+const js = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
 
 test('all eight Executive Functions keep their existing names and entry points', () => {
   [
@@ -39,4 +40,20 @@ test('dense functions preserve distinct executive layouts', () => {
   assert.match(css, /Transcripts keeps one quiet index beside one readable source brief/);
   assert.match(css, /Lead Intelligence follows Studio's three-step contract without extra framing/);
   assert.match(css, /Project Managers reads like an executive project index/);
+});
+
+test('dense functions share a generous interior spacing contract', () => {
+  assert.match(css, /Executive Function interior contract: one generous gutter at every depth/);
+  assert.match(css, /--function-inner-gutter:clamp\(24px,2\.4vw,32px\)/);
+  assert.match(css, /\.drawer-tray\.project-open \.project-rolodex\{\s*display:grid!important;\s*flex:1 1 auto!important/);
+  assert.match(css, /\.drawer-tray\.relationship-open \.relationship-v1-panel\.active\{/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index,\s*\.drawer-tray\.timeline-open \.transcript-detail-panel\{\s*padding:var\(--function-inner-gutter\)!important/);
+  assert.match(css, /\.drawer-tray\.correspondence-open \.correspondence-queue,\s*\.drawer-tray\.correspondence-open \.correspondence-thread/);
+});
+
+test('Executive Inbox converts HTML found in either email body field to readable text', () => {
+  assert.match(js, /function correspondenceReadableEmailBody\(body = '', bodyHtml = ''\)/);
+  assert.match(js, /bodyContainsMarkup/);
+  assert.match(js, /p\.textContent = correspondenceReadableEmailBody\(message\.body, message\.bodyHtml\)/);
+  assert.doesNotMatch(js, /p\.textContent = message\.body \|\| correspondenceReadableTextFromHtml/);
 });

@@ -19554,3 +19554,124 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
   color:#fff!important;
   box-shadow:0 8px 20px rgba(70,82,66,.14)!important;
 }
+
+/* Executive Function interior contract: one generous gutter at every depth. */
+.drawer-tray:is(
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open
+){
+  --function-inner-gutter:clamp(24px,2.4vw,32px);
+}
+
+.drawer-tray.project-open .project-rolodex{
+  display:grid!important;
+  flex:1 1 auto!important;
+  align-content:start!important;
+  width:auto!important;
+  min-height:clamp(320px,52vh,560px)!important;
+  max-height:none!important;
+  padding:var(--function-inner-gutter)!important;
+  border:1px solid rgba(49,68,53,.1)!important;
+  border-radius:6px!important;
+  background:rgba(255,255,255,.58)!important;
+  overflow:visible!important;
+}
+.drawer-tray.project-open .project-rolodex button[data-project-open-profile]{
+  width:100%!important;
+  min-height:64px!important;
+  padding:16px 18px!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray.project-open .project-rolodex-empty,
+.drawer-tray.project-open .project-manager-empty{
+  align-self:stretch!important;
+  width:100%!important;
+  min-height:calc(clamp(320px,52vh,560px) - (var(--function-inner-gutter) * 2))!important;
+  padding:var(--function-inner-gutter)!important;
+  border:0!important;
+  background:transparent!important;
+  box-sizing:border-box!important;
+}
+
+.drawer-tray.relationship-open .relationship-v1-panel.active{
+  padding:var(--function-inner-gutter)!important;
+  border:1px solid rgba(49,68,53,.1)!important;
+  border-radius:6px!important;
+  background:rgba(255,255,255,.54)!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray.relationship-open :is(
+  .stewardship-suggestion-card,
+  .stewardship-comparison-card,
+  .stewardship-empty,
+  .stewardship-network-detail
+){
+  padding:24px!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray.relationship-open .stewardship-network-layout{
+  gap:var(--function-inner-gutter)!important;
+}
+
+.drawer-tray.timeline-open .transcript-index,
+.drawer-tray.timeline-open .transcript-detail-panel{
+  padding:var(--function-inner-gutter)!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray.timeline-open .transcript-index{
+  padding-left:var(--function-inner-gutter)!important;
+}
+.drawer-tray.timeline-open .transcript-detail-panel{
+  padding-right:var(--function-inner-gutter)!important;
+}
+.drawer-tray.timeline-open :is(
+  .timeline-transcript-row,
+  .transcript-section,
+  .transcript-relationship-alert,
+  .transcript-full-text,
+  .timeline-transcript-detail
+){
+  padding:22px!important;
+  box-sizing:border-box!important;
+}
+
+.drawer-tray.correspondence-open .correspondence-queue,
+.drawer-tray.correspondence-open .correspondence-thread,
+.drawer-tray.correspondence-open .correspondence-brief,
+.drawer-tray.correspondence-open .correspondence-intelligence{
+  padding:var(--function-inner-gutter)!important;
+  box-sizing:border-box!important;
+}
+.drawer-tray.correspondence-open .correspondence-list{
+  padding-right:0!important;
+}
+.drawer-tray.correspondence-open .correspondence-list button{
+  padding:16px 14px!important;
+}
+.drawer-tray.correspondence-open :is(
+  .correspondence-summary-card,
+  .correspondence-email-content,
+  .correspondence-thread-message,
+  .correspondence-thread-attachments,
+  .correspondence-draft-preview,
+  .correspondence-intelligence > section
+){
+  padding:22px!important;
+  box-sizing:border-box!important;
+}
+
+@media(max-width:900px){
+  .drawer-tray:is(
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open
+  ){
+    --function-inner-gutter:20px;
+  }
+  .drawer-tray.project-open .project-rolodex{
+    min-height:300px!important;
+  }
+}
