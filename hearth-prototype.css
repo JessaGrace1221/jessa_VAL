@@ -19685,6 +19685,10 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
 .drawer-tray.timeline-open .timeline-review-cards{
   overflow-anchor:none!important;
 }
+.drawer-tray.timeline-open .transcript-detail-empty[hidden],
+.drawer-tray.timeline-open .transcript-detail-content[hidden]{
+  display:none!important;
+}
 .drawer-tray.timeline-open .transcript-detail-panel{
   padding:clamp(34px,3.2vw,46px)!important;
   scroll-behavior:auto!important;

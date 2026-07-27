@@ -64,6 +64,7 @@ test('Transcripts reset selected details to the top and keep title counts in sta
   assert.match(js, /window\.requestAnimationFrame\(resetTimelineTranscriptDetailScroll\)/);
   assert.match(css, /Transcript reading position and Network index clarity/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel,[\s\S]*overflow-anchor:none!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-empty\[hidden\],[\s\S]*display:none!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index > \.timeline-status-header\{[\s\S]*grid-template-columns:minmax\(0,1fr\)!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*padding:clamp\(34px,3\.2vw,46px\)!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*align-content:start!important/);
