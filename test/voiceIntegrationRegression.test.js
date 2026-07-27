@@ -195,6 +195,9 @@ test('Home VAL voice supports source questions and spoken approval handoff',()=>
 test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/app\.post\('\/api\/val\/ghl\/voice-turn'/);
   assert.match(server,/function ghlVoiceUserMessage/);
+  assert.match(server,/body\.parameters/);
+  assert.match(server,/body\.args/);
+  assert.match(server,/ghlVoiceUserMessage\(value\)/);
   assert.match(server,/function ghlVoiceContextText/);
   assert.match(server,/'conversationText'/);
   assert.match(server,/'callTranscript'/);

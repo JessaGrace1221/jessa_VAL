@@ -37365,6 +37365,18 @@ function sendFastHearthChatNow(res,{content,messages,conversationId,conversation
   });
 }
 function ghlVoiceUserMessage(body={}){
+  const nestedBodies=[
+    body.data,
+    body.input,
+    body.inputs,
+    body.arguments,
+    body.args,
+    body.parameters,
+    body.params
+  ].filter(value=>value&&typeof value==='object'&&!Array.isArray(value));
+  const nestedMessage=nestedBodies
+    .map(value=>ghlVoiceUserMessage(value))
+    .find(Boolean);
   return String(
     body.user_request
     || body.userRequest
@@ -37377,6 +37389,7 @@ function ghlVoiceUserMessage(body={}){
     || body.query
     || body.prompt
     || body.messages?.slice?.().reverse?.().find?.(m=>m?.role==='user')?.content
+    || nestedMessage
     || ''
   ).trim();
 }
