@@ -37,6 +37,13 @@ test('Environment schema and routes are mounted as native VAL infrastructure',()
   assert.match(routes,/\/api\/val\/environments\/:id\/activate/);
 });
 
+test('Environment transcript intake includes canonical resolved participants as recipient evidence',()=>{
+  assert.match(
+    server,
+    /calendarEvent\.attendees,\s*transcript\.attendees,\s*transcript\.participants,\s*transcript\.invitees/
+  );
+});
+
 test('Environment contract requires confirmed event, observers, sender, and document',()=>{
   assert.equal(validateEnvironmentSpec(validSpec()).ok,true);
   const invalid=normalizeEnvironmentSpec({name:'Incomplete'});

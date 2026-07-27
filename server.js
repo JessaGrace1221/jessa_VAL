@@ -26175,6 +26175,7 @@ function transcriptOverviewInvitees(transcript={},calendarEvent={}){
   const buckets=[
     calendarEvent.attendees,
     transcript.attendees,
+    transcript.participants,
     transcript.invitees,
     transcript.calendarEvent?.attendees,
     transcript.calendar_event?.attendees,
