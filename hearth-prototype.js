@@ -28985,6 +28985,7 @@ async function hydrateValStudio(){
 
 function openTeachValSession(){
   closeCalendarPanel();
+  closeDrawer();
   setWorkspaceContent({
     lens: 'VAL Studio',
     title: 'VAL Studio',
@@ -29350,7 +29351,15 @@ executiveCompassCore?.addEventListener('click', closeExecutiveCompassFromCore);
 
 document.addEventListener('click', (event) => {
   const closeButton = event.target.closest('.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail');
-  if(!closeButton || !closeButton.closest('#drawer-tray')) return;
+  const activeExecutiveFunction = Boolean(
+    retrievalSystem?.classList.contains('open') &&
+    (
+      retrievalSystem.dataset.activeDrawer ||
+      drawerTray.matches('.val-open,.relationship-open,.project-open,.timeline-open,.correspondence-open,.commitment-open,.document-open,.source-open')
+    )
+  );
+  const clickedOutsideExecutiveFunction = activeExecutiveFunction && !event.target.closest('#drawer-tray');
+  if((!closeButton || !closeButton.closest('#drawer-tray')) && !clickedOutsideExecutiveFunction) return;
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();

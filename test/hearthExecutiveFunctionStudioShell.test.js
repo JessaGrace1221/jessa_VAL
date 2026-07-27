@@ -66,6 +66,7 @@ test('Transcripts reset selected details to the top and keep title counts in sta
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel,[\s\S]*overflow-anchor:none!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index > \.timeline-status-header\{[\s\S]*grid-template-columns:minmax\(0,1fr\)!important/);
   assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*padding:clamp\(34px,3\.2vw,46px\)!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*align-content:start!important/);
 });
 
 test('Stewardship Network index contains only names and context refresh actions', () => {
@@ -79,4 +80,20 @@ test('Stewardship Network index contains only names and context refresh actions'
   assert.doesNotMatch(rowRenderer, /rolodex-(?:status|why|open|next|evidence)/);
   assert.doesNotMatch(rowRenderer, /relationship-enrichment-receipt/);
   assert.match(css, /\.drawer-tray\.relationship-open \.relationship-rolodex-row\{[\s\S]*grid-template-columns:minmax\(0,1fr\) auto!important/);
+});
+
+test('Executive Function dismissal returns to the compass and VAL Studio owns the top layer', () => {
+  const executiveFunctionDismissal = js.slice(
+    js.indexOf("const closeButton = event.target.closest('.close-val-detail"),
+    js.indexOf('function openCompassAxisWorkspace')
+  );
+  const studioOpen = js.slice(
+    js.indexOf('function openTeachValSession'),
+    js.indexOf('function openWorkspace(roomName)')
+  );
+  assert.match(executiveFunctionDismissal, /clickedOutsideExecutiveFunction = activeExecutiveFunction && !event\.target\.closest\('#drawer-tray'\)/);
+  assert.match(executiveFunctionDismissal, /event\.stopImmediatePropagation\(\)/);
+  assert.match(executiveFunctionDismissal, /returnToExecutiveCompass\(\)/);
+  assert.match(studioOpen, /closeDrawer\(\)/);
+  assert.match(css, /\.hearth-shell \.desk-workspace:has\(\.val-studio-surface\)\[aria-hidden="false"\]\{[\s\S]*z-index:5400!important/);
 });

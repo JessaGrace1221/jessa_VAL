@@ -828,6 +828,9 @@ button,a{font:inherit}
 .desk-workspace:has(.val-studio-surface){
   width:min(1180px,92vw);
 }
+.hearth-shell .desk-workspace:has(.val-studio-surface)[aria-hidden="false"]{
+  z-index:5400!important;
+}
 .desk-workspace:has(.val-studio-surface) .workspace-panel{
   width:100%;
   max-height:min(880px,90vh);
@@ -19685,6 +19688,11 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
 .drawer-tray.timeline-open .transcript-detail-panel{
   padding:clamp(34px,3.2vw,46px)!important;
   scroll-behavior:auto!important;
+  align-content:start!important;
+  justify-content:start!important;
+}
+.drawer-tray.timeline-open .transcript-detail-content{
+  align-self:start!important;
 }
 .drawer-tray.timeline-open .timeline-transcript-detail{
   padding:clamp(26px,2.5vw,34px)!important;
