@@ -38031,8 +38031,20 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const priorMessages=await conversationMessagesForContext(conversationId,10);
     const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
-      const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
-      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance',...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})});
+      const receivedFields=Object.keys(req.body||{}).sort();
+      console.warn('GHL voice turn rejected: missing userUtterance. Received fields:',receivedFields.join(', ')||'(none)');
+      const speak='GHL did not pass the caller’s spoken request to VAL. The Ask VAL action must send a required userUtterance body field.';
+      return res.status(422).json({
+        ok:false,
+        error:'missing_user_utterance',
+        speak,
+        val_response:speak,
+        reply:speak,
+        conversationId,
+        needs:'user_utterance',
+        receivedFields,
+        ...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})
+      });
     }
     const messages=[...priorMessages,{role:'user',content:lastUser}].slice(-12);
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};

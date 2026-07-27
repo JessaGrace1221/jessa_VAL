@@ -223,7 +223,10 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(ghlMeetingPrepBlock,/GHL voice custom actions time out quickly/);
   assert.match(server,/speak:content/);
   assert.match(server,/val_response:content/);
-  assert.match(server,/GHL did not pass me the user’s words yet/);
+  assert.match(server,/GHL did not pass the caller’s spoken request to VAL/);
+  assert.match(server,/res\.status\(422\)\.json/);
+  assert.match(server,/error:'missing_user_utterance'/);
+  assert.match(server,/receivedFields/);
   assert.match(server,/const priorMessages=await conversationMessagesForContext\(conversationId,10\)/);
   assert.match(server,/const actionContext=ghlVoiceActionContext\(\{lastUser,voiceContextText,priorMessagesText\}\)/);
   assert.match(server,/const actionRequest=hearthActionIntent\(lastUser\)\?lastUser:actionContext/);
