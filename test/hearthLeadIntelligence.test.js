@@ -2295,8 +2295,7 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /missing_prepared_work_or_action_status/,
     /homeAdmissionFilter\('velocity', velocityItems\)/,
     /const chiefAlignmentQueue = briefingItems\(briefing\.chiefAlignmentQueue\)/,
-    /const highest = firstBriefingItem\(chiefAlignmentQueue\) \|\| briefing\.highestLeverageMove/,
-    /const alignmentCandidates = \(chiefAlignmentQueue\.length \? chiefAlignmentQueue : \[highest\]\.concat\(briefingItems\(briefing\.alsoImportant\)\)\)/,
+    /const alignmentCandidates = chiefAlignmentQueue/,
     /homeAdmissionFilter\('alignment', alignmentCandidates\)/,
     /homeAdmissionFilter\('leverage', leverageItems\)/,
     /setHomeRoomQueue\('velocity', admittedVelocityItems\)/,
@@ -2310,6 +2309,7 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /No prepared work is waiting right now/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
+  assert.doesNotMatch(hearthJs, /chiefAlignmentQueue\.length \? chiefAlignmentQueue : \[highest\]/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {

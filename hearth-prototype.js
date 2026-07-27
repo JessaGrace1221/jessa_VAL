@@ -19841,8 +19841,7 @@ function hydrateRoomsFromBriefing(briefing){
   const admittedVelocityItems = homeAdmissionFilter('velocity', velocityItems);
   const changed = firstBriefingItem(admittedVelocityItems);
   const chiefAlignmentQueue = briefingItems(briefing.chiefAlignmentQueue);
-  const highest = firstBriefingItem(chiefAlignmentQueue) || briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
-  const alignmentCandidates = (chiefAlignmentQueue.length ? chiefAlignmentQueue : [highest].concat(briefingItems(briefing.alsoImportant)))
+  const alignmentCandidates = chiefAlignmentQueue
     .filter(Boolean)
     .filter((item, index, list) => list.findIndex((candidate) => {
       const a = sourceIdentityForItem(candidate);
