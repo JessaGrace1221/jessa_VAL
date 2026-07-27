@@ -42,6 +42,8 @@ test('Environment transcript intake includes canonical resolved participants as 
     server,
     /calendarEvent\.attendees,\s*transcript\.attendees,\s*transcript\.participants,\s*transcript\.invitees/
   );
+  assert.match(server,/eventTitle===normalizedTranscriptTitle/);
+  assert.match(server,/transcriptCalendarEventCompatible\(transcript,linked\)/);
 });
 
 test('Environment contract requires confirmed event, observers, sender, and document',()=>{

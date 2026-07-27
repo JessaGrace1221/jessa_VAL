@@ -26281,16 +26281,37 @@ function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
 }
 async function transcriptCalendarEventForOverview(transcript={}){
   const nested=[transcript.calendarEvent,transcript.calendar_event,transcript.event,transcript.metadata?.calendarEvent,transcript.metadata?.calendar_event,transcript.metadata?.meetingMatch,transcript.sourcePayloadMetadata?.calendarEvent,transcript.sourcePayloadMetadata?.calendar_event,transcript.sourcePayloadMetadata?.meetingMatch].find(event=>event&&typeof event==='object'&&Array.isArray(event.attendees));
-  if(nested)return nested;
+  if(nested&&transcriptCalendarEventCompatible(transcript,nested))return nested;
   const id=String(transcript.calendarEventId||transcript.calendar_event_id||transcript.meetingId||transcript.meeting_id||transcript.metadata?.calendarEventId||transcript.metadata?.calendar_event_id||transcript.sourcePayloadMetadata?.calendarEventId||transcript.sourcePayloadMetadata?.calendar_event_id||'').trim();
-  if(!id)return {};
-  await valDbReady;
-  if(pgPool){
-    const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
-    const row=r.rows[0];
-    return row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+  let linked={};
+  if(id){
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
+      const row=r.rows[0];
+      linked=row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+    }else{
+      linked=(valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+    }
+    if(transcriptCalendarEventCompatible(transcript,linked))return linked;
   }
-  return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+  const occurredAt=new Date(transcript.meetingDatetime||transcript.occurredAt||transcript.createdAt||Date.now());
+  if(Number.isNaN(occurredAt.getTime()))return {};
+  const start=new Date(occurredAt);start.setDate(start.getDate()-14);
+  const end=new Date(occurredAt);end.setDate(end.getDate()+2);
+  const normalizedTranscriptTitle=String(transcript.title||transcript.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  if(!normalizedTranscriptTitle)return {};
+  const loaded=await loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
+  const exactMatches=(loaded.events||[]).filter(event=>{
+    const eventTitle=String(event.title||event.summary||event.name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+    return eventTitle===normalizedTranscriptTitle&&Array.isArray(event.attendees)&&event.attendees.some(attendee=>validEmail(attendee?.email));
+  });
+  exactMatches.sort((left,right)=>{
+    const leftDistance=Math.abs(occurredAt.getTime()-new Date(left.startTime||left.start||0).getTime());
+    const rightDistance=Math.abs(occurredAt.getTime()-new Date(right.startTime||right.start||0).getTime());
+    return leftDistance-rightDistance;
+  });
+  return exactMatches[0]||{};
 }
 function transcriptCalendarEventCompatible(transcript={},event={}){
   if(!event||!Object.keys(event).length)return false;
