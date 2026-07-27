@@ -204,6 +204,22 @@ The user must be able to inspect:
 
 VAL exposes conclusions and evidence, not hidden chain-of-thought.
 
+### Board Card Projection
+
+Clicking an Observer in the Board room must visibly project the same bounded
+definition and durable receipts used by the runtime. The card shows:
+
+- `What I Protect`, from the canonical Observer registry
+- the latest honest state: observation stored, no meaningful signal, pending,
+  or waiting
+- how many completed packet reviews support the state and when the latest one
+  completed
+- the Observer definition version
+- the current observation, watching stance, evidence, concern, and question
+
+The card never turns a failed or incomplete review into `no meaningful signal`.
+It does not display hidden reasoning or infrastructure diagnostics.
+
 ## Builder Compatibility
 
 Future VAL Studio workflows use these contracts as stable building blocks.

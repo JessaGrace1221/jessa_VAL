@@ -1,22 +1,10 @@
 const {createValPromptRegistry} = require('./valPromptRegistry');
 const {fallbackChiefLanguage}=require('./valChiefOfStaffReasoning');
-
-const DEFAULT_OBSERVERS = [
-  {observerName:'Executive Inbox',promptKey:'executive_inbox'},
-  {observerName:'Relationship',promptKey:'relationship_project_understanding'},
-  {observerName:'Project',promptKey:'relationship_project_understanding'},
-  {observerName:'Capacity',promptKey:'chief_of_staff'},
-  {observerName:'Courage',promptKey:'chief_of_staff'},
-  {observerName:'Delight',promptKey:'chief_of_staff'},
-  {observerName:'Opportunity',promptKey:'crm'},
-  {observerName:'Momentum',promptKey:'momentum'},
-  {observerName:'Meaning',promptKey:'momentum'},
-  {observerName:'Synchronicity',promptKey:'chief_of_staff'},
-  {observerName:'Commitment',promptKey:'transcript_intake'},
-  {observerName:'Calendar',promptKey:'calendar_meeting_prep'},
-  {observerName:'Environment',promptKey:'event_intelligence_pass'},
-  {observerName:'Witnessing',promptKey:'chief_of_staff'}
-];
+const {
+  DEFAULT_OBSERVERS,
+  OBSERVER_PACKET_LENSES,
+  observerDefinition
+}=require('./valObserverRegistry');
 
 function safeArray(value){ return Array.isArray(value) ? value : []; }
 async function mapWithConcurrency(items=[],limit=4,worker=async value=>value){
@@ -99,92 +87,6 @@ function sourceRefsFromRows(rows=[],sourceType='unknown',summaryKey='summary',id
     createdAt:row.createdAt||row.created_at||row.updatedAt||row.updated_at||''
   }));
 }
-const OBSERVER_PACKET_LENSES = {
-  'Executive Inbox':{
-    lens:'attention and reply judgment',
-    sees:'whether this creates a reply, draft, or inbox decision',
-    concern:'communication loops could remain unowned',
-    question:'Does this need human judgment?'
-  },
-  Relationship:{
-    lens:'trust and relational warmth',
-    sees:'whether this changes trust, warmth, distance, or repair',
-    concern:'relationship context could be flattened into a task',
-    question:'What changed between people?'
-  },
-  Project:{
-    lens:'project movement and dependencies',
-    sees:'whether this changes progress, blockers, ownership, or scope',
-    concern:'work could move without a clear project anchor',
-    question:'What project does this move?'
-  },
-  Capacity:{
-    lens:'tradeoffs and decision quality',
-    sees:'whether this adds load, pressure, recovery need, or timing strain',
-    concern:'the system could protect output while degrading judgment',
-    question:'What does this cost?'
-  },
-  Courage:{
-    lens:'truth without comfort',
-    sees:'whether this reveals avoidance, directness, or a needed challenge',
-    concern:'the hard truth could be softened into politeness',
-    question:'What is being avoided?'
-  },
-  Delight:{
-    lens:'aliveness and restoration',
-    sees:'whether this protects curiosity, energy, joy, or human connection',
-    concern:'life could disappear from an otherwise effective day',
-    question:'Where is life here?'
-  },
-  Opportunity:{
-    lens:'openings and mutual value',
-    sees:'whether this creates timing, demand, introduction, or revenue signal',
-    concern:'an opening could be missed because it arrived quietly',
-    question:'What opening is present?'
-  },
-  Momentum:{
-    lens:'movement over perfection',
-    sees:'whether this creates real movement, friction, or next-step clarity',
-    concern:'activity could be mistaken for progress',
-    question:'What is moving now?'
-  },
-  Meaning:{
-    lens:'purpose and wider pattern',
-    sees:'whether this connects to values, story, purpose, or recurring themes',
-    concern:'execution could drift from what actually matters',
-    question:'Why does this matter?'
-  },
-  Synchronicity:{
-    lens:'cross-context convergence',
-    sees:'whether this echoes another signal, timing cluster, or repeated arrival',
-    concern:'a meaningful pattern could be dismissed as coincidence',
-    question:'What is repeating?'
-  },
-  Commitment:{
-    lens:'promises and follow-through',
-    sees:'whether this creates, fulfills, or threatens a promise',
-    concern:'trust could leak through small unclosed loops',
-    question:'What was promised?'
-  },
-  Calendar:{
-    lens:'time reality',
-    sees:'whether this affects schedule, prep, availability, or timing',
-    concern:'time could be treated as flexible when it is not',
-    question:'When does this matter?'
-  },
-  Environment:{
-    lens:'conditions around the work',
-    sees:'whether this depends on location, travel, body, interruption, or external condition',
-    concern:'context outside the screen could be ignored',
-    question:'What condition changes this?'
-  },
-  Witnessing:{
-    lens:'direct user-revealed truth',
-    sees:'whether this aligns with or updates what the user has revealed about herself',
-    concern:'VAL could advise from data while forgetting the person',
-    question:'What did she already tell us?'
-  }
-};
 function packetRouteForObserver(packet={},observerName=''){
   return safeArray(packet.routeObserversJson||packet.route_observers_json).find(route=>route.observerName===observerName)||null;
 }
@@ -219,6 +121,7 @@ function buildPacketReview(observerName,packet={},context={}){
     concern:'the signal could be missed',
     question:'What does this change?'
   };
+  const definition=observerDefinition(observerName);
   const payload=packet.payloadJson||packet.payload_json||packet.payload||{};
   const rawPacketObserverReview=safeArray(payload.observerReviews||payload.observer_reviews)
     .find(review=>review&&review.observerName===observerName);
@@ -261,6 +164,8 @@ function buildPacketReview(observerName,packet={},context={}){
     status:observed?'observed':'no_signal',
     evidence:reviewEvidenceRef.length ? reviewEvidenceRef : evidence,
     observerName,
+    observerId:definition?.observerId||'',
+    observerVersion:definition?.version||'',
     lens:lens.lens,
     primary,
     triggered,
@@ -837,6 +742,7 @@ function createValIntelligenceSpine({
   async function runObserver({observerName,promptKey,contextPacket,eventRunId='',output=null}={}){
     const scope=currentScope();
     const prompt=promptRegistry.getPrompt(promptKey||'event_intelligence_pass');
+    const definition=observerDefinition(observerName);
     const deterministicOutput=buildObserverOutput(observerName,contextPacket||{});
     let generated=output;
     if(!generated && typeof observerReasoner==='function'){
@@ -863,7 +769,17 @@ function createValIntelligenceSpine({
         };
       }
     }
-    generated=generated || deterministicOutput;
+    generated={
+      ...(generated || deterministicOutput),
+      observerDefinition:{
+        observerId:definition?.observerId||'',
+        observerName,
+        observerVersion:definition?.version||'',
+        promptKey:promptKey||'event_intelligence_pass',
+        promptSource:prompt.sourcePath||'',
+        outputContract:definition?.outputContract||'observer_receipt_v1'
+      }
+    };
     const reviewFailed=generated.status==='review_failed';
     const reviewError=reviewFailed
       ? String(safeArray(generated.unknowns).find(item=>item?.source==='observer_reasoner')?.reason||'Observer evidence review failed.')

@@ -740,6 +740,7 @@ const observerBoardState = {
     {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?'},
     {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?'}
   ],
+  definitionsByObserver: {},
   reviewsByObserver: {},
   livePackets: [],
   livePacketCount: 0,
@@ -1055,6 +1056,11 @@ async function loadLiveObserverBoardContext(){
     observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
   }
   if(evidence){
+    observerBoardState.definitionsByObserver = Object.fromEntries(
+      safeArray(evidence?.definitions)
+        .filter(definition => definition?.observerName)
+        .map(definition => [definition.observerName, definition])
+    );
     observerBoardState.reviewsByObserver = evidence?.reviewsByObserver && typeof evidence.reviewsByObserver === 'object'
       ? evidence.reviewsByObserver
       : {};
@@ -27170,6 +27176,70 @@ function observerReviewSummaryLine(review = {}){
   return observerCompactLine(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 240);
 }
 
+function observerAgentDefinition(observer = {}){
+  const name = String(observer?.name || observer || '').trim();
+  const liveDefinition = observerBoardState.definitionsByObserver?.[name];
+  if(liveDefinition) return liveDefinition;
+  const fallback = observerBoardState.observers.find(item => item.name === name) || observer || {};
+  return {
+    observerId:observerConversationId(name),
+    observerName:name,
+    version:'v1',
+    truthProtected:fallback.truth || 'This Observer is waiting for its bounded definition.',
+    question:fallback.stance || ''
+  };
+}
+
+function observerReviewTime(value = ''){
+  if(!value || Number.isNaN(new Date(value).getTime())) return '';
+  return new Date(value).toLocaleString([], {
+    month:'short',
+    day:'numeric',
+    hour:'numeric',
+    minute:'2-digit'
+  });
+}
+
+function observerAgentProof(observer = {}, {isChief=false,meaningfulReviews=[],completedReviews=[],checkedReviews=[]} = {}){
+  if(isChief){
+    const receiptCount = Number(observerBoardState.observerEvidenceSummary?.receiptCount || 0);
+    const observerCount = Number(observerBoardState.observerEvidenceSummary?.observerCount || 0);
+    return {
+      truthProtected:'Completed Observer evidence becomes an ordered executive brief.',
+      status:receiptCount ? 'Board evidence available' : 'Waiting for completed Observer reviews',
+      detail:receiptCount
+        ? receiptCount + ' review receipt' + (receiptCount === 1 ? '' : 's') + ' across ' + observerCount + ' Observer' + (observerCount === 1 ? '' : 's')
+        : 'No completed review receipts are being claimed.',
+      state:receiptCount ? 'observed' : 'waiting',
+      version:'Chief of Staff v1'
+    };
+  }
+  const definition = observerAgentDefinition(observer);
+  const latestCompleted = completedReviews[0] || null;
+  const latestChecked = checkedReviews[0] || null;
+  const latest = latestCompleted || latestChecked;
+  const completedAt = observerReviewTime(latest?.reviewedAt || latest?.reviewed_at || '');
+  const meaningful = Boolean(meaningfulReviews.length);
+  const completed = Boolean(completedReviews.length);
+  return {
+    truthProtected:definition.truthProtected,
+    status:meaningful
+      ? 'Observation stored'
+      : completed
+        ? 'Review complete · No meaningful signal'
+        : latestChecked
+          ? 'Review received · Completion pending'
+          : 'Waiting for a completed review',
+    detail:completed
+      ? completedReviews.length + ' completed packet review' + (completedReviews.length === 1 ? '' : 's') + (completedAt ? ' · ' + completedAt : '')
+      : latestChecked
+        ? 'A packet receipt exists, but VAL is not presenting it as a completed deduction.'
+        : 'No review result is being invented.',
+    state:meaningful ? 'observed' : completed ? 'no-signal' : latestChecked ? 'pending' : 'waiting',
+    version:'Observer ' + (latest?.observerVersion || latest?.observer_version || definition.version || 'v1')
+  };
+}
+
 function observerPresentation(observer = {}, review = {}){
   const name = String(observer.name || '').trim();
   const usefulContext = safeArray(review.usefulContext).map((item) => observerCompactLine(item, '', 190)).filter(Boolean);
@@ -27629,6 +27699,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const checkedReviews = isChief ? [] : observerLiveReviews(name, 5);
   const receivedCount = isChief ? 0 : observerLiveReviews(name, 80).length;
   const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
+  const agentProof = observerAgentProof(observer || {}, {isChief,meaningfulReviews,completedReviews,checkedReviews});
   const latestDeduction = meaningfulReviews[0] || null;
   const presentation = latestDeduction ? observerPresentation(observer, latestDeduction) : null;
   const currentlySeeing = isChief
@@ -27683,6 +27754,10 @@ function observerBoardCardMarkup(observer = null, position = {}){
         '<span>' + escapeHtml(name) + '</span>',
         '<button type="button" aria-label="Close ' + escapeHtml(name) + ' context" data-observer-card-close>×</button>',
       '</header>',
+      '<section class="observer-agent-proof" data-observer-proof-status="' + escapeHtml(agentProof.state) + '">',
+        '<div><em>What I Protect</em><p>' + escapeHtml(agentProof.truthProtected) + '</p></div>',
+        '<div class="observer-agent-receipt"><span><i></i>' + escapeHtml(agentProof.status) + '</span><small>' + escapeHtml(agentProof.detail) + ' · ' + escapeHtml(agentProof.version) + '</small></div>',
+      '</section>',
       '<button type="button" aria-label="' + escapeHtml(chatLabel) + '" data-observer-cowork="' + escapeHtml(observerId) + '" data-observer-role="' + escapeHtml(role) + '">' + escapeHtml(chatLabel) + '</button>',
       '<div><em>Currently Seeing</em><p>' + escapeHtml(currentlySeeing) + '</p></div>',
       '<div><em>What I’m Watching</em><p>' + escapeHtml(watching) + '</p></div>',

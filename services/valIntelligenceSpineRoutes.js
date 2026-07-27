@@ -1,5 +1,6 @@
 const {createValIntelligenceSpine} = require('./valIntelligenceSpine');
 const {buildObserverEvidenceLedger} = require('./valObserverEvidence');
+const {publicObserverDefinitions} = require('./valObserverRegistry');
 
 function parseLimit(value,defaultValue=30,max=200){
   return Math.max(1,Math.min(Number(value)||defaultValue,max));
@@ -48,7 +49,11 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
         limit:parseLimit(req.query.limit,200),
         observerName
       });
-      res.json({ok:true,...buildObserverEvidenceLedger(runs,{observerName})});
+      res.json({
+        ok:true,
+        definitions:publicObserverDefinitions(),
+        ...buildObserverEvidenceLedger(runs,{observerName})
+      });
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 

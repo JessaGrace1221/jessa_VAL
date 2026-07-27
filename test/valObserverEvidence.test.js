@@ -10,8 +10,15 @@ test('durable Observer runs become one inspectable evidence receipt',()=>{
   const review=normalizeObserverEvidenceReview({
     id:'observer_run_1',
     observerName:'Relationship',
+    promptKey:'relationship_project_understanding',
     status:'completed',
-    createdAt:'2026-07-25T12:00:00Z'
+    createdAt:'2026-07-25T12:00:00Z',
+    outputJson:{
+      observerDefinition:{
+        observerId:'relationship',
+        observerVersion:'v1'
+      }
+    }
   },{
     packetId:'packet_1',
     sourceType:'transcript',
@@ -38,6 +45,9 @@ test('durable Observer runs become one inspectable evidence receipt',()=>{
   assert.equal(review.canonicalWorkItemId,'work_1');
   assert.equal(review.projectName,'GOALL');
   assert.equal(review.relationshipName,'Mike');
+  assert.equal(review.observerId,'relationship');
+  assert.equal(review.observerVersion,'v1');
+  assert.equal(review.promptKey,'relationship_project_understanding');
 });
 
 test('an observed claim without exact evidence is downgraded to no signal',()=>{
