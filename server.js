@@ -13,6 +13,7 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const {createGhlMcpService} = require('./services/ghlMcpService');
 const {createKrispMcpService} = require('./services/krispMcpService');
+const {artifactRequiresContact,validEmail:validPreparedWorkEmail} = require('./services/valPreparedWorkAdmission');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
 const {DEFAULT_OBSERVERS,OBSERVER_PACKET_LENSES} = require('./services/valIntelligenceSpine');
@@ -24759,6 +24760,14 @@ function dashboardConclusionFromMove(move={},profilesById=new Map(),evidenceById
   const {email,...restTargetMeta}=targetMeta;
   return {...move,...restTargetMeta,...emailFields,title,why,summary:why,impact,target,evidenceIds,observationIds:move.sourceObservationIds||[]};
 }
+function dashboardDraftArtifactKind(draft={}){
+  if(draft.draftType==='meeting_recap')return 'meeting_overview_email_draft';
+  const source=draft.sourceContext||{};
+  const rawKind=String(draft.draftType||'reply').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return source.source==='executive_inbox_review_only'&&!(new RegExp('(?:^|_)email(?:_|$)').test(rawKind))
+    ?`email_${rawKind}_draft`
+    :(rawKind||'internal_draft');
+}
 function dashboardDraftQuality(draft={}){
   const body=String(draft.body||''),subject=String(draft.subject||'');
   const problems=[];
@@ -24792,8 +24801,9 @@ function dashboardDraftQuality(draft={}){
     headers
   };
   const recipientAddress=normalizeExecutiveEmailAddress(inbound.from?.email||ctx.draftBrief?.recipient?.email||ctx.recipient?.email||ctx.recipientEmail||ctx.to||'');
-  const outboundEmailDraft=executiveInboxDraft||draft.draftType==='meeting_recap';
-  if(outboundEmailDraft&&!recipient)problems.push('missing_recipient');
+  const preparedArtifactKind=dashboardDraftArtifactKind(draft);
+  const recipientEmails=String(recipient||'').split(/[;,]/).map(value=>value.trim()).filter(validPreparedWorkEmail);
+  if(artifactRequiresContact(preparedArtifactKind)&&!recipientEmails.length)problems.push('missing_recipient');
   if(executiveInboxDraft&&!sourceRefs.length&&!(sourceId&&dashboardCleanText(sourceExcerpt)))problems.push('missing_source_evidence');
   if(executiveInboxDraft&&(relationshipEmailIsGenericMailbox(recipientAddress)||relationshipEmailHasUnsubscribeSignal(sourceEmail)||relationshipEmailHasBulkSignal(sourceEmail)||emailLooksAutomatedSystemNotice(sourceEmail)||emailLooksTransactionalOrBulk(sourceEmail)))problems.push('bulk_or_subscription_mail');
   if(/\bThank you for sending this over\b[\s\S]*\bcome back with the clean next step\b/i.test(body))problems.push('generic_placeholder_reply');
@@ -24819,8 +24829,7 @@ function dashboardReadyDraft(draft={}){
     source.draftBrief?.recipient?.email
   ].map(value=>String(value||'').trim()).filter((value,index,list)=>value&&list.indexOf(value)===index);
   const recipientEmail=recipients[0]||'';
-  const rawKind=String(draft.draftType||'reply').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
-  const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(source.source==='executive_inbox_review_only'?(new RegExp('(?:^|_)email(?:_|$)').test(rawKind)?rawKind:`email_${rawKind}_draft`):(rawKind||'internal_draft'));
+  const artifactKind=dashboardDraftArtifactKind(draft);
   const sourceRefs=safeArray(source.draftBrief?.source_refs||source.draftBrief?.sourceRefs)
     .concat(safeArray(conversation.source_refs||conversation.sourceRefs))
     .filter(ref=>(ref.source_id||ref.sourceId)&&(ref.quote_or_summary||ref.quoteOrSummary))
