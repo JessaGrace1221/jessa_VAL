@@ -206,8 +206,8 @@ test('fresh risk check blocks expired, unsupported, ambiguous, and never-auto pa
 
 test('executor runs one supported adapter once, creates receipt, and reconciles source objects',async()=>{
   let store={valExternalActionPackets:[
-    {id:'exec_1',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'create_gmail_draft',targetSystem:'gmail',targetId:'thread_1',payloadPreviewJson:{subject:'Re: Workflow',body:'Hi Aric'},sourceRefsJson:[{source_type:'draft',source_id:'d1',quote_or_summary:'Draft',confidence:0.8}],whyThisActionExists:'Create Gmail draft for review.',whatWillHappen:'Create provider draft.',whatWillNotHappen:'Nothing will be sent.',riskLevel:'low',approvalPolicy:'approval_required',representationRisk:'medium',financialOrLegalRisk:'low',relationshipRisk:'low',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{draftId:'draft_1'},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
-  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[],drafts:[{id:'draft_1',tenantId:'tenant',userId:'user',status:'ready_for_review',subject:'Re: Workflow',sourceContext:{}}]};
+    {id:'exec_1',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'create_gmail_draft',targetSystem:'gmail',targetId:'thread_1',payloadPreviewJson:{subject:'Re: Workflow',body:'Hi Aric'},sourceRefsJson:[{source_type:'draft',source_id:'d1',quote_or_summary:'Draft',confidence:0.8}],whyThisActionExists:'Create Gmail draft for review.',whatWillHappen:'Create provider draft.',whatWillNotHappen:'Nothing will be sent.',riskLevel:'low',approvalPolicy:'approval_required',representationRisk:'medium',financialOrLegalRisk:'low',relationshipRisk:'low',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{draftId:'draft_1',readyForYouId:'ready_1'},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
+  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[],drafts:[{id:'draft_1',tenantId:'tenant',userId:'user',status:'ready_for_review',subject:'Re: Workflow',sourceContext:{}}],readyForYouItems:[{id:'ready_1',tenantId:'tenant',userId:'user',status:'ready_for_review'}]};
   const packetService=createValExternalActionsService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -244,7 +244,10 @@ test('executor runs one supported adapter once, creates receipt, and reconciles 
   assert.equal(result.reconciliation.receipt.reconciliationStatus,'reconciled');
   assert.equal(store.drafts[0].status,'executed');
   assert.equal(store.drafts[0].executionReceiptId,'receipt_exec_1');
+  assert.equal(store.readyForYouItems[0].status,'executed');
+  assert.equal(store.readyForYouItems[0].executionReceiptId,'receipt_exec_1');
   assert.equal(store.valExecutionReconciliationEvents.some(e=>e.targetTable==='drafts'),true);
+  assert.equal(store.valExecutionReconciliationEvents.some(e=>e.targetTable==='ready_for_you_items'),true);
   assert.equal(store.valExternalActionAudit.some(a=>a.action==='executed'&&a.externalActionTaken===true),true);
   const duplicate=await executor.execute('exec_1');
   assert.equal(duplicate.ok,false);

@@ -21,7 +21,7 @@ test('homepage cards expose a strict six-card intelligence contract',()=>{
   assert.match(server,/dashboardNormalizeCardCollection\('people'/);
   assert.match(server,/dashboardNormalizeCardCollection\('projects'/);
   assert.match(server,/dashboardNormalizeCardItem\('momentum'/);
-  assert.match(server,/dashboardDedupeCardItems\(dashboardNormalizeCardCollection\('ready_for_you'/);
+  assert.match(server,/dashboardNormalizeCardCollection\('ready_for_you',dashboardDedupePreparedWork\(/);
   assert.match(server,/highestLeverageMove:highest/);
   assert.match(server,/source_type/);
   assert.match(server,/source_id/);
@@ -165,8 +165,9 @@ test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.match(server,/const readyQueueItems=dashboardNormalizeCardCollection\('ready_for_you',safeArray\(readyForYouItems\)\)/);
   assert.match(server,/valReadyForYou\?\.listItems\?valReadyForYou\.listItems\(\{limit:20\}\)/);
   assert.doesNotMatch(server,/valReadyForYou\?\.buildQueue\?valReadyForYou\.buildQueue\(\{limit:20\}\)/);
-  assert.match(server,/readyForYouItems=safeArray\(readyForYouQueue\?\.preparedItems\)\.length/);
-  assert.match(server,/safeArray\(readyForYouQueue\.prepared_items\)/);
+  assert.match(server,/readyForYouItems=Array\.isArray\(readyForYouQueue\?\.preparedItems\)/);
+  assert.match(server,/readyForYouQueue\.prepared_items/);
+  assert.match(server,/outcome:'approved_and_sent'/);
   assert.match(server,/buildDashboardIntelligence\(\{moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket\}\)/);
   assert.match(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\);/);
   assert.doesNotMatch(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\)\.concat\(briefingItems\(briefing\.watching\)\);/);

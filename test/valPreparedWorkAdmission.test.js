@@ -142,3 +142,22 @@ test('stored outbound artifact without contact information is removed from Lever
   assert.equal(admission.admitted,false);
   assert.ok(admission.missingInformation.some(item=>/recipient/i.test(item)));
 });
+
+test('a verified recipient address is enough contact information for review-only prepared work',()=>{
+  const admission=artifactAdmissionFromStored({
+    id:'ready_email',
+    title:'Reply to Jen',
+    whatValPrepared:'Hi Jen, here is the source-backed update you requested.',
+    sourceRefsJson:sourceRef('Jen asked Jessa for the current project update.'),
+    metadataJson:{
+      source:'executive_inbox_review_only',
+      preparedArtifactKind:'email_reply_draft',
+      preparedArtifact:{
+        kind:'email_reply_draft',
+        body:'Hi Jen, here is the source-backed update you requested.',
+        recipients:[{name:'Jen',email:'jen@example.com'}]
+      }
+    }
+  });
+  assert.equal(admission.admitted,true);
+});

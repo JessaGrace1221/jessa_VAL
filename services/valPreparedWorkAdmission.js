@@ -76,6 +76,14 @@ function buildPreparedWorkBrief({kind='',instruction={},record={},linkage={},sou
       const name=normalizedName(person?.name||person?.displayName||person?.contactName||'');
       if(name&&projectNames.includes(name))return false;
       return !/^(sales system|pipeline|project|transcript|document|voice|user|task|calendar|email)$/i.test(name);
+    })
+    .filter((person,index,rows)=>{
+      const normalized=normalizePerson(person);
+      const key=normalized.contactId||normalized.email||normalized.phone||normalizedName(normalized.name);
+      return key&&rows.findIndex(candidate=>{
+        const other=normalizePerson(candidate);
+        return (other.contactId||other.email||other.phone||normalizedName(other.name))===key;
+      })===index;
     });
   const target=instruction.target_person_or_record||artifact.target||artifact.recipientName||artifact.recipient_email||'';
   const recipients=resolveRecipients({kind,target,people});
@@ -122,7 +130,6 @@ function validatePreparedWorkBrief(brief={},extraMissing=[]){
     if(safeArray(brief.recipients).length<requiredCount)missing.push(requiredCount===2?'Resolve both people in the introduction.':'Resolve the intended recipient.');
     if(artifactRequiresEmail(brief.workType)&&safeArray(brief.recipients).some(person=>!validEmail(person.email)))missing.push('Add a verified recipient email address.');
     if(artifactRequiresPhone(brief.workType)&&safeArray(brief.recipients).some(person=>!validPhone(person.phone)))missing.push('Add a verified recipient phone number in international format.');
-    if(safeArray(brief.recipients).some(person=>!person.contactId))missing.push('Link the recipient to a confirmed contact record.');
   }
   if(brief.requiresConsentCheck&&!brief.consentConfirmed)missing.push('Confirm permission before sharing contact details or making the introduction.');
   const unique=[...new Set(missing)];

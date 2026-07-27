@@ -91,7 +91,9 @@ test('builds a judgment-only review queue and limits visible items to three',asy
   assert.equal(draftItem.metadataJson.writingRules,'Warm but direct. Sign off with Jessa.');
   const listed=await service.listItems();
   assert.equal(listed.items.length,3);
-  assert.notEqual(listed.message,"I'm caught up.");
+  assert.equal(listed.message,"I'm caught up.");
+  assert.deepEqual(listed.preparedItems,[]);
+  assert.equal(listed.preparedCount,0);
 });
 
 test('buildQueue keeps prepared work beyond the old five item cap',async()=>{
@@ -138,6 +140,63 @@ test('buildQueue keeps prepared work beyond the old five item cap',async()=>{
   const listed=await service.listItems({limit:20});
   assert.equal(listed.items.length,8);
   assert.equal(listed.visibleLimit,20);
+});
+
+test('prepared projection is not starved by older non-prepared judgment rows',async()=>{
+  const noisyRows=Array.from({length:30},(_,index)=>({
+    id:`noise_${index}`,
+    tenantId:'tenant',
+    userId:'user',
+    category:'communication',
+    type:'email_draft_readiness',
+    itemType:'email_draft_readiness',
+    title:`Needs context ${index}`,
+    status:'needs_context',
+    summary:'A judgment record, not prepared work.',
+    confidence:0.99,
+    requiresApproval:true,
+    sourceRefsJson:[],
+    metadataJson:{source:'legacy_readiness'},
+    createdAt:`2026-07-27T12:${String(index).padStart(2,'0')}:00Z`
+  }));
+  const prepared={
+    id:'prepared_after_noise',
+    tenantId:'tenant',
+    userId:'user',
+    category:'prepared_work',
+    type:'proposal_draft',
+    itemType:'proposal_draft',
+    title:'GOALL proposal',
+    status:'ready_for_review',
+    summary:'A grounded proposal is ready.',
+    confidence:0.7,
+    requiresApproval:true,
+    sourceRefsJson:[{source_type:'transcript',source_id:'tr_goall',quote_or_summary:'Jessa and Mike agreed to the scope and timing.',confidence:0.9}],
+    metadataJson:{
+      source:'transcript_intelligence',
+      preparedArtifactKind:'proposal_draft',
+      preparedArtifact:{
+        kind:'proposal_draft',
+        body:'Proposal scope, timing, and pricing for GOALL.',
+        recipients:[{name:'Mike',email:'mike@example.com'}]
+      },
+      canValAct:'approval_required',
+      executionPath:'review_then_send'
+    },
+    createdAt:'2026-07-26T12:00:00Z'
+  };
+  let store={readyForYouItems:[...noisyRows,prepared]};
+  const ready=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=> 'tenant',
+    userId:()=> 'user'
+  });
+  const listed=await ready.listItems({limit:5});
+  assert.equal(listed.items.length,5);
+  assert.equal(listed.preparedCount,1);
+  assert.equal(listed.preparedItems[0].id,'prepared_after_noise');
 });
 
 test('approve, reject, and snooze remain local actions and notify the canonical decision return path',async()=>{

@@ -159,6 +159,40 @@ function preparedWorkCount(rows=[]){
     .filter(readyItemHasConcretePreparedWork)
     .length;
 }
+function draftRecipient(draft={}){
+  const source=draft.sourceContext||{};
+  const context=source.conversationContext||{};
+  const brief=source.draftBrief||{};
+  const recipient=brief.recipient||context.latest_inbound?.from||context.current_message?.from||{};
+  const email=String(recipient.email||source.recipientEmail||source.to||'').trim().toLowerCase();
+  return {
+    name:compactText(recipient.name||recipient.displayName||source.recipientName||'',120),
+    email,
+    contactId:String(recipient.contactId||recipient.crmContactId||draft.contactId||'').trim()
+  };
+}
+function draftSourceRefs(draft={}){
+  const source=draft.sourceContext||{};
+  const context=source.conversationContext||{};
+  const message=context.latest_inbound||context.current_message||{};
+  const refs=safeArray(source.draftBrief?.source_refs||source.draftBrief?.sourceRefs)
+    .concat(safeArray(context.source_refs||context.sourceRefs))
+    .map(normalizeSourceRef)
+    .filter(ref=>ref.source_id&&ref.quote_or_summary);
+  if(refs.length)return refs;
+  const sourceId=message.messageId||message.id||source.currentMessageId||source.messageId||source.threadId||source.conversationId||'';
+  const excerpt=message.bodyText||message.bodyPreview||message.snippet||message.subject||draft.subject||'';
+  return sourceId&&compactText(excerpt,900)
+    ? [normalizeSourceRef({sourceType:'email_message',sourceId,quoteOrSummary:excerpt,confidence:0.82,createdAt:message.receivedAt||message.date||draft.createdAt})]
+    : [];
+}
+function draftPreparedArtifactKind(draft={}){
+  const raw=String(draft.sourceContext?.writerOutput?.draft_type||draft.draftType||'reply')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'_')
+    .replace(/^_+|_+$/g,'');
+  return /(?:^|_)email(?:_|$)/.test(raw)?raw:`email_${raw||'reply'}_draft`;
+}
 function draftToCandidate(draft,uuid,scope){
   const source=draft.sourceContext||{};
   const writer=source.writerOutput||{};
@@ -169,6 +203,31 @@ function draftToCandidate(draft,uuid,scope){
   const approvalPolicy=writer.approval_policy||readiness.approval_policy||source.approvalPolicy||'approval_required';
   const title=draft.subject||writer.subject||brief.single_purpose||'Email draft ready for review';
   const body=draft.body||writer.body||'';
+  const recipient=draftRecipient(draft);
+  const refs=draftSourceRefs(draft);
+  const preparedArtifactKind=draftPreparedArtifactKind(draft);
+  const preparedArtifact={
+    kind:preparedArtifactKind,
+    draftType:writer.draft_type||draft.draftType||'reply',
+    title,
+    subject:title,
+    body,
+    recipientName:recipient.name,
+    recipientEmail:recipient.email,
+    recipientId:recipient.contactId,
+    target:recipient.email||recipient.name,
+    recipients:recipient.email?[recipient]:[],
+    provider:draft.provider||'internal',
+    threadId:source.threadId||'',
+    messageId:source.currentMessageId||source.messageId||'',
+    intendedAction:'send_email',
+    reviewRequired:true,
+    source_packet:{
+      source_type:refs[0]?.source_type||'',
+      source_id:refs[0]?.source_id||'',
+      source_excerpt:refs[0]?.quote_or_summary||''
+    }
+  };
   const id=stableItemId(uuid,scope.tenantId,scope.userId,'draft',draft.id);
   const item={
     id,
@@ -189,13 +248,28 @@ function draftToCandidate(draft,uuid,scope){
     whatValDid:'Prepared a local review-only email draft and ran draft QA. No provider draft was created.',
     whatOnlyUserCanDo:readiness.status==='needs_context'?'Provide the missing context or decide this should not be drafted.':'Decide whether the draft accurately represents your voice, intent, and relationship.',
     estimatedReviewMinutes:estimateMinutes(body,representationRisk),
-    sourceRefsJson:[normalizeSourceRef({sourceType:'draft',sourceId:draft.id,quoteOrSummary:title,confidence:writer.confidence||0.75})],
+    sourceRefsJson:refs,
     confidence:Math.max(0,Math.min(1,Number(writer.confidence||qa.confidence||0.72))),
     requiresApproval:true,
     approvalPolicy,
     representationRisk,
     actionsJson:[],
-    metadataJson:{source:'executive_inbox_review_only',draftId:draft.id,conversationId:source.conversationId||'',threadId:source.threadId||'',writingRules:source.writingRules||source.writing_rules||'',noExternalAction:true,noProviderDraftCreated:true},
+    metadataJson:{
+      source:'executive_inbox_review_only',
+      draftId:draft.id,
+      conversationId:source.conversationId||'',
+      threadId:source.threadId||'',
+      messageId:source.currentMessageId||source.messageId||'',
+      writingRules:source.writingRules||source.writing_rules||'',
+      noExternalAction:true,
+      noProviderDraftCreated:true,
+      preparedArtifactKind,
+      preparedArtifact,
+      canValAct:'approval_required',
+      executionPath:'review_then_send_email',
+      recipientEmail:recipient.email,
+      recipientName:recipient.name
+    },
     decisionJson:{},
     createdAt:draft.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString(),
@@ -204,6 +278,30 @@ function draftToCandidate(draft,uuid,scope){
   };
   item.actionsJson=approvalActions(item);
   return item;
+}
+function preparedWorkIdentity(item={}){
+  const metadata=jsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  const artifact=readyItemPreparedArtifact(item)||{};
+  const kind=readyItemPreparedArtifactKind(item).toLowerCase();
+  const title=compactText(artifact.subject||artifact.title||item.title||'',180).toLowerCase().replace(/[^a-z0-9]+/g,' ');
+  const recipients=safeArray(artifact.recipients)
+    .map(person=>String(person?.email||person?.address||person||'').trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const day=String(item.createdAt||item.created_at||'').slice(0,10);
+  if(/meeting_(?:overview|recap)/.test(kind))return `meeting|${title}|${recipients}|${day}`;
+  const sourceId=metadata.threadId||metadata.messageId||metadata.canonicalWorkItemId||metadata.commitmentId||metadata.transcriptId||metadata.draftId||item.id||'';
+  return `${kind}|${String(sourceId).toLowerCase()}`;
+}
+function dedupePreparedWork(rows=[]){
+  const seen=new Set();
+  return safeArray(rows).filter(item=>{
+    const key=preparedWorkIdentity(item);
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
 }
 function draftEvaluationToCandidate(candidate,uuid,scope){
   const readiness=candidate.draftReadiness||candidate.draft_readiness||{};
@@ -849,7 +947,7 @@ function createValReadyForYouService({
       const params=[tenantId(),userId(),activeStatuses];
       let where='tenant_id=$1 and user_id=$2 and status = any($3)';
       if(!includeSnoozed) where+=' and (snoozed_until is null or snoozed_until <= now())';
-      const r=await dbQuery(`select * from ready_for_you_items where ${where} order by requires_approval desc, confidence desc, created_at desc limit ${lim}`,params);
+      const r=await dbQuery(`select * from ready_for_you_items where ${where} order by requires_approval desc, confidence desc, created_at desc limit 500`,params);
       rows=(r.rows||[]).map(parseReadyRow);
     }else{
       const now=Date.now();
@@ -857,8 +955,7 @@ function createValReadyForYouService({
         .filter(r=>r.tenantId===tenantId()&&r.userId===userId())
         .filter(r=>activeStatuses.includes(r.status))
         .filter(r=>includeSnoozed||!r.snoozedUntil||Date.parse(r.snoozedUntil)<=now)
-        .sort((a,b)=>(Number(b.requiresApproval)-Number(a.requiresApproval))||(Number(b.confidence||0)-Number(a.confidence||0))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
-        .slice(0,lim);
+        .sort((a,b)=>(Number(b.requiresApproval)-Number(a.requiresApproval))||(Number(b.confidence||0)-Number(a.confidence||0))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
     }
     const sanitized=[];
     for(const row of rows){
@@ -869,7 +966,17 @@ function createValReadyForYouService({
       }
       sanitized.push(admitted);
     }
-    return {ok:true,state:sanitized.length?'has_items':'caught_up',message:sanitized.length?'Ready for review.':"I'm caught up.",items:sanitized,visibleLimit:lim,preparedCount:preparedWorkCount(sanitized)};
+    const preparedItems=dedupePreparedWork(sanitized.filter(readyItemHasConcretePreparedWork)).slice(0,lim);
+    return {
+      ok:true,
+      state:preparedItems.length?'has_items':'caught_up',
+      message:preparedItems.length?'Prepared work is ready.':"I'm caught up.",
+      items:sanitized.slice(0,lim),
+      preparedItems,
+      prepared_items:preparedItems,
+      visibleLimit:lim,
+      preparedCount:preparedItems.length
+    };
   }
   async function listItemsWithReceipts({limit=3,status='',includeSnoozed=false,receiptService=null}={}){
     const result=await listItems({limit,status,includeSnoozed});
@@ -1005,7 +1112,7 @@ function createValReadyForYouService({
       .slice(0,cappedLimit);
     const saved=[];
     for(const item of actionable) saved.push(await saveItem(item));
-    const preparedItems=saved.filter(readyItemHasConcretePreparedWork);
+    const preparedItems=dedupePreparedWork(saved.filter(readyItemHasConcretePreparedWork));
     return {
       ok:true,
       state:saved.length?'has_items':'caught_up',

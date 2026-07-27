@@ -24768,7 +24768,25 @@ function dashboardDraftQuality(draft={}){
   if(/VAL:\s*I can start[^.]*live web access/i.test(body))problems.push('tool_fragment');
   if((body.match(/Next steps:/gi)||[]).length>1||body.length>3500)problems.push('too_noisy');
   const ctx=draft.sourceContext||{};
-  const recipient=ctx.recipient?.email||ctx.recipient||ctx.recipientEmail||ctx.to||ctx.draftBrief?.recipient?.email||(Array.isArray(ctx.recipients)?ctx.recipients.join(', '):'');
+  const recipient=ctx.recipient?.email
+    ||(typeof ctx.recipient==='string'?ctx.recipient:'')
+    ||ctx.recipientEmail
+    ||ctx.to
+    ||ctx.draftBrief?.recipient?.email
+    ||safeArray(ctx.recipients).map(person=>person?.email||person?.address||person).filter(value=>typeof value==='string'&&value.trim()).join(', ');
+  const conversation=ctx.conversationContext||{};
+  const inbound=conversation.latest_inbound||conversation.current_message||{};
+  const headers=inbound.headers||{};
+  const sourceRefs=safeArray(ctx.draftBrief?.source_refs||ctx.draftBrief?.sourceRefs)
+    .concat(safeArray(conversation.source_refs||conversation.sourceRefs))
+    .filter(ref=>(ref.source_id||ref.sourceId)&&(ref.quote_or_summary||ref.quoteOrSummary));
+  const sourceId=inbound.messageId||inbound.id||ctx.currentMessageId||ctx.messageId||ctx.threadId||ctx.transcriptId||ctx.transcript_id||'';
+  const sourceExcerpt=inbound.bodyText||inbound.bodyPreview||inbound.snippet||inbound.subject||ctx.meetingTitle||ctx.transcriptTitle||'';
+  const executiveInboxDraft=ctx.source==='executive_inbox_review_only';
+  if(executiveInboxDraft&&!recipient)problems.push('missing_recipient');
+  if(executiveInboxDraft&&!sourceRefs.length&&!(sourceId&&dashboardCleanText(sourceExcerpt)))problems.push('missing_source_evidence');
+  if(executiveInboxDraft&&(headers.listUnsubscribe||headers.listId||headers.xCampaign||/\b(unsubscribe|newsletter|digest|promotional email)\b/i.test(sourceExcerpt)))problems.push('bulk_or_subscription_mail');
+  if(/\bThank you for sending this over\b[\s\S]*\bcome back with the clean next step\b/i.test(body))problems.push('generic_placeholder_reply');
   if(draft.status==='ready_for_review'&&draft.draftType!=='meeting_recap'&&ctx.qa?.passes!==true)problems.push('missing_review_qa');
   const ready=!problems.length&&!!dashboardCleanText(subject||body);
   return {ready,problems,recipient:dashboardCleanText(recipient||ctx.contactName||''),context:dashboardShortText(ctx.transcriptTitle||ctx.meetingTitle||ctx.source||draft.draftType||'Draft', 'Draft', 90)};
@@ -24781,6 +24799,8 @@ function dashboardReadyDraft(draft={}){
   const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
   const source=draft.sourceContext||{};
   const transcriptId=source.transcriptId||source.transcript_id||'';
+  const conversation=source.conversationContext||{};
+  const inbound=conversation.latest_inbound||conversation.current_message||{};
   const recipients=[
     ...safeArray(source.recipients),
     source.recipient?.email,
@@ -24789,7 +24809,17 @@ function dashboardReadyDraft(draft={}){
     source.draftBrief?.recipient?.email
   ].map(value=>String(value||'').trim()).filter((value,index,list)=>value&&list.indexOf(value)===index);
   const recipientEmail=recipients[0]||'';
-  const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(draft.draftType||'internal_draft');
+  const rawKind=String(draft.draftType||'reply').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(source.source==='executive_inbox_review_only'?(new RegExp('(?:^|_)email(?:_|$)').test(rawKind)?rawKind:`email_${rawKind}_draft`):(rawKind||'internal_draft'));
+  const sourceRefs=safeArray(source.draftBrief?.source_refs||source.draftBrief?.sourceRefs)
+    .concat(safeArray(conversation.source_refs||conversation.sourceRefs))
+    .filter(ref=>(ref.source_id||ref.sourceId)&&(ref.quote_or_summary||ref.quoteOrSummary))
+    .map(ref=>({source_type:ref.source_type||ref.sourceType||'email_message',source_id:ref.source_id||ref.sourceId||'',quote_or_summary:ref.quote_or_summary||ref.quoteOrSummary||'',confidence:Number(ref.confidence||0.82)}));
+  if(!sourceRefs.length){
+    const sourceId=inbound.messageId||inbound.id||source.currentMessageId||source.messageId||source.threadId||transcriptId||draft.id;
+    const excerpt=inbound.bodyText||inbound.bodyPreview||inbound.snippet||inbound.subject||source.meetingTitle||source.transcriptTitle||draft.subject||'Prepared draft';
+    sourceRefs.push({source_type:transcriptId?'transcript':'email_message',source_id:sourceId,quote_or_summary:dashboardShortText(excerpt,'Prepared draft source',500),confidence:0.82});
+  }
   return {
     id:draft.id,
     draftId:draft.id,
@@ -24800,6 +24830,7 @@ function dashboardReadyDraft(draft={}){
     target:{type:'draft',id:draft.id},
     draftType:draft.draftType,
     status:draft.status,
+    createdAt:draft.createdAt||draft.updatedAt||'',
     provider:draft.provider||'internal',
     threadId:source.threadId||'',
     messageId:source.currentMessageId||source.messageId||'',
@@ -24808,7 +24839,7 @@ function dashboardReadyDraft(draft={}){
     quality,
     sourceType:transcriptId?'transcript':'draft',
     sourceId:transcriptId||draft.id,
-    sourceRefs:transcriptId?[{source_type:'transcript',source_id:transcriptId,quote_or_summary:source.meetingTitle||source.transcriptTitle||draft.subject||'Transcript-created draft',confidence:0.86}]:[{source_type:'draft',source_id:draft.id,quote_or_summary:draft.subject||'Prepared draft',confidence:0.78}],
+    sourceRefs,
     preparedArtifactKind:artifactKind,
     preparedArtifact:{kind:artifactKind,draftId:draft.id,title:draft.subject||label,subject:draft.subject||label,body:draft.body||'',to:recipientEmail,recipientEmail,recipients,provider:draft.provider||'internal',threadId:source.threadId||'',messageId:source.currentMessageId||source.messageId||'',externalSend:false,reviewRequired:true},
     preparedWorkPacket:{prepared_work_type:artifactKind,trigger_source_id:transcriptId||draft.id,work_product:draft.body||draft.subject||label,approval_needed:true,execution_path:'review_then_send_email',can_val_act_status:'approval_required'},
@@ -25044,6 +25075,29 @@ function dashboardDedupeCardItems(items=[]){
   }
   return out;
 }
+function dashboardPreparedWorkDedupeKey(item={}){
+  const metadata=evidenceJsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  const artifact=item.preparedArtifact||item.prepared_artifact||metadata.preparedArtifact||metadata.prepared_artifact||{};
+  const kind=String(item.preparedArtifactKind||item.prepared_artifact_kind||metadata.preparedArtifactKind||artifact.kind||'').toLowerCase();
+  const title=dashboardCleanText(artifact.subject||artifact.title||item.title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ');
+  const recipients=safeArray(artifact.recipients||metadata.recipients)
+    .map(person=>String(person?.email||person?.address||person||'').trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const day=String(item.createdAt||item.created_at||'').slice(0,10);
+  if(/meeting_(?:overview|recap)/.test(kind))return `meeting|${title}|${recipients}|${day}`;
+  return `${kind}|${String(item.threadId||item.messageId||metadata.threadId||metadata.messageId||item.sourceId||item.source_id||item.draftId||item.id||'').toLowerCase()}`;
+}
+function dashboardDedupePreparedWork(items=[]){
+  const seen=new Set();
+  return safeArray(items).filter(item=>{
+    const key=dashboardPreparedWorkDedupeKey(item);
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
 function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],readyForYouItems=[],freshTranscriptPacket=null}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
@@ -25069,7 +25123,7 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
   }).slice(0,4);
   const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,12);
   const readyQueueItems=dashboardNormalizeCardCollection('ready_for_you',safeArray(readyForYouItems));
-  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...readyQueueItems,...readyDrafts].filter(Boolean))).slice(0,12);
+  const ready=dashboardNormalizeCardCollection('ready_for_you',dashboardDedupePreparedWork([freshTranscriptPacket?.readyDraft,...readyQueueItems,...readyDrafts].filter(Boolean))).slice(0,12);
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
@@ -25326,10 +25380,10 @@ async function buildExecutiveBriefing(){
   const onboarding=teachValOnboardingReflection(onboardingMemory);
   const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
   const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);
-  const readyForYouItems=safeArray(readyForYouQueue?.preparedItems).length
-    ? safeArray(readyForYouQueue.preparedItems)
-    : (safeArray(readyForYouQueue?.prepared_items).length
-      ? safeArray(readyForYouQueue.prepared_items)
+  const readyForYouItems=Array.isArray(readyForYouQueue?.preparedItems)
+    ? readyForYouQueue.preparedItems
+    : (Array.isArray(readyForYouQueue?.prepared_items)
+      ? readyForYouQueue.prepared_items
       : safeArray(readyForYouQueue?.items));
   const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket});
   const top=dashboard.highestLeverageMove?[dashboard.highestLeverageMove]:[];

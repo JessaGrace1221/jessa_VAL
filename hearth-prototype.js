@@ -19941,10 +19941,11 @@ function mergePreparedWorkQueues(...collections){
 }
 
 function hydrateLeverageFromReadyForYou(result = {}){
+  const hasPreparedProjection = Array.isArray(result.preparedItems) || Array.isArray(result.prepared_items);
   const preparedItems = Array.isArray(result.preparedItems) ? result.preparedItems : (Array.isArray(result.prepared_items) ? result.prepared_items : []);
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
-  const queueSource = preparedItems.length ? preparedItems : (allBuilt.length ? allBuilt : items);
+  const queueSource = hasPreparedProjection ? preparedItems : (allBuilt.length ? allBuilt : items);
   const briefingPrepared = briefingItems(executiveBriefingState?.readyForYou);
   const queueItems = mergePreparedWorkQueues(queueSource.map(normalizeReadyForYouItem), briefingPrepared).filter((item) => item?.id);
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
