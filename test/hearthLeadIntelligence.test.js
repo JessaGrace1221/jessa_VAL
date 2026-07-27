@@ -2304,6 +2304,9 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /if\(!changed\) clearHomeRoomForAdmission\('velocity'\)/,
     /if\(!admittedHighest\) clearHomeRoomForAdmission\('alignment'\)/,
     /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
+    /const roomHasAction = name !== 'alignment' \|\| queue\.length > 0/,
+    /actionButton\.hidden = !roomHasAction/,
+    /if\(name === 'alignment' && roomHasAction\)/,
     /No meaningful movement earned Home/,
     /No action needs you right now/,
     /No prepared work is waiting right now/

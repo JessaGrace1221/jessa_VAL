@@ -15302,6 +15302,7 @@ function setRoomCopy(state){
     const existingDone = room.querySelector('.alignment-card-done');
     if(existingDone) existingDone.remove();
     const queue = homeRoomQueues[name] || [];
+    const roomHasAction = name !== 'alignment' || queue.length > 0;
     if(queue.length && (name === 'velocity' || name === 'leverage')){
       const list = document.createElement('div');
       list.className = 'room-item-list';
@@ -15318,8 +15319,9 @@ function setRoomCopy(state){
       )).join('');
       room.insertBefore(list, actionButton);
     }
-    actionButton.innerHTML = content.card.action + ' <b>&rarr;</b>';
-    if(name === 'alignment'){
+    actionButton.hidden = !roomHasAction;
+    actionButton.innerHTML = roomHasAction ? content.card.action + ' <b>&rarr;</b>' : '';
+    if(name === 'alignment' && roomHasAction){
       const doneButton = document.createElement('button');
       doneButton.className = 'alignment-card-done';
       doneButton.type = 'button';
@@ -15336,7 +15338,7 @@ function setRoomCopy(state){
       delete actionButton.dataset.actionTarget;
     }
     room.setAttribute('aria-label', content.card.observation + ' ' + content.card.implication + ' ' + content.card.invitation);
-    const hasWorkspace = Boolean(content.workspace && content.workspace.title);
+    const hasWorkspace = roomHasAction && Boolean(content.workspace && content.workspace.title);
     room.classList.toggle('has-workspace', hasWorkspace);
     if(hasWorkspace){
       room.setAttribute('tabindex', '0');
