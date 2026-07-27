@@ -179,6 +179,13 @@ test('Home Leverage is fed by canonical Ready For You prepared work',()=>{
   assert.doesNotMatch(hearthPrototype,/const leverageItems = briefingItems\(briefing\.readyForYou\)\.concat\(briefingItems\(briefing\.watching\)\);/);
 });
 
+test('Home Leverage labels prepared work by its subject before its recipients',()=>{
+  assert.match(hearthPrototype,/function preparedArtifactSubject\(item = \{\}\)/);
+  assert.match(hearthPrototype,/artifact\.subject \|\|\s*artifact\.title \|\|\s*item\.title/);
+  assert.match(hearthPrototype,/const subject = preparedArtifactSubject\(item\)/);
+  assert.doesNotMatch(hearthPrototype,/const subject = primaryPortalPhrase\(item\) \|\| itemTitle\(item, 'Prepared work'\)/);
+});
+
 test('Commitments drawer only labels concrete artifacts as prepared work',()=>{
   assert.match(hearthPrototype,/function taskWorkspaceAttachments/);
   assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/build/);

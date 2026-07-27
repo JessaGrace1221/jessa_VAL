@@ -18539,6 +18539,18 @@ function preparedArtifactForHomeItem(item = {}){
     {};
 }
 
+function preparedArtifactSubject(item = {}){
+  const artifact = preparedArtifactForHomeItem(item);
+  return compactSentence(
+    artifact.subject ||
+    artifact.title ||
+    item.title ||
+    item.name ||
+    primaryPortalPhrase(item) ||
+    'Prepared work'
+  );
+}
+
 function reviewOnlyLeverageKind(kind = ''){
   return /\b(commitment_bundle|transcript_follow_up|relationship_project_update_candidate|transcript_follow_up_bundle|task_context|email_draft_readiness)\b/i.test(String(kind || ''));
 }
@@ -18574,7 +18586,7 @@ function concretePreparedWorkProduct(item = {}){
 
 function preparedArtifactHomeCopy(item){
   const kind = preparedArtifactKind(item);
-  const subject = primaryPortalPhrase(item) || itemTitle(item, 'Prepared work');
+  const subject = preparedArtifactSubject(item);
   if(kind === 'linkedin_post_draft' || kind === 'social_post_draft') return {
     observation: 'Social post draft prepared',
     implication: subject + ' is ready to copy manually into LinkedIn.',
