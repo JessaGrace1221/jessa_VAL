@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const {
   assessPreparedWork,
   artifactAdmissionFromStored,
+  preparedEmailSourceEligibility,
   validatePreparedArtifactQuality
 }=require('../services/valPreparedWorkAdmission');
 const {
@@ -160,4 +161,37 @@ test('a verified recipient address is enough contact information for review-only
     }
   });
   assert.equal(admission.admitted,true);
+});
+
+test('bulk and automated source emails are excluded from prepared work',()=>{
+  assert.equal(preparedEmailSourceEligibility({
+    subject:'Your SBA is pre-approved. Six workdays left in July.',
+    from:{email:'offers@funding.example'}
+  }).eligible,false);
+  assert.equal(preparedEmailSourceEligibility({
+    subject:'Emily just messaged you',
+    from:{email:'notifications@network.example'}
+  }).eligible,false);
+  const admission=artifactAdmissionFromStored({
+    id:'ready-noisy-email',
+    title:'Re: Emily just messaged you',
+    confidence:0.9,
+    sourceRefsJson:[{source_type:'email_message',source_id:'msg-noise',quote_or_summary:'Emily just messaged you'}],
+    metadataJson:{
+      preparedArtifactKind:'email_reply_draft',
+      preparedArtifact:{
+        kind:'email_reply_draft',
+        subject:'Re: Emily just messaged you',
+        body:'Thanks for the automated notification.',
+        recipients:[{name:'Emily',email:'emily@example.com'}],
+        intendedAction:'send_email',
+        sourceEmail:{
+          subject:'Emily just messaged you',
+          from:{email:'notifications@network.example'}
+        }
+      }
+    }
+  });
+  assert.equal(admission.excluded,true);
+  assert.equal(admission.admitted,false);
 });

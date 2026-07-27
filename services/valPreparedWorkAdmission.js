@@ -34,6 +34,34 @@ function artifactRequiresEmail(kind=''){
 function artifactRequiresPhone(kind=''){
   return /sms|text_message/i.test(String(kind||''));
 }
+function emailAddress(value={}){
+  if(typeof value==='string')return String(value).trim().toLowerCase();
+  return String(value.email||value.address||'').trim().toLowerCase();
+}
+function preparedEmailSourceEligibility(source={}){
+  const headers=source.headers||{};
+  const sender=emailAddress(source.from||source.sender||source.senderEmail||'');
+  const text=[
+    source.subject,
+    source.snippet,
+    source.bodyPreview,
+    source.bodyText,
+    headers.listUnsubscribe,
+    headers['list-unsubscribe'],
+    headers.listId,
+    headers['list-id'],
+    headers.precedence,
+    headers.xCampaign,
+    headers['x-campaign'],
+    sender
+  ].filter(Boolean).join(' ').toLowerCase();
+  const reasons=[];
+  if(/\b(list-unsubscribe|unsubscribe|manage preferences|email preferences|update your preferences|view in browser|why am i receiving this|you are receiving this|opt out)\b/.test(text))reasons.push('unsubscribe_or_list_mail');
+  if(/\b(precedence:\s*bulk|mailchimp|constant contact|convertkit|substack|beehiiv|sendgrid|campaign|newsletter|digest|roundup|webinar|recommended jobs|job picks|promotion|promotional|special offer|limited time|advertis|sponsor)\b/.test(text))reasons.push('bulk_or_promotional_mail');
+  if(/\b(no-?reply|donotreply|system notification|automated notification|account alert|security alert|just messaged you|new notification)\b/.test(text))reasons.push('automated_notification');
+  if(/\b(pre[- ]?approved|prequalified|new loan inquiry|loan offer|lending offer|apply now|workdays? left)\b/.test(text))reasons.push('financial_promotion');
+  return {eligible:reasons.length===0,reasons:[...new Set(reasons)]};
+}
 function isContactSharingWork(text=''){
   return /\b(contact (?:information|info|details)|email address|phone number|number|introduc(?:e|tion)|connect)\b/i.test(String(text||''));
 }
@@ -179,6 +207,18 @@ function artifactAdmissionFromStored(item={}){
   const metadata=item.metadataJson||item.metadata_json||item.metadata||{};
   const artifact=metadata.preparedArtifact||metadata.prepared_artifact||item.preparedArtifact||item.prepared_artifact||{};
   const kind=artifact.kind||metadata.preparedArtifactKind||metadata.prepared_artifact_kind||item.preparedArtifactKind||item.prepared_artifact_kind||'';
+  if(/(?:^|_)email(?:_|$)/i.test(String(kind||''))){
+    const sourceEligibility=preparedEmailSourceEligibility(artifact.sourceEmail||artifact.source_email||metadata.sourceEmail||metadata.source_email||{});
+    if(!sourceEligibility.eligible)return {
+      admitted:false,
+      excluded:true,
+      status:'excluded',
+      reason:'The source email does not belong in Executive Inbox or Leverage.',
+      exclusionReasons:sourceEligibility.reasons,
+      missingInformation:[],
+      brief:{workType:kind,missingInformation:[]}
+    };
+  }
   const recipients=safeArray(artifact.recipients||artifact.attendees);
   const storedRecipient=metadata.recipientEmail||metadata.recipient_email||artifact.recipientEmail||artifact.recipient_email||'';
   if(validEmail(storedRecipient)&&!recipients.some(person=>String(person.email||person.address||'').toLowerCase()===String(storedRecipient).toLowerCase())){
@@ -224,6 +264,7 @@ module.exports={
   assessPreparedWork,
   artifactAdmissionFromStored,
   buildPreparedWorkBrief,
+  preparedEmailSourceEligibility,
   validatePreparedWorkBrief,
   validatePreparedArtifactQuality,
   validEmail,

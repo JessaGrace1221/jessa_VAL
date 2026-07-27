@@ -148,6 +148,21 @@ function enforcePreparedWorkAdmission(item={}){
   const kind=readyItemPreparedArtifactKind(item);
   if(!kind)return item;
   const admission=artifactAdmissionFromStored(item);
+  if(admission.excluded)return {
+    ...item,
+    category:'excluded',
+    status:'excluded',
+    requiresApproval:false,
+    actionsJson:[],
+    metadataJson:{
+      ...(item.metadataJson||{}),
+      preparedArtifactKind:'',
+      preparedArtifact:null,
+      preparedWorkAdmission:'excluded',
+      preparedWorkExclusionReasons:safeArray(admission.exclusionReasons),
+      noExternalAction:true
+    }
+  };
   return admission.admitted?{
     ...item,
     metadataJson:{...(item.metadataJson||{}),preparedWorkAdmission:'admitted',workBrief:admission.brief}
@@ -205,6 +220,8 @@ function draftToCandidate(draft,uuid,scope){
   const body=draft.body||writer.body||'';
   const recipient=draftRecipient(draft);
   const refs=draftSourceRefs(draft);
+  const conversationContext=source.conversationContext||{};
+  const sourceMessage=conversationContext.latest_inbound||conversationContext.current_message||source.currentMessage||source.email||{};
   const preparedArtifactKind=draftPreparedArtifactKind(draft);
   const preparedArtifact={
     kind:preparedArtifactKind,
@@ -222,6 +239,14 @@ function draftToCandidate(draft,uuid,scope){
     messageId:source.currentMessageId||source.messageId||'',
     intendedAction:'send_email',
     reviewRequired:true,
+    sourceEmail:{
+      subject:sourceMessage.subject||source.originalSubject||draft.subject||'',
+      from:sourceMessage.from||source.from||draft.from||'',
+      snippet:sourceMessage.snippet||source.snippet||'',
+      bodyPreview:sourceMessage.bodyPreview||sourceMessage.preview||source.bodyPreview||'',
+      bodyText:sourceMessage.bodyText||sourceMessage.body||source.bodyText||'',
+      headers:sourceMessage.headers||source.headers||{}
+    },
     source_packet:{
       source_type:refs[0]?.source_type||'',
       source_id:refs[0]?.source_id||'',
