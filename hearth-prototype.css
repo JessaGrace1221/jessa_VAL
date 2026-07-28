@@ -19938,3 +19938,208 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
     grid-template-columns:1fr!important;
   }
 }
+
+/* System-wide scroll ownership: every open surface has one predictable vertical path. */
+body:has(.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+)),
+body:has(.desk-workspace[aria-hidden="false"]),
+body:has(.full-calendar-panel[aria-hidden="false"]){
+  overflow:hidden;
+}
+
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+){
+  overscroll-behavior:none!important;
+}
+
+.drawer-tray:is(
+  .source-open,
+  .relationship-open,
+  .project-open,
+  .timeline-open,
+  .correspondence-open,
+  .commitment-open,
+  .document-open,
+  .val-open
+) > .source-detail[aria-hidden="false"]{
+  scroll-padding-top:106px;
+  touch-action:pan-y;
+}
+
+/* The function detail owns vertical scrolling; its content should not trap the wheel. */
+.drawer-tray.timeline-open :is(
+  .transcript-workbench,
+  .transcript-index,
+  .transcript-list,
+  .transcript-detail-panel,
+  .transcript-detail-content,
+  .timeline-review-cards
+),
+.drawer-tray.correspondence-open :is(
+  .correspondence-workbench,
+  .correspondence-queue,
+  .correspondence-list,
+  .correspondence-thread,
+  .correspondence-thread-body,
+  .correspondence-brief,
+  .correspondence-intelligence
+),
+.drawer-tray.project-open :is(
+  .project-rolodex,
+  .project-manager-dossier
+){
+  max-height:none!important;
+  overflow-y:visible!important;
+  overscroll-behavior:auto!important;
+}
+
+.drawer-tray.correspondence-open .correspondence-email-html{
+  overflow-x:auto!important;
+  overflow-y:visible!important;
+}
+
+/* Stewardship keeps its long people index usable without adding a third scroll layer. */
+.drawer-tray.relationship-open .relationship-detail.show-index .stewardship-network-layout{
+  height:auto!important;
+  min-height:420px;
+  overflow:visible!important;
+}
+.drawer-tray.relationship-open .relationship-detail.show-index :is(
+  .relationship-rolodex,
+  .stewardship-network-detail
+){
+  height:auto!important;
+  max-height:none!important;
+  overflow-y:visible!important;
+  overscroll-behavior:auto!important;
+}
+
+/* Calendar and workspace shells own their content; their page backgrounds stay still. */
+.full-calendar-panel{
+  scroll-padding-top:24px;
+  touch-action:pan-y;
+}
+.full-calendar-panel .calendar-panel-inner{
+  width:100%;
+  height:100%;
+  min-height:0;
+  box-sizing:border-box;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  scroll-padding-top:24px;
+  touch-action:pan-y;
+}
+.desk-workspace:not(.observer-board-mode):not(.home-cowork-mode){
+  overflow:hidden!important;
+}
+.desk-workspace:not(.observer-board-mode):not(.home-cowork-mode) > .workspace-panel{
+  width:100%;
+  max-height:100%;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  scroll-padding-top:24px;
+  touch-action:pan-y;
+}
+.desk-workspace.home-cowork-mode .home-cowork-sidebar,
+.desk-workspace.home-cowork-mode .home-cowork-thread,
+.observer-cowork-overlay .home-cowork-sidebar,
+.observer-cowork-overlay .home-cowork-thread{
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  touch-action:pan-y;
+}
+
+.observer-selected-card,
+.correspondence-rules-modal,
+.correspondence-rule-composer,
+.correspondence-attachment-view{
+  touch-action:pan-y;
+}
+
+@media(max-width:900px){
+  .drawer-tray:is(
+    .source-open,
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open,
+    .commitment-open,
+    .document-open,
+    .val-open
+  ) > .source-detail[aria-hidden="false"]{
+    scroll-padding-top:96px;
+  }
+  .drawer-tray:is(
+    .source-open,
+    .relationship-open,
+    .project-open,
+    .timeline-open,
+    .correspondence-open,
+    .commitment-open,
+    .document-open,
+    .val-open
+  ) .source-detail-header{
+    flex-wrap:wrap!important;
+    align-content:start!important;
+    gap:14px!important;
+  }
+  .drawer-tray.timeline-open .source-detail-header > div:first-child{
+    flex:1 1 100%!important;
+    width:100%!important;
+    padding-right:42px;
+  }
+  .drawer-tray.timeline-open .timeline-header-actions{
+    display:grid!important;
+    grid-template-columns:minmax(112px,1fr) auto 30px!important;
+    align-items:end!important;
+    gap:8px!important;
+    width:100%!important;
+    margin:0!important;
+  }
+  .drawer-tray.timeline-open .timeline-header-actions label{
+    min-width:0;
+  }
+  .drawer-tray.timeline-open .timeline-header-actions label > span{
+    display:none;
+  }
+  .drawer-tray.timeline-open .timeline-header-actions select{
+    width:100%;
+  }
+  .drawer-tray.timeline-open .timeline-header-actions > button:not(.close-timeline-detail){
+    min-width:0!important;
+    padding:0 10px!important;
+    white-space:nowrap;
+  }
+  .desk-workspace.observer-board-mode .workspace-panel{
+    height:calc(100vh - 24px)!important;
+    min-height:0!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    overscroll-behavior:contain!important;
+    scrollbar-gutter:stable!important;
+    touch-action:pan-y;
+  }
+  .observer-board-mode .workspace-input-panel{
+    min-height:100%!important;
+  }
+}

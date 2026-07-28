@@ -21080,6 +21080,34 @@ async function runTeachVal(mode){
   });
 }
 
+function resetOpenSurfaceScroll(surface, nestedSelectors = []){
+  const nodes = [
+    surface,
+    ...nestedSelectors.flatMap((selector) => Array.from(surface?.querySelectorAll?.(selector) || []))
+  ].filter(Boolean);
+  [...new Set(nodes)].forEach((node) => {
+    node.scrollTop = 0;
+    node.scrollLeft = 0;
+    node.scrollTo?.({top:0, left:0, behavior:'auto'});
+  });
+}
+
+function resetExecutiveFunctionScroll(){
+  const activeDetail = drawerTray?.querySelector?.('.source-detail[aria-hidden="false"]');
+  resetOpenSurfaceScroll(activeDetail, [
+    '.transcript-detail-panel',
+    '.timeline-review-cards',
+    '.correspondence-thread-body',
+    '.stewardship-network-detail',
+    '.project-manager-dossier'
+  ]);
+}
+
+function finishOpeningExecutiveFunction(){
+  resetExecutiveFunctionScroll();
+  window.requestAnimationFrame(resetExecutiveFunctionScroll);
+}
+
 function restoreRelationshipWindow(){
   retrievalSystem.classList.add('open');
   retrievalSystem.dataset.activeDrawer = 'relationship';
@@ -21106,6 +21134,7 @@ function restoreRelationshipWindow(){
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreProjectWindow(projectId = ''){
@@ -21145,6 +21174,7 @@ function restoreProjectWindow(projectId = ''){
     openProjectIndex();
   }
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreTimelineWindow(){
@@ -21181,6 +21211,7 @@ function restoreTimelineWindow(){
     renderTimelineReviewCards(currentTimelineReviewItems);
   }
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreCorrespondenceWindow(){
@@ -21209,6 +21240,7 @@ function restoreCorrespondenceWindow(){
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   renderCorrespondenceBrief(activeCorrespondenceItem || currentCorrespondenceItems[0]);
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreLeadIntelligenceWindow(){
@@ -21239,6 +21271,7 @@ function restoreLeadIntelligenceWindow(){
   if(leadDrawerPreviewList && !leadDrawerPreviewList.innerHTML.trim()) leadSourcingEmptyBoard();
   scrollLeadIntelligenceActionsIntoView();
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreValWindow(){
@@ -21267,6 +21300,7 @@ function restoreValWindow(){
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   updateCloseAllDrawersButton();
   hydrateValDrawer();
+  finishOpeningExecutiveFunction();
 }
 
 function valOperationalCategory(item){
@@ -28247,6 +28281,7 @@ async function openObserverBoardAfterWitnessing(){
 }
 
 async function openObserverBoard(options = {}){
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']);
   const existingSelectedObserverId = deskWorkspace?.classList.contains('observer-board-mode')
     ? workspaceInputPanel?.querySelector?.('.observer-node.is-selected')?.dataset?.observerCowork || ''
     : '';
@@ -28461,6 +28496,8 @@ async function openObserverBoard(options = {}){
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']);
+  window.requestAnimationFrame(() => resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']));
   const selectedObserverName = options.selectedObserverName || options.observerName || '';
   const selectedObserverId = requestedSelectedObserverId || (selectedObserverName ? observerConversationId(selectedObserverName) : '');
   if(selectedObserverId){
@@ -29127,6 +29164,8 @@ function openTeachValSession(){
   scraperPreviewList.innerHTML='<div class="val-studio-loading" data-val-studio-loading><span class="val-presence-mark"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><strong>Opening VAL Studio</strong><span>Loading Environments and real transcript evidence.</span></div>';
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel']);
+  window.requestAnimationFrame(() => resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel']));
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
@@ -29397,6 +29436,7 @@ function openCalendarPanel(){
   hearth.classList.add('calendar-open');
   calendarTab.setAttribute('aria-expanded', 'true');
   fullCalendarPanel.setAttribute('aria-hidden', 'false');
+  resetOpenSurfaceScroll(fullCalendarPanel, ['.calendar-panel-inner']);
   refreshCalendarSourceStatus();
   hydrateCalendarPanel();
 }
@@ -29462,7 +29502,7 @@ drawerPull.addEventListener('click', () => {
   updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
-    drawerTray.scrollTo?.({top:0, left:0});
+    drawerTray?.scrollTo?.({top:0, left:0});
     window.requestAnimationFrame(() => drawerTray.scrollIntoView?.({block:'nearest', inline:'nearest'}));
   }
   updateCloseAllDrawersButton();

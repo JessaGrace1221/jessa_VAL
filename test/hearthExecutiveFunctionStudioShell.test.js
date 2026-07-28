@@ -72,6 +72,19 @@ test('Transcripts reset selected details to the top and keep title counts in sta
   assert.match(css, /\.drawer-tray\.timeline-open \.timeline-source-receipt\[data-transcript-section="action-items"\] \.timeline-source-lines > div,[\s\S]*box-sizing:border-box!important;[\s\S]*padding:14px 16px!important/);
 });
 
+test('open surfaces use one predictable vertical scroll owner', () => {
+  assert.match(css, /System-wide scroll ownership: every open surface has one predictable vertical path/);
+  assert.match(css, /The function detail owns vertical scrolling; its content should not trap the wheel/);
+  assert.match(css, /\.drawer-tray\.timeline-open :is\([\s\S]*\.transcript-detail-panel[\s\S]*overflow-y:visible!important/);
+  assert.match(css, /\.drawer-tray\.correspondence-open :is\([\s\S]*\.correspondence-thread-body[\s\S]*overflow-y:visible!important/);
+  assert.match(css, /\.desk-workspace:not\(\.observer-board-mode\):not\(\.home-cowork-mode\) > \.workspace-panel\{[\s\S]*overflow-y:auto/);
+  assert.match(css, /body:has\(\.desk-workspace\[aria-hidden="false"\]\)[\s\S]*overflow:hidden/);
+  assert.match(js, /function resetOpenSurfaceScroll\(surface, nestedSelectors = \[\]\)/);
+  assert.match(js, /function finishOpeningExecutiveFunction\(\)/);
+  assert.match(js, /resetOpenSurfaceScroll\(fullCalendarPanel, \['\.calendar-panel-inner'\]\)/);
+  assert.match(js, /resetOpenSurfaceScroll\(deskWorkspace, \['\.workspace-panel', '\.observer-selected-card'\]\)/);
+});
+
 test('Stewardship Network index contains only names and context refresh actions', () => {
   const rowRenderer = js.slice(
     js.indexOf('function appendRelationshipRolodexRow'),
