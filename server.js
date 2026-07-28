@@ -3645,6 +3645,7 @@ function teachValMemoryRow(row){
 }
 async function getTeachValSession(id=''){
   await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
   if(pgPool){
     const args=[tenantId(),currentUserId()];
     let where='tenant_id=$1 and user_id=$2';
@@ -3656,8 +3657,57 @@ async function getTeachValSession(id=''){
   const found=rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&(!id||r.id===id)).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
   return teachValSessionRow(found);
 }
+function configuredValOwnerEmails(){
+  return [
+    process.env.ADMIN_EMAIL,
+    process.env.VAL_OWNER_EMAIL,
+    ...String(process.env.VAL_OWNER_EMAILS||'').split(',')
+  ].map(value=>String(value||'').trim().toLowerCase()).filter(Boolean);
+}
+function currentOwnerMayClaimLegacyWitnessing(){
+  const user=currentValUser();
+  if(!user?.id||String(user.role||'').toLowerCase()!=='owner') return false;
+  const configured=configuredValOwnerEmails();
+  return configured.length===0||configured.includes(String(user.email||'').trim().toLowerCase());
+}
+async function reclaimLegacyTenantWitnessingForCurrentOwner(){
+  if(!pgPool||!currentOwnerMayClaimLegacyWitnessing()) return {claimed:false,count:0};
+  const user=currentValUser();
+  const tenant=tenantId();
+  const legacyUserId=tenant;
+  if(!user?.id||user.id===legacyUserId) return {claimed:false,count:0};
+  const legacy=(await dbQuery(
+    'select count(*)::int as count from teach_val_onboarding_sessions where tenant_id=$1 and user_id=$2',
+    [tenant,legacyUserId]
+  )).rows[0];
+  const count=Number(legacy?.count||0);
+  if(!count) return {claimed:false,count:0};
+  const client=await pgPool.connect();
+  try{
+    await client.query('begin');
+    for(const table of [
+      'teach_val_onboarding_sessions',
+      'teach_val_imports',
+      'teach_val_memory_items',
+      'val_first_look_runs',
+      'val_first_look_candidate_analyses',
+      'val_first_look_candidates',
+      'val_first_look_change_sets'
+    ]){
+      await client.query(`update ${table} set user_id=$1 where tenant_id=$2 and user_id=$3`,[user.id,tenant,legacyUserId]);
+    }
+    await client.query('commit');
+    return {claimed:true,count};
+  }catch(error){
+    await client.query('rollback').catch(()=>{});
+    throw error;
+  }finally{
+    client.release();
+  }
+}
 async function getTeachValWitnessingResumeSession(){
   await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
   if(pgPool){
     const r=await dbQuery(`select s.* from teach_val_onboarding_sessions s
       where s.tenant_id=$1 and s.user_id=$2 and s.status in ('draft','committed')
@@ -3682,6 +3732,7 @@ async function getTeachValWitnessingResumeSession(){
 
 async function getTeachValCompletedWitnessingSession(){
   await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
   if(pgPool){
     const r=await dbQuery(`select s.* from teach_val_onboarding_sessions s
       where s.tenant_id=$1 and s.user_id=$2 and s.status='committed'
