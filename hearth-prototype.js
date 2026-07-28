@@ -21968,7 +21968,8 @@ const valWitnessingConnectionCopy = {
   google: {keyLabel:'Google',fieldLabel:'',placeholder:'',actionLabel:'Connect Google'},
   microsoft: {keyLabel:'Outlook',fieldLabel:'',placeholder:'',actionLabel:'Connect Outlook'},
   krisp: {keyLabel:'Krisp transcripts',fieldLabel:'',placeholder:'',actionLabel:'Connect Krisp'},
-  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'}
+  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'},
+  anthropic: {keyLabel:'Anthropic / Claude',fieldLabel:'Anthropic API key',placeholder:'sk-ant-...',actionLabel:'Connect Anthropic'}
 };
 
 function valWitnessingConnectionCard(connection = {}){

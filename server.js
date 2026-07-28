@@ -8396,6 +8396,8 @@ async function witnessingConnectionStatusPayload(){
     loadOAuthTokens('microsoft').catch(()=>null)
   ]);
   const openai=await tenantOpenAIConnectionReadiness();
+  const anthropicStatuses=await tenantApiKeyConnectionStatuses().catch(()=>[]);
+  const anthropic=anthropicStatuses.find(item=>item.provider==='anthropic')||{};
   const krisp=await krispOAuthConnectionStatus().catch(error=>({connected:false,error:error.message||'Krisp needs to reconnect.'}));
   return {
     ok:true,
@@ -8448,6 +8450,19 @@ async function witnessingConnectionStatusPayload(){
         learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
         limits:'A saved key is encrypted and never shown again.',
         error:''
+      },
+      {
+        id:'anthropic',
+        label:'Anthropic / Claude',
+        configured:anthropic.status==='connected',
+        status:anthropic.status||'not_connected',
+        connected:anthropic.status==='connected',
+        lastUpdatedAt:anthropic.lastUpdatedAt||'',
+        lastTestedAt:anthropic.lastTestedAt||'',
+        action:'credential',
+        learns:'Nothing from your world. This provides an optional Claude model connection for approved VAL workflows.',
+        limits:'A saved key is encrypted and never shown again. VAL does not use it unless a workflow is configured to do so.',
+        error:''
       }
     ]
   };
@@ -8463,7 +8478,7 @@ app.get('/api/val/witnessing/readiness',async(req,res)=>{
 app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
   try{
     const provider=String(req.params.provider||'').trim().toLowerCase();
-    if(!['openai','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
+    if(!['openai','anthropic','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
     const apiKey=String(req.body.apiKey||req.body.key||req.body.token||'').trim();
     if(!apiKey) return res.status(400).json({ok:false,error:'Paste the connection key before saving it.'});
     await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub'}});
