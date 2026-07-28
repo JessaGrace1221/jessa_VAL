@@ -867,7 +867,7 @@ button,a{font:inherit}
 }
 .val-studio{
   display:grid;
-  grid-template-rows:auto auto minmax(460px,1fr) auto;
+  grid-template-rows:auto auto auto minmax(460px,1fr) auto;
   min-height:min(760px,82vh);
   color:#202822;
   font-family:var(--body);
@@ -932,7 +932,8 @@ button,a{font:inherit}
   box-shadow:0 0 0 4px rgba(120,145,111,.12),0 0 16px rgba(120,145,111,.38);
 }
 .val-studio-library{
-  grid-template-rows:auto auto minmax(0,1fr) auto;
+  display:flex;
+  flex-direction:column;
 }
 .val-studio-library-header{
   display:flex;
@@ -974,6 +975,47 @@ button,a{font:inherit}
   padding:0 17px;
   font:650 .68rem/1 var(--body);
 }
+.val-studio-library-actions,
+.val-studio-header-actions,
+.val-studio-live-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.val-studio-library-header>.val-studio-library-actions,
+.val-studio-header>.val-studio-header-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+}
+.val-studio-library-actions button:first-child,
+.val-studio-header-actions button,
+.val-studio-live-actions button:first-child{
+  background:rgba(255,255,255,.82);
+  color:#405047;
+  border:1px solid rgba(77,97,84,.2);
+  box-shadow:none;
+}
+.val-studio-header-actions button{
+  min-height:34px;
+  padding:7px 12px;
+  border-radius:7px;
+  font:600 12px/1 var(--body);
+  cursor:pointer;
+}
+.val-studio-notice{
+  margin:0 0 18px;
+  padding:12px 14px;
+  border-left:2px solid rgba(112,143,119,.72);
+  background:linear-gradient(90deg,rgba(231,240,230,.88),rgba(248,235,238,.58),rgba(255,255,255,.22));
+  color:#33423a;
+  font-size:13px;
+  line-height:1.5;
+}
+.val-studio-notice.is-empty{display:none}
 .val-studio-library-summary{
   display:flex;
   align-items:center;
@@ -996,6 +1038,8 @@ button,a{font:inherit}
 .val-studio-environment-list{
   display:grid;
   align-content:start;
+  flex:1;
+  min-height:0;
   overflow:auto;
 }
 .val-studio-environment-row{
@@ -1075,6 +1119,7 @@ button,a{font:inherit}
 }
 .val-studio-library-empty{
   display:grid;
+  flex:1;
   place-items:center;
   align-content:center;
   gap:10px;
@@ -1666,7 +1711,7 @@ button,a{font:inherit}
   line-height:1.35;
 }
 .val-studio-live-home{
-  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-rows:auto auto minmax(0,1fr) auto;
 }
 .val-studio-live-layout{
   display:grid;
@@ -1798,7 +1843,11 @@ button,a{font:inherit}
   .val-studio-activation{grid-template-columns:1fr}
   .val-studio-activation button{width:100%}
   .val-studio-library-header{align-items:flex-start;flex-direction:column}
-  .val-studio-library-header button{width:100%}
+  .val-studio-library-actions{width:100%;justify-content:stretch}
+  .val-studio-library-actions button{flex:1;min-width:0}
+  .val-studio-header-actions{width:100%;justify-content:flex-start}
+  .val-studio-live-actions{width:100%}
+  .val-studio-live-actions button{flex:1}
   .val-studio-environment-row{grid-template-columns:1fr 24px;gap:8px 12px;padding:16px 4px}
   .val-studio-environment-state,
   .val-studio-environment-meta{grid-column:1}
@@ -19503,6 +19552,29 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
 }
 
 @media(max-width:900px){
+  .hearth-shell .desk-workspace[aria-hidden="false"]{
+    position:fixed!important;
+    inset:12px!important;
+    width:auto!important;
+    max-height:none!important;
+    margin:0!important;
+    transform:none!important;
+    overflow:hidden!important;
+  }
+  .hearth-shell .desk-workspace[aria-hidden="false"] > .workspace-panel{
+    width:100%!important;
+    height:100%!important;
+    max-height:100%!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+  }
+  .hearth-shell .desk-workspace:has(.val-studio-surface)[aria-hidden="false"] > .workspace-panel{
+    background:
+      linear-gradient(135deg,rgba(239,246,235,.9),rgba(255,255,255,.96) 48%,rgba(250,232,236,.88)),
+      rgba(255,255,255,.94)!important;
+    -webkit-backdrop-filter:blur(14px) saturate(1.02)!important;
+    backdrop-filter:blur(14px) saturate(1.02)!important;
+  }
   .drawer-tray:is(
     .source-open,
     .relationship-open,

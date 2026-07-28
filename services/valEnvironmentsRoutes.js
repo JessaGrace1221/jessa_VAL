@@ -17,6 +17,28 @@ function registerValEnvironmentsRoutes(app,deps={}){
       res.json({ok:true,blockCatalog:service.blockCatalog()});
     }catch(error){res.status(500).json({ok:false,error:error.message});}
   });
+  app.get('/api/val/environments/:id/export',async(req,res)=>{
+    try{
+      await waitForDb();
+      const result=await service.exportTemplate(req.params.id);
+      const filename=String(result.share?.template?.name||'VAL Environment')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g,'-')
+        .replace(/^-+|-+$/g,'')
+        .slice(0,80)||'val-environment';
+      res.setHeader('Content-Disposition',`attachment; filename="${filename}.val-environment.json"`);
+      await auditLog({req,action:'val_environment_shared',resourceType:'val_environment',resourceId:req.params.id,metadata:{privateDataRemoved:true,noExternalAction:true},success:true}).catch(()=>{});
+      res.json(result);
+    }catch(error){res.status(/not found/i.test(error.message)?404:400).json({ok:false,error:error.message,no_external_action:true});}
+  });
+  app.post('/api/val/environments/import',async(req,res)=>{
+    try{
+      await waitForDb();
+      const result=await service.importTemplate(req.body||{});
+      await auditLog({req,action:'val_environment_imported',resourceType:'val_environment',resourceId:result.environment?.id||'',metadata:{installedAsDraft:true,noExternalAction:true},success:true}).catch(()=>{});
+      res.json(result);
+    }catch(error){res.status(400).json({ok:false,error:error.message,no_external_action:true});}
+  });
   app.get('/api/val/environments/:id',async(req,res)=>{
     try{
       await waitForDb();

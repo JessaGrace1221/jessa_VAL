@@ -118,3 +118,20 @@ IDs, and error remain inspectable in the Environment run.
 - Shared or library copies strip identities, evidence, credentials, and account
   mappings, then install as Draft.
 
+## Environment Sharing
+
+Sharing is a governed product action, not a source-code operation.
+
+- User-created Environments remain private tenant and user records in Postgres.
+- GitHub contains the VAL Studio builder and runtime, not private Environments.
+- Share Environment produces a portable `val_environment_template_v1` file.
+- The file retains the outcome, purpose, selected Observers, bounded action
+  sequence, failure order, and governance.
+- The file contains no source evidence, contacts, credentials, connected account
+  mappings, external destination IDs, approval grants, receipts, or run history.
+- The recurring event match is cleared because it belongs to the recipient's
+  sources.
+- Import Environment always creates a new disconnected Draft. It never modifies
+  an existing Environment and never installs as Active.
+- The recipient must reconnect the trigger, sending account, destinations, and
+  approval boundaries, then pass a historical test using their own evidence.

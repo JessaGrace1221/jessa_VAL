@@ -24,6 +24,7 @@ function normalizeEmailProvider(value=''){
   if(provider.includes('gmail')||provider.includes('google'))return 'gmail';
   return '';
 }
+const VAL_ENVIRONMENT_SHARE_FORMAT='val_environment_template_v1';
 function environmentBlockCatalog(){
   return {
     sources:[
@@ -103,6 +104,73 @@ function normalizeEnvironmentSpec(input={}){
       installAsDraft:true
     }
   };
+}
+function portableEnvironmentSpec(input={}){
+  const spec=normalizeEnvironmentSpec(input);
+  return {
+    ...spec,
+    trigger:{
+      ...spec.trigger,
+      eventTitlePattern:'',
+      eventTitleConfirmed:false
+    },
+    connections:{
+      emailProvider:'',
+      googleDocumentId:''
+    },
+    approvals:{
+      ...spec.approvals,
+      sendEmail:'required',
+      appendGoogleDoc:'required'
+    },
+    sharing:{
+      ...spec.sharing,
+      stripPersonalEvidence:true,
+      stripCredentials:true,
+      stripContactIdentities:true,
+      stripAccountMappings:true,
+      installAsDraft:true
+    }
+  };
+}
+function environmentSharePackage({environment={},version={},exportedAt=new Date().toISOString()}={}){
+  const spec=portableEnvironmentSpec(version.specJson||version.spec_json||{});
+  return {
+    format:VAL_ENVIRONMENT_SHARE_FORMAT,
+    formatVersion:1,
+    exportedAt,
+    template:{
+      name:spec.name,
+      outcome:spec.outcome,
+      purpose:spec.purpose,
+      spec,
+      sourceVersion:Number(version.versionNumber||version.version_number||1),
+      safety:{
+        containsCredentials:false,
+        containsEvidence:false,
+        containsContacts:false,
+        containsRunHistory:false,
+        installsAsDraft:true
+      },
+      recipientSetup:[
+        'Confirm the recurring source trigger.',
+        'Connect the recipient sending account.',
+        'Connect each external destination.',
+        'Review approval boundaries.',
+        'Test with the recipient’s own historical evidence.'
+      ]
+    }
+  };
+}
+function importedEnvironmentSpec(input={}){
+  if(input?.format!==VAL_ENVIRONMENT_SHARE_FORMAT||Number(input?.formatVersion)!==1){
+    throw new Error('This is not a supported VAL Environment share file.');
+  }
+  const rawSpec=input?.template?.spec;
+  if(!rawSpec||typeof rawSpec!=='object'||Array.isArray(rawSpec)){
+    throw new Error('This Environment share file does not contain a usable template.');
+  }
+  return portableEnvironmentSpec(rawSpec);
 }
 function validateEnvironmentSpec(spec={}){
   const errors=[];
@@ -398,6 +466,33 @@ function createValEnvironmentsService({
       updatedAt:now
     });
     return {ok:true,environment:await hydrateEnvironment(environment),validation:validateEnvironmentSpec(spec),no_external_action:true};
+  }
+  async function exportTemplate(id){
+    const environment=await getEnvironment(id);
+    if(!environment)throw new Error('Environment not found.');
+    const version=await getVersion(environment.draftVersionId||environment.activeVersionId);
+    if(!version)throw new Error('This Environment has no version to share.');
+    return {
+      ok:true,
+      share:environmentSharePackage({environment,version}),
+      message:'Private evidence, identities, connections, approvals, and run history were removed.'
+    };
+  }
+  async function importTemplate(input={}){
+    const spec=importedEnvironmentSpec(input?.share||input);
+    const result=await saveDraft({spec});
+    return {
+      ...result,
+      imported:true,
+      message:'Environment imported as a disconnected Draft. Reconnect, review, and test it before activation.',
+      requiredSetup:[
+        'trigger',
+        'sending_account',
+        'external_destinations',
+        'approval_boundaries',
+        'historical_test'
+      ]
+    };
   }
   async function activate(id){
     const environment=await getEnvironment(id);
@@ -796,6 +891,8 @@ function createValEnvironmentsService({
     list,
     get:async id=>hydrateEnvironment(await getEnvironment(id)),
     saveDraft,
+    exportTemplate,
+    importTemplate,
     activate,
     pause,
     runHistoricalTest,
@@ -812,8 +909,12 @@ function createValEnvironmentsService({
 
 module.exports={
   createValEnvironmentsService,
+  VAL_ENVIRONMENT_SHARE_FORMAT,
   environmentBlockCatalog,
   normalizeEnvironmentSpec,
+  portableEnvironmentSpec,
+  environmentSharePackage,
+  importedEnvironmentSpec,
   validateEnvironmentSpec,
   humanEnvironmentContract,
   environmentSourceHash,

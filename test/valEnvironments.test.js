@@ -4,7 +4,9 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {
   createValEnvironmentsService,
+  VAL_ENVIRONMENT_SHARE_FORMAT,
   normalizeEnvironmentSpec,
+  importedEnvironmentSpec,
   validateEnvironmentSpec,
   titleRuleMatches,
   exactMeetingContent
@@ -36,6 +38,72 @@ test('Environment schema and routes are mounted as native VAL infrastructure',()
   assert.match(server,/registerValEnvironmentsRoutes/);
   assert.match(routes,/\/api\/val\/environments\/:id\/test/);
   assert.match(routes,/\/api\/val\/environments\/:id\/activate/);
+  assert.match(routes,/\/api\/val\/environments\/:id\/export/);
+  assert.match(routes,/\/api\/val\/environments\/import/);
+});
+
+test('shared Environments keep governance and remove private tenant context',async()=>{
+  let sourceStore={};
+  const sourceService=createValEnvironmentsService({
+    hasPg:()=>false,
+    getStore:()=>sourceStore,
+    saveStore:value=>{sourceStore=value;},
+    tenantId:()=>'source_tenant',
+    userId:()=>'source_user',
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`
+  });
+  const draft=await sourceService.saveDraft({spec:validSpec()});
+  const exported=await sourceService.exportTemplate(draft.environment.id);
+  assert.equal(exported.share.format,VAL_ENVIRONMENT_SHARE_FORMAT);
+  assert.deepEqual(exported.share.template.spec.observerIds,['commitment','relationship','delight','synchronicity']);
+  assert.equal(exported.share.template.spec.trigger.eventTitlePattern,'');
+  assert.equal(exported.share.template.spec.trigger.eventTitleConfirmed,false);
+  assert.equal(exported.share.template.spec.connections.emailProvider,'');
+  assert.equal(exported.share.template.spec.connections.googleDocumentId,'');
+  assert.equal(exported.share.template.spec.approvals.sendEmail,'required');
+  assert.equal(exported.share.template.spec.approvals.appendGoogleDoc,'required');
+  assert.equal(exported.share.template.safety.containsCredentials,false);
+  assert.equal(exported.share.template.safety.containsEvidence,false);
+  assert.doesNotMatch(JSON.stringify(exported.share),/doc_123|source_tenant|source_user/);
+});
+
+test('imported Environments are new disconnected Drafts that require recipient testing',async()=>{
+  let sourceStore={};
+  const sourceService=createValEnvironmentsService({
+    hasPg:()=>false,
+    getStore:()=>sourceStore,
+    saveStore:value=>{sourceStore=value;},
+    tenantId:()=>'source_tenant',
+    userId:()=>'source_user',
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`
+  });
+  const sourceDraft=await sourceService.saveDraft({spec:validSpec()});
+  const exported=await sourceService.exportTemplate(sourceDraft.environment.id);
+  let recipientStore={};
+  const recipientService=createValEnvironmentsService({
+    hasPg:()=>false,
+    getStore:()=>recipientStore,
+    saveStore:value=>{recipientStore=value;},
+    tenantId:()=>'recipient_tenant',
+    userId:()=>'recipient_user',
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`
+  });
+  const imported=await recipientService.importTemplate(exported.share);
+  assert.equal(imported.imported,true);
+  assert.notEqual(imported.environment.id,sourceDraft.environment.id);
+  assert.equal(imported.environment.status,'draft');
+  assert.equal(imported.environment.activeVersion,null);
+  assert.equal(imported.environment.draftVersion.state,'draft');
+  assert.equal(imported.validation.ok,false);
+  assert.ok(imported.validation.errors.some(error=>/recurring calendar event/i.test(error)));
+  assert.ok(imported.validation.errors.some(error=>/sending account/i.test(error)));
+  assert.ok(imported.validation.errors.some(error=>/Google Doc/i.test(error)));
+  await assert.rejects(()=>recipientService.activate(imported.environment.id),/recurring calendar event|sending account|Google Doc/);
+});
+
+test('Environment imports reject unknown or malformed share files',()=>{
+  assert.throws(()=>importedEnvironmentSpec({format:'other',formatVersion:1}),/not a supported/);
+  assert.throws(()=>importedEnvironmentSpec({format:VAL_ENVIRONMENT_SHARE_FORMAT,formatVersion:1}),/usable template/);
 });
 
 test('Environment transcript intake includes canonical resolved participants as recipient evidence',()=>{
@@ -146,6 +214,16 @@ test('VAL Studio opens as an Environment library and preserves live detail state
   assert.match(hearth,/The current version remains active until you deliberately replace it with another tested version\./);
   assert.match(hearth,/Make Environment Live/);
   assert.match(hearth,/Live v.*remains active/);
+});
+
+test('VAL Studio can share and import sanitized Environment files',()=>{
+  assert.match(hearth,/data-val-studio-import>Import Environment/);
+  assert.match(hearth,/data-val-studio-import-file/);
+  assert.match(hearth,/data-val-studio-share>Share Environment/);
+  assert.match(hearth,/function shareValStudioEnvironment\(\)/);
+  assert.match(hearth,/function importValStudioEnvironment\(file\)/);
+  assert.match(hearth,/\.val-environment\.json/);
+  assert.match(hearth,/Imported as a disconnected Draft/);
 });
 
 test('activation is blocked until the exact draft version has a successful test',async()=>{

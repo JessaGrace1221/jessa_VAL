@@ -28579,6 +28579,7 @@ function valStudioDefaultSpec(){
 let valStudioState = {
   stage:0,
   mode:'library',
+  notice:'',
   environmentId:'',
   environment:null,
   versionNumber:0,
@@ -28857,6 +28858,11 @@ function valStudioResumeStage(spec={}){
   return 4;
 }
 
+function valStudioNotice(){
+  if(!valStudioState.notice)return '<div class="val-studio-notice is-empty" hidden></div>';
+  return '<div class="val-studio-notice" role="status">' + escapeHtml(valStudioState.notice) + '</div>';
+}
+
 function valStudioLibraryView(){
   const environments=safeArray(valStudioState.environments);
   const liveCount=environments.filter(item=>item.status==='active').length;
@@ -28865,8 +28871,13 @@ function valStudioLibraryView(){
     '<div class="val-studio val-studio-library" data-val-studio>',
       '<header class="val-studio-library-header">',
         '<div><span>VAL Studio</span><strong>Environments</strong><p>Governed work VAL can recognize, reason through, and complete.</p></div>',
-        '<button type="button" data-val-studio-new>New Environment</button>',
+        '<div class="val-studio-library-actions">',
+          '<button type="button" data-val-studio-import>Import Environment</button>',
+          '<button type="button" data-val-studio-new>New Environment</button>',
+          '<input type="file" accept=".json,.val-environment.json,application/json" data-val-studio-import-file hidden>',
+        '</div>',
       '</header>',
+      valStudioNotice(),
       environments.length?[
         '<div class="val-studio-library-summary">',
           '<span><strong>' + escapeHtml(String(environments.length)) + '</strong> Total</span>',
@@ -28911,6 +28922,7 @@ function valStudioLiveView(){
         '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(spec.name) + '</strong></div>',
         '<small class="val-studio-live-status"><i aria-hidden="true"></i>Live</small>',
       '</header>',
+      valStudioNotice(),
       '<div class="val-studio-live-layout">',
         '<section class="val-studio-live-overview">',
           '<div class="val-studio-live-heading">',
@@ -28934,7 +28946,10 @@ function valStudioLiveView(){
       '</div>',
       '<footer class="val-studio-live-footer">',
         '<div><strong>Active version ' + escapeHtml(String(valStudioState.activeVersionNumber||valStudioState.versionNumber||1)) + '</strong><span>Running from the confirmed contract above.</span></div>',
-        '<button type="button" data-val-studio-edit>Edit Environment</button>',
+        '<div class="val-studio-live-actions">',
+          '<button type="button" data-val-studio-share>Share Environment</button>',
+          '<button type="button" data-val-studio-edit>Edit Environment</button>',
+        '</div>',
       '</footer>',
     '</div>'
   ].join('');
@@ -28968,8 +28983,12 @@ function renderValStudio(){
     '<div class="val-studio" data-val-studio>',
       '<header class="val-studio-header">',
         '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
-        '<small>' + versionLabel + '</small>',
+        '<div class="val-studio-header-actions">',
+          '<small>' + versionLabel + '</small>',
+          valStudioState.environmentId?'<button type="button" data-val-studio-share>Share Environment</button>':'',
+        '</div>',
       '</header>',
+      valStudioNotice(),
       '<nav class="val-studio-steps" aria-label="Environment setup">',
         stages.map((label,index)=>'<button type="button" data-val-studio-stage="' + index + '" class="' + (index===valStudioState.stage?'active':'') + '"><span>0' + (index+1) + '</span>' + label + '</button>').join(''),
       '</nav>',
@@ -29006,15 +29025,69 @@ async function saveValStudioDraft(){
   return payload;
 }
 
+async function shareValStudioEnvironment(){
+  if(!valStudioState.environmentId)throw new Error('Save this Environment before sharing it.');
+  const response=await fetch(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/export`,{
+    credentials:'same-origin'
+  });
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload.ok===false)throw new Error(payload.error||'VAL could not prepare this Environment for sharing.');
+  const name=String(payload.share?.template?.name||'VAL Environment')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,80)||'val-environment';
+  const blob=new Blob([JSON.stringify(payload.share,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement('a');
+  anchor.href=url;
+  anchor.download=`${name}.val-environment.json`;
+  anchor.hidden=true;
+  anchor.addEventListener('click',event=>event.stopPropagation(),{once:true});
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  valStudioState.notice='Environment ready to share. Private evidence, identities, connections, approvals, and run history were removed.';
+  renderValStudio();
+}
+
+async function importValStudioEnvironment(file){
+  if(!file)throw new Error('Choose a VAL Environment share file.');
+  let share;
+  try{
+    share=JSON.parse(await file.text());
+  }catch(_error){
+    throw new Error('That file is not readable VAL Environment JSON.');
+  }
+  const result=await valStudioRequest('/api/val/environments/import','POST',share);
+  valStudioState.environment=result.environment;
+  valStudioState.environmentId=result.environment.id;
+  valStudioState.environments=[
+    result.environment,
+    ...safeArray(valStudioState.environments).filter(item=>item.id!==result.environment.id)
+  ];
+  valStudioState.versionNumber=result.environment.draftVersion?.versionNumber||1;
+  valStudioState.activeVersionNumber=0;
+  valStudioState.spec=result.environment.draftVersion?.specJson||valStudioDefaultSpec();
+  valStudioState.lastTest=null;
+  valStudioState.mode='builder';
+  valStudioState.stage=valStudioResumeStage(valStudioState.spec);
+  valStudioState.notice='Imported as a disconnected Draft. Confirm your trigger, connections, approval boundaries, and historical test before making it live.';
+  renderValStudio();
+}
+
 function wireValStudio(){
   const root=scraperPreviewList.querySelector('[data-val-studio]');
   if(!root)return;
   root.addEventListener('click',event=>event.stopPropagation());
   root.querySelector('[data-val-studio-library]')?.addEventListener('click',()=>{
+    valStudioState.notice='';
     valStudioState.mode='library';
     renderValStudio();
   });
   root.querySelectorAll('[data-val-studio-new]').forEach(button=>button.addEventListener('click',()=>{
+    valStudioState.notice='';
     valStudioState.mode='builder';
     valStudioState.stage=0;
     valStudioState.environmentId='';
@@ -29024,6 +29097,25 @@ function wireValStudio(){
     valStudioState.lastTest=null;
     valStudioState.spec=valStudioDefaultSpec();
     renderValStudio();
+  }));
+  const importInput=root.querySelector('[data-val-studio-import-file]');
+  root.querySelector('[data-val-studio-import]')?.addEventListener('click',()=>importInput?.click());
+  importInput?.addEventListener('change',async()=>{
+    try{
+      await importValStudioEnvironment(importInput.files?.[0]);
+    }catch(error){
+      valStudioState.notice=error.message;
+      renderValStudio();
+    }
+  });
+  root.querySelectorAll('[data-val-studio-share]').forEach(button=>button.addEventListener('click',async()=>{
+    button.disabled=true;
+    try{
+      await shareValStudioEnvironment();
+    }catch(error){
+      valStudioState.notice=error.message;
+      renderValStudio();
+    }
   }));
   root.querySelectorAll('[data-val-studio-open]').forEach(button=>button.addEventListener('click',async()=>{
     const environment=valStudioState.environments.find(item=>item.id===button.dataset.valStudioOpen);
@@ -29036,6 +29128,7 @@ function wireValStudio(){
     valStudioState.spec=version?.specJson||valStudioDefaultSpec();
     valStudioState.lastTest=null;
     valStudioState.mode=environment.status==='active'&&environment.activeVersion&&!environment.draftVersion?'live':'builder';
+    valStudioState.notice='';
     valStudioState.stage=environment.draftVersion?valStudioResumeStage(valStudioState.spec):0;
     renderValStudio();
     try{
