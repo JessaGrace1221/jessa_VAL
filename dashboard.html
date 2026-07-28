@@ -3967,7 +3967,7 @@ html body.val-jessa-ux .val-review-card:before{
     <div class="center-welcome val-home time-morning" id="centerWelcome">
       <div class="val-home-hero">
         <div class="val-home-banner" aria-label="Velocity Alignment Leverage. AI that moves you forward."></div>
-        <div class="val-home-greeting"><div><h1>Good morning, Jessa.</h1><p>I’ve been paying attention. Here’s what <em>matters</em> today.</p></div>
+        <div class="val-home-greeting"><div><h1 data-val-home-greeting>Good morning.</h1><p>I’ve been paying attention. Here’s what <em>matters</em> today.</p></div>
         <div class="val-hero-note">You’ve got this. <span>♡</span></div></div>
       </div>
       <section class="val-dashboard-grid">
@@ -5964,6 +5964,13 @@ fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function
   document.title=(VAL_CONFIG.brandName||'VAL')+' - Executive Command Center';
   document.querySelectorAll('[data-client-name]').forEach(function(el){el.textContent=VAL_CONFIG.clientName||'VAL User';});
   document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
+  var homeGreeting=document.querySelector('[data-val-home-greeting]');
+  if(homeGreeting){
+    var greetingHour=new Date().getHours();
+    var greetingDaypart=greetingHour<12?'morning':greetingHour<17?'afternoon':'evening';
+    var greetingName=String(VAL_CONFIG.clientName||'').trim().split(/\s+/)[0]||'';
+    homeGreeting.textContent='Good '+greetingDaypart+(greetingName?', '+greetingName:'')+'.';
+  }
   if(babySettings.welcomeMessage){
     var welcome=document.querySelector('#centerWelcome .cw-sub');
     if(welcome)welcome.textContent=babySettings.welcomeMessage;
