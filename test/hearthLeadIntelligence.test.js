@@ -2608,6 +2608,9 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /function openValOpenAISetup/);
   assert.match(hearthJs, /Your VAL is ready for its intelligence connection\./);
   assert.match(hearthJs, /data-val-openai-setup-form/);
+  assert.match(hearthJs, /<button type="button" data-val-openai-setup-submit>/);
+  assert.match(hearthJs, /setupButton\?\.addEventListener\('click',submitSetup\)/);
+  assert.match(hearthJs, /setupForm\?\.addEventListener\('submit',submitSetup\)/);
   assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);
   assert.match(hearthJs, /async function openValWitnessingSession/);

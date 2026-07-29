@@ -22039,7 +22039,7 @@ function renderValOpenAISetup({mandatory = false} = {}){
           '<input type="password" autocomplete="off" data-val-witnessing-credential-input="openai" placeholder="sk-...">',
         '</label>',
         '<div class="val-openai-setup-actions">',
-          '<button type="submit" data-val-openai-setup-submit>Save, test, and enter VAL</button>',
+          '<button type="button" data-val-openai-setup-submit>Save, test, and enter VAL</button>',
           '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Create an OpenAI key</a>',
         '</div>',
         '<small data-val-witnessing-credential-status>Your key will be encrypted, validated, and never shown again.</small>',
@@ -22069,11 +22069,21 @@ function openValOpenAISetup(cardId = 'meeting_val', options = {}){
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = renderValOpenAISetup({mandatory:openAiSetupRequired});
   const setupForm = workspaceInputPanel.querySelector('[data-val-openai-setup-form]');
-  setupForm?.addEventListener('submit', async (event) => {
+  const setupButton = workspaceInputPanel.querySelector('[data-val-openai-setup-submit]');
+  let setupSubmissionStarted = false;
+  const submitSetup = async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    await completeValOpenAISetup();
-  });
+    if(setupSubmissionStarted) return;
+    setupSubmissionStarted = true;
+    try{
+      await completeValOpenAISetup();
+    }finally{
+      setupSubmissionStarted = false;
+    }
+  };
+  setupForm?.addEventListener('submit',submitSetup);
+  setupButton?.addEventListener('click',submitSetup);
   workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="openai"]')?.focus();
   openWorkspaceShell('VAL OpenAI setup', {returnTarget:'val'});
 }

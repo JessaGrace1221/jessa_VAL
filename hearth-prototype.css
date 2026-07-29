@@ -6916,6 +6916,13 @@ button.observer-node:focus-visible{
   font:800 .74rem var(--body);
   text-decoration:none;
 }
+.val-openai-setup-actions button,
+.val-openai-setup-actions a{
+  cursor:pointer;
+}
+.val-openai-setup-actions button:disabled{
+  cursor:wait;
+}
 .desk-workspace.openai-setup-required{
   z-index:120;
 }
