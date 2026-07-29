@@ -13237,6 +13237,11 @@ button.timeline-overview-receipt:focus-visible{
 .lead-sourcing-board.has-source-column{
   grid-template-columns:repeat(4,minmax(0,1fr));
 }
+@media(max-width:900px){
+  .lead-sourcing-board.has-source-column{
+    grid-template-columns:1fr!important;
+  }
+}
 .lead-sourcing-column{
   display:grid;
   align-content:start;
