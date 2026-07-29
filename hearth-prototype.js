@@ -22008,9 +22008,10 @@ function renderValWitnessingConnectionHub(){
 }
 
 function valWitnessingConnectionSurface(){
-  if(deskWorkspace?.getAttribute('aria-hidden') === 'false' && workspaceInputPanel?.querySelector('[data-val-witnessing-connection-list]')) return workspaceInputPanel;
-  if(valDetail?.getAttribute('aria-hidden') === 'false' && valDetail.querySelector('[data-val-witnessing-connection-list]')) return valDetail;
-  if(workspaceInputPanel?.querySelector('[data-val-witnessing-connection-list]')) return workspaceInputPanel;
+  const connectionSelector = '[data-val-witnessing-connection-list], [data-val-openai-setup-form]';
+  if(deskWorkspace?.getAttribute('aria-hidden') === 'false' && workspaceInputPanel?.querySelector(connectionSelector)) return workspaceInputPanel;
+  if(valDetail?.getAttribute('aria-hidden') === 'false' && valDetail.querySelector(connectionSelector)) return valDetail;
+  if(workspaceInputPanel?.querySelector(connectionSelector)) return workspaceInputPanel;
   return valDetail || workspaceInputPanel;
 }
 
