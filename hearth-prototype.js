@@ -24106,6 +24106,7 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingResume',
   'valWitnessingFresh',
   'valWitnessingBegin',
+  'valWitnessingUpdate',
   'valWitnessingQuestion',
   'valWitnessingSave',
   'valWitnessingSkipTo',
@@ -24142,6 +24143,10 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingBegin'){
     await openValWitnessingSession('meeting_val', {resume:true});
+    return;
+  }
+  if(command === 'valWitnessingUpdate'){
+    await reopenValWitnessingCard(type || 'meeting_val');
     return;
   }
   if(command === 'valWitnessingQuestion'){

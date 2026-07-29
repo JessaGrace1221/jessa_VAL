@@ -2786,7 +2786,9 @@ test('Witnessing Session questions dispatch before shared workflow packet valida
   assert.ok(witnessingDispatch > workflowStart, 'Witnessing dispatch must be inside the shared workflow handler');
   assert.ok(sharedPacketPreflight > witnessingDispatch, 'Witnessing dispatch must happen before generic packet validation');
   assert.match(hearthJs, /const valWitnessingWorkflowCommands = new Set/);
+  assert.match(hearthJs, /'valWitnessingUpdate'/);
   assert.match(witnessingDispatcher, /openValWitnessingQuestion\(type \|\| 'meeting_val'\)/);
+  assert.match(witnessingDispatcher, /reopenValWitnessingCard\(type \|\| 'meeting_val'\)/);
   assert.match(witnessingDispatcher, /saveValWitnessingCard\(type \|\| 'witness_meeting_val'\)/);
   assert.match(witnessingDispatcher, /continueValWitnessingWithSources\(type \|\| 'witness_connect_sources'\)/);
   assert.doesNotMatch(witnessingDispatcher, /ensureHearthClickPacket/);
