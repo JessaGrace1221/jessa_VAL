@@ -2801,17 +2801,17 @@ async function testTenantApiKey(req,provider){
   let ok=false, message='';
   try{
     if(p.testType==='openai_models'){
-      const model=await resolveOpenAIModel();
+      const model=OPENAI_EXTRACTION_MODEL;
       const body={
         model,
         input:[{role:'user',content:'Reply with OK.'}],
         max_output_tokens:32
       };
-      const r=await fetch('https://api.openai.com/v1/responses',{
+      const r=await fetchWithTimeout('https://api.openai.com/v1/responses',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},
         body:JSON.stringify(body)
-      });
+      },15000,'OpenAI key validation');
       const payload=await readJsonResponse(r);
       ok=r.ok&&!payload.error;
       message=ok

@@ -62,6 +62,8 @@ test('OpenAI tenant key validation proves that the key can generate a response',
   assert.match(testBlock,/https:\/\/api\.openai\.com\/v1\/responses/);
   assert.match(testBlock,/could not generate a response/);
   assert.match(testBlock,/Reply with OK\./);
+  assert.match(testBlock,/OPENAI_EXTRACTION_MODEL/);
+  assert.match(testBlock,/fetchWithTimeout/);
   assert.doesNotMatch(testBlock,/json_object/);
   assert.doesNotMatch(testBlock,/https:\/\/api\.openai\.com\/v1\/models/);
 });
@@ -92,6 +94,9 @@ test('missing user-owned OpenAI key gates the authenticated Hearth before any ot
   assert.match(hearthJs,/window\.setTimeout\(initializeAuthenticatedDashboardEntry,120\)/);
   assert.match(hearthJs,/No Jessa or shared client AI key will be used for your work/);
   assert.match(hearthJs,/https:\/\/platform\.openai\.com\/api-keys/);
+  assert.match(hearthJs,/Testing your connection\.\.\./);
+  assert.match(hearthJs,/Connected\. Entering VAL\.\.\./);
+  assert.match(hearthJs,/timeoutMs:20000/);
 });
 
 test('clean dashboard exposes Google connection as a first-run user action',()=>{

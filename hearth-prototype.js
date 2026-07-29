@@ -22039,7 +22039,7 @@ function renderValOpenAISetup({mandatory = false} = {}){
           '<input type="password" autocomplete="off" data-val-witnessing-credential-input="openai" placeholder="sk-...">',
         '</label>',
         '<div class="val-openai-setup-actions">',
-          '<button type="submit">Save, test, and enter VAL</button>',
+          '<button type="submit" data-val-openai-setup-submit>Save, test, and enter VAL</button>',
           '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Create an OpenAI key</a>',
         '</div>',
         '<small data-val-witnessing-credential-status>Your key will be encrypted, validated, and never shown again.</small>',
@@ -22181,21 +22181,37 @@ async function saveValWitnessingCredential(provider = ''){
   const root = valWitnessingConnectionSurface();
   const input = root?.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
   const status = root?.querySelector('[data-val-witnessing-credential-status]');
+  const submit = root?.querySelector('[data-val-openai-setup-submit]');
   const apiKey = input?.value.trim() || '';
   if(!apiKey){
     if(status) status.textContent = 'Paste the connection key before saving it.';
     return;
   }
+  if(submit?.disabled) return false;
+  if(submit){
+    submit.disabled = true;
+    submit.textContent = 'Testing your connection...';
+    submit.setAttribute('aria-busy','true');
+  }
   if(status) status.textContent = 'Saving and testing this connection...';
   try{
-    const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey});
+    const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey}, {
+      timeoutMs:20000,
+      timeoutMessage:'OpenAI did not finish validating within 20 seconds. Your key is saved; press this button once more to test it again.'
+    });
     if(input) input.value = '';
+    if(submit) submit.textContent = 'Connected. Entering VAL...';
     const slot = root?.querySelector('[data-val-witnessing-credential-slot]');
     if(slot) slot.innerHTML = '<p class="val-witnessing-credential-success">' + escapeHtml(result.message || 'Connection saved.') + '</p>';
     renderValWitnessingConnections({connections:result.connections || []});
     return true;
   }catch(error){
     if(status) status.textContent = error.message || 'That connection could not be saved.';
+    if(submit){
+      submit.disabled = false;
+      submit.textContent = 'Save, test, and enter VAL';
+      submit.removeAttribute('aria-busy');
+    }
     return false;
   }
 }
