@@ -2804,10 +2804,8 @@ async function testTenantApiKey(req,provider){
       const model=await resolveOpenAIModel();
       const body={
         model,
-        instructions:'Return strict JSON only.',
-        input:[{role:'user',content:'Return {"ok":true} and nothing else.'}],
-        max_output_tokens:32,
-        text:{format:{type:'json_object'}}
+        input:[{role:'user',content:'Reply with OK.'}],
+        max_output_tokens:32
       };
       const r=await fetch('https://api.openai.com/v1/responses',{
         method:'POST',

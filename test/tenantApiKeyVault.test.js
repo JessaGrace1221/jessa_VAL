@@ -61,6 +61,8 @@ test('OpenAI tenant key validation proves that the key can generate a response',
   const testBlock=server.match(/async function testTenantApiKey[\s\S]*?\n}\nfunction platformKeyFallbackAllowed/)?.[0]||'';
   assert.match(testBlock,/https:\/\/api\.openai\.com\/v1\/responses/);
   assert.match(testBlock,/could not generate a response/);
+  assert.match(testBlock,/Reply with OK\./);
+  assert.doesNotMatch(testBlock,/json_object/);
   assert.doesNotMatch(testBlock,/https:\/\/api\.openai\.com\/v1\/models/);
 });
 
