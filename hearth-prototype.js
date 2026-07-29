@@ -15331,14 +15331,15 @@ function setRoomCopy(state){
       list.className = 'room-item-list';
       list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared by VAL');
       list.innerHTML = queue.map((item, index) => (
-        '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
+        '<button type="button" role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
-          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
+          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '"' +
+          ' aria-label="Open ' + escapeHtml(item.title || (name === 'leverage' ? 'prepared work' : 'item')) + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
-        '</div>'
+        '</button>'
       )).join('');
       room.insertBefore(list, actionButton);
     }
@@ -25907,6 +25908,8 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
 function renderLeverageFunctionWorkspace(workspace = {}){
   const active = workspace || {};
   const fields = active.packetFields || {};
+  const queueEntries = leverageReviewableQueueEntries();
+  const selectedQueueIndex = leverageWorkspaceQueueIndex(active, queueEntries);
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
   const title = compactSentence(
     active.title || fields.what_changed || (count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting' : 'No prepared work is waiting right now'),
@@ -25964,6 +25967,13 @@ function renderLeverageFunctionWorkspace(workspace = {}){
           '<div class="alignment-room-meta"><span>Prepared Work</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
+          queueEntries.length > 1 ? '<nav class="leverage-work-queue" aria-label="Choose prepared work"><div class="leverage-work-queue-heading"><span>Waiting for you</span><strong>Choose what to review</strong><small>' + queueEntries.length + ' prepared items</small></div><div class="leverage-work-queue-items">' + queueEntries.map(({queueItem,queueIndex}, position) => {
+            const sourceItem = queueItem?.sourceItem || queueItem || {};
+            const queueTitle = leverageDraftFromWorkspace({sourceItem})?.title || itemTitle(sourceItem, 'Prepared work');
+            const kind = preparedArtifactKind(sourceItem);
+            const selected = queueIndex === selectedQueueIndex;
+            return '<button type="button" data-leverage-select-index="' + queueIndex + '" aria-pressed="' + String(selected) + '"' + (selected ? ' class="is-selected"' : '') + '><span>' + (position + 1) + '</span><strong>' + escapeHtml(queueTitle) + '</strong><small>' + escapeHtml(kind ? kind.replace(/_/g, ' ') : 'Ready to review') + '</small></button>';
+          }).join('') + '</div></nav>' : '',
           '<div class="leverage-review-facts">' + executiveFacts.map((fact) => '<article><span>' + escapeHtml(fact.label) + '</span><p>' + escapeHtml(fact.value) + '</p></article>').join('') + '</div>',
           draft ? '<section class="alignment-room-draft leverage-draft-review" data-alignment-draft-preview tabindex="-1"><label><span>' + escapeHtml(draft.title) + '</span><textarea data-leverage-draft-editor aria-label="Edit prepared work">' + escapeHtml(draft.body) + '</textarea></label><div class="leverage-draft-actions"><button type="button" data-home-action="approve_prepared">' + escapeHtml(approvalLabel) + '</button><button type="button" data-home-action="save_prepared_edits">Save edits</button><button type="button" data-home-action="hold_prepared">Hold</button></div></section>' : '',
         '</section>',
@@ -25985,13 +25995,40 @@ function renderLeverageFunctionWorkspace(workspace = {}){
   ].join('');
   enableValAutocorrect(workspaceInputPanel);
   openWorkspaceShell('Leverage function workspace', {returnTarget:'home', keepDrawerOpen:true});
+  window.requestAnimationFrame(() => {
+    const queue = scraperPreviewList.querySelector('.leverage-work-queue-items');
+    const selected = queue?.querySelector('[aria-pressed="true"]');
+    if(queue && selected && queue.scrollWidth > queue.clientWidth){
+      queue.scrollLeft = Math.max(0, selected.offsetLeft - 12);
+    }
+  });
 }
 
-function leverageReviewableQueueItems(){
-  return (homeRoomQueues.leverage || []).filter((queueItem) => {
+function leverageReviewableQueueEntries(){
+  return (homeRoomQueues.leverage || []).map((queueItem, queueIndex) => ({queueItem,queueIndex})).filter(({queueItem}) => {
     const sourceItem = queueItem?.sourceItem || queueItem || {};
     return hasPreparedWorkPacketAndActionStatus(sourceItem) && Boolean(leverageDraftFromWorkspace({sourceItem}));
   });
+}
+
+function leverageReviewableQueueItems(){
+  return leverageReviewableQueueEntries().map(({queueItem}) => queueItem);
+}
+
+function leverageWorkspaceQueueIndex(workspace = {}, entries = leverageReviewableQueueEntries()){
+  const activeSource = workspace.sourceItem || {};
+  const activeIds = leveragePreparedIdentifiers(activeSource);
+  const activeIdentity = sourceIdentityForItem(activeSource);
+  const match = entries.find(({queueItem}) => {
+    const sourceItem = queueItem?.sourceItem || queueItem || {};
+    if(sourceItem === activeSource) return true;
+    const ids = leveragePreparedIdentifiers(sourceItem);
+    if(activeIds.draftId && ids.draftId === activeIds.draftId) return true;
+    if(activeIds.readyForYouId && ids.readyForYouId === activeIds.readyForYouId) return true;
+    const identity = sourceIdentityForItem(sourceItem);
+    return Boolean(activeIdentity.id && identity.id === activeIdentity.id);
+  });
+  return match?.queueIndex ?? -1;
 }
 
 function openVelocityAwarenessWorkspace(){
@@ -26062,16 +26099,17 @@ function openAlignmentCoworkDirect(){
   openHomeCardCowork(workspace);
 }
 
-function openLeverageApprovalWorkspace(){
-  const queue = homeRoomQueues.leverage || [];
-  const reviewableItems = leverageReviewableQueueItems();
-  const firstReviewable = reviewableItems[0] || null;
-  const reviewableIndex = firstReviewable ? queue.findIndex((item) => item === firstReviewable) : -1;
-  const firstWorkspace = reviewableIndex >= 0 ? activateHomeQueueItem('leverage', reviewableIndex) : null;
-  if(firstWorkspace){
-    activeHomeWorkspace = {roomName:'leverage', workspace:firstWorkspace};
-    activeClarityWorkspace = firstWorkspace;
-    renderLeverageFunctionWorkspace(firstWorkspace);
+function openLeverageApprovalWorkspace(preferredQueueIndex = null){
+  const reviewableEntries = leverageReviewableQueueEntries();
+  const requestedIndex = Number(preferredQueueIndex);
+  const selectedEntry = Number.isInteger(requestedIndex) && preferredQueueIndex !== null
+    ? reviewableEntries.find(({queueIndex}) => queueIndex === requestedIndex)
+    : reviewableEntries[0];
+  const selectedWorkspace = selectedEntry ? activateHomeQueueItem('leverage', selectedEntry.queueIndex) : null;
+  if(selectedWorkspace){
+    activeHomeWorkspace = {roomName:'leverage', workspace:selectedWorkspace};
+    activeClarityWorkspace = selectedWorkspace;
+    renderLeverageFunctionWorkspace(selectedWorkspace);
     return;
   }
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
@@ -30859,6 +30897,13 @@ workspaceInputPanel.addEventListener('click', (event) => {
   }
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
+  const leverageSelection = event.target.closest('[data-leverage-select-index]');
+  if(leverageSelection){
+    event.preventDefault();
+    event.stopPropagation();
+    openLeverageApprovalWorkspace(Number(leverageSelection.dataset.leverageSelectIndex));
+    return;
+  }
   const alignmentDraftButton = event.target.closest('[data-alignment-load-draft]');
   if(alignmentDraftButton){
     event.preventDefault();
@@ -31383,6 +31428,16 @@ roomButtons.forEach((button) => {
 rooms.forEach((room) => {
   room.addEventListener('click', async (event) => {
     if(hearth.classList.contains('drawer-open')) return;
+    const selectedRoomItem = event.target.closest('.room-item-list [data-home-room-source][data-home-room-index]');
+    if(selectedRoomItem){
+      event.preventDefault();
+      event.stopPropagation();
+      const roomName = selectedRoomItem.dataset.homeRoomSource || room.dataset.room || '';
+      const queueIndex = Number(selectedRoomItem.dataset.homeRoomIndex);
+      if(roomName === 'leverage') openLeverageApprovalWorkspace(queueIndex);
+      else openHomeItemCowork(roomName, queueIndex);
+      return;
+    }
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
     if(actionButton){

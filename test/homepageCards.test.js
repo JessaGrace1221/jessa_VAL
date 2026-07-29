@@ -122,9 +122,20 @@ test('Alignment Co-Work carries the selected packet into a project-first envelop
 test('Leverage opens only reviewable prepared work products',()=>{
   assert.match(hearthPrototype,/function leverageReviewableQueueItems/);
   assert.match(hearthPrototype,/hasPreparedWorkPacketAndActionStatus\(sourceItem\) && Boolean\(leverageDraftFromWorkspace\(\{sourceItem\}\)\)/);
-  assert.match(hearthPrototype,/const reviewableItems = leverageReviewableQueueItems\(\)/);
+  assert.match(hearthPrototype,/function leverageReviewableQueueEntries/);
   assert.match(hearthPrototype,/no reviewable draft body or artifact is attached yet/);
   assert.match(hearthPrototype,/No approval is requested from an empty packet/);
+});
+
+test('Leverage preserves the prepared item selected from Home or inside the review workspace',()=>{
+  assert.match(hearthPrototype,/<button type="button" role="listitem" data-home-room-source=/);
+  assert.match(hearthPrototype,/function openLeverageApprovalWorkspace\(preferredQueueIndex = null\)/);
+  assert.match(hearthPrototype,/reviewableEntries\.find\(\(\{queueIndex\}\) => queueIndex === requestedIndex\)/);
+  assert.match(hearthPrototype,/data-leverage-select-index=/);
+  assert.match(hearthPrototype,/openLeverageApprovalWorkspace\(Number\(leverageSelection\.dataset\.leverageSelectIndex\)\)/);
+  assert.match(hearthPrototype,/if\(roomName === 'leverage'\) openLeverageApprovalWorkspace\(queueIndex\)/);
+  assert.match(hearthPrototype,/function leverageWorkspaceQueueIndex/);
+  assert.match(hearthPrototype,/queue\.scrollLeft = Math\.max\(0, selected\.offsetLeft - 12\)/);
 });
 
 test('Home admits both editable and ready-for-review drafts into Leverage',()=>{
