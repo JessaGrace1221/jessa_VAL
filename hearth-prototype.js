@@ -22029,22 +22029,28 @@ function renderValDrawerConnections(){
 }
 
 let pendingValWitnessingLaunch = null;
+let openAiSetupRequired = false;
 
-function renderValOpenAISetup(){
+function renderValOpenAISetup({mandatory = false} = {}){
   return [
-    '<section class="val-witnessing-openai-gate" aria-label="Connect OpenAI">',
-      '<span>First, connect OpenAI</span>',
-      '<h4>Connect the intelligence that powers VAL.</h4>',
-      '<p>Your OpenAI API key lets VAL have its Witnessing conversation, prepare drafts, and reason across the parts of your world you choose to connect later.</p>',
+    '<section class="val-witnessing-openai-gate" aria-label="Connect your OpenAI key" data-mandatory="' + String(mandatory) + '">',
+      '<span>Your first VAL connection</span>',
+      '<h4>Connect your OpenAI key.</h4>',
+      '<p>This is the intelligence connection that lets VAL converse, reason across your context, prepare drafts, and support your Board of Observers.</p>',
+      '<div class="val-openai-ownership-note">',
+        '<strong>This key belongs only to you.</strong>',
+        '<p>It is encrypted inside your VAL. No Jessa or shared client AI key will be used for your work.</p>',
+      '</div>',
       '<form class="val-witnessing-credential-form" data-val-openai-setup-form>',
         '<label>',
           '<span>OpenAI API key</span>',
           '<input type="password" autocomplete="off" data-val-witnessing-credential-input="openai" placeholder="sk-...">',
         '</label>',
-        '<div>',
-          '<button type="submit">Save and test OpenAI</button>',
+        '<div class="val-openai-setup-actions">',
+          '<button type="submit">Save, test, and enter VAL</button>',
+          '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Create an OpenAI key</a>',
         '</div>',
-        '<small data-val-witnessing-credential-status>Your key is encrypted and never shown again. You will choose other connections later, only when you are ready.</small>',
+        '<small data-val-witnessing-credential-status>Your key will be encrypted, validated, and never shown again.</small>',
       '</form>',
     '</section>'
   ].join('');
@@ -22052,20 +22058,35 @@ function renderValOpenAISetup(){
 
 function openValOpenAISetup(cardId = 'meeting_val', options = {}){
   pendingValWitnessingLaunch = {cardId,options};
+  openAiSetupRequired = options.mandatory === true;
+  hearth.classList.toggle('openai-setup-required',openAiSetupRequired);
+  deskWorkspace.classList.toggle('openai-setup-required',openAiSetupRequired);
+  returnButton.disabled = openAiSetupRequired;
+  returnButton.hidden = openAiSetupRequired;
+  returnButton.setAttribute('aria-hidden',String(openAiSetupRequired));
   setWorkspaceContent({
     lens: 'VAL',
-    title: 'Connect OpenAI to start VAL.',
-    meaning: 'Before VAL asks anything of you, it needs the intelligence that makes its responses thoughtful and specific.',
-    understanding: ['Your key powers VAL. It does not give VAL permission to send, change, or share anything.'],
-    recommendation: 'Save and test your OpenAI API key to begin your Witnessing Session.',
-    actions: [{label:'Back to VAL', workflow:'cancel:val'}],
+    title: 'Your VAL is ready for its intelligence connection.',
+    meaning: 'Connect your own OpenAI key once. After it validates, VAL will remember the connection and bring you directly into your private executive environment.',
+    understanding: ['Your key powers VAL. It does not give VAL permission to send, change, or share anything.','Usage remains inside your own OpenAI account, never Jessa’s or another client’s account.'],
+    recommendation: 'Create or paste your OpenAI key below, then save and test it.',
+    actions: openAiSetupRequired?[]:[{label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL OpenAI setup'
   });
   deskWorkspace.classList.add('witnessing-mode');
   workspaceInputPanel.hidden = false;
-  workspaceInputPanel.innerHTML = renderValOpenAISetup();
+  workspaceInputPanel.innerHTML = renderValOpenAISetup({mandatory:openAiSetupRequired});
   workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="openai"]')?.focus();
   openWorkspaceShell('VAL OpenAI setup', {returnTarget:'val'});
+}
+
+function releaseValOpenAISetup(){
+  openAiSetupRequired = false;
+  hearth.classList.remove('openai-setup-required');
+  deskWorkspace.classList.remove('openai-setup-required');
+  returnButton.disabled = false;
+  returnButton.hidden = false;
+  returnButton.setAttribute('aria-hidden','false');
 }
 
 async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', options = {}){
@@ -22078,6 +22099,19 @@ async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', op
   }catch(error){
     valLiveStatus.textContent = 'Could not check the OpenAI connection: ' + error.message;
     return false;
+  }
+}
+
+async function enforceOpenAIConnectionOnDashboardEntry(){
+  if(!canUseApi || mockScrapers) return true;
+  try{
+    const readiness = await getJson('/api/val/witnessing/readiness', {cache:'no-store'});
+    if(!readiness.requiresOpenAIKey) return true;
+    openValOpenAISetup('dashboard',{mandatory:true,afterConnect:'dashboard'});
+    return false;
+  }catch(error){
+    valLiveStatus.textContent = 'VAL could not confirm the OpenAI connection: ' + error.message;
+    return true;
   }
 }
 
@@ -29492,6 +29526,7 @@ function markAlignmentCardDone(){
 }
 
 function closeWorkspace(){
+  if(openAiSetupRequired) return;
   stopValCoworkVoiceMode();
   if(workspaceReturnTarget === 'board' && deskWorkspace?.classList.contains('observer-cowork-active')){
     hideCoworkContextGathering();
@@ -30860,7 +30895,14 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
     if(connected){
       const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
       pendingValWitnessingLaunch = null;
-      await openValWitnessingSession(launch.cardId,launch.options);
+      if(launch.options?.afterConnect === 'dashboard'){
+        releaseValOpenAISetup();
+        closeWorkspace();
+        hydrateHomePresence();
+      }else{
+        releaseValOpenAISetup();
+        await openValWitnessingSession(launch.cardId,launch.options);
+      }
     }
     return;
   }
@@ -31472,17 +31514,18 @@ hydrateClientConfig();
 hydrateHomePresence();
 hydrateCalendarPanel();
 
-if(location.hash === '#valWitnessingResume'){
-  setTimeout(() => {
+async function initializeAuthenticatedDashboardEntry(){
+  const ready = await enforceOpenAIConnectionOnDashboardEntry();
+  if(!ready) return;
+  if(location.hash === '#valWitnessingResume'){
     openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
       valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
     });
-  }, 120);
-}
-if(location.hash === '#valWitnessingDocuments'){
-  setTimeout(() => {
+  }
+  if(location.hash === '#valWitnessingDocuments'){
     reopenValWitnessingDocuments().catch((error) => {
       valLiveStatus.textContent = 'Could not reopen Documents: ' + error.message;
     });
-  }, 120);
+  }
 }
+window.setTimeout(initializeAuthenticatedDashboardEntry,120);

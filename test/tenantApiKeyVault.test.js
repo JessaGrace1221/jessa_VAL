@@ -80,6 +80,18 @@ test('API Keys & Connections UI is exposed under settings navigation',()=>{
   assert.doesNotMatch(dashboard,/Full keys never show after save[\s\S]*value="\$\{/);
 });
 
+test('missing user-owned OpenAI key gates the authenticated Hearth before any other route',()=>{
+  assert.match(server,/const approvedServiceKey=!!\(OPENAI_KEY&&platformKeyFallbackAllowed\('openai'\)\)/);
+  assert.match(server,/requiresOpenAIKey:!openai\.connected/);
+  assert.doesNotMatch(server,/requiresOpenAIKey:!openai\.connected&&!continuationAllowed/);
+  assert.match(hearthJs,/async function enforceOpenAIConnectionOnDashboardEntry\(\)/);
+  assert.match(hearthJs,/openValOpenAISetup\('dashboard',\{mandatory:true,afterConnect:'dashboard'\}\)/);
+  assert.match(hearthJs,/if\(openAiSetupRequired\) return;/);
+  assert.match(hearthJs,/window\.setTimeout\(initializeAuthenticatedDashboardEntry,120\)/);
+  assert.match(hearthJs,/No Jessa or shared client AI key will be used for your work/);
+  assert.match(hearthJs,/https:\/\/platform\.openai\.com\/api-keys/);
+});
+
 test('clean dashboard exposes Google connection as a first-run user action',()=>{
   assert.match(server,/app\.get\('\/dashboard',\(req,res\)=>\{res\.set\('Cache-Control','no-store, max-age=0'\);res\.sendFile\(path\.join\(__dirname,'hearth-prototype\.html'\)\);\}\);/);
   assert.match(server,/app\.get\('\/witnessing-dashboard'/);

@@ -2602,7 +2602,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /\/api\/val\/witnessing\/connections/);
   assert.match(hearthJs, /\/api\/val\/witnessing\/readiness/);
   assert.match(hearthJs, /function openValOpenAISetup/);
-  assert.match(hearthJs, /Connect OpenAI to start VAL\./);
+  assert.match(hearthJs, /Your VAL is ready for its intelligence connection\./);
   assert.match(hearthJs, /data-val-openai-setup-form/);
   assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);

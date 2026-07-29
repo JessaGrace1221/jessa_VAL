@@ -8408,9 +8408,14 @@ async function tenantOpenAIConnectionReadiness(){
   ]);
   const saved=normalizeTenantApiKeyRow(row);
   const keyLooksValid=tenantApiKeyLooksValid('openai',secret);
+  const tenantConnected=!!(keyLooksValid&&saved?.status==='connected');
+  const approvedServiceKey=!!(OPENAI_KEY&&platformKeyFallbackAllowed('openai'));
   return {
-    connected:!!(keyLooksValid&&saved?.status==='connected'),
-    status:saved?.status||'not_connected',
+    connected:tenantConnected||approvedServiceKey,
+    tenantConnected,
+    approvedServiceKey,
+    source:tenantConnected?'tenant_vault':(approvedServiceKey?'approved_service_key':'not_connected'),
+    status:tenantConnected?'connected':(approvedServiceKey?'connected':(saved?.status||'not_connected')),
     lastUpdatedAt:saved?.lastUpdatedAt||'',
     lastTestedAt:saved?.lastTestedAt||''
   };
@@ -8425,7 +8430,7 @@ async function witnessingOpenAIReadiness(){
     ok:true,
     openai,
     continuationAllowed,
-    requiresOpenAIKey:!openai.connected&&!continuationAllowed
+    requiresOpenAIKey:!openai.connected
   };
 }
 async function requireOpenAIForNewWitnessing(res){
