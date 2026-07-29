@@ -8145,7 +8145,7 @@ button.drawer-link{
   --node-y:0px;
   animation-delay:.5s;
 }
-.retrieval-system.open:not([data-active-drawer]) .val-drawer-link{
+.retrieval-system.open:not([data-active-drawer]) .studio-drawer-link{
   --orb-sage:rgba(125,141,111,.14);
   --orb-rose:rgba(239,185,173,.3);
   --orb-rim-sage:rgba(125,141,111,.12);
@@ -21170,7 +21170,7 @@ body:has(.full-calendar-panel[aria-hidden="false"]){
     --node-x:148px;
     --node-y:0px;
   }
-  .retrieval-system.open:not([data-active-drawer]) .val-drawer-link{
+  .retrieval-system.open:not([data-active-drawer]) .studio-drawer-link{
     --node-x:104px;
     --node-y:104px;
   }

@@ -51,7 +51,8 @@ const drawerCoworkIcon = document.querySelector('[data-drawer-cowork-icon]');
 if(drawerCoworkIcon && drawerCoworkIcon.parentElement !== document.body){
   document.body.appendChild(drawerCoworkIcon);
 }
-const valDrawerLink = document.querySelector('.val-drawer-link');
+const valDrawerLink = executiveCompassCore;
+const studioDrawerLink = document.querySelector('.studio-drawer-link');
 const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
 let valLiveStatus = document.querySelector('[data-val-live-status]');
@@ -660,7 +661,7 @@ const hearthClickContractRegistry = [
   {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
   {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
-  {selector:'.teach-pen', contract:'home.val_studio', packet:'val_os_packet', rule:'VAL Studio governance and reviewed learning prompts', actions:'Shape VAL, review learning, and manage connected context', never:'Do not save durable memory or activate workflows without review'},
+  {selector:'.teach-pen,.studio-drawer-link', contract:'home.val_studio', packet:'val_os_packet', rule:'VAL Studio governance and reviewed learning prompts', actions:'Shape VAL, review learning, and manage connected context', never:'Do not save durable memory or activate workflows without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
   {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Chief of Staff Alignment action rule', actions:'Co-work with VAL on the current action only', never:'Do not draft, send, create tasks, or expose Leverage prepared work from Alignment'},
@@ -673,7 +674,7 @@ const hearthClickContractRegistry = [
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
   {selector:'.source-drawer-link,[data-open-scraper],[data-preview-choice]', contract:'drawer.lead_intelligence', packet:'lead_intelligence_packet', rule:'Lead Intelligence scraper prompt suite', actions:'Run preview, approve/hold, import approved only', never:'Do not import unreviewed leads'},
-  {selector:'.val-drawer-link,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL OS / Teach VAL / connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
+  {selector:'.executive-compass-core,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL Witnessing and connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
   {selector:'[data-workflow-action]', contract:'shared.workflow_action', packet:'workflow_scoped_packet', rule:'handleWorkflowAction dispatch rule', actions:'Only workflow-specific actions', never:'Do not dispatch unknown workflow silently'},
   {selector:'[data-workspace-tool],[data-workspace-file-input],[data-workspace-prompt-copy]', contract:'shared.workspace_tools', packet:'cowork_packet', rule:'Workspace input tool rule', actions:'Voice, upload, image request, prompt copy', never:'Do not transmit externally without approval'},
   {selector:'.val-autocorrect button', contract:'shared.autocorrect', packet:'user_text_field_packet', rule:'Spelling suggestion rule', actions:'Replace misspelled word after click', never:'Do not silently rewrite'}
@@ -13710,15 +13711,6 @@ function returnToExecutiveCompass(){
   renderDrawerPacketReceiptStrip(null);
   drawerTray.scrollTo?.({top:0, left:0});
   updateCloseAllDrawersButton();
-}
-
-function closeExecutiveCompassFromCore(){
-  if(!retrievalSystem.classList.contains('open')){
-    closeDrawer();
-    return;
-  }
-  retrievalSystem.classList.add('compass-closing');
-  window.setTimeout(closeDrawer, 520);
 }
 
 function updateCloseAllDrawersButton(){
@@ -29676,7 +29668,6 @@ drawerPull.addEventListener('click', () => {
 });
 
 closeAllDrawersButton?.addEventListener('click', closeDrawer);
-executiveCompassCore?.addEventListener('click', closeExecutiveCompassFromCore);
 
 document.addEventListener('click', (event) => {
   const closeButton = event.target.closest('.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail');
@@ -29744,6 +29735,12 @@ valDrawerLink?.addEventListener('click', () => {
     retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
+});
+
+studioDrawerLink?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  openTeachValSession();
 });
 
 async function handleValDetailWorkflowClick(event){

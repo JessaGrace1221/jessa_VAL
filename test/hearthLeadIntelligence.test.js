@@ -599,8 +599,7 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
     ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
     ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
-    ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence'],
-    ['VAL OS', 'val-drawer-link', 'val-open', 'val-detail', 'val_os_packet', 'drawer.val_os']
+    ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence']
   ];
   for(const [label, buttonClass, openClass, detailId, packetName, clickContract] of drawerContracts){
     assert.match(hearthHtml, new RegExp(`class="drawer-link ${buttonClass}"`), label + ' drawer button missing');
@@ -611,8 +610,10 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
   }
   const drawerLabels = Array.from(hearthHtml.matchAll(/class="drawer-link [^"]+"[\s\S]*?<span>([^<]+)<\/span>/g)).map((match) => match[1]);
-  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL Studio']);
   assert.match(hearthHtml, /class="drawer-link project-drawer-link"[\s\S]*?aria-controls="project-detail"/);
+  assert.match(hearthHtml, /class="executive-compass-core"[^>]*aria-label="Open Witnessing Session and Connections"[^>]*aria-controls="val-detail"/);
+  assert.match(hearthJs, /selector:'\.executive-compass-core,[^']*', contract:'drawer\.val_os', packet:'val_os_packet'/);
   assert.match(hearthHtml, /id="project-detail"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
@@ -2566,8 +2567,11 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /<title>VAL - Home<\/title>/);
   assert.match(hearthHtml, /VAL Home/);
   assert.doesNotMatch(hearthHtml, />The Hearth</);
-  assert.match(hearthHtml, /class="drawer-link val-drawer-link"/);
-  assert.match(hearthHtml, /aria-controls="val-detail"/);
+  assert.match(hearthHtml, /class="executive-compass-core"[^>]*aria-label="Open Witnessing Session and Connections"[^>]*aria-controls="val-detail"/);
+  assert.match(hearthHtml, /class="drawer-link studio-drawer-link"[^>]*aria-label="Open VAL Studio"/);
+  assert.match(hearthJs, /const valDrawerLink = executiveCompassCore/);
+  assert.match(hearthJs, /studioDrawerLink\?\.addEventListener\('click'/);
+  assert.doesNotMatch(hearthJs, /executiveCompassCore\?\.addEventListener\('click', closeExecutiveCompassFromCore\)/);
   assert.match(hearthHtml, /id="val-detail"/);
   assert.match(hearthHtml, /Witnessing Session/);
   assert.match(hearthHtml, /Continue Witnessing/);
