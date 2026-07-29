@@ -271,21 +271,36 @@ const clientFeatureLocks = {
   linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
 };
 let clientDisplayName = '';
+let clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
 function clientFirstName(fallback = ''){
   return String(clientDisplayName || fallback || '').trim().split(/\s+/)[0] || '';
 }
+function clientHour(date = new Date()){
+  try{
+    const hourPart = new Intl.DateTimeFormat('en-US',{
+      hour:'2-digit',
+      hourCycle:'h23',
+      timeZone:clientTimezone
+    }).formatToParts(date).find((part) => part.type === 'hour');
+    const hour = Number(hourPart?.value);
+    if(Number.isInteger(hour)) return hour;
+  }catch(_error){}
+  return date.getHours();
+}
 function valTimeGreeting(name = clientFirstName()){
-  const hour = new Date().getHours();
+  const hour = clientHour();
   const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   return 'Good ' + daypart + (name ? ', ' + name : '') + '.';
 }
 function personalizeTenantGreeting(value = ''){
   const name = clientFirstName();
   const text = String(value || '');
+  const greetingMatch = text.match(/^Good\s+(?:morning|afternoon|evening)\s*,?\s*([^.\n]+)\./i);
+  if(greetingMatch){
+    return valTimeGreeting(name || greetingMatch[1].trim()) + text.slice(greetingMatch[0].length);
+  }
   if(!name || /^Jessa$/i.test(name)) return text;
-  return text
-    .replace(/^(Good\s+(?:morning|afternoon|evening))\s*,?\s*Jessa\b/i, '$1, ' + name)
-    .replace(/^Jessa\b/i, name);
+  return text.replace(/^Jessa\b/i, name);
 }
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
@@ -342,7 +357,7 @@ let workspaceReturnTarget = 'home';
 const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
 
 function hearthTimePeriodFromDate(date = new Date()){
-  const hour = date.getHours();
+  const hour = clientHour(date);
   if(hour >= 5 && hour < 11) return 'morning';
   if(hour >= 11 && hour < 17) return 'afternoon';
   if(hour >= 17 && hour < 21) return 'evening';
@@ -16982,7 +16997,7 @@ function appendToWorkspaceInput(text){
 }
 
 function valCoworkGreeting(){
-  const hour = new Date().getHours();
+  const hour = clientHour();
   const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const name = clientFirstName();
   return 'Good ' + daypart + (name ? ' ' + name : '') + ', what would you like to discuss this ' + daypart + '?';
@@ -18267,6 +18282,8 @@ async function hydrateClientConfig(){
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
     clientDisplayName = String(config?.clientName||'').trim();
+    clientTimezone = String(config?.timezone||clientTimezone).trim() || clientTimezone;
+    applyHearthTimePeriod();
     states.quiet.title = valTimeGreeting();
     states.protective.title = valTimeGreeting();
   }catch(error){
@@ -19391,7 +19408,7 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
     const firstLineIsGreeting = /^Good (?:morning|afternoon|evening),\s+/i.test(preparedLines[0]);
     const bodyLines = firstLineIsGreeting ? preparedLines.slice(1) : preparedLines;
     return {
-      headline: firstLineIsGreeting ? preparedLines[0] : 'Good morning, ' + name + '.',
+      headline: firstLineIsGreeting ? preparedLines[0] : valTimeGreeting(name),
       witness: bodyLines[0],
       orientation: bodyLines[1] || permissionLine || 'I will keep the desk clear until something earns your attention.',
       permission: bodyLines[2] || permissionLine || 'Nothing sends, imports, or changes externally unless you approve it.'
@@ -19417,7 +19434,7 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
     ? selectedName + ' can show the source trail behind this read.'
     : selectedName + ' has the clearest Board lens if you want the full context.';
   return {
-    headline: 'Good morning, ' + name + '.',
+    headline: valTimeGreeting(name),
     witness: witnessLine || (reason ? subject + ': ' + reason.replace(/[.!?]+$/, '') + '.' : 'No single source-backed move has earned the room yet.'),
     orientation: observerContextLine,
     permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
@@ -19442,7 +19459,7 @@ function applyWitnessingPendingPerspective(status = observerBoardState){
   const name = homePerspectiveUserName();
   const answered = Math.max(0, Number(status?.witnessingAnsweredCount) || 0);
   const atFirstLook = status?.witnessingStage === 'witness_connect_sources';
-  if(title) title.textContent = 'Good morning, ' + name + '.';
+  if(title) title.textContent = valTimeGreeting(name);
   if(witness) witness.textContent = atFirstLook
     ? 'Your Witnessing Session is paused at First Look.'
     : 'Your Witnessing Session is not complete yet.';

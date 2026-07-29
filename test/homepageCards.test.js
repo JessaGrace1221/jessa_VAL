@@ -297,6 +297,9 @@ test('Home full context opens selected Observer Co-Work with Chief of Staff evid
 });
 
 test('Chief of Staff Home witness is concrete and points to inspectable proof',()=>{
+  assert.match(server,/function hourInTenantTimezone/);
+  assert.match(server,/function tenantDaypart/);
+  assert.match(server,/timezone: CLIENT_CONFIG\.timezone/);
   assert.match(server,/function buildChiefDailyWitness/);
   assert.match(server,/function buildQuietChiefDailyWitness/);
   assert.match(server,/const dailyWitness=buildChiefDailyWitness\(chiefHomeItem\)/);
@@ -308,6 +311,11 @@ test('Chief of Staff Home witness is concrete and points to inspectable proof',(
   assert.match(server,/I put the clearest next decision in Alignment\./);
   assert.match(server,/Nothing from the Board has earned your attention yet\./);
   assert.match(server,/I will keep the desk clear until something does\./);
+  assert.match(server,/`Good \$\{tenantDaypart\(\)\},/);
+  assert.match(server,/`Good \$\{tenantDaypart\(date\)\},/);
+  assert.match(hearthPrototype,/function clientHour/);
+  assert.match(hearthPrototype,/clientTimezone = String\(config\?\.timezone\|\|clientTimezone\)/);
+  assert.match(hearthPrototype,/return valTimeGreeting\(name \|\| greetingMatch\[1\]\.trim\(\)\)/);
   assert.doesNotMatch(server,/buildFreshTranscriptDailyWitness\(recentTranscriptsForHome\[0\],freshTranscriptPacket\)/);
   assert.doesNotMatch(server,/GOALL is the thing to settle today/);
   assert.doesNotMatch(server,/Mike needs the dashboard\/projections handoff clarified/);

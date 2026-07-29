@@ -153,6 +153,22 @@ const CLIENT_CONFIG = {
   projectName: process.env.VAL_PROJECT_NAME || '',
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
+function hourInTenantTimezone(date=new Date(),timeZone=CLIENT_CONFIG.timezone){
+  try{
+    const hourPart=new Intl.DateTimeFormat('en-US',{
+      hour:'2-digit',
+      hourCycle:'h23',
+      timeZone:timeZone||'America/New_York'
+    }).formatToParts(date).find(part=>part.type==='hour');
+    const hour=Number(hourPart?.value);
+    if(Number.isInteger(hour))return hour;
+  }catch(_error){}
+  return date.getHours();
+}
+function tenantDaypart(date=new Date()){
+  const hour=hourInTenantTimezone(date);
+  return hour<12?'morning':(hour<17?'afternoon':'evening');
+}
 function envFlag(name){
   return /^(1|true|yes|on|coming_soon|disabled)$/i.test(String(process.env[name] || '').trim());
 }
@@ -8366,6 +8382,7 @@ app.get('/api/public-config',(req,res)=>{
     clientSlug: CLIENT_CONFIG.clientSlug,
     clientName: CLIENT_CONFIG.clientName,
     brandName: CLIENT_CONFIG.brandName,
+    timezone: CLIENT_CONFIG.timezone,
     voiceWidgetId: process.env.GHL_VOICE_WIDGET_ID || '6a6253197742c156ecacd8ca',
     featureFlags: clientFeatureLocks()
   });
@@ -25843,7 +25860,7 @@ function buildChiefDailyWitness(chiefItem={}){
     confidence:chiefItem.confidence
   });
   if(!welcomeAdmission.passed)return null;
-  const first=`Good ${new Date().getHours()<12?'morning':(new Date().getHours()<17?'afternoon':'evening')}, ${String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there'}.`;
+  const first=`Good ${tenantDaypart()}, ${String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there'}.`;
   const observerBrief=`${observerName} is seeing ${findingSentence.charAt(0).toLowerCase()}${findingSentence.slice(1)}.`;
   const second='I put the clearest next decision in Alignment.';
   return {
@@ -25876,7 +25893,7 @@ function buildChiefDailyWitness(chiefItem={}){
 function buildQuietChiefDailyWitness(){
   const date=new Date();
   const name=String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there';
-  const first=`Good ${date.getHours()<12?'morning':(date.getHours()<17?'afternoon':'evening')}, ${name}.`;
+  const first=`Good ${tenantDaypart(date)}, ${name}.`;
   const second='Nothing from the Board has earned your attention yet.';
   const third='I will keep the desk clear until something does.';
   return {
