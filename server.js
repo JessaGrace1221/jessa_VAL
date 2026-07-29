@@ -2814,9 +2814,12 @@ async function testTenantApiKey(req,provider){
       },15000,'OpenAI key validation');
       const payload=await readJsonResponse(r);
       ok=r.ok&&!payload.error;
+      const upstreamMessage=String(payload.error?.message||'');
       message=ok
         ?'Connected'
-        :(payload.error?.message||`Your ${p.displayName} key could not generate a response. Please check its quota and billing. (${r.status})`);
+        :/(quota|billing|credit balance|insufficient credit)/i.test(upstreamMessage)
+          ?'Your OpenAI key is saved, but its OpenAI API project has no available credits. Add API billing or credits in OpenAI, then press Save, test, and enter VAL again.'
+          :(upstreamMessage||`Your ${p.displayName} key could not generate a response. Please check its quota and billing. (${r.status})`);
     }else if(p.testType==='anthropic_models'){
       const r=await fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01'}});
       ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;

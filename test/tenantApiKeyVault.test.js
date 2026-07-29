@@ -64,6 +64,7 @@ test('OpenAI tenant key validation proves that the key can generate a response',
   assert.match(testBlock,/Reply with OK\./);
   assert.match(testBlock,/OPENAI_EXTRACTION_MODEL/);
   assert.match(testBlock,/fetchWithTimeout/);
+  assert.match(testBlock,/has no available credits/);
   assert.doesNotMatch(testBlock,/json_object/);
   assert.doesNotMatch(testBlock,/https:\/\/api\.openai\.com\/v1\/models/);
 });
@@ -96,6 +97,7 @@ test('missing user-owned OpenAI key gates the authenticated Hearth before any ot
   assert.match(hearthJs,/https:\/\/platform\.openai\.com\/api-keys/);
   assert.match(hearthJs,/Testing your connection\.\.\./);
   assert.match(hearthJs,/Connected\. Entering VAL\.\.\./);
+  assert.match(hearthJs,/OpenAI needs API credits/);
   assert.match(hearthJs,/timeoutMs:20000/);
 });
 

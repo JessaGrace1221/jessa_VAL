@@ -7092,6 +7092,16 @@ button.observer-node:focus-visible{
   font-size:.76rem;
   line-height:1.36;
 }
+.val-witnessing-credential-form small.is-error{
+  display:block;
+  border-left:2px solid rgba(157,81,86,.72);
+  background:rgba(255,250,248,.92);
+  color:rgba(92,37,40,.96);
+  padding:10px 12px;
+  font-size:.82rem;
+  font-weight:650;
+  line-height:1.5;
+}
 .val-witnessing-credential-success{
   border:1px solid rgba(64,86,61,.2);
   border-radius:7px;

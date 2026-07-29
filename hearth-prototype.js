@@ -22188,6 +22188,7 @@ async function saveValWitnessingCredential(provider = ''){
     return;
   }
   if(submit?.disabled) return false;
+  status?.classList.remove('is-error');
   if(submit){
     submit.disabled = true;
     submit.textContent = 'Testing your connection...';
@@ -22206,10 +22207,16 @@ async function saveValWitnessingCredential(provider = ''){
     renderValWitnessingConnections({connections:result.connections || []});
     return true;
   }catch(error){
-    if(status) status.textContent = error.message || 'That connection could not be saved.';
+    const message = error.message || 'That connection could not be saved.';
+    if(status){
+      status.textContent = message;
+      status.classList.add('is-error');
+    }
     if(submit){
       submit.disabled = false;
-      submit.textContent = 'Save, test, and enter VAL';
+      submit.textContent = /quota|billing|credit/i.test(message)
+        ? 'OpenAI needs API credits'
+        : 'Save, test, and enter VAL';
       submit.removeAttribute('aria-busy');
     }
     return false;
