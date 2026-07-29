@@ -30360,6 +30360,165 @@ function partnerSourceUrls(p={}){
   ].map(v=>String(v||'').trim()).filter(v=>/^https?:\/\//i.test(v)))];
 }
 
+function usefulLeadReadinessText(value){
+  const text=cleanLeadLevelText(value).replace(/\s+/g,' ').trim();
+  if(!text || /^(unclear|unknown|none|n\/a|not available|not found|no data found)$/i.test(text)) return '';
+  return text;
+}
+
+function leadReadinessSourceUrls(p={}){
+  return [...new Set([
+    ...(Array.isArray(p.sourceUrls)?p.sourceUrls:String(p.sourceUrls||'').split(/[\n,]/)),
+    ...(Array.isArray(p.decisionMakerSourceUrls)?p.decisionMakerSourceUrls:[]),
+    p.website,
+    p.googleMapsUrl,
+    p.google_maps_url,
+    p.linkedinCompanyUrl,
+    p.linkedinPersonalUrl,
+    p.linkedinUrl,
+    p.facebook,
+    p.instagram,
+    p.donationPage,
+    p.newsletterUrl
+  ].map(value=>String(value||'').trim()).filter(value=>/^https?:\/\//i.test(value)))].slice(0,8);
+}
+
+function leadReadinessProfile(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  if(profile==='westwood') return 'WESTWOOD EMPLOYER';
+  if(profile==='partners') return 'STRATEGIC PARTNER';
+  if(profile==='frisson'){
+    return `FRISSON ${String(options.mode||p.scraperType||'organization').toUpperCase()}`;
+  }
+  if(profile==='goall') return 'GOALL EMPLOYER';
+  return 'SAVED SCRAPER LEAD';
+}
+
+function leadReadinessFit(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  if(profile==='partners'){
+    const score=Number(p.partnershipFitScore)||0;
+    return {
+      label:score>=80?'High':score>=60?'Promising':score?'Needs review':'Not established',
+      reason:usefulLeadReadinessText(p.reasonForScore)||'No partnership-fit explanation was preserved.'
+    };
+  }
+  const score=Number(p.leadScore||p.lead_score)||0;
+  if(score){
+    return {
+      label:score===1?'Highest priority':score===2?'Strong fit':score===3?'Possible fit':'Low fit',
+      reason:usefulLeadReadinessText(p.leadScoreReason||p.lead_score_reason)||'No fit explanation was preserved.'
+    };
+  }
+  const confidence=usefulLeadReadinessText(p.confidence);
+  return {
+    label:/high/i.test(confidence)?'Strong':/moderate|medium/i.test(confidence)?'Promising':'Needs review',
+    reason:usefulLeadReadinessText(p.qualificationRule||p.targetDescription)
+      || 'This result matched the saved scraper, but its fit still needs human review.'
+  };
+}
+
+function leadReadinessEvidence(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  const common=[
+    ['Requested signal',p.requestedPainPoints],
+    ['Public signals',Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):p.evidenceSignals],
+    ['Hiring or expansion',p.hiringExpansionInsight||p.hiringActivity||p.careersPage],
+    ['Turnover or team pressure',p.turnoverRiskInsight],
+    ['Growth activity',p.growthActivity],
+    ['Operational activity',p.operationalActivity||p.operationalIndicators],
+    ['Recent activity',p.recentActivityLast90Days||p.socialActivity||p.newsRaw]
+  ];
+  const specific=profile==='partners'
+    ? [
+        ['Potential reach',p.potentialReach],
+        ['Partner type',p.partnerType],
+        ['Geographic reach',p.geographicReach],
+        ['Conference or event path',p.conferenceInformation],
+        ['Vendor opportunity',p.vendorOpportunities],
+        ['Sponsor opportunity',p.sponsorOpportunities],
+        ['Benefits evidence',p.benefitsEvidence]
+      ]
+    : profile==='frisson'
+      ? [
+          ['Mission or service',p.missionStatementAiSummary||p.missionStatement||p.aiFitSummary],
+          ['Cause or population',p.causeCategory||p.populationServed],
+          ['Donation path',p.donationPage||p.acceptsOnlineDonations],
+          ['Monthly giving',p.monthlyGivingProgram],
+          ['Volunteer or event activity',p.volunteerProgram||p.eventsOrCampaigns||p.annualEvents],
+          ['Nonprofit reach',p.numberOfNonprofitsServed||p.nonprofitsServed]
+        ]
+      : [
+          ['Pain point',p.painpoint],
+          ['Pain-point evidence',p.painpointEvidence],
+          ['Employee or team signal',p.employeeCount||p.estimatedEmployeeCount||p.linkedinEmployeeCount||p.approximateDonors],
+          ['Business category',p.aiExactIndustry||p.industry||p.organizationType]
+        ];
+  return [...specific,...common]
+    .map(([label,value])=>[label,usefulLeadReadinessText(value)])
+    .filter(([,value])=>value);
+}
+
+function buildLeadReadinessBrief(p={},options={}){
+  const profile=leadReadinessProfile(p,options);
+  const fit=leadReadinessFit(p,options);
+  const evidence=leadReadinessEvidence(p,options);
+  const sources=leadReadinessSourceUrls(p);
+  const contactability=leadContactability(p);
+  const contactReady=!!((p.decisionMakerName||p.primaryContact||p.contactName) && (contactability.hasEmail||contactability.hasPhone));
+  const contactLabel=contactReady?'Ready':contactability.importable?'Partially ready':'Not ready';
+  const licensedIntentProvider=usefulLeadReadinessText(p.intentProvider||p.buyingIntentProvider);
+  const licensedIntentEvidence=usefulLeadReadinessText(p.verifiedBuyingIntentEvidence||p.intentEvidence);
+  const intentVerified=!!(licensedIntentProvider&&licensedIntentEvidence);
+  const readinessLabel=evidence.length>=3?'High':evidence.length?'Moderate':'Not yet established';
+  const confidenceLabel=evidence.length>=3&&sources.length>=2?'High':evidence.length&&sources.length?'Moderate':'Needs validation';
+  const person=p.decisionMakerName||p.primaryContact||p.contactName||'Not verified';
+  const title=p.decisionMakerTitle||p.contactTitle||'';
+  return [
+    `${profile} READINESS BRIEF`,
+    `Prepared: ${new Date().toISOString()}`,
+    '',
+    `FIT: ${fit.label}`,
+    fit.reason,
+    '',
+    `OBSERVABLE READINESS: ${readinessLabel}`,
+    evidence.length
+      ? evidence.map(([label,value])=>`- ${label}: ${value}`).join('\n')
+      : '- No concrete public readiness signal was preserved with this lead.',
+    '',
+    `VERIFIED BUYING INTENT: ${intentVerified?'Verified':'Not verified'}`,
+    intentVerified
+      ? `${licensedIntentProvider}: ${licensedIntentEvidence}`
+      : 'This record contains public fit and readiness evidence. It does not contain licensed topic-consumption evidence proving that this organization is actively shopping for a solution.',
+    '',
+    `CONTACT READINESS: ${contactLabel}`,
+    `Decision maker: ${person}${title?' - '+title:''}`,
+    `Contact method: ${contactability.hasEmail?'email':''}${contactability.hasEmail&&contactability.hasPhone?' + ':''}${contactability.hasPhone?'phone':''}${!contactability.hasEmail&&!contactability.hasPhone?'none verified':''}`,
+    usefulLeadReadinessText(p.targetContactReason||p.bestContactRoute)?`Best route: ${usefulLeadReadinessText(p.targetContactReason||p.bestContactRoute)}`:null,
+    usefulLeadReadinessText(p.whoToAvoid)?`Avoid first: ${usefulLeadReadinessText(p.whoToAvoid)}`:null,
+    '',
+    `CONFIDENCE: ${confidenceLabel}`,
+    confidenceLabel==='Needs validation'
+      ? 'The result may still fit, but the preserved evidence is not strong enough for a confident readiness claim.'
+      : `This read is grounded in ${evidence.length} preserved public signal${evidence.length===1?'':'s'} and ${sources.length} inspectable source${sources.length===1?'':'s'}.`,
+    '',
+    'INSPECTABLE SOURCES',
+    sources.length?sources.map(url=>`- ${url}`).join('\n'):'- No inspectable source URL was preserved with this lead.',
+    '',
+    'APPROVAL BOUNDARY',
+    options.previewOnly
+      ? 'This is a research result only. It has not been imported, contacted, or placed into an outreach automation.'
+      : 'This record was approved for CRM. Approval does not prove buying intent and does not itself authorize outreach. Any outreach still follows this VAL and CRM safeguards.'
+  ].filter(line=>line!==undefined&&line!==null).join('\n');
+}
+
+async function saveLeadReadinessBrief(contactId,p={},options={}){
+  if(!contactId) return '';
+  const body=buildLeadReadinessBrief(p,options);
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body});
+  return body;
+}
+
 function partnerPotentialReach(p={},type=partnerTypeFromLead(p)){
   const direct=donorValue(p.potentialReach||p.membershipSize||p.memberCount||p.attendeeCount||p.employerClients||p.businessClients);
   if(direct) return direct;
@@ -30388,7 +30547,8 @@ function scorePartnerFit(p={}){
   const recommendedOutreachAngle=/Association|Organization|Conference/.test(partnerType)
     ? 'Propose a member-value education, conference sponsorship, or preferred-vendor relationship that introduces GOALL to many employers at once.'
     : 'Propose a referral or co-selling partnership that adds GOALL to the organization’s employer relationships without disrupting its core service.';
-  return {...p,leadProfile:'partners',partnerType,potentialReach,partnershipFitScore,reasonForScore,recommendedOutreachAngle,sources,sourceUrls:sources,researchSourceCount:sources.length,researchQuality:sources.length>=2?'supported':'needs second source'};
+  const scored={...p,leadProfile:'partners',partnerType,potentialReach,partnershipFitScore,reasonForScore,recommendedOutreachAngle,sources,sourceUrls:sources,researchSourceCount:sources.length,researchQuality:sources.length>=2?'supported':'needs second source'};
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'partners',previewOnly:true})};
 }
 
 function partnerPreviewText(discovered={}){
@@ -30456,12 +30616,16 @@ async function upsertGhlPartnerLead(raw={}){
   await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags:contactPayload.tags}).catch(()=>{});
   const note=[`Partner type: ${p.partnerType}`,`Potential reach: ${p.potentialReach}`,`Partnership fit: ${p.partnershipFitScore}/100`,p.reasonForScore,`Recommended outreach: ${p.recommendedOutreachAngle}`,`Sources: ${p.sourceUrls.join(', ')||'Needs second source'}`,p.membershipSize?`Membership size: ${p.membershipSize}`:'',p.geographicReach?`Geographic reach: ${p.geographicReach}`:'',p.conferenceInformation?`Conference: ${p.conferenceInformation}`:'',p.vendorOpportunities?`Vendor opportunities: ${p.vendorOpportunities}`:'',p.sponsorOpportunities?`Sponsor opportunities: ${p.sponsorOpportunities}`:'',p.benefitsEvidence?`Benefits evidence: ${p.benefitsEvidence}`:'',p.lifeInsuranceEvidence?`Life evidence: ${p.lifeInsuranceEvidence}`:'',p.commercialInsuranceEvidence?`Commercial evidence: ${p.commercialInsuranceEvidence}`:''].filter(Boolean).join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'partners'}).catch(e=>{
+    console.log('Strategic partner readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
+    return '';
+  });
   let opportunity=await findPartnerOpportunity(contactId,target);
   if(!opportunity){
     const created=await createGhlOpportunity({locationId:GHL_LOC,pipelineId:target.pipelineId,pipelineStageId:target.stageId,name:p.organizationName||p.name,status:'open',contactId,monetaryValue:p.potentialReach,source:'GOALL Strategic Partner Prospecting'});
     opportunity=created.opportunity||created;
   }
-  return {name:p.organizationName||p.name,contactId,updated,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,partnershipFitScore:p.partnershipFitScore,potentialReach:p.potentialReach};
+  return {name:p.organizationName||p.name,contactId,updated,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,partnershipFitScore:p.partnershipFitScore,potentialReach:p.potentialReach,readinessBrief};
 }
 
 async function importApprovedPartnerLeads(body={}){
@@ -30604,7 +30768,7 @@ function scoreFrissonPartner(p={}){
   if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
   if(/multiple nonprofits|nonprofits served|clients|portfolio|case studies|agency|consultant/.test(text)){ score=Math.min(score,2); reasons.push('evidence of serving multiple organizations'); }
   if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public presence found, nonprofit fit needs review'); }
-  return {
+  const scored={
     ...p,
     leadProfile:'frisson',
     scraperType:'Partner',
@@ -30613,6 +30777,7 @@ function scoreFrissonPartner(p={}){
     aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This prospect'} may be useful to Frisson if its nonprofit reach and referral potential are confirmed.`,
     recommendedOutreachAngle:p.recommendedOutreachAngle||'Lead with a practical partnership conversation around helping more nonprofits activate donor support, recurring community support, or adjacent revenue.'
   };
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'frisson',mode:'partner',previewOnly:true})};
 }
 
 function scoreFrissonOrganization(p={}){
@@ -30624,7 +30789,7 @@ function scoreFrissonOrganization(p={}){
   if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
   if(/event|campaign|newsletter|facebook|instagram|linkedin|recent|volunteer/.test(text)){ score=Math.min(score,2); reasons.push('community activity signal'); }
   if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public nonprofit-like presence found, Frisson fit needs review'); }
-  return {
+  const scored={
     ...p,
     leadProfile:'frisson',
     scraperType:'Organization',
@@ -30633,6 +30798,7 @@ function scoreFrissonOrganization(p={}){
     aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This organization'} may be a Frisson fit if its donation, volunteer, and community activity signals are confirmed.`,
     recommendedOutreachAngle:p.recommendedOutreachAngle||'Open with support for donor activation, shopping-based giving, recurring community support, and practical fundraising lift.'
   };
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'frisson',mode:'organization',previewOnly:true})};
 }
 
 function applyFrissonScoring(p={},mode='organizations'){
@@ -30791,7 +30957,7 @@ function normalizeGeneralLeadResult(lead={},criteria={}){
     criteria.painPoints?`Requested signal: ${criteria.painPoints}`:'',
     ...(Array.isArray(lead.evidenceSignals)?lead.evidenceSignals.slice(0,3):[])
   ].filter(Boolean);
-  return {
+  const normalized={
     ...lead,
     leadProfile:'general',
     source:'VAL Lead Intelligence',
@@ -30809,6 +30975,7 @@ function normalizeGeneralLeadResult(lead={},criteria={}){
       : `Explore whether ${lead.organizationName||'this organization'} fits the saved scraper definition.`,
     confidence:lead.organizationName&&generalLeadViewUrl(lead)?'moderate':'weak'
   };
+  return {...normalized,readinessBrief:buildLeadReadinessBrief(normalized,{profile:'general',previewOnly:true})};
 }
 async function discoverGeneralLeadProspects(input={}){
   const criteria=generalLeadScraperCriteria(input);
@@ -31053,6 +31220,10 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
     `Sources: ${frissonSourceUrls(p).join(', ')||'source review needed'}`
   ].join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'frisson',mode:currentMode}).catch(e=>{
+    console.log('Frisson readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
+    return '';
+  });
   let opportunity=await findPartnerOpportunity(contactId,target);
   if(!opportunity){
     const created=await createGhlOpportunity({
@@ -31067,7 +31238,7 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
     });
     opportunity=created.opportunity||created;
   }
-  return {name:p.organizationName||p.name,contactId,updated,tags,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason};
+  return {name:p.organizationName||p.name,contactId,updated,tags,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,readinessBrief};
 }
 
 async function importApprovedFrissonLeads(body={},mode='organizations'){
@@ -31848,6 +32019,8 @@ async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,aut
     const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
     await updateGhlLeadFields(contactId,leadFields);
   }
+  await saveLeadReadinessBrief(contactId,lead,{profile:isGoall?'goall':'westwood'})
+    .catch(e=>console.log('Employer readiness brief not saved',{contactId,name:lead.organizationName||lead.name,error:e.message}));
   const existing=await findOpenOpportunityForContact(contactId);
   if(existing) return {created:false, existing:true, opportunity:existing, contactId};
   const target=await getOpportunityTarget();
@@ -32101,6 +32274,10 @@ async function createGhlLeadFromProspect(p,opts={}){
     !isWestwood && automation.needsNewAutomation?`Suggested new automation: ${automation.suggestedNewAutomationTag||'Manual Review'}`:''
   ].filter(Boolean).join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(e=>console.log('Lead contactability note not saved',{contactId,name,error:e.message}));
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:isWestwood?'westwood':'goall'}).catch(e=>{
+    console.log('Employer readiness brief not saved',{contactId,name,error:e.message});
+    return '';
+  });
   const target=await getOpportunityTarget();
   const opportunityPayload={
     locationId:GHL_LOC,
@@ -32113,7 +32290,7 @@ async function createGhlLeadFromProspect(p,opts={}){
     source
   };
   const opportunityData=await createGhlOpportunity(opportunityPayload);
-  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note};
+  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note,readinessBrief};
 }
 
 function isGoallTestContactRequest(text=''){
