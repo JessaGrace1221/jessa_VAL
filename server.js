@@ -1567,7 +1567,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','leadScraperDefinitions'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -2431,6 +2431,132 @@ function currentUserId(){
 }
 function tenantId(){
   return CLIENT_CONFIG.clientSlug || 'default';
+}
+const INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS = 1;
+const ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY = 200;
+
+function generalLeadScraperSlotLimit(){
+  const additional=Math.max(0,Number(process.env.VAL_ADDITIONAL_SCRAPER_SLOTS)||0);
+  return INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS+additional;
+}
+function cleanScraperText(value,max=500){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+}
+function generalLeadScraperCriteria(input={}){
+  const businessTerms=cleanScraperText(input.businessTerms||input.business_terms||input.organizationType||input.category||input.keywords,300);
+  const roleTerms=cleanScraperText(input.roleTerms||input.role_terms||input.personRole||input.role,240);
+  const painPoints=cleanScraperText(input.painPoints||input.pain_points||input.painPoint,500);
+  const locations=cleanScraperText(input.locations||input.location||input.market||'United States',300);
+  const qualification=cleanScraperText(input.qualification||input.qualificationRule||input.criteria,1000);
+  const target=cleanScraperText(input.target||input.targetDescription||[businessTerms,roleTerms,painPoints].filter(Boolean).join(' | '),500);
+  return {
+    target,
+    businessTerms,
+    roleTerms,
+    painPoints,
+    locations,
+    qualification,
+    resultLimit:Math.min(Math.max(Number(input.resultLimit||input.limit)||12,1),50),
+    enrichContacts:input.enrichContacts===true
+  };
+}
+function generalLeadScraperPublicRow(row={}){
+  return {
+    id:row.id||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    name:row.name||'My lead scraper',
+    status:row.status||'active',
+    criteria:row.criteria_json||row.criteria||{},
+    destination:row.destination_json||row.destination||{},
+    automationPolicy:row.automation_policy_json||row.automationPolicy||{},
+    createdAt:row.created_at||row.createdAt||'',
+    updatedAt:row.updated_at||row.updatedAt||''
+  };
+}
+async function listGeneralLeadScrapers(){
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select * from val_lead_scraper_definitions where tenant_id=$1 order by updated_at desc',[tenantId()]);
+    return result.rows.map(generalLeadScraperPublicRow);
+  }
+  return valStore().leadScraperDefinitions
+    .filter(row=>row.tenantId===tenantId())
+    .sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))
+    .map(generalLeadScraperPublicRow);
+}
+async function saveGeneralLeadScraper(input={},requestedId=''){
+  const name=cleanScraperText(input.name||input.scraperName||'My lead scraper',100)||'My lead scraper';
+  const criteria=generalLeadScraperCriteria(input.criteria||input);
+  if(!criteria.target&&!criteria.businessTerms&&!criteria.roleTerms&&!criteria.painPoints){
+    throw Object.assign(new Error('Tell VAL what business, person, role, or pain point this scraper should find.'),{statusCode:400});
+  }
+  const current=await listGeneralLeadScrapers();
+  const existing=requestedId
+    ? current.find(row=>row.id===requestedId)
+    : input.createNew===true
+      ? null
+      : current.find(row=>row.status==='active');
+  if(requestedId&&!existing) throw Object.assign(new Error('This saved scraper was not found.'),{statusCode:404});
+  const activeCount=current.filter(row=>row.status==='active'&&row.id!==existing?.id).length;
+  if(!existing&&activeCount>=generalLeadScraperSlotLimit()){
+    throw Object.assign(new Error(`This VAL includes one active saved scraper. Additional active scrapers are $${ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY}/month each.`),{
+      statusCode:402,
+      code:'additional_scraper_slot_required',
+      entitlement:{included:INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS,active:activeCount,limit:generalLeadScraperSlotLimit(),additionalPriceMonthly:ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY}
+    });
+  }
+  const now=new Date().toISOString();
+  const row={
+    id:existing?.id||uuid('scraper'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    name,
+    status:'active',
+    criteria,
+    destination:input.destination||existing?.destination||{},
+    automationPolicy:{
+      mode:'prepare_and_queue',
+      ...(existing?.automationPolicy||{}),
+      ...(input.automationPolicy||{})
+    },
+    createdAt:existing?.createdAt||now,
+    updatedAt:now
+  };
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`insert into val_lead_scraper_definitions
+      (id,tenant_id,user_id,name,status,criteria_json,destination_json,automation_policy_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9::timestamptz,now()),now())
+      on conflict (id) do update set
+        name=excluded.name,status=excluded.status,criteria_json=excluded.criteria_json,
+        destination_json=excluded.destination_json,automation_policy_json=excluded.automation_policy_json,updated_at=now()
+      where val_lead_scraper_definitions.tenant_id=excluded.tenant_id
+      returning *`,[row.id,row.tenantId,row.userId,row.name,row.status,JSON.stringify(row.criteria),JSON.stringify(row.destination),JSON.stringify(row.automationPolicy),row.createdAt]);
+    return generalLeadScraperPublicRow(result.rows[0]);
+  }
+  const store=valStore();
+  const index=store.leadScraperDefinitions.findIndex(item=>item.id===row.id&&item.tenantId===row.tenantId);
+  if(index>=0) store.leadScraperDefinitions[index]=row;
+  else store.leadScraperDefinitions.push(row);
+  saveValStore(store);
+  return generalLeadScraperPublicRow(row);
+}
+async function archiveGeneralLeadScraper(id){
+  const current=await listGeneralLeadScrapers();
+  const existing=current.find(row=>row.id===id);
+  if(!existing) throw Object.assign(new Error('This saved scraper was not found.'),{statusCode:404});
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`update val_lead_scraper_definitions set status='archived',updated_at=now()
+      where id=$1 and tenant_id=$2 returning *`,[id,tenantId()]);
+    return generalLeadScraperPublicRow(result.rows[0]);
+  }
+  const store=valStore();
+  const row=store.leadScraperDefinitions.find(item=>item.id===id&&item.tenantId===tenantId());
+  row.status='archived';
+  row.updatedAt=new Date().toISOString();
+  saveValStore(store);
+  return generalLeadScraperPublicRow(row);
 }
 function transcriptWebhookToken(){
   return process.env.TRANSCRIPT_WEBHOOK_TOKEN || crypto.createHmac('sha256',SESSION_SECRET).update(`transcript:${tenantId()}`).digest('hex').slice(0,48);
@@ -7464,6 +7590,20 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists val_lead_scraper_definitions (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      name text not null,
+      status text not null default 'active',
+      criteria_json jsonb not null default '{}',
+      destination_json jsonb not null default '{}',
+      automation_policy_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists val_lead_scraper_definitions_tenant_status_idx
+      on val_lead_scraper_definitions (tenant_id,status,updated_at desc);
     create table if not exists val_templates (
       id text primary key,
       user_id text not null default 'default',
@@ -16879,6 +17019,59 @@ app.get('/api/frisson/custom-fields/status',async(req,res)=>{
   try{
     res.json(await frissonCustomFieldStatus());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.get('/api/val/lead-scrapers',async(req,res)=>{
+  try{
+    const scrapers=await listGeneralLeadScrapers();
+    res.json({
+      ok:true,
+      scrapers,
+      entitlement:{
+        included:INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS,
+        active:scrapers.filter(row=>row.status==='active').length,
+        limit:generalLeadScraperSlotLimit(),
+        additionalPriceMonthly:ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY
+      }
+    });
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/val/lead-scrapers',async(req,res)=>{
+  try{
+    const scraper=await saveGeneralLeadScraper(req.body||{});
+    res.json({ok:true,scraper});
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,code:e.code||'',entitlement:e.entitlement||null});
+  }
+});
+
+app.put('/api/val/lead-scrapers/:id',async(req,res)=>{
+  try{
+    const scraper=await saveGeneralLeadScraper(req.body||{},req.params.id);
+    res.json({ok:true,scraper});
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,code:e.code||'',entitlement:e.entitlement||null});
+  }
+});
+
+app.delete('/api/val/lead-scrapers/:id',async(req,res)=>{
+  try{res.json({ok:true,scraper:await archiveGeneralLeadScraper(req.params.id)});}
+  catch(e){res.status(e.statusCode||500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/val/lead-scrapers/discover-preview',async(req,res)=>{
+  try{
+    const criteria=generalLeadScraperCriteria(req.body?.criteria||req.body||{});
+    const result=await withTimeout(
+      discoverGeneralLeadProspects(criteria),
+      GOALL_LEAD_DISCOVERY_TIMEOUT_MS,
+      'General lead scrape timed out before results returned'
+    );
+    res.json(result);
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,leads:[]});
+  }
 });
 
 app.post('/api/frisson/organizations/discover-preview',async(req,res)=>{
@@ -30560,6 +30753,129 @@ function frissonDiscoveryPlan(mode='organizations',body={}){
     limit:Math.min(Math.max(Number(body.limit)||12,1),100),
     enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
     rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
+  };
+}
+
+function generalLeadSearchTerms(criteria={}){
+  const terms=String(criteria.businessTerms||criteria.target||'businesses')
+    .split(/[,;\n]/)
+    .map(value=>cleanScraperText(value,160))
+    .filter(Boolean);
+  return [...new Set(terms.length?terms:['businesses'])].slice(0,4);
+}
+function generalLeadLocations(criteria={}){
+  const locations=String(criteria.locations||'United States')
+    .split(/[;\n]/)
+    .map(value=>cleanScraperText(value,160))
+    .filter(Boolean);
+  return [...new Set(locations.length?locations:['United States'])].slice(0,3);
+}
+function generalLeadViewUrl(lead={}){
+  return lead.website||lead.googleMapsUrl||lead.linkedinCompanyUrl||'';
+}
+function generalLeadSourceUrls(lead={}){
+  return [...new Set([
+    lead.website,
+    lead.googleMapsUrl,
+    lead.linkedinCompanyUrl,
+    ...(Array.isArray(lead.sourceUrls)?lead.sourceUrls:[])
+  ].filter(Boolean))].slice(0,8);
+}
+function normalizeGeneralLeadResult(lead={},criteria={}){
+  const sourceUrls=generalLeadSourceUrls(lead);
+  const evidence=[
+    lead.organizationType||lead.industry||'',
+    lead.location||[lead.city,lead.state].filter(Boolean).join(', '),
+    lead.googleRating?`${lead.googleRating} public rating`:'',
+    lead.googleReviewCount?`${lead.googleReviewCount} public reviews`:'',
+    criteria.painPoints?`Requested signal: ${criteria.painPoints}`:'',
+    ...(Array.isArray(lead.evidenceSignals)?lead.evidenceSignals.slice(0,3):[])
+  ].filter(Boolean);
+  return {
+    ...lead,
+    leadProfile:'general',
+    source:'VAL Lead Intelligence',
+    targetDescription:criteria.target,
+    requestedRole:criteria.roleTerms,
+    requestedPainPoints:criteria.painPoints,
+    qualificationRule:criteria.qualification,
+    evidenceSignals:evidence,
+    sourceUrls,
+    viewUrl:lead.linkedinPersonalUrl||generalLeadViewUrl(lead),
+    personViewUrl:lead.linkedinPersonalUrl||'',
+    businessViewUrl:generalLeadViewUrl(lead),
+    nextOutreachAngle:criteria.painPoints
+      ? `Explore whether ${lead.organizationName||'this organization'} is experiencing ${criteria.painPoints}.`
+      : `Explore whether ${lead.organizationName||'this organization'} fits the saved scraper definition.`,
+    confidence:lead.organizationName&&generalLeadViewUrl(lead)?'moderate':'weak'
+  };
+}
+async function discoverGeneralLeadProspects(input={}){
+  const criteria=generalLeadScraperCriteria(input);
+  const terms=generalLeadSearchTerms(criteria);
+  const locations=generalLeadLocations(criteria);
+  const jobs=[];
+  for(const location of locations){
+    for(const term of terms){
+      jobs.push({term,location});
+    }
+  }
+  const perSearch=Math.max(3,Math.ceil((criteria.resultLimit*1.5)/Math.max(1,jobs.length)));
+  const results=await mapWithConcurrency(jobs,Math.min(4,jobs.length||1),async job=>{
+    const scraped=await discoverOutscraperProspects({
+      organizationType:job.term,
+      employeeMinimum:1,
+      market:job.location,
+      limit:perSearch,
+      leadProfile:'general'
+    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:error.message}));
+    return {job,scraped};
+  });
+  const raw=[];
+  const errors=[];
+  for(const {job,scraped} of results){
+    if(!scraped.configured){
+      throw Object.assign(new Error(scraped.error||'Connect Outscraper before running this saved scraper.'),{statusCode:409});
+    }
+    if(scraped.error) errors.push(`${job.term} in ${job.location}: ${cleanLeadLevelText(scraped.error)}`);
+    raw.push(...(scraped.leads||[]).map(lead=>normalizeGeneralLeadResult({
+      ...lead,
+      organizationType:job.term,
+      searchMarket:job.location
+    },criteria)));
+  }
+  const seen=new Set();
+  const deduped=[];
+  for(const lead of raw){
+    const key=goallLeadKey(lead);
+    if(!key||seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(lead);
+  }
+  const candidates=deduped.slice(0,criteria.resultLimit);
+  const leads=criteria.enrichContacts
+    ? await mapWithConcurrency(candidates,3,async lead=>{
+        const enriched=await enrichProspect(lead,{rocketReachMode:'defer',fastPreview:false}).catch(error=>({...lead,enrichmentStatus:error.message}));
+        return normalizeGeneralLeadResult(enriched,criteria);
+      })
+    : candidates.map(lead=>({...lead,rocketReachStatus:'deferred until approval'}));
+  return {
+    ok:true,
+    leadProfile:'general',
+    prospectingMode:'general_flexible',
+    criteria,
+    searchTerms:terms,
+    locations,
+    leads,
+    errors,
+    report:{
+      requested:criteria.resultLimit,
+      found:leads.length,
+      rawBusinessesSearched:raw.length,
+      contactEnrichmentRan:criteria.enrichContacts
+    },
+    crmDestination:{status:'approval_required'},
+    outreachPolicy:{mode:'prepare_and_queue',active:false}
   };
 }
 

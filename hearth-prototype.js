@@ -303,6 +303,8 @@ function personalizeTenantGreeting(value = ''){
   return text.replace(/^Jessa\b/i, name);
 }
 const scraperSessions = {};
+let activeGeneralLeadScraperId = '';
+let generalLeadScraperEntitlement = {included:1, active:0, limit:1, additionalPriceMonthly:200};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 const homeCompletedItemsStorageKey = 'val.hearth.completedHomeItems.v1';
 let activeScraperType = '';
@@ -1715,6 +1717,38 @@ function saveLeadScraperCriteria(type, criteria = {}){
 }
 
 const leadScraperDefinitions = {
+  general: {
+    scraperId: 'general_flexible',
+    userLabel: 'My scraper',
+    purpose: 'Find the businesses and people this executive needs without forcing the search into a rigid industry template.',
+    clientTemplate: 'general',
+    routeBase: '/api/val/lead-scrapers',
+    recommendedAction: 'Run my scraper',
+    crmDestination: {
+      provider: 'ghl',
+      label: 'Connected CRM / approved records only',
+      pipeline: '',
+      stage: '',
+      tags: ['VAL Lead Intelligence']
+    },
+    criteriaFields: [
+      {key:'name',label:'Scraper name',value:'My lead scraper'},
+      {key:'target',label:'Who or what should VAL find?',value:'Businesses that fit the opportunity I am pursuing'},
+      {key:'businessTerms',label:'Business or organization',value:''},
+      {key:'roleTerms',label:'Person or role',value:''},
+      {key:'painPoints',label:'Pain point or visible need',value:''},
+      {key:'locations',label:'Location',value:'United States'},
+      {key:'resultLimit',label:'Preview count',type:'number',value:'12'},
+      {key:'qualification',label:'What makes a result worth showing?',type:'textarea',value:'Show credible public evidence and explain what is known versus still unconfirmed.'}
+    ],
+    sourceReadiness: [
+      ['Live discovery', 'Public business search'],
+      ['Person context', 'Only when requested and available'],
+      ['Trust', 'Official website or public listing on every result'],
+      ['Import policy', 'Approved only'],
+      ['Outreach', 'Prepare and queue; never automatic by default']
+    ]
+  },
   organizations: {
     scraperId: 'frisson_organizations',
     userLabel: 'Organizations',
@@ -1815,7 +1849,82 @@ function leadScraperPayloadFromDefinition(type, criteria = {}){
   };
 }
 
+function applyGeneralLeadScraperToDefinition(scraper = {}){
+  if(!scraper?.criteria || !leadScraperDefinitions.general) return;
+  activeGeneralLeadScraperId = scraper.id || activeGeneralLeadScraperId;
+  const values = {...scraper.criteria, name:scraper.name || scraper.criteria.name || 'My lead scraper'};
+  leadScraperDefinitions.general.criteriaFields = leadScraperDefinitions.general.criteriaFields.map((field) => ({
+    ...field,
+    value: values[field.key] == null ? field.value : String(values[field.key])
+  }));
+  if(scraper.destination?.label) leadScraperDefinitions.general.crmDestination.label = scraper.destination.label;
+  if(scraperWorkflows.general) scraperWorkflows.general.criteria = leadScraperCriteriaFromDefinition('general');
+}
+
+async function hydrateGeneralLeadScraper(){
+  if(!canUseApi) return;
+  try{
+    const result = await getJson('/api/val/lead-scrapers', {cache:'no-store'});
+    generalLeadScraperEntitlement = result.entitlement || generalLeadScraperEntitlement;
+    const active = (result.scrapers || []).find((scraper) => scraper.status === 'active');
+    if(active) applyGeneralLeadScraperToDefinition(active);
+  }catch(error){
+    console.warn('[hearth] saved lead scraper unavailable', error.message);
+  }
+}
+
+async function persistGeneralLeadScraper(criteria = {}){
+  if(!canUseApi) return null;
+  const config = scraperApiConfig.general;
+  const payload = config.buildPayload(criteria);
+  const result = await postJson('/api/val/lead-scrapers', {
+    name: payload.name,
+    criteria: payload,
+    destination: leadScraperDefinitions.general.crmDestination,
+    automationPolicy: {mode:'prepare_and_queue'}
+  });
+  if(result.scraper) applyGeneralLeadScraperToDefinition(result.scraper);
+  return result.scraper || null;
+}
+
 const scraperWorkflows = {
+  general: {
+    lens: 'Lead Intelligence',
+    setupTitle: 'Describe the opportunity. VAL will build the search.',
+    setupMeaning: 'Use any combination of business, person, role, pain point, and location. One active saved scraper is included and can be edited or replaced at any time.',
+    setupUnderstanding: [
+      'The saved definition belongs to this VAL, not this browser.',
+      'Live public discovery happens before paid person enrichment.',
+      'Every result must show evidence and a real place to inspect it.'
+    ],
+    setupRecommendation: 'Start with the outcome you want, then give VAL only the boundaries that genuinely matter.',
+    criteria: leadScraperCriteriaFromDefinition('general'),
+    previewTitle: 'The live preview is ready for judgment.',
+    previewMeaning: 'These are real public results. Nothing has entered CRM and no outreach has begun.',
+    previewUnderstanding: [
+      'Step 1 found public businesses matching the saved definition.',
+      'Step 2 attached person or role evidence only where available.',
+      'Step 3 keeps approval, dedupe, and CRM import visible.'
+    ],
+    previewRecommendation: 'Inspect the source, approve what belongs, and hold what does not.',
+    verifiedTitle: 'The evidence is ready for approval.',
+    verifiedMeaning: 'VAL preserved what is known, what is unconfirmed, and where each result came from.',
+    verifiedUnderstanding: [
+      'A source link stays attached to every inspectable result.',
+      'No decision maker is invented.',
+      'Outreach remains in prepare-and-queue mode.'
+    ],
+    verifiedRecommendation: 'Approve only the records you would genuinely want waiting in CRM.',
+    importedTitle: 'Approved records were handed to CRM.',
+    importedMeaning: 'Only approved records moved forward.',
+    importedUnderstanding: [
+      'CRM duplicate protection ran again.',
+      'Source evidence stayed attached.',
+      'Outreach still requires its own governed Environment.'
+    ],
+    importedRecommendation: 'Review the new records and decide whether VAL should prepare initial outreach.',
+    previewLeads: []
+  },
   organizations: {
     lens: 'Lead Intelligence',
     setupTitle: 'Define the organization scraper before VAL begins.',
@@ -1943,6 +2052,23 @@ const scraperWorkflows = {
 };
 
 const scraperApiConfig = {
+  general: {
+    previewUrl: '/api/val/lead-scrapers/discover-preview',
+    importUrl: '',
+    buildPayload(criteria){
+      return {
+        name: criteria['Scraper name'] || criteria.name || 'My lead scraper',
+        target: criteria['Who or what should VAL find?'] || criteria.target || '',
+        businessTerms: criteria['Business or organization'] || criteria.businessTerms || '',
+        roleTerms: criteria['Person or role'] || criteria.roleTerms || '',
+        painPoints: criteria['Pain point or visible need'] || criteria.painPoints || '',
+        locations: criteria.Location || criteria.locations || 'United States',
+        qualification: criteria['What makes a result worth showing?'] || criteria.qualification || '',
+        resultLimit: Math.min(Math.max(Number(criteria['Preview count'] || criteria.resultLimit) || 12, 1), 50),
+        enrichContacts: Boolean(criteria['Person or role'] || criteria.roleTerms)
+      };
+    }
+  },
   organizations: {
     previewUrl: '/api/frisson/organizations/discover-preview',
     importUrl: '/api/frisson/organizations/import-approved',
@@ -17777,10 +17903,11 @@ function leadSourcingEmptyBoard(){
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing board</span><small>Select one of the two scrapers above to begin.</small></div>',
-    '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
+    '<div class="lead-sourcing-board idle has-source-column" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review and source evidence land here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Verify the source</h4><small>Public proof</small></div><article class="lead-stage-row empty"><strong>Waiting for public evidence</strong><span>Every result must be inspectable.</span><small>VAL will link to the person or business it found.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="4"><div><span>Step 4</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review happens before any record is created.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -17796,7 +17923,7 @@ function renderScraperCriteria(workflow, type){
       '<h3>' + criteria.title + '</h3>',
       '<div class="criteria-grid">' + criteria.fields.map(renderCriteriaField).join('') + '</div>',
       '<div class="lead-sourcing-actions">',
-        '<button type="button" data-lead-drawer-action="save-trainer" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Save training</button>',
+        '<button type="button" data-lead-drawer-action="save-trainer" data-lead-drawer-type="' + (type || activeScraperType || '') + '">' + ((type || activeScraperType) === 'general' ? 'Save this scraper' : 'Save training') + '</button>',
         '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Run this scraper</button>',
       '</div>',
     '</section>',
@@ -17821,7 +17948,7 @@ function renderScraperPreviewList(workflow, stage){
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>' + stageSummary + '</small></div>',
-    '<div class="lead-sourcing-board" data-lead-sourcing-board>',
+    '<div class="lead-sourcing-board has-source-column" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column done" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div>' +
         leads.map((lead, index) => (
           '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
@@ -17841,7 +17968,16 @@ function renderScraperPreviewList(workflow, stage){
           '</article>'
         )).join('') +
       '</section>',
-      '<section class="lead-sourcing-column active" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' +
+      '<section class="lead-sourcing-column done" data-level="3"><div><span>Step 3</span><h4>Verify the source</h4><small>Public proof</small></div>' +
+        leads.map((lead, index) => (
+          '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
+            '<strong>' + escapeHtml(lead.name) + '</strong>' +
+            (lead.personViewUrl ? '<a class="lead-source-link" href="' + escapeConnectionHtml(lead.personViewUrl) + '" target="_blank" rel="noopener noreferrer">View this person</a>' : '') +
+            (lead.businessViewUrl || lead.viewUrl ? '<a class="lead-source-link" href="' + escapeConnectionHtml(lead.businessViewUrl || lead.viewUrl) + '" target="_blank" rel="noopener noreferrer">View this business</a>' : '<small>Public source link unavailable</small>') +
+          '</article>'
+        )).join('') +
+      '</section>',
+      '<section class="lead-sourcing-column active" data-level="4"><div><span>Step 4</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' +
         leads.map((lead, index) => (
           '<article class="preview-lead lead-stage-row" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
             '<div class="lead-confirm-main">' +
@@ -17899,7 +18035,7 @@ function renderLeadSourcingMessage(type, title, details = [], actionLabel = 'Tra
       '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Protected</strong><span>' + escapeHtml(details[2] || 'Approval and duplicate gates remain in place.') + '</span><small>No CRM write happened.</small></article></section>',
     '</div>',
     '<div class="lead-sourcing-actions">',
-      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'organizations') + '">' + escapeHtml(actionLabel) + '</button>',
+      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'general') + '">' + escapeHtml(actionLabel) + '</button>',
     '</div>'
   ].join('');
 }
@@ -18005,15 +18141,27 @@ function leadField(lead, keys, fallback = ''){
   return fallback;
 }
 
+function safeLeadSourceHref(value = ''){
+  try{
+    const url = new URL(String(value || ''));
+    return /^https?:$/.test(url.protocol) ? url.href : '';
+  }catch(_error){
+    return '';
+  }
+}
+
 function normalizePreviewLead(lead, type){
   const sourceUrls = Array.isArray(lead.sourceUrls) ? lead.sourceUrls : Array.isArray(lead.sources) ? lead.sources : [];
-  const contactName = leadField(lead, ['decisionMakerName','contactName','primaryContact','name'], '');
+  const contactName = leadField(lead, ['decisionMakerName','contactName','primaryContact'], '');
   const contactTitle = leadField(lead, ['decisionMakerTitle','contactTitle','title'], '');
   const contact = contactName ? contactName + (contactTitle ? ', ' + contactTitle : '') : lead.email || lead.phone || 'Decision maker not confirmed';
   const score = type === 'partners'
     ? (lead.partnershipFitScore != null ? 'Fit ' + Number(lead.partnershipFitScore) + '/100' : leadField(lead, ['score','leadScore','partnerFit'], 'Fit pending'))
     : (lead.leadScore != null ? 'Score ' + lead.leadScore : leadField(lead, ['score','leadScoreReason','partnerFit','confidence'], 'Review fit'));
   const evidence = leadField(lead, ['reasonForScore','leadScoreReason','evidence','nextOutreachAngle','recommendedOutreachAngle','tagReason'], sourceUrls.length ? 'Sources: ' + sourceUrls.slice(0, 2).join(', ') : 'Evidence attached in scraper result.');
+  const personViewUrl = safeLeadSourceHref(leadField(lead, ['personViewUrl','linkedinPersonalUrl'], ''));
+  const businessViewUrl = safeLeadSourceHref(leadField(lead, ['businessViewUrl','viewUrl','website','googleMapsUrl','linkedinCompanyUrl'], sourceUrls[0] || ''));
+  const viewUrl = personViewUrl || businessViewUrl;
   return {
     name: leadField(lead, ['organizationName','companyName','businessName','name'], 'Unnamed organization'),
     type: leadField(lead, ['partnerType','organizationType','industry','aiExactIndustry','normalizedIndustry'], type === 'partners' ? 'Strategic partner' : 'Organization'),
@@ -18021,6 +18169,9 @@ function normalizePreviewLead(lead, type){
     score,
     contact,
     evidence,
+    viewUrl,
+    personViewUrl,
+    businessViewUrl,
     _raw: lead,
     _approved: lead._approved !== false
   };
@@ -20436,6 +20587,18 @@ async function runScraperPreview(type){
   }
   const criteria = getScraperCriteria();
   saveLeadScraperCriteria(type, criteria);
+  if(type === 'general'){
+    try{
+      await persistGeneralLeadScraper(criteria);
+    }catch(error){
+      renderLeadSourcingMessage(type, 'Scraper could not be saved', [
+        error.message,
+        'The active scraper definition did not change.',
+        'Nothing entered CRM and no outreach began.'
+      ], 'Edit scraper');
+      return;
+    }
+  }
   const payload = config.buildPayload(criteria);
   const session = sessionFor(type);
   session.payload = payload;
@@ -20497,6 +20660,14 @@ async function importApprovedScraperLeads(type){
   }
   const config = scraperApiConfig[type];
   const workflow = scraperWorkflows[type];
+  if(type === 'general' && !config?.importUrl){
+    renderLeadSourcingMessage(type, 'Approved results are ready for a CRM destination', [
+      'The live results and approval decisions are preserved in this session.',
+      'Connect the destination pipeline before importing.',
+      'Outreach remains in prepare-and-queue mode and will not start automatically.'
+    ], 'Edit scraper');
+    return;
+  }
   const session = sessionFor(type);
   const rows = Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead'));
   const approvedIndexes = rows
@@ -21530,21 +21701,33 @@ function renderScraperUtility(type){
 }
 
 function trainLeadScraper(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   openScraper(selectedType, 'setup');
 }
 
-function saveLeadScraperTraining(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+async function saveLeadScraperTraining(type){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   const criteria = getScraperCriteria();
   saveLeadScraperCriteria(selectedType, criteria);
+  if(selectedType === 'general'){
+    try{
+      await persistGeneralLeadScraper(criteria);
+    }catch(error){
+      renderLeadSourcingMessage(selectedType, 'Scraper could not be saved', [
+        error.message,
+        'The active saved scraper remains unchanged.',
+        'Nothing entered CRM and no outreach began.'
+      ], 'Edit scraper');
+      return;
+    }
+  }
   activeScraperType = selectedType;
   if(leadDrawerPreviewList){
     leadDrawerPreviewList.hidden = false;
     leadDrawerPreviewList.innerHTML = [
       '<div class="preview-list-head"><span>Training saved</span><small>The next run will use this scraper definition.</small></div>',
       '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-        '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' training saved</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the updated sequence.</small></article></section>',
+        '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' saved</strong><span>' + (selectedType === 'general' ? 'This definition belongs to this VAL and is available across devices.' : 'Criteria and source instructions are stored locally for this VAL.') + '</span><small>Run the scraper to test the updated sequence.</small></article></section>',
         '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
         '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered CRM.</small></article></section>',
       '</div>',
@@ -21560,7 +21743,7 @@ function saveLeadScraperTraining(type){
 }
 
 function approveAllPreviewLeads(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   activeScraperType = selectedType;
   const rows = leadDrawerPreviewList ? Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead')) : [];
   const session = sessionFor(selectedType);
@@ -21579,7 +21762,7 @@ function approveAllPreviewLeads(type){
 }
 
 async function handleLeadDrawerAction(action, type, node){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'lead_intelligence_packet',
@@ -21594,7 +21777,7 @@ async function handleLeadDrawerAction(action, type, node){
     return;
   }
   if(action === 'save-trainer'){
-    saveLeadScraperTraining(selectedType);
+    await saveLeadScraperTraining(selectedType);
     return;
   }
   if(action === 'preview'){
@@ -31161,6 +31344,7 @@ document.addEventListener('click', async (event) => {
 });
 
 leadSourcingEmptyBoard();
+void hydrateGeneralLeadScraper();
 
 async function routeWorkspaceActionClick(event){
   const homeActionButton = event.target.closest('[data-home-action]');

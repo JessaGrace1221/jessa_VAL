@@ -13234,6 +13234,9 @@ button.timeline-overview-receipt:focus-visible{
   background:rgba(255,255,255,.72);
   box-shadow:0 20px 54px rgba(29,29,31,.08), inset 0 1px 0 rgba(255,255,255,.7);
 }
+.lead-sourcing-board.has-source-column{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
 .lead-sourcing-column{
   display:grid;
   align-content:start;
@@ -13288,6 +13291,20 @@ button.timeline-overview-receipt:focus-visible{
   background:rgba(94,114,88,.08);
   color:rgba(65,83,61,.92);
   font:650 .62rem/1 var(--body);
+}
+.lead-source-link{
+  width:max-content;
+  max-width:100%;
+  color:#315943;
+  font:720 .74rem/1.25 var(--body);
+  text-decoration:underline;
+  text-decoration-color:rgba(49,89,67,.32);
+  text-underline-offset:4px;
+}
+.lead-source-link:hover,
+.lead-source-link:focus-visible{
+  color:#173c2f;
+  text-decoration-color:#173c2f;
 }
 .lead-sourcing-board.loading .lead-sourcing-column.active{
   background:rgba(247,247,242,.62);
