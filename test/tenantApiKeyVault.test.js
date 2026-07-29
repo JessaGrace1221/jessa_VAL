@@ -99,6 +99,8 @@ test('missing user-owned OpenAI key gates the authenticated Hearth before any ot
   assert.match(hearthJs,/Connected\. Entering VAL\.\.\./);
   assert.match(hearthJs,/OpenAI needs API credits/);
   assert.match(hearthJs,/timeoutMs:20000/);
+  assert.match(hearthJs,/setupForm\?\.addEventListener\('submit'/);
+  assert.match(hearthJs,/async function completeValOpenAISetup/);
 });
 
 test('clean dashboard exposes Google connection as a first-run user action',()=>{

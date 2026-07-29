@@ -22068,6 +22068,12 @@ function openValOpenAISetup(cardId = 'meeting_val', options = {}){
   deskWorkspace.classList.add('witnessing-mode');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = renderValOpenAISetup({mandatory:openAiSetupRequired});
+  const setupForm = workspaceInputPanel.querySelector('[data-val-openai-setup-form]');
+  setupForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await completeValOpenAISetup();
+  });
   workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="openai"]')?.focus();
   openWorkspaceShell('VAL OpenAI setup', {returnTarget:'val'});
 }
@@ -22221,6 +22227,22 @@ async function saveValWitnessingCredential(provider = ''){
     }
     return false;
   }
+}
+
+async function completeValOpenAISetup(){
+  const connected = await saveValWitnessingCredential('openai');
+  if(!connected) return false;
+  const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
+  pendingValWitnessingLaunch = null;
+  if(launch.options?.afterConnect === 'dashboard'){
+    releaseValOpenAISetup();
+    closeWorkspace();
+    hydrateHomePresence();
+  }else{
+    releaseValOpenAISetup();
+    await openValWitnessingSession(launch.cardId,launch.options);
+  }
+  return true;
 }
 
 async function continueValWitnessingWithSources(category = 'witness_connect_sources'){
@@ -30911,19 +30933,7 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   const openAiSetupForm = event.target.closest('[data-val-openai-setup-form]');
   if(openAiSetupForm){
     event.preventDefault();
-    const connected = await saveValWitnessingCredential('openai');
-    if(connected){
-      const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
-      pendingValWitnessingLaunch = null;
-      if(launch.options?.afterConnect === 'dashboard'){
-        releaseValOpenAISetup();
-        closeWorkspace();
-        hydrateHomePresence();
-      }else{
-        releaseValOpenAISetup();
-        await openValWitnessingSession(launch.cardId,launch.options);
-      }
-    }
+    await completeValOpenAISetup();
     return;
   }
   const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
