@@ -21269,6 +21269,7 @@ function restoreLeadIntelligenceWindow(){
 
 function restoreValWindow(){
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'val';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
   updateDrawerPullLabel();

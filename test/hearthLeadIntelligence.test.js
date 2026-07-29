@@ -2596,6 +2596,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.doesNotMatch(hearthHtml, /<a href="\.\/dashboard\.html" class="drawer-link" data-drawer-tone="clay-green">/);
   assert.match(hearthJs, /const valDrawerLink/);
   assert.match(hearthJs, /function restoreValWindow/);
+  assert.match(hearthJs, /function restoreValWindow\(\)\{\s*retrievalSystem\.classList\.add\('open'\);\s*retrievalSystem\.dataset\.activeDrawer = 'val';/);
   assert.match(hearthJs, /function handleValAction/);
   assert.match(hearthJs, /function refreshGoogleConnectionStatus/);
   assert.match(hearthJs, /function refreshCalendarSourceStatus/);
