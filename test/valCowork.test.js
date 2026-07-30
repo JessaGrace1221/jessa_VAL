@@ -1263,6 +1263,26 @@ test('Transcript Working Brief remains scoped to the selected Krisp receipt and 
   assert.equal(applied.draft.body,opened.session.workingBrief.sourceReceipt.body);
 });
 
+test('Transcript Working Brief answers every typed turn from the selected transcript context',async()=>{
+  const turns=[];
+  const {service}=serviceFor({generateConversationReply:async input=>{
+    turns.push(input);
+    return 'Anthony owns the website-link follow-up. The meeting purpose was to follow up on Forever Freedom.';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'transcript.working_brief',
+    scope:{entityType:'transcript',entityId:'transcript_forever_freedom',sectionId:'working_brief'}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'Outline the follow-up and who owns it.'});
+  assert.equal(turns.length,1);
+  assert.equal(turns[0].entrypointId,'transcript.working_brief');
+  assert.equal(turns[0].scopeId,'transcript_forever_freedom');
+  assert.equal(turns[0].workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
+  assert.equal(answered.session.state.messages[0].content,'Outline the follow-up and who owns it.');
+  assert.match(answered.message,/Anthony owns/i);
+  assert.equal(answered.workItem.status,'needs_review');
+});
+
 test('Transcript Action Item remains word for word, creates only one internal Commitment, and rejects an unselected line',async()=>{
   const {service,createdTranscriptActionItems}=serviceFor();
   const opened=await service.openEntry({

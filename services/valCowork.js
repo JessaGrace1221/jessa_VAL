@@ -4287,6 +4287,9 @@ function createValCoworkService({
     if(session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff') return respondObserverConversation(session,answer);
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    // A Transcript Working Brief is an active source-scoped conversation, not a
+    // one-shot form. Every turn must retain the exact selected transcript.
+    if(session.entrypointId === 'transcript.working_brief') return respondScopedConversation(session,workItem,answer);
     if(coworkTurnLooksConversational(answer)) return respondScopedConversation(session,workItem,answer);
     if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
@@ -4304,7 +4307,6 @@ function createValCoworkService({
     if(session.entrypointId === 'project.phase') return respondProjectPhase(session,workItem,answer);
     if(session.entrypointId === 'project.prepared_work') return respondProjectPreparedWork(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
-    if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
     if(session.entrypointId === 'email.thread') return respondEmailThread(session,workItem,answer);
     if(session.entrypointId === 'relationship.overview') return respondRelationshipOverview(session,workItem,answer);

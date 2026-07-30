@@ -6321,6 +6321,13 @@ function renderCoworkEntryResult(result = {}, options = {}){
     }
   }
   if(submit) submit.disabled = isObserverConversation ? false : (isComplete || isReadyForReview);
+  const pendingMessage = projectCleanText(activeCoworkEntry?.pendingMessage || '');
+  if(session.id && pendingMessage){
+    activeCoworkEntry = {...activeCoworkEntry,pendingMessage:''};
+    window.setTimeout(() => {
+      void submitActiveCoworkEntry(pendingMessage);
+    }, 0);
+  }
 }
 
 async function openProjectWorkstreamsCowork(node = null){
@@ -6823,9 +6830,9 @@ async function submitActiveCoworkEntry(messageOverride = ''){
   const entry = activeCoworkEntry;
   if(!entry) return false;
   const observerScopedLane = entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff';
+  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!entry.sessionId){
     if(observerScopedLane){
-      const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
       if(!projectCleanText(input)) return true;
       appendHomeCoworkMessage('user', input);
       const textarea = homeCoworkTextareaNode();
@@ -6838,15 +6845,15 @@ async function submitActiveCoworkEntry(messageOverride = ''){
       return true;
     }
     if(entry.status === 'opening'){
+      if(projectCleanText(input)) activeCoworkEntry = {...entry,pendingMessage:input};
       const submit = homeCoworkSubmitNode();
       if(submit) submit.disabled = true;
-      showCoworkContextGathering('VAL is finishing the selected section packet. Your message remains here and will stay scoped to this Project Manager.');
+      showCoworkContextGathering('VAL is finishing the selected source packet. Your message will continue automatically inside this Working Brief.');
     }
     // Do not fall through to generic Home Co-Work while a source-specific session is opening.
     return true;
   }
   if(entry.status === 'applied') return true;
-  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!projectCleanText(input)) return true;
   appendHomeCoworkMessage('user',input);
   const textarea = homeCoworkTextareaNode();
@@ -17627,10 +17634,8 @@ function activeWorkspaceFileInput(tool = null){
 function handleHomeCoworkFormSubmit(event){
   if(!event.target.matches('[data-home-cowork-form]')) return false;
   event.preventDefault();
-  const observerLane = Boolean(deskWorkspace?.classList.contains('observer-cowork-active'));
   const textarea = event.target.querySelector('[data-workspace-input="cowork"]');
-  const message = observerLane ? projectCleanText(textarea?.value || '') : '';
-  if(observerLane && textarea) textarea.value = '';
+  const message = projectCleanText(textarea?.value || '');
   submitActiveCoworkEntry(message).then((handled) => {
     if(!handled) runCowork('think', message);
   });
