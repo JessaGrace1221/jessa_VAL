@@ -6216,7 +6216,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
   const message = options.suppressMessage ? '' : (result.message || result.question?.question || '');
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
-  if(response && workItem.id){
+  const hidePreparedWorkInsideTranscriptChat = session.entrypointId === 'transcript.working_brief' && workItem.type === 'transcript_conversation';
+  if(response && workItem.id && !hidePreparedWorkInsideTranscriptChat){
     const item = workItem.type === 'project_documents'
       ? renderCoworkDocumentItem(workItem)
       : workItem.type === 'project_people'
@@ -6735,17 +6736,17 @@ async function openTranscriptWorkingBriefCowork(transcriptId = ''){
   activeCoworkEntry = {entrypointId:'transcript.working_brief',sessionId:'',workItemId:'',transcriptId,status:'opening'};
   openContextualCoworkSession({
     returnTarget:'timeline',
-    title:'Transcript Working Brief',
-    meaning:'Holding the exact Krisp Action Items and Key Points for ' + timelineTranscriptTitle(transcript) + '.',
+    title:'Chat about this transcript',
+    meaning:'The complete meeting context for ' + timelineTranscriptTitle(transcript) + ' is already loaded.',
     context:[
       'Transcript: ' + timelineTranscriptTitle(transcript),
       'Exact Krisp receipt is loaded on the server.',
       'No source text will be rewritten.'
     ],
-    recommendation:'VAL will prepare a reviewable internal result from this selected meeting only.',
-    placeholder:'Preparing the selected transcript Working Brief...',
-    heading:'Preparing work from ' + timelineTranscriptTitle(transcript),
-    detail:'This conversation is scoped to one transcript and its exact Krisp receipt.',
+    recommendation:'Ask what mattered, what was decided, what could be built, or what VAL notices across the complete meeting.',
+    placeholder:'Opening this transcript conversation...',
+    heading:'Thinking with ' + timelineTranscriptTitle(transcript),
+    detail:'This conversation is scoped to this transcript. Existing drafts remain in Leverage.',
     publicDetail:'Scoped to Transcripts: selected meeting receipt.',
     lockContext:true
   });
@@ -14251,12 +14252,14 @@ function timelineTranscriptInvitees(transcript = {}){
       if(typeof person === 'string'){
         const emailMatch = person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
         const email = emailMatch ? emailMatch[0].toLowerCase() : '';
-        return {label:person.replace(/<.*?>/g, '').trim(), name:person.replace(/<.*?>/g, '').replace(email, '').trim(), email, key:(email || person).toLowerCase(), relationshipId:'', projectId:''};
+        if(!email) return null;
+        return {label:person.replace(/<.*?>/g, '').trim(), name:person.replace(/<.*?>/g, '').replace(email, '').trim(), email, key:email, relationshipId:'', projectId:''};
       }
       const email = person?.email || person?.address || person?.emailAddress?.address || person?.mail || person?.matchedEmail || '';
+      if(!/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(String(email || ''))) return null;
       const name = person?.name || person?.displayName || person?.emailAddress?.name || person?.speakerNameRaw || person?.matchedContactName || '';
       const label = String(name || email || '').trim();
-      const key = String(email || label || '').trim().toLowerCase();
+      const key = String(email || '').trim().toLowerCase();
       const relationshipId = person?.relationshipId || person?.matchedContactId || person?.contactId || person?.crmContactId || person?.profileKey || '';
       const projectId = person?.projectId || person?.matchedProjectId || person?.projectProfileId || '';
       return label ? {label, name, email, key, relationshipId, relationshipName:person?.relationshipName || person?.matchedRelationshipName || '', projectId, matchReason:person?.matchReason || person?.relationshipStatus || ''} : null;
@@ -14423,22 +14426,15 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
   const calendarMismatchNote = calendarInviteMismatch ? '<small class="timeline-map-suggestion timeline-map-warning">VAL found a calendar invite, but it did not match this transcript closely enough to trust its attendees: ' + escapeHtml(calendarInviteMismatch.title || calendarInviteMismatch.id || 'calendar invite') + '.</small>' : '';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
-  const sourceDraft = overviewDraft || timelineMeetingOverviewDraft(transcript);
-  const actionCount = sourceDraft.actionItems.length;
-  const keyPointCount = sourceDraft.keyPoints.length;
-  const attendeeEmailDraft = timelineAttendeeEmailDraftRecord(transcript);
+  const attendeeChips = invitees.map((person) => '<span><strong>' + escapeHtml(person.name || person.label || person.email) + '</strong><small>' + escapeHtml(person.email) + '</small></span>').join('');
   return [
-    '<section class="timeline-transcript-section timeline-transcript-send-panel" data-transcript-section="send-action-items">',
-    '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Key Points and Action Items</strong></div>',
-    '<p>VAL keeps the source Key Points and Action Items exactly as shown, then prepares one group email for your review.</p>',
-    attendeeEmailDraft
-      ? renderTimelineAttendeeEmailReview(attendeeEmailDraft)
-      : '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Prepare group email</button>',
-    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee email' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(keyPointCount ? keyPointCount + ' Key Point' + (keyPointCount === 1 ? '' : 's') : 'No Key Points found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
-    '</section>',
-    '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
-    '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
-    '<p>If VAL missed a relationship or project, link it here so the Round Table packets and future prepared work have the right context.</p>',
+    '<section class="timeline-transcript-section timeline-transcript-context-panel" data-transcript-section="people-projects">',
+    '<div class="timeline-overview-receipt"><span>Verified connections</span><strong>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee' + (attendeeCount === 1 ? '' : 's') : 'No attendee emails attached') + '</strong></div>',
+    attendeeChips ? '<div class="timeline-verified-attendees">' + attendeeChips + '</div>' : '<p>VAL did not receive a verified attendee email with this transcript.</p>',
+    '<details class="timeline-transcript-map-panel">',
+    '<summary>Review or correct relationships and project</summary>',
+    '<div class="timeline-transcript-map-body">',
+    '<p>Only verified attendee emails belong here. Key Points and Action Items remain meeting evidence and can never become people.</p>',
     '<div class="timeline-project-link-row timeline-relationship-link-row">',
     '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(suggestedRelationship?.relationshipName || suggestedRelationship?.label || suggestedRelationship?.email || '') + '" data-transcript-relationship-main-search aria-label="Search relationship for this transcript">',
     '<button type="button" data-transcript-action="link_transcript_relationship" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to relationship</button>',
@@ -14463,6 +14459,8 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     calendarMismatchNote,
     '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-map-status></p>',
+    '</div>',
+    '</details>',
     '</section>'
   ].join('');
 }
@@ -14500,11 +14498,11 @@ function renderTimelineTranscriptMetricStrip(transcript = {}, tasks = [], overvi
   const draft = overviewDraft || timelineMeetingOverviewDraft(transcript, tasks);
   const taskCount = draft.actionItems.length || tasks.length;
   const keyPointCount = draft.keyPoints.length;
-  const savedDraft = timelineMeetingOverviewRecord(transcript);
-  const emailLabel = savedDraft ? 'Open email draft' : 'Prepare email draft';
+  const savedDraft = timelineMeetingOverviewRecord(transcript) || timelineAttendeeEmailDraftRecord(transcript);
+  const emailLabel = savedDraft ? 'Open in Leverage' : 'Nothing prepared';
   const emailControl = savedDraft
-    ? '<button type="button" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>'
-    : '<button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>';
+    ? '<button type="button" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Prepared work</strong><span>' + escapeHtml(emailLabel) + '</span></button>'
+    : '<button type="button" disabled><strong>Prepared work</strong><span>' + escapeHtml(emailLabel) + '</span></button>';
   return [
     '<div class="timeline-transcript-summary-strip" aria-label="Transcript readiness">',
     '<button type="button" data-transcript-focus="action-items"><strong>' + escapeHtml(taskCount) + '</strong><span>Action Items</span></button>',
@@ -14529,8 +14527,9 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
         '<span>' + escapeHtml(actionSection ? 'FOLLOW-THROUGH' : 'MEETING INTELLIGENCE') + '</span>',
         '<h4>' + escapeHtml(section.heading || (actionSection ? 'Action Items' : 'Key Points')) + '</h4>',
         '</header>',
-        lines.length ? '<div class="timeline-source-lines">' + lines.map((line) => [
+        lines.length ? '<div class="timeline-source-lines">' + lines.map((line, index) => [
           '<div>',
+          '<span class="timeline-source-line-marker" aria-hidden="true">' + escapeHtml(actionSection ? String(index + 1) : '—') + '</span>',
           '<p>' + escapeHtml(line) + '</p>',
           '</div>'
         ].join('')).join('') : '<pre>' + escapeHtml(section.raw || '') + '</pre>',
@@ -14714,12 +14713,12 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<article class="timeline-transcript-detail">',
     '<div class="timeline-transcript-titlebar">',
     '<div><span>Selected transcript</span><h4>' + escapeHtml(title) + '</h4><small>' + escapeHtml(meta || 'Source receipt available') + '</small>' + (rawTitle && rawTitle !== title ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
+    '<button type="button" class="timeline-chat-transcript timeline-chat-transcript-top" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button>',
     '</div>',
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
     renderTimelineTranscriptMappingControls(transcript, overviewDraft),
-    renderTimelineMeetingOverviewDraft(transcript, tasks, overviewDraft),
-    '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><p>VAL will use this selected meeting\'s exact Krisp receipt to prepare a reviewable internal result.</p><button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Open Transcript Working Brief</button></section>',
+    '<section class="timeline-transcript-section timeline-transcript-cowork"><div><span>Ask, explore, or build from the meeting</span><h4>Chat about this transcript</h4><p>VAL already has this meeting\'s Action Items, Key Points, and verified connections loaded. Prepared drafts remain in Leverage.</p></div><button type="button" class="timeline-chat-transcript" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button></section>',
     '<div class="timeline-transcript-source-actions">',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
     downloadUrl ? '<a class="transcript-download-link" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener">Download transcript</a>' : '',

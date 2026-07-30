@@ -11,6 +11,7 @@ const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 const krispService=fs.readFileSync(path.join(root,'services/krispMcpService.js'),'utf8');
+const coworkService=fs.readFileSync(path.join(root,'services/valCowork.js'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -211,7 +212,7 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.doesNotMatch(hearthJs,/Ready - send to invitees/);
 });
 
-test('transcript detail can map attendees/projects and prepare reviewed Key Points and Action Items emails',()=>{
+test('transcript detail can map verified attendees and projects while prepared emails remain separate',()=>{
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/action-items-email-draft'/);
   assert.match(server,/prepareTranscriptActionItemsAttendeeEmailDraft/);
   assert.match(server,/transcript_action_items_attendee_email/);
@@ -229,8 +230,6 @@ test('transcript detail can map attendees/projects and prepare reviewed Key Poin
   assert.match(server,/transcript_context_for_project/);
   assert.match(server,/review_then_send_email/);
   assert.match(hearthJs,/function renderTimelineTranscriptMappingControls/);
-  assert.match(hearthJs,/Prepare group email/);
-  assert.match(hearthJs,/data-transcript-action="send_action_items"/);
   assert.match(hearthJs,/data-transcript-action="link_relationship"/);
   assert.match(hearthJs,/data-transcript-action="create_relationship"/);
   assert.match(hearthJs,/data-transcript-action="link_transcript_relationship"/);
@@ -249,6 +248,9 @@ test('transcript detail can map attendees/projects and prepare reviewed Key Poin
   assert.match(hearthJs,/Email found: /);
   assert.match(hearthJs,/VAL matched relationship/);
   assert.match(hearthJs,/VAL matched project/);
+  assert.match(hearthJs,/Verified connections/);
+  assert.match(hearthJs,/Review or correct relationships and project/);
+  assert.match(hearthJs,/Key Points and Action Items remain meeting evidence and can never become people/);
   assert.match(hearthJs,/calendarInviteMismatch/);
   assert.match(hearthJs,/normalizeTimelineEmail/);
   assert.match(server,/const email=normalizeContextEmail/);
@@ -270,6 +272,27 @@ test('transcript attendees and titles stay source-exact instead of guessed',()=>
   assert.match(server,/meetingTitle:title,calendarEventTitle:title/);
   assert.match(server,/const id=String\(record\.id\|\|record\.transcriptId/);
   assert.match(server,/transcript\.summary\?\.executiveSummary/);
+});
+
+test('transcript evidence cannot be promoted into a relationship without an email address',()=>{
+  const clientInvitees=hearthJs.match(/function timelineTranscriptInvitees\(transcript = \{\}\)\{[\s\S]*?\n\}/)?.[0]||'';
+  const coworkInvitees=coworkService.match(/function transcriptInvitees\(transcript=\{\}\)\{[\s\S]*?\n\}/)?.[0]||'';
+  assert.ok(clientInvitees);
+  assert.ok(coworkInvitees);
+  assert.match(clientInvitees,/if\(!email\)\s*return null;/);
+  assert.match(coworkInvitees,/return email \? \{name:[\s\S]*?\} : null;/);
+  assert.match(coworkInvitees,/test\(normalized\.email\) \? normalized : null/);
+  assert.match(clientInvitees,/seen\.has\(person\.key\)/);
+  assert.match(coworkInvitees,/seen\.has\(key\)/);
+});
+
+test('transcript detail keeps prepared work in Leverage and offers conversation at both boundaries',()=>{
+  const detail=hearthJs.match(/function renderTimelineTranscriptDetail\(transcript = \{\}\)\{[\s\S]*?\n\}/)?.[0]||'';
+  assert.ok(detail);
+  assert.match(detail,/timeline-chat-transcript-top/);
+  assert.match(detail,/Prepared drafts remain in Leverage/);
+  assert.equal((detail.match(/Chat about this transcript/g)||[]).length,3);
+  assert.doesNotMatch(detail,/renderTimelineMeetingOverviewDraft/);
 });
 
 test('Krisp transcript refresh does not promote content fragments into transcripts',()=>{

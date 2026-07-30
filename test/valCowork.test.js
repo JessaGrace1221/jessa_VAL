@@ -1239,7 +1239,7 @@ test('next move interview is scoped, field-targeted, review-gated, and applied w
   assert.equal(appliedNextMoves[0].timingOrTrigger,'Before the Friday review');
 });
 
-test('Transcript Working Brief remains scoped to the selected Krisp receipt and produces an exact internal draft',async()=>{
+test('Transcript conversation remains scoped to the selected Krisp receipt without creating a draft',async()=>{
   const {service,preparedTranscriptOverviews}=serviceFor();
   const opened=await service.openEntry({
     entrypointId:'transcript.working_brief',
@@ -1247,20 +1247,14 @@ test('Transcript Working Brief remains scoped to the selected Krisp receipt and 
   });
   assert.equal(opened.session.scope.entityId,'transcript_forever_freedom');
   assert.equal(opened.session.workingBrief.transcriptTitle,'Forever Freedom follow-up');
-  assert.equal(opened.question.targetField,'prepared_artifact.email_draft');
+  assert.equal(opened.question.targetField,'transcript_working_brief.conversation');
   assert.equal(opened.session.workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
   assert.equal(opened.session.workingBrief.sourceReceipt.keyPoints[0],'Purpose of the call: follow up on Forever Freedom.');
-  assert.equal(opened.workItem.status,'needs_review');
-  assert.equal(opened.workItem.type,'transcript_meeting_overview');
-  assert.equal(opened.workItem.payload.preparedArtifact.body,opened.session.workingBrief.sourceReceipt.body);
-
-  const applied=await service.applyWorkItem(opened.workItem.id);
-  assert.equal(applied.workItem.status,'applied');
-  assert.equal(applied.receipt.action,'prepare_transcript_meeting_overview');
-  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
-  assert.equal(preparedTranscriptOverviews.length,1);
-  assert.equal(preparedTranscriptOverviews[0].transcriptId,'transcript_forever_freedom');
-  assert.equal(applied.draft.body,opened.session.workingBrief.sourceReceipt.body);
+  assert.equal(opened.session.status,'needs_input');
+  assert.equal(opened.workItem.status,'needs_input');
+  assert.equal(opened.workItem.type,'transcript_conversation');
+  assert.equal(opened.workItem.payload.preparedArtifact,undefined);
+  assert.equal(preparedTranscriptOverviews.length,0);
 });
 
 test('Transcript Working Brief answers every typed turn from the selected transcript context',async()=>{
@@ -1280,7 +1274,7 @@ test('Transcript Working Brief answers every typed turn from the selected transc
   assert.equal(turns[0].workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
   assert.equal(answered.session.state.messages[0].content,'Outline the follow-up and who owns it.');
   assert.match(answered.message,/Anthony owns/i);
-  assert.equal(answered.workItem.status,'needs_review');
+  assert.equal(answered.workItem.status,'needs_input');
 });
 
 test('Transcript Action Item remains word for word, creates only one internal Commitment, and rejects an unselected line',async()=>{

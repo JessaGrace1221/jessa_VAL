@@ -2373,13 +2373,17 @@ function transcriptInvitees(transcript={}){
   ];
   const seen=new Set();
   return buckets.flatMap((bucket)=>safeArray(bucket)).map((person)=>{
-    if(typeof person === 'string') return {name:person,email:''};
-    return {
+    if(typeof person === 'string'){
+      const email=compactText(person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '',220);
+      return email ? {name:compactText(person.replace(email,'').replace(/[<>]/g,' '),180),email} : null;
+    }
+    const normalized={
       name:compactText(person?.name || person?.displayName || person?.emailAddress?.name || '',180),
       email:compactText(person?.email || person?.address || person?.emailAddress?.address || '',220)
     };
-  }).filter((person)=>person.name || person.email).filter((person)=>{
-    const key=(person.email || person.name).toLowerCase();
+    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(normalized.email) ? normalized : null;
+  }).filter(Boolean).filter((person)=>{
+    const key=person.email.toLowerCase();
     if(seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2433,9 +2437,9 @@ function buildTranscriptWorkingBrief(transcript={},input={}){
     relatedRelationships,
     existingDrafts:safeArray(transcript.drafts).map((draft)=>({id:compactText(draft?.id || '',220),type:compactText(draft?.draftType || '',100),status:compactText(draft?.status || '',100)})),
     sourceRefs:references,
-    objective:'Prepare one reviewable, source-preserving result from the selected transcript.',
-    completionCondition:'The result is tied to the exact Krisp receipt, uses the selected meeting context, and has an explicit review or apply route.',
-    approvalBoundary:'Applying the first Transcript Working Brief result creates only an internal meeting-overview draft. It does not send email, create provider drafts, alter Krisp text, create a task, update CRM, or modify a calendar event.'
+    objective:'Hold a useful conversation grounded in one complete selected transcript.',
+    completionCondition:'VAL answers the executive\'s actual question using the selected meeting evidence and clearly separates source fact from inference.',
+    approvalBoundary:'Conversation does not create or display a draft automatically. Existing prepared work remains in Leverage, and no external action occurs without explicit approval.'
   };
 }
 function transcriptActionItemIndex(input={}){
@@ -2465,18 +2469,11 @@ function buildTranscriptActionItemBrief(transcript={},input={}){
   };
 }
 function transcriptWorkingBriefQuestion(state={},brief={}){
-  if(state.stage === 'ready_to_apply'){
-    return {
-      targetField:'prepared_artifact.email_draft',
-      question:'Review the exact meeting overview, then apply it to Leverage as an internal draft.',
-      detail:'Applying creates an internal draft for review only. Nothing sends and the Krisp source receipt stays unchanged.'
-    };
-  }
   const receipt=brief.sourceReceipt || {};
   return {
-    targetField:'transcript_working_brief.prepared_artifact_kind',
-    question:`Krisp's exact receipt for ${brief.transcriptTitle || 'this transcript'} is loaded unchanged (${exactTranscriptLines(receipt.actionItems).length} Action Items and ${exactTranscriptLines(receipt.keyPoints).length} Key Points). Should I prepare that attendee meeting overview for review?`,
-    detail:'Reply "yes" or "prepare" to create the source-preserving internal email draft. Nothing sends from this conversation.'
+    targetField:'transcript_working_brief.conversation',
+    question:`I have the complete context for ${brief.transcriptTitle || 'this transcript'} loaded (${exactTranscriptLines(receipt.actionItems).length} Action Items and ${exactTranscriptLines(receipt.keyPoints).length} Key Points). What would you like to understand, pressure-test, or create from it?`,
+    detail:'This is a conversation about the selected meeting. Prepared work remains in Leverage and nothing external happens from opening chat.'
   };
 }
 function transcriptActionItemQuestion(brief={}){
@@ -3998,16 +3995,16 @@ function createValCoworkService({
     const brief=buildTranscriptWorkingBrief(transcript,input);
     if(!brief.entityId) throw new Error('The selected transcript has no durable identifier yet.');
     if(!brief.sourceReceipt.ready) throw new Error('This transcript has no exact Krisp Action Items and Key Points receipt yet. VAL will not invent one.');
-    const state={stage:'ready_to_apply',draftTranscriptArtifact:{kind:'email_draft',source:'exact_krisp_receipt',body:brief.sourceReceipt.body || '',actionItems:exactTranscriptLines(brief.sourceReceipt.actionItems),keyPoints:exactTranscriptLines(brief.sourceReceipt.keyPoints),invitees:safeArray(brief.invitees)},answers:[]};
+    const state={stage:'conversation',answers:[]};
     const question=transcriptWorkingBriefQuestion(state,brief);
     const now=new Date().toISOString();
     const sc=scope();
     const session=await saveSession({
-      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_review',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
     });
     const workItem=await saveWorkItem({
-      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_meeting_overview',title:`Meeting overview for ${brief.transcriptTitle}`,status:'needs_review',
-      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,preparedArtifact:state.draftTranscriptArtifact,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_conversation',title:`Conversation about ${brief.transcriptTitle}`,status:'needs_input',
+      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
   }
