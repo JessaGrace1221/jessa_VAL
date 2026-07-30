@@ -36355,6 +36355,7 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
   const isChief=entrypointId==='board.chief_of_staff';
   const isObserver=entrypointId==='observer.discussion';
   const isBoardConversation=isChief||isObserver;
+  const isTranscriptConversation=entrypointId==='transcript.working_brief';
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
   const selectedObserver=String(context.selectedObserver?.name||workingBrief.title||scopeId||'').replace(/\s+Observer$/i,'').trim();
   const [liveBoardContext,latestObserverRuns]=isBoardConversation ? await Promise.all([
@@ -36446,6 +36447,12 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
       `You are Co-Work with VAL inside the exact ${entrypointId.replace(/[._]/g,' ')} context the user opened.`,
       'The supplied Working Brief is the complete private folder for this turn. It contains the selected object, source receipts, linked packets, current state, objective, completion condition, and approval boundary.',
       'Answer the executive\'s exact question first in natural language. Then point out the most useful pattern, tradeoff, risk, opportunity, or missing fact that is actually supported by this Working Brief.',
+      ...(isTranscriptConversation ? [
+        'For a Transcript Working Brief, reason across the meeting evidence instead of merely repeating Action Items, Key Points, or the review instruction.',
+        'When the executive asks for the most valuable, most important, best thing to demonstrate, hidden opportunity, deeper pattern, or what the meeting really revealed: choose one highest-leverage answer, explain why it outranks the alternatives, cite the specific meeting evidence that supports it, and recommend the concrete artifact, demonstration, decision, or next move.',
+        'Distinguish what participants explicitly said from the strategic conclusion you are drawing. A useful supported inference is welcome; generic advice and unsupported invention are not.',
+        'Do not answer a substantive transcript question with "review the meeting overview" or "apply it to Leverage." The prepared draft remains available separately from this conversation.'
+      ] : []),
       'End with one clear forward-moving question or next move only when it helps. Do not ask a question merely to sound conversational.',
       'Do not expose packet field names, schemas, JSON, backend processes, or internal retrieval language. Do not make the user restate context already present in the Working Brief.',
       'If the answer is not supported by the loaded sources, say exactly what is missing and ask for only that one thing. Never substitute generic Home context or another entity.',
@@ -36460,7 +36467,7 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
   return callOpenAIResponses({
     system,
     messages:[packetMessage,...conversation],
-    maxTokens:isBoardConversation?950:750,
+    maxTokens:isBoardConversation?950:(isTranscriptConversation?1000:750),
     temperature:isBoardConversation?0.32:0.38,
     timeoutMs:isBoardConversation?20000:12000
   });

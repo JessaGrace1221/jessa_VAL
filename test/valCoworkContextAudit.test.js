@@ -56,6 +56,12 @@ test('shared Co-Work model contract is direct, human, and forward-moving',()=>{
   assert.match(server,/Do not make the user restate context already present in the Working Brief/);
 });
 
+test('Transcript Working Brief asks VAL for strategic synthesis instead of receipt repetition',()=>{
+  assert.match(server,/For a Transcript Working Brief, reason across the meeting evidence/);
+  assert.match(server,/choose one highest-leverage answer/);
+  assert.match(server,/Do not answer a substantive transcript question with "review the meeting overview"/);
+});
+
 test('all 14 Observer folders are named in the launch contract',()=>{
   [
     'Executive Inbox','Relationship','Project','Capacity','Courage','Delight',
