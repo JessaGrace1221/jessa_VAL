@@ -339,3 +339,12 @@ test('transcript cards and errors have readable responsive styling',()=>{
   assert.match(css,/\.val-transcript-row\{[^}]*color:#17243a/);
   assert.match(css,/@media\(max-width:900px\)[\s\S]*\.val-transcript-row\{grid-template-columns:1fr\}/);
 });
+
+test('transcript detail separates source sections and rebuilds email copy from structured evidence',()=>{
+  assert.match(hearthJs,/timeline-source-receipt is-' \+ sectionName/);
+  assert.match(hearthJs,/FOLLOW-THROUGH/);
+  assert.match(hearthJs,/MEETING INTELLIGENCE/);
+  assert.match(hearthJs,/const structuredBody = sections\.map/);
+  assert.match(hearthCss,/\.timeline-source-receipt\.is-action-items/);
+  assert.match(hearthCss,/\.timeline-source-receipt\.is-key-points/);
+});

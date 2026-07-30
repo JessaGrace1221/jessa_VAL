@@ -60,6 +60,7 @@ test('Transcript Working Brief asks VAL for strategic synthesis instead of recei
   assert.match(server,/For a Transcript Working Brief, reason across the meeting evidence/);
   assert.match(server,/choose one highest-leverage answer/);
   assert.match(server,/Do not answer a substantive transcript question with "review the meeting overview"/);
+  assert.match(hearth,/result\.message \|\| result\.question\?\.question/);
 });
 
 test('all 14 Observer folders are named in the launch contract',()=>{

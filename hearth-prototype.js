@@ -6214,7 +6214,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
     response.scrollTop = response.scrollHeight;
   }
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
-  const message = options.suppressMessage ? '' : (result.question?.question || result.message || '');
+  const message = options.suppressMessage ? '' : (result.message || result.question?.question || '');
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
   if(response && workItem.id){
     const item = workItem.type === 'project_documents'
@@ -14023,8 +14023,7 @@ function timelineSourceReceipt(transcript = {}){
     .filter(Boolean)
     .map(String)
     .map((item) => item.replace(/^\s*#{1,6}\s*/, '').trim())
-    .filter((item) => !sourceLineLooksLikeTranscript(item))
-    .slice(0, 12);
+    .filter((item) => !sourceLineLooksLikeTranscript(item));
   const safeSections = sections.map((section) => {
     const lines = [];
     for(const line of (Array.isArray(section.lines) ? section.lines.map(String) : [])){
@@ -14480,7 +14479,8 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
     sourceSections.unshift({kind:'action_items', heading:'Action Items', raw:['Action Items', ...actionItems].join('\n'), lines:actionItems});
   }
   const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
-  const body = receipt.body || sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n') || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
+  const structuredBody = sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n').trim();
+  const body = structuredBody || receipt.body || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
   const invitees = timelineTranscriptInvitees(transcript);
   return {
     ...receipt,
@@ -14524,8 +14524,11 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
 	      const lines = (Array.isArray(section.lines) ? section.lines : []).map((line) => String(line || '').replace(/^\s*#{1,6}\s*/, '').trim()).filter(Boolean);
       const sectionName = actionSection ? 'action-items' : 'key-points';
       return [
-        '<section class="timeline-transcript-section timeline-source-receipt" data-transcript-section="' + sectionName + '">',
+        '<section class="timeline-transcript-section timeline-source-receipt is-' + sectionName + '" data-transcript-section="' + sectionName + '">',
+        '<header class="timeline-source-section-heading">',
+        '<span>' + escapeHtml(actionSection ? 'FOLLOW-THROUGH' : 'MEETING INTELLIGENCE') + '</span>',
         '<h4>' + escapeHtml(section.heading || (actionSection ? 'Action Items' : 'Key Points')) + '</h4>',
+        '</header>',
         lines.length ? '<div class="timeline-source-lines">' + lines.map((line) => [
           '<div>',
           '<p>' + escapeHtml(line) + '</p>',
