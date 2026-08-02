@@ -27,14 +27,59 @@ test('meeting prep routes are backend-only and mounted',()=>{
   assert.match(server,/ensureRelationshipPacketFromAttendee:ensureRelationshipPacketFromCalendarAttendee/);
   assert.match(server,/sourceType:'calendar_event_attendee'/);
   assert.match(server,/saveRelationshipTimelineEvent/);
+  assert.match(server,/const phone=normalizeContextPhone\(contact\.phone\|\|contact\.contactPhone\|\|contact\.phoneNumber/);
+  assert.match(server,/phone,\s*\n\s*networkAdmission:'calendar_attendee'/);
+  assert.match(server,/name:name\|\|email,\s*\n\s*email,\s*\n\s*phone,/);
   assert.match(routes,/\/api\/val\/calendar\/meeting-prep/);
   assert.match(routes,/\/api\/val\/calendar\/meeting-prep\/:eventId/);
   assert.match(routes,/\/api\/val\/calendar\/post-meeting-capture/);
   assert.match(meetingPrepServiceSource,/withMeetingPrepTimeout\(enrichRelationshipPublicContext/);
+  assert.match(meetingPrepServiceSource,/afterPublicContextEvent/);
+  assert.match(server,/afterPublicContextEvent:async/);
+  assert.match(server,/afterPublicContextEvent:async\(event\)=>\{\s*await processCanonicalBoardEvidence\(\{/);
+  assert.match(server,/sourceType:event\.sourceType\|\|'public_research'/);
   assert.match(meetingPrepServiceSource,/VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS/);
   assert.match(server,/app\.post\('\/api\/val\/contacts\/create'/);
   assert.match(server,/relationshipDossier=contactId\?buildRelationshipDossier/);
   assert.match(server,/Use this contactId as the canonical relationship key going forward/);
+});
+
+test('meeting prep public and LinkedIn attendee context is sent to the Board',async()=>{
+  let store={};
+  const event={id:'cal_public_board',source:'google',title:'GOALL review with Greg',startTime:'2026-07-27T14:00:00Z',attendees:[{name:'Greg Zlevor',email:'greg@example.com'}]};
+  const boardEvents=[];
+  const service=createValMeetingPrepService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_board`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    loadContextCalendarEvents:async()=>({events:[event],errors:[]}),
+    resolveContactFromContext:async()=>({status:'matched',confidence:0.9,contact:{id:'relationship-profile:greg',relationshipProfileId:'rel_greg',name:'Greg Zlevor',email:'greg@example.com',company:'Westwood'}}),
+    resolveMeetingContext:async()=>({meeting:event,contactResolution:{},relationshipContext:{},transcripts:[],tasks:[],openLoops:[],sourcesChecked:['Calendar events (1)'],errors:[]}),
+    enrichRelationshipPublicContext:async()=>({
+      cached:false,
+      profile:{id:'rel_greg',displayName:'Greg Zlevor'},
+      enrichment:{
+        status:'complete',
+        provider:'outscraper',
+        organization:'Westwood',
+        summary:'Fresh public context found for the GOALL review.',
+        latestLinkedInPost:'Greg shared a post about leadership momentum.',
+        latestLinkedInUrl:'https://www.linkedin.com/posts/gregzlevor_fresh',
+        sourceRefs:[{type:'linkedin_recent_signal',sourceId:'https://www.linkedin.com/posts/gregzlevor_fresh',summary:'Greg shared a post about leadership momentum.'}]
+      }
+    }),
+    afterPublicContextEvent:async(event)=>boardEvents.push(event)
+  });
+  const result=await service.buildMeetingPrep({eventId:'cal_public_board'});
+  assert.equal(result.ok,true);
+  assert.equal(boardEvents.length,1);
+  assert.equal(boardEvents[0].sourceType,'linkedin_visibility');
+  assert.match(boardEvents[0].summary,/leadership momentum/i);
+  assert.equal(boardEvents[0].eventType,'meeting_prep_public_context');
+  assert.ok(boardEvents[0].sourceRefs.length);
 });
 
 test('meeting prep rebuild allows the OpenAI brief enough time to finish',()=>{
@@ -87,15 +132,25 @@ test('meeting prep resolves context from attendee transcripts without cross-atte
   assert.match(server,/broadCalendarMatch=!targetHasIdentity/);
 });
 
-test('meeting prep Outscraper LinkedIn lookup uses name and organization instead of raw email only',()=>{
+test('meeting prep Outscraper LinkedIn lookup separates personal-profile search from company scraping',()=>{
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
-  assert.doesNotMatch(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
-  assert.match(server,/const query = personalLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| companyLinkedIn \|\| organization \|\| usableDomain \|\| email/);
+  assert.match(server,/function linkedInActivityDate/);
+  assert.match(server,/function linkedInPublicMetaContent/);
+  assert.match(server,/async function readPublicLinkedInPost/);
+  assert.match(server,/function linkedInStructuredPosts/);
+  assert.match(server,/async function lookupPublicLinkedInProfilePosts/);
+  assert.match(server,/async function lookupOutscraperLinkedInPersonalPosts/);
+  assert.match(server,/site:linkedin\.com\/posts \$\{slug\}/);
+  assert.match(server,/if\(\/linkedin\\\.com\\\/in\\\/\/i\.test\(personalLinkedIn\)\)/);
+  assert.match(server,/const direct=await lookupPublicLinkedInProfilePosts\(personalLinkedIn\)/);
+  assert.match(server,/const fallback=await lookupOutscraperLinkedInPersonalPosts\(attendee,profile,personalLinkedIn\)/);
+  assert.match(server,/const companySlug=String\(companyLinkedIn\|\|personalLinkedIn\|\|''\)\.match/);
+  assert.match(server,/const query = companySlug \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| organization \|\| usableDomain \|\| email/);
   assert.match(server,/OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS/);
   assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
+  assert.match(server,/const embeddedError=rows\.find/);
   assert.match(server,/filter\(post=>post\.text&&\/linkedin\\\.com\\\/\(posts\|feed\\\/update\|pulse\)\\\/\/i\.test\(post\.url\|\|''\)\)/);
   assert.doesNotMatch(server,/const weekAgo = Date\.now\(\) - 7\*24\*60\*60\*1000/);
-  assert.match(server,/return \{configured:true, query, postsLastWeek:recentPosts, rawCount:posts\.length\}/);
   assert.match(server,/await lookupOutscraperLinkedIn\(\{name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl/);
   assert.doesNotMatch(server,/cacheStatus:'deferred_to_recent_signal'/);
 });

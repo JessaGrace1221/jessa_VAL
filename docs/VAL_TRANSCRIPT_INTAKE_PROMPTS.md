@@ -6,6 +6,7 @@ This is a prompt specification. It does not change runtime behavior until implem
 
 Companion specs:
 
+- [VAL_TRANSCRIPT_EVIDENCE_ENGINE.md](./VAL_TRANSCRIPT_EVIDENCE_ENGINE.md)
 - [VAL_CONSTITUTION.md](./VAL_CONSTITUTION.md)
 - [VAL_CONTEXT_REGISTRY.md](./VAL_CONTEXT_REGISTRY.md)
 - [VAL_EVENT_INTELLIGENCE_PASS.md](./VAL_EVENT_INTELLIGENCE_PASS.md)
@@ -15,6 +16,12 @@ Companion specs:
 - [VAL_READY_FOR_YOU_CARD_PROMPTS.md](./VAL_READY_FOR_YOU_CARD_PROMPTS.md)
 
 ## Core Thesis
+
+The transcript drawer is only for transcripts and what transcripts do.
+
+Calendar-only events, meeting prep records, chat memory, generic memory, empty webhook receipts, planning artifacts, and debug records must not appear as transcript rows. Calendar events may link to transcripts, but they may never create transcript rows by themselves.
+
+Krisp MCP is a supported Transcript Witness connector. Krisp can supply structured meeting data, transcripts, summaries, key points, and action item candidates, but Krisp does not decide what matters. VAL must validate Krisp action item candidates against the full transcript before creating VAL action items, commitments, project updates, relationship updates, Leverage drafts, or Home signals.
 
 Transcript intake is not summarization.
 
@@ -406,6 +413,10 @@ Distinguish:
 - reminder only
 - not a commitment
 
+A transcript snippet is not a commitment because it contains action language.
+
+Keep only statements where someone is actually expected to do something.
+
 Do not create tasks yet.
 Do not treat every action phrase as a promise.
 Do not shame overdue commitments.
@@ -462,11 +473,22 @@ Every task must answer:
 - Is it a promise, a suggestion, or an idea?
 - Can VAL safely create or update it automatically, or does it need approval?
 
+Task admission rule:
+Only create a task candidate when there is:
+- a real actor or owner
+- a concrete action verb
+- an object or outcome
+- an exact source quote
+- enough confidence that someone is expected to do something
+
+Suggested actions and ideas do not become tasks unless they were accepted, delegated, or clearly committed to.
+
 Do not create tasks from vague inspiration.
 Do not create duplicate tasks.
 Do not create contextless tasks.
 Do not turn emotional processing into a task unless the user clearly asked for action.
 Do not create tasks that VAL should quietly handle internally.
+Do not create tasks from small talk, jokes, agenda transitions, repeated phrases, or completed work.
 
 Return strict JSON.
 ```
@@ -998,6 +1020,8 @@ Include:
 - capacity and tone context only when relevant and cautious
 
 Do not over-summarize.
+Do not paste transcript snippets as the summary.
+Group the meeting by agenda/business topic before writing.
 Do not include sensitive emotional interpretation unless evidence supports it.
 
 Return strict JSON.

@@ -23,12 +23,16 @@ test('executive briefing endpoint distills engine outputs without model reasonin
   assert.match(server,/alsoImportant/);
   assert.match(server,/onboardingReflection/);
   assert.match(server,/readyForYou/);
-  assert.match(server,/buildDailyWitnessGreeting/);
+  assert.match(server,/buildChiefDailyWitness/);
+  assert.match(server,/buildQuietChiefDailyWitness/);
+  assert.doesNotMatch(server,/buildDailyWitnessGreeting\(\{moves:/);
   assert.match(server,/dailyWitness/);
   const start=server.indexOf('async function buildExecutiveBriefing');
   const end=server.indexOf('function executiveBriefingChatContext',start);
   const body=server.slice(start,end);
   assert.doesNotMatch(body,/callValModel|callOpenAIResponses/);
+  assert.match(body,/valReadyForYou\?\.listItems/);
+  assert.doesNotMatch(body,/valReadyForYou\?\.buildQueue/);
 });
 
 test('executive briefing preserves Michele book/editor separation',()=>{

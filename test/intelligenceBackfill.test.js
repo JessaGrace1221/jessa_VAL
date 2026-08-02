@@ -20,10 +20,43 @@ test('intelligence backfill rehydrates existing evidence before dashboard conclu
   assert.match(server,/Postgres is not connected/);
   assert.match(server,/backfillTranscriptEvidence/);
   assert.match(server,/backfillEmailEvidence/);
+  assert.match(server,/backfillBoardPackets/);
   assert.match(server,/saveEvidenceItem/);
   assert.match(server,/runObservationEngine/);
   assert.match(server,/relationshipReviewFromStoredProfiles/);
   assert.match(server,/buildExecutiveBriefing/);
+});
+
+test('intelligence backfill reconciles historical evidence into Board packets',()=>{
+  assert.match(server,/async function backfillBoardPackets/);
+  assert.match(server,/app\.post\('\/api\/val\/board\/reconcile'/);
+  const start=server.indexOf('async function backfillBoardPackets');
+  const end=server.indexOf('async function backfillValIntelligence',start);
+  const body=server.slice(start,end);
+  assert.match(body,/processCanonicalBoardEvidence\(\{/);
+  assert.match(body,/sourceType:'transcript'/);
+  assert.match(body,/sourceType:'email'/);
+  assert.match(body,/sourceType:'calendar_event'/);
+  assert.match(body,/sourceType:'task'/);
+  assert.match(body,/sourceType,\n\s+sourceId:profile/);
+  assert.match(body,/original transcript text could not be recovered/);
+  assert.doesNotMatch(body,/valBoardPackets\.record/);
+  assert.doesNotMatch(body,/modelReviewBoardPacket/);
+  assert.doesNotMatch(body,/triggerBoardIntelligenceForPackets/);
+});
+
+test('Board packet reconciliation reads existing source tables and local stores',()=>{
+  assert.match(server,/async function boardBackfillTranscriptRuns/);
+  assert.match(server,/from transcript_intelligence_runs/);
+  assert.match(server,/valStore\(\)\.transcriptIntelligenceRuns/);
+  assert.match(server,/async function boardBackfillEmailMessages/);
+  assert.match(server,/from email_messages/);
+  assert.match(server,/valStore\(\)\.emailMessages/);
+  assert.match(server,/async function boardBackfillCalendarEvents/);
+  assert.match(server,/from val_calendar_events/);
+  assert.match(server,/valStore\(\)\.calendarEvents/);
+  assert.match(server,/listRelationshipProfiles\(\{limit:lim\}\)/);
+  assert.match(server,/valCommitments\.list\(\{limit:lim\}\)/);
 });
 
 test('transcript migration merges old archive records with the processed transcript index',()=>{
@@ -32,7 +65,7 @@ test('transcript migration merges old archive records with the processed transcr
   const start=server.indexOf("app.get('/api/val/transcripts'");
   const end=server.indexOf("app.get('/api/val/transcripts/review'",start);
   const body=server.slice(start,end);
-  assert.match(body,/transcriptArchiveRecords\(days,limit\)/);
+  assert.match(body,/transcriptArchiveRecords\(days,1000\)/);
   assert.match(body,/mergeTranscriptMigrationRecords\(archive,data\)/);
   assert.doesNotMatch(body,/if\(data\.transcripts\.length\)/);
 });

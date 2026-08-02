@@ -24,7 +24,7 @@ function normalizeSourceRef(ref={}){
 }
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180);}
 function allowedAction(type){
-  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
+  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','append_google_doc','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
 }
 function externalActionForInstruction(action=''){
   const map={
@@ -350,6 +350,8 @@ function createValExternalActionsService({
     const subject=compactText(payload.subject||payload.title||'VAL email',320);
     const body=String(payload.body||payload.bodyText||payload.message||payload.bodyPreview||'').trim();
     const provider=String(payload.provider||payload.targetSystem||'gmail').trim().toLowerCase();
+    const googleProvider=String(payload.googleProvider||payload.google_provider||'google').trim();
+    const accountEmail=compactText(payload.accountEmail||payload.account_email||'',320);
     const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
     const packet=basePacket({
@@ -361,13 +363,81 @@ function createValExternalActionsService({
       targetId:payload.threadId||payload.messageId||to||subject,
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
-      payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
+      payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,googleProvider,accountEmail,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
       refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.draftId||sourceContext.docId||payload.id||'',quoteOrSummary:subject,confidence:0.9})],
       approvalPolicy:'approval_required',
-      sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
+      sourceContext:{...sourceContext,source:'send_gate',googleProvider,accountEmail,finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
     });
     packet.whatWillHappen='After final approval, VAL will send exactly this email through the connected provider and save an execution receipt.';
     packet.whatWillNotHappen='VAL will not send any other email, modify CRM, create calendar events, publish content, or change the draft contents beyond the fields shown in this send gate.';
+    return upsertPacket(packet);
+  }
+  async function createSmsSendPacket(payload={}){
+    const message=String(payload.message||payload.body||payload.text||payload.bodyPreview||'').trim();
+    const contactId=compactText(payload.contactId||payload.contact_id||payload.targetId||'',240);
+    const conversationId=compactText(payload.conversationId||payload.conversation_id||'',240);
+    const recipient=compactText(payload.recipientName||payload.recipient||payload.to||contactId||conversationId||'recipient',320);
+    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const packet=basePacket({
+      uuid,
+      scope:scope(),
+      source:'send_gate',
+      actionType:'send_sms',
+      targetSystem:'GHL',
+      targetId:contactId||conversationId||recipient,
+      title:payload.title||`Text ${recipient}`,
+      summary:payload.why||payload.summary||`Send SMS to ${recipient}.`,
+      payload:{
+        contactId,
+        conversationId,
+        recipient,
+        message,
+        bodyPreview:compactText(message,1200),
+        externalSend:true,
+        requiresFreshApproval:true
+      },
+      refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.contactId||contactId||conversationId||payload.id||'',quoteOrSummary:compactText(message||recipient,300),confidence:0.9})],
+      approvalPolicy:'approval_required',
+      sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
+    });
+    packet.whatWillHappen='After final approval, VAL will send exactly this SMS through GHL and save an execution receipt.';
+    packet.whatWillNotHappen='VAL will not send any other SMS, email, CRM update, calendar event, tag, stage movement, publishing, or external write from this packet.';
+    return upsertPacket(packet);
+  }
+  async function createGoogleDocAppendPacket(payload={}){
+    const documentId=compactText(payload.documentId||payload.document_id||payload.targetId||'',320);
+    const content=String(payload.content||payload.body||payload.bodyPreview||'').trim();
+    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const packet=basePacket({
+      uuid,
+      scope:scope(),
+      source:'environment_action',
+      actionType:'append_google_doc',
+      targetSystem:'google_docs',
+      targetId:documentId,
+      title:payload.title||'Append meeting overview to Google Doc',
+      summary:payload.why||payload.summary||'Append the exact meeting overview to the selected Google Doc.',
+      payload:{
+        documentId,
+        content,
+        bodyPreview:compactText(content,1200),
+        mode:'append',
+        externalWrite:true,
+        requiresFreshApproval:true
+      },
+      refs:refs.length?refs:[normalizeSourceRef({
+        sourceType:sourceContext.source||'environment',
+        sourceId:sourceContext.sourceId||sourceContext.environmentRunId||payload.id||'',
+        quoteOrSummary:compactText(payload.title||content,300),
+        confidence:0.95
+      })],
+      approvalPolicy:'approval_required',
+      sourceContext:{...sourceContext,source:'environment_action',finalApprovalSurface:payload.finalApprovalSurface||'val_environment'}
+    });
+    packet.whatWillHappen='After approval, VAL will append exactly this meeting overview to the selected Google Doc and save an execution receipt.';
+    packet.whatWillNotHappen='VAL will not replace existing document content, resend the meeting email, or change any other connected system.';
     return upsertPacket(packet);
   }
   async function auditForPacket(id,{limit=50}={}){
@@ -381,7 +451,7 @@ function createValExternalActionsService({
       .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
       .slice(0,lim);
   }
-  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,collectCandidates,preparePacketFromPreparedArtifact};
+  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,createSmsSendPacket,createGoogleDocAppendPacket,collectCandidates,preparePacketFromPreparedArtifact};
 }
 
 module.exports={createValExternalActionsService,allowedAction,riskFromText,approvalFor};

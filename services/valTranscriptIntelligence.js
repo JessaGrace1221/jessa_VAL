@@ -1,5 +1,6 @@
 const {extractExecutiveInstructions}=require('./valExecutiveInstructions');
 const {relationshipIntroCandidates}=require('./valRelationshipActionIntelligence');
+const {assessPreparedWork,validatePreparedArtifactQuality}=require('./valPreparedWorkAdmission');
 
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=800){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
@@ -60,8 +61,19 @@ function qualityGate(record={}){
   };
 }
 function commitmentSentences(text=''){
-  const markers=/\b(i will|i'll|we will|we'll|you will|you'll|need to|needs to|going to|follow up|send|share|review|schedule|introduce|connect|prepare|draft|update|circle back|by monday|by tomorrow|next week|today|before)\b/i;
-  return sentences(text).filter(s=>markers.test(s)&&!/\b(maybe|might|could possibly|for example|nothing needs to happen|nothing need happen|no action needed|doesn't need follow up|does not need follow up)\b/i.test(s)).slice(0,12);
+  return sentences(text).filter(transcriptSentenceIsActionReady).slice(0,12);
+}
+function transcriptSentenceIsSmallTalk(text=''){
+  return /\b(laughter|haha|vacuum|litter box|screwdriver|marriage counselor|mother'?s day|shop vac|robot cat|pretty|good morning everybody|how is everyone doing|anything else anyone wants to bring up|bye\b)\b/i.test(String(text||''));
+}
+function transcriptSentenceIsActionReady(sentence=''){
+  const s=String(sentence||'');
+  if(!s||transcriptSentenceIsSmallTalk(s))return false;
+  if(/\b(maybe|might|could possibly|for example|nothing needs to happen|nothing need happen|no action needed|doesn't need follow up|does not need follow up|already did|already sent|completed|finished)\b/i.test(s))return false;
+  const hasCommitment=/\b(i will|i'll|we will|we'll|i can|we can|i need to|we need to|let me|i'm going to|we're going to|i'll send|i will send|please send|send me|can you|could you|make sure|i'll put|i will put|get with|let's)\b/i.test(s);
+  const hasAssignedAction=/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+to\s+(?:research|send|share|review|schedule|build|create|add|update|confirm|check|use|connect|set up|prepare|draft|finish|complete|deliver|forward|introduce|provide|resend|nudge|choose|hold off|onboard|test|fix|map|write|call|email|text|route|change|compare|report|compile|find)\b/.test(s);
+  const hasConcreteAction=/\b(research|send|share|review|schedule|build|create|add|update|confirm|check|use|connect|set up|prepare|draft|finish|complete|deliver|forward|introduce|provide|resend|nudge|choose|hold off|onboard|test|fix|map|write|call|email|text|route|change|compare|report)\b/i.test(s);
+  return (hasCommitment||hasAssignedAction)&&hasConcreteAction;
 }
 function evidenceExtractor(record={}){
   const text=transcriptText(record),id=record.id||record.transcriptId||record.transcript_id||'';
@@ -72,15 +84,23 @@ function commitmentExtractor(record={},evidenceRefs=[]){
   const id=record.id||record.transcriptId||record.transcript_id||'',text=transcriptText(record);
   return commitmentSentences(text).map((s,i)=>({
     id:`commitment_${i+1}`,
-    title:compactText(s,120),
+    title:commitmentTitleFromSentence(s),
     summary:compactText(s,360),
     source_quote:findQuote(text,s),
-    owner:/\byou will|you'll\b/i.test(s)?'other':(/\bi will|i'll|we will|we'll\b/i.test(s)?'user_or_team':'unknown'),
+    owner:/\byou will|you'll|can you|could you|please\b/i.test(s)?'other':(/\bi will|i'll|i can|let me|i'm going to\b/i.test(s)?'user':(/\bwe will|we'll|we can|we're going to\b/i.test(s)?'unknown':'unknown')),
     due_hint:(s.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|before [^.]+)\b/i)||[])[0]||'',
     approval_policy:'approval_required',
-    confidence:0.72,
+    confidence:0.78,
     source_refs:[evidenceRefs.find(r=>r.quote_or_summary===s)||normalizeSourceRef({sourceType:'transcript',sourceId:id,quoteOrSummary:s,confidence:0.72})]
   }));
+}
+function commitmentTitleFromSentence(sentence=''){
+  const s=compactText(sentence,180)
+    .replace(/^(so|okay|all right|yeah|yes|then|and|but)[,.\s]+/i,'')
+    .replace(/\b(i will|i'll|we will|we'll|i can|we can|let me|i'm going to|we're going to)\b/i,'')
+    .replace(/\s+/g,' ')
+    .trim();
+  return compactText(s||sentence,120);
 }
 function taskContextBuilder(record={},commitments=[]){
   return commitments.map((c,i)=>({
@@ -102,6 +122,41 @@ function taskContextBuilder(record={},commitments=[]){
     requires_approval:true,
     confidence:c.confidence
   }));
+}
+function canonicalWorkShape(commitment={},record={},linkage={},projectSignalsList=[]){
+  const title=compactText(commitment.title||commitment.summary||'',180);
+  const match=title.match(/^([A-Za-z]+)\s+(.+)$/);
+  const project=safeArray(linkage.linked_projects)[0]||{};
+  const groundedProjectHint=projectHintFromText([
+    commitment.source_quote,
+    commitment.summary,
+    title,
+    transcriptTitle(record)
+  ].filter(Boolean).join(' '),record);
+  const projectHint=project.name||project.title||project.projectName||groundedProjectHint||safeArray(projectSignalsList).map(signal=>signal.project_hint).find(Boolean)||'';
+  const relationship=safeArray(linkage.linked_people)[0]||{};
+  return {
+    sourceType:'transcript',
+    sourceId:record.id||record.transcriptId||record.transcript_id||'',
+    workType:'commitment',
+    ownership:commitment.owner,
+    ownerName:commitment.owner==='user'?'user':commitment.owner==='other'?(relationship.name||relationship.email||'other'):'',
+    actionText:match?.[1]||title,
+    objectText:match?.[2]||commitment.summary||title,
+    outcomeText:commitment.summary||title,
+    title,
+    summary:commitment.summary||title,
+    exactSourceQuote:commitment.source_quote,
+    sourceRefs:commitment.source_refs,
+    projectId:project.id||project.projectId||'',
+    projectName:projectHint,
+    relationshipId:relationship.contactId||relationship.crm_contact_id||'',
+    relationshipName:relationship.name||relationship.email||'',
+    dueAt:null,
+    dueBasis:{sourceHint:commitment.due_hint||'',explicitDate:false},
+    confidence:commitment.confidence,
+    metadata:{transcriptCommitmentId:commitment.id,approvalPolicy:commitment.approval_policy,noExternalAction:true}
+  };
 }
 function executionLevelForInstruction(instruction={}){
   const action=String(instruction.requested_action||'');
@@ -137,6 +192,166 @@ function linkedContextForPreparedWork(record={},linkage={},instruction={},taskId
     relationships:people,
     task:{id:taskId,title:compactText(instruction.instruction||'',140),source:'transcript_execution_opportunity'}
   };
+}
+function preparedWorkNeedsInformationCandidate({id='',index=0,instruction={},record={},linkage={},sourceRefs=[],assessment={},task=null,projectHint=''}={}){
+  const kind=assessment.brief?.workType||preparedWorkType(instruction)||'prepared_work';
+  const missing=safeArray(assessment.missingInformation||assessment.brief?.missingInformation);
+  const taskId=task?.id||`task_${id}_${String(kind).replace(/[^a-z0-9]+/gi,'_')}_${index+1}`;
+  const linkedContext={
+    ...linkedContextForPreparedWork({...record,id},linkage,instruction,taskId),
+    task:{id:taskId,title:task?.title||compactText(instruction.instruction||`Finish ${kind.replace(/_/g,' ')}`,140),source:task?'transcript_commitment':'transcript_execution_opportunity'},
+    source_packet:{
+      transcript_id:id,
+      task_id:taskId,
+      source_quote:safeArray(sourceRefs)[0]?.quote_or_summary||assessment.brief?.sourceExcerpt||'',
+      project_hint:projectHint||instruction.project_hint||'',
+      evidence_refs:sourceRefs,
+      work_brief:assessment.brief
+    }
+  };
+  return {
+    id:`needs_information_${id}_${kind}_${index+1}`,
+    category:'task_candidate',
+    type:'prepared_work_needs_information',
+    title:task?.title||compactText(`Finish ${kind.replace(/_/g,' ')}: ${instruction.target_person_or_record||assessment.brief?.subjectPurpose||'missing context'}`,160),
+    summary:`VAL recognized the intended ${kind.replace(/_/g,' ')}, but did not create a draft because required information is missing.`,
+    why_user_is_seeing_this:'This is unfinished work, not approval-ready work.',
+    why_now:'Resolving the missing information will let VAL prepare the work without asking you to repeat the source context.',
+    what_val_did:'Classified the intended work, preserved its source packet, and stopped before generating an ungrounded draft.',
+    what_only_user_can_do:`Resolve: ${missing.join('; ')}`,
+    estimated_review_minutes:2,
+    approval_policy:'approval_required',
+    representation_risk:/proposal|email|introduction|invoice|agreement/.test(kind)?'high':'medium',
+    requires_approval:true,
+    execution_level:'level_4_human_judgment_required',
+    execution_level_label:'Information Required',
+    completion_status:'needs_information',
+    completed_by_val:['Classified the intended work.','Preserved the full source packet and work brief.','Prevented incomplete work from entering Leverage.'],
+    remaining_context_needed:missing,
+    linked_context:linkedContext,
+    continuation_task:{
+      id:taskId,
+      title:task?.title||compactText(`Resolve context for ${kind.replace(/_/g,' ')}`,140),
+      status:'needs_information',
+      project:linkedContext.project,
+      relationships:linkedContext.relationships,
+      transcript:linkedContext.transcript,
+      completed_by_val:['Classified the intended work and preserved its source packet.'],
+      remaining_context_needed:missing,
+      work_brief:assessment.brief
+    },
+    prepared_artifact:null,
+    work_brief:assessment.brief,
+    source_refs:sourceRefs,
+    confidence:assessment.brief?.confidence||instruction.confidence||0.62
+  };
+}
+function projectHintFromText(text='',record={}){
+  const value=String(text||'');
+  if(/\bGOALL\b/i.test(value)||/\bGOAL[L]?\s+project\b/i.test(value)||/\bGOAL[L]?\s+dashboard\b/i.test(value))return 'GOALL';
+  const title=transcriptTitle(record);
+  if(/\bGOALL\b/i.test(title))return 'GOALL';
+  const projectMatch=(value.match(/\b([A-Z][A-Za-z0-9]+(?:\s+[A-Z][A-Za-z0-9]+){0,2})\s+(?:project|dashboard|handoff|proposal)\b/)||[])[1]||'';
+  return compactText(projectMatch,80);
+}
+function preparedWorkActionForTask(task={},record={}){
+  const text=[task.title,task.summary,task.context_summary,task.why,task.source_quote,transcriptTitle(record)].filter(Boolean).join(' ').toLowerCase();
+  if(!text)return null;
+  if(/\b(dashboard|html|iframe|landing page|web page|site|component|app|code|css|javascript|build|implement|scaffold)\b/.test(text))return 'build_artifact';
+  if(/\b(proposal|scope of work|sow)\b/.test(text))return 'prepare_proposal';
+  if(/\b(invoice|payment request)\b/.test(text))return 'prepare_invoice';
+  if(/\b(agreement|contract)\b/.test(text))return 'create_draft';
+  if(/\b(intro|introduction|introduce|connect)\b/.test(text))return 'draft_introduction';
+  if(/\b(email|reply|message|nudge|follow up)\b/.test(text)&&/\b(draft|write|send|prepare|nudge|follow up)\b/.test(text))return 'send_email';
+  if(/\b(document|brief|overview|summary|handoff|agenda|plan|one[- ]pager|deck|copy)\b/.test(text)&&/\b(create|prepare|draft|write|finish|build|shape|handoff)\b/.test(text))return 'create_draft';
+  return null;
+}
+function preparedWorkCandidatesFromTasks(record={},contextualTasks=[],linkage={},evidenceRefs=[]){
+  const id=record.id||record.transcriptId||record.transcript_id||'';
+  return safeArray(contextualTasks).map((task,i)=>{
+    if(/\bVAL\s*,?\s+(please\s+)?(prepare|build|set|make|send|draft|write|create)\b/i.test([task.title,task.context_summary,task.source_quote].filter(Boolean).join(' ')))return null;
+    const action=preparedWorkActionForTask(task,record);
+    if(!action)return null;
+    const quote=task.source_quote||task.context_summary||task.title||'';
+    const projectHint=projectHintFromText([task.title,task.context_summary,task.source_quote,transcriptTitle(record)].join(' '),record);
+    const projectLinked=projectHint&&safeArray(linkage.linked_projects).every(p=>String(p.name||p.title||p.projectName||'').toLowerCase()!==projectHint.toLowerCase())
+      ? {...linkage,linked_projects:[{id:projectHint.toLowerCase().replace(/[^a-z0-9]+/g,'_'),name:projectHint,source:'transcript_task_hint'},...safeArray(linkage.linked_projects)]}
+      : linkage;
+    const instruction={
+      instruction:compactText(task.context_summary||task.title||quote,900),
+      instruction_type:'inferred_from_transcript_task',
+      requested_action:action,
+      target_system:action==='build_artifact'?'val_workspace':(action==='send_email'||action==='draft_introduction'?'email':'val_workspace'),
+      target_person_or_record:projectHint || task.owner || '',
+      project_hint:projectHint,
+      external_action:action==='send_email',
+      authorization:'approval_required',
+      authenticated_user_spoke:false,
+      speaker_confidence:0.62,
+      ambiguity:[],
+      conflicts:[],
+      blocking_safety_rules:[],
+      recommended_next_step:'prepare_only',
+      source_refs:task.source_refs||[normalizeSourceRef({sourceType:'transcript',sourceId:id,quoteOrSummary:quote,confidence:task.confidence||0.68})],
+      confidence:Math.min(0.84,Number(task.confidence)||0.68),
+      authorization_source:'transcript_task',
+      authorization_event_id:id,
+      authorization_quote:quote,
+      authenticated_user_confirmed:false,
+      authorization_created_at:record.createdAt||record.created_at||new Date().toISOString()
+    };
+    const sourceRefs=instruction.source_refs.length?instruction.source_refs:evidenceRefs.slice(0,3);
+    const assessment=assessPreparedWork({
+      kind:preparedWorkType(instruction),
+      instruction,
+      record:{...record,id},
+      linkage:projectLinked,
+      sourceRefs,
+      extraMissing:missingContextForInstruction(instruction,projectLinked,preparedWorkType(instruction))
+    });
+    if(!assessment.admitted)return preparedWorkNeedsInformationCandidate({id,index:i,instruction,record:{...record,id},linkage:projectLinked,sourceRefs,assessment,task,projectHint});
+    const artifact=preparedArtifactForInstruction(instruction,{...record,id},projectLinked,evidenceRefs);
+    if(!artifact)return null;
+    const quality=validatePreparedArtifactQuality(artifact,assessment.brief);
+    if(!quality.passes)return preparedWorkNeedsInformationCandidate({id,index:i,instruction,record:{...record,id},linkage:projectLinked,sourceRefs,assessment:{...assessment,admitted:false,status:'needs_information',missingInformation:quality.issues,brief:{...assessment.brief,missingInformation:quality.issues}},task,projectHint});
+    const linkedContext={...(artifact.linked_context||{}),task:{id:task.id,title:task.title,source:'transcript_commitment'},source_packet:{transcript_id:id,task_id:task.id,source_quote:quote,project_hint:projectHint||'',evidence_refs:sourceRefs}};
+    artifact.source='transcript_task';
+    artifact.instruction=instruction.instruction;
+    artifact.source_quote=quote;
+    artifact.source_packet=linkedContext.source_packet;
+    artifact.linked_context=linkedContext;
+    artifact.continuation_task={...(artifact.continuation_task||{}),id:task.id,title:task.title,status:'ready_for_review',project:linkedContext.project,relationships:linkedContext.relationships,transcript:linkedContext.transcript,remaining_context_needed:artifact.remaining_context_needed||[]};
+    return {
+      id:`prepared_${id}_${artifact.kind}_task_${i+1}`,
+      category:'prepared_work',
+      type:artifact.kind,
+      title:artifact.title,
+      summary:`VAL prepared ${artifact.kind.replace(/_/g,' ')} from the task packet instead of making you restate the transcript.`,
+      why_user_is_seeing_this:'A transcript-created task included enough shape for VAL to prepare reviewable work.',
+      why_now:'The task is already on the executive desk, so the draft should arrive with it instead of requiring a second search.',
+      what_val_did:`Turned the transcript task packet into a reviewable ${artifact.kind.replace(/_/g,' ')}. Nothing was sent, scheduled, published, or written externally.`,
+      what_only_user_can_do:artifact.remaining_context_needed?.length
+        ? `Review what VAL prepared and fill the missing pieces: ${artifact.remaining_context_needed.join('; ')}`
+        : 'Review the prepared work, edit if needed, and approve any external step separately.',
+      estimated_review_minutes:artifact.kind==='html_page_draft'?6:3,
+      approval_policy:'approval_required',
+      representation_risk:/proposal|email|introduction/.test(artifact.kind)?'high':'medium',
+      requires_approval:true,
+      execution_level:artifact.execution_level,
+      execution_level_label:artifact.execution_level_label,
+      completion_status:artifact.completion_status,
+      completed_by_val:artifact.completed_by_val,
+      remaining_context_needed:artifact.remaining_context_needed,
+      linked_context:linkedContext,
+      continuation_task:artifact.continuation_task,
+      prepared_artifact:artifact,
+      source_refs:sourceRefs,
+      confidence:Math.min(0.84,Number(task.confidence)||0.68)
+    };
+  }).filter(Boolean).filter((candidate,index,all)=>{
+    const key=[candidate.type,candidate.linked_context?.project?.name||'',candidate.linked_context?.transcript?.id||id].join('|').toLowerCase();
+    return index===all.findIndex(other=>[other.type,other.linked_context?.project?.name||'',other.linked_context?.transcript?.id||id].join('|').toLowerCase()===key);
+  });
 }
 function relationshipSignals(record={},participants=[],commitments=[]){
   const text=transcriptText(record);
@@ -189,6 +404,112 @@ function followUpCandidates(record={},commitments=[],relationshipSignals=[]){
   }
   return candidates;
 }
+function transcriptMeetingOverviewPreparedWork(record={},commitments=[],relationshipSignalsList=[],projectSignalsList=[],linkage={},evidenceRefs=[]){
+  const id=record.id||record.transcriptId||record.transcript_id||'';
+  const title=transcriptTitle(record);
+  const meaningfulSignals=[
+    ...safeArray(commitments).map((item)=>item.summary||item.title||item.source_quote),
+    ...safeArray(relationshipSignalsList).map((item)=>item.summary||item.source_quote),
+    ...safeArray(projectSignalsList).map((item)=>item.summary||item.source_quote),
+    ...safeArray(evidenceRefs).map((item)=>item.quote_or_summary||item.quoteOrSummary)
+  ].map((item)=>compactText(item,360)).filter(Boolean)
+    .filter((item,index,all)=>index===all.findIndex(other=>other.toLowerCase()===item.toLowerCase()));
+  if(!id||!meaningfulSignals.length)return [];
+  const actionLines=safeArray(commitments).map((item)=>compactText(item.title||item.summary||'',220)).filter(Boolean)
+    .filter((item,index,all)=>index===all.findIndex(other=>other.toLowerCase()===item.toLowerCase()));
+  const usedLines=new Set(actionLines.concat(meaningfulSignals).map(item=>item.toLowerCase()));
+  const keyPointLines=safeArray(evidenceRefs).map((item)=>compactText(item.quote_or_summary||item.quoteOrSummary||'',260)).filter(Boolean)
+    .filter((item,index,all)=>!usedLines.has(item.toLowerCase())&&index===all.findIndex(other=>other.toLowerCase()===item.toLowerCase()))
+    .slice(0,6);
+  const people=safeArray(linkage.linked_people).map((person)=>({name:person.name||'',email:person.email||'',contactId:person.contactId||person.crm_contact_id||''})).filter((person)=>person.name||person.email||person.contactId).slice(0,8);
+  const body=[
+    `Meeting overview: ${title}`,
+    '',
+    'What changed',
+    ...meaningfulSignals.slice(0,5).map((line)=>'- '+line),
+    '',
+    actionLines.length?'Action items':'Action items',
+    ...(actionLines.length?actionLines:['No explicit action item was clean enough to turn into a task without review.']).map((line)=>'- '+line),
+    '',
+    keyPointLines.length?'Key points':'Key points',
+    ...(keyPointLines.length?keyPointLines:['No separate key point excerpt was attached.']).map((line)=>'- '+line),
+    '',
+    'Review decision',
+    '- Confirm what should become a task, draft, relationship update, or project packet.',
+    '- Nothing has been sent, scheduled, published, or written externally.'
+  ].join('\n');
+  const linkedContext={
+    transcript:{id,title},
+    project:safeArray(linkage.linked_projects)[0]||{},
+    relationships:people,
+    source_packet:{transcript_id:id,source_quote:meaningfulSignals[0]||'',evidence_refs:safeArray(evidenceRefs).slice(0,8)}
+  };
+  const instruction={
+    requested_action:'send_email',
+    instruction:`Send the meeting overview for ${title}. ${meaningfulSignals.slice(0,5).join(' ')}`,
+    target_person_or_record:people.length===1?(people[0].email||people[0].name):'',
+    confidence:0.74,
+    source_refs:safeArray(evidenceRefs).slice(0,8),
+    authorization:'approval_required'
+  };
+  const assessment=assessPreparedWork({
+    kind:'meeting_overview_email_draft',
+    instruction,
+    record:{...record,id},
+    linkage,
+    sourceRefs:evidenceRefs
+  });
+  if(!assessment.admitted)return [preparedWorkNeedsInformationCandidate({id,index:0,instruction,record:{...record,id},linkage,sourceRefs:safeArray(evidenceRefs).slice(0,8),assessment})];
+  const artifact={
+    kind:'meeting_overview_email_draft',
+    source:'transcript_meeting_overview',
+    transcript_id:id,
+    title:`Meeting overview draft: ${title}`,
+    subject:`Meeting overview: ${title}`,
+    body,
+    recipients:people,
+    externalSend:false,
+    reviewRequired:true,
+    no_external_action:true,
+    linked_context:linkedContext,
+    completed_by_val:[
+      'Extracted transcript action items and key points.',
+      'Prepared a reviewable meeting overview draft.',
+      'Linked the draft back to the transcript and available relationships.'
+    ],
+    remaining_context_needed:people.length?[]:['Choose recipients before sending this outside VAL.'],
+    completion_status:people.length?'complete_for_review':'partial_needs_context',
+    execution_level:'level_2_autonomous_draft',
+    execution_level_label:'Autonomous Draft'
+  };
+  const quality=validatePreparedArtifactQuality(artifact,assessment.brief);
+  if(!quality.passes)return [preparedWorkNeedsInformationCandidate({id,index:0,instruction,record:{...record,id},linkage,sourceRefs:safeArray(evidenceRefs).slice(0,8),assessment:{...assessment,admitted:false,status:'needs_information',missingInformation:quality.issues,brief:{...assessment.brief,missingInformation:quality.issues}}})];
+  return [{
+    id:`prepared_${id}_meeting_overview_email_draft`,
+    category:'prepared_work',
+    type:'meeting_overview_email_draft',
+    title:artifact.title,
+    summary:'VAL prepared the transcript action items and key points as a reviewable meeting overview instead of leaving them buried in the transcript.',
+    why_user_is_seeing_this:'This transcript produced action items, key points, or relationship/project signals that are useful enough to review.',
+    why_now:'Meeting context is easiest to use while the conversation is still fresh.',
+    what_val_did:'Prepared a meeting overview draft from the transcript. Nothing was sent, scheduled, published, or written externally.',
+    what_only_user_can_do:artifact.remaining_context_needed.length?'Choose recipients, edit if needed, and approve any external step separately.':'Review the overview, edit if needed, and approve any external step separately.',
+    estimated_review_minutes:3,
+    approval_policy:'approval_required',
+    representation_risk:'medium',
+    requires_approval:true,
+    execution_level:artifact.execution_level,
+    execution_level_label:artifact.execution_level_label,
+    completion_status:artifact.completion_status,
+    completed_by_val:artifact.completed_by_val,
+    remaining_context_needed:artifact.remaining_context_needed,
+    linked_context:linkedContext,
+    continuation_task:null,
+    prepared_artifact:artifact,
+    source_refs:safeArray(evidenceRefs).slice(0,8),
+    confidence:0.74
+  }];
+}
 function preparedWorkType(instruction={}){
   const action=instruction.requested_action||'';
   const text=String(instruction.instruction||'').toLowerCase();
@@ -206,6 +527,180 @@ function preparedWorkType(instruction={}){
   if(action==='send_email')return 'email_draft';
   return '';
 }
+function artifactEvidenceLines(instruction={},record={},evidenceRefs=[]){
+  const direct=[
+    instruction.instruction,
+    instruction.authorization_quote,
+    ...(safeArray(instruction.source_refs).map(ref=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote)),
+    ...(safeArray(evidenceRefs).map(ref=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote))
+  ].map(line=>compactText(line,360)).filter(Boolean);
+  const keyTerms=String([instruction.instruction,instruction.authorization_quote].filter(Boolean).join(' ')).toLowerCase().split(/[^a-z0-9]+/).filter(term=>term.length>4).slice(0,12);
+  const related=sentences(transcriptText(record))
+    .filter(sentence=>keyTerms.some(term=>sentence.toLowerCase().includes(term)))
+    .map(sentence=>compactText(sentence,360));
+  return [...new Set([...direct,...related])].filter(Boolean).slice(0,8);
+}
+function artifactOpenQuestions(missing=[]){
+  return safeArray(missing).length?safeArray(missing):['Confirm this still represents your intent before anything leaves VAL.'];
+}
+function artifactPlainBody({kind='',title='',target='',instruction={},record={},evidenceRefs=[],missing=[]}={}){
+  const evidence=artifactEvidenceLines(instruction,record,evidenceRefs);
+  const sourceTitle=transcriptTitle(record);
+  const sourceQuote=evidence[0]||compactText(instruction.instruction||'',280);
+  const bodyByKind={
+    proposal_draft:[
+      title,
+      '',
+      'Context heard in the source',
+      ...evidence.slice(0,5).map(line=>'- '+line),
+      '',
+      'Recommended scope',
+      `- Build the proposal around ${target || 'the named relationship or project'} using only the commitments, pricing, timing, and boundaries confirmed in the source.`,
+      '',
+      'Decision needed',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    invoice_draft:[
+      title,
+      '',
+      'Context heard in the source',
+      ...evidence.slice(0,5).map(line=>'- '+line),
+      '',
+      'Invoice review',
+      '- Confirm amount, recipient, terms, and timing before any financial action.',
+      '',
+      'Decision needed',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    agreement_draft:[
+      title,
+      '',
+      'Parties and context',
+      ...evidence.slice(0,5).map(line=>'- '+line),
+      '',
+      'Draft structure',
+      '- Scope',
+      '- Responsibilities',
+      '- Timeline',
+      '- Terms requiring human or legal review',
+      '',
+      'Decision needed',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    document_draft:[
+      title,
+      '',
+      'Purpose',
+      `- Turn the ${sourceTitle} context into a clean reviewable document.`,
+      '',
+      'Source-backed content',
+      ...evidence.slice(0,6).map(line=>'- '+line),
+      '',
+      'Next review decision',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    copy_draft:[
+      title,
+      '',
+      'Audience and promise',
+      `- Draft copy for ${target || 'the intended audience'} from the source context.`,
+      '',
+      'Source-backed points',
+      ...evidence.slice(0,6).map(line=>'- '+line),
+      '',
+      'Review decision',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    calendar_invite_draft:[
+      title,
+      '',
+      'Invite context',
+      ...evidence.slice(0,5).map(line=>'- '+line),
+      '',
+      'Invite draft',
+      `Subject: ${target ? `Meeting with ${target}` : 'Follow-up meeting'}`,
+      'Timing: Confirm before scheduling.',
+      'Purpose: Close the loop named in the source.',
+      '',
+      'Decision needed',
+      ...artifactOpenQuestions(missing).map(line=>'- '+line)
+    ],
+    introduction_email_draft:[
+      title,
+      '',
+      `Hi ${target || 'there'},`,
+      '',
+      'I wanted to make this introduction because the source context suggests there may be useful alignment here.',
+      '',
+      evidence.slice(0,3).map(line=>`- ${line}`).join('\n'),
+      '',
+      'I am keeping this as a draft until Jessa confirms the relationship fit and wording.'
+    ],
+    email_draft:[
+      title,
+      '',
+      `Hi ${target || 'there'},`,
+      '',
+      sourceQuote,
+      '',
+      'I wanted to close this loop clearly. Please let me know what timing or next step works best from here.'
+    ]
+  };
+  return safeArray(bodyByKind[kind]).filter(line=>line!=null).join('\n');
+}
+function htmlEscape(value=''){
+  return String(value||'').replace(/[&<>"']/g,(char)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+function artifactHtmlDraft({target='',instruction={},record={},evidenceRefs=[],missing=[]}={}){
+  const evidence=artifactEvidenceLines(instruction,record,evidenceRefs);
+  const project=projectHintFromText([target,instruction.instruction,transcriptTitle(record),evidence.join(' ')].join(' '),record)||target||'Dashboard';
+  const requirements=evidence.filter(line=>/\b(show|dashboard|projection|pipeline|owner|risk|context|follow|iframe|crm|html|css|embed)\b/i.test(line)).slice(0,6);
+  const title=/\bGOALL\b/i.test(project)?'GOALL Dashboard Handoff':`${project} Dashboard Handoff`;
+  const cards=(requirements.length?requirements:evidence.slice(0,4)).map((line,index)=>`      <article>\n        <span>${index+1}</span>\n        <p>${htmlEscape(line)}</p>\n      </article>`).join('\n');
+  const questions=artifactOpenQuestions(missing).map(line=>`      <li>${htmlEscape(line)}</li>`).join('\n');
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8">',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+    `  <title>${htmlEscape(title)}</title>`,
+    '  <style>',
+    '    :root{color-scheme:light;--sage:#6f8f72;--rose:#c98995;--ink:#243025;--line:rgba(111,143,114,.22);--glass:rgba(255,255,255,.78)}',
+    '    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:linear-gradient(135deg,rgba(111,143,114,.12),rgba(201,137,149,.14));color:var(--ink)}',
+    '    main{box-sizing:border-box;min-height:100vh;padding:28px}',
+    '    .shell{max-width:1080px;margin:0 auto;border:1px solid rgba(36,48,37,.12);background:var(--glass);border-radius:18px;padding:28px;box-shadow:0 24px 80px rgba(36,48,37,.12)}',
+    '    .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--sage);font-weight:650}',
+    '    h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,58px);line-height:.96;margin:10px 0 18px}',
+    '    .summary{font-size:16px;line-height:1.55;max-width:720px;color:rgba(36,48,37,.76)}',
+    '    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:26px}',
+    '    article{border:1px solid var(--line);background:rgba(255,255,255,.58);border-radius:14px;padding:16px;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}',
+    '    article span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,rgba(111,143,114,.2),rgba(201,137,149,.24));color:var(--sage);font-size:12px;font-weight:700}',
+    '    p{margin:0}.open{margin-top:28px;border-top:1px solid rgba(36,48,37,.12);padding-top:20px}.open h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);margin:0 0 10px}.open li{margin:6px 0;color:rgba(36,48,37,.72)}',
+    '    @media(max-width:720px){main{padding:16px}.grid{grid-template-columns:1fr}.shell{padding:20px}}',
+    '  </style>',
+    '</head>',
+    '<body>',
+    '  <main>',
+    '    <section class="shell">',
+    '      <div class="eyebrow">Prepared by VAL</div>',
+    `      <h1>${htmlEscape(title)}</h1>`,
+    `      <p class="summary">This iframe-ready draft was built from ${htmlEscape(transcriptTitle(record))}. Review the wording and destination before publishing or embedding it.</p>`,
+    '      <div class="grid">',
+    cards,
+    '      </div>',
+    '      <section class="open">',
+    '        <h2>Before this leaves VAL</h2>',
+    '        <ul>',
+    questions,
+    '        </ul>',
+    '      </section>',
+    '    </section>',
+    '  </main>',
+    '</body>',
+    '</html>'
+  ].join('\n');
+}
 function preparedArtifactForInstruction(instruction={},record={},linkage={},evidenceRefs=[]){
   const type=preparedWorkType(instruction);
   if(!type)return null;
@@ -216,6 +711,20 @@ function preparedArtifactForInstruction(instruction={},record={},linkage={},evid
   const completionStatus=missing.length?'partial_needs_context':'complete_for_review';
   const taskId=`task_${id}_${String(type||'prepared').replace(/[^a-z0-9]+/gi,'_')}`;
   const linkedContext=linkedContextForPreparedWork({...record,id},linkage,instruction,taskId);
+  const titleByType={
+    proposal_draft:`Proposal draft for ${target}`,
+    invoice_draft:`Invoice draft for ${target}`,
+    agreement_draft:`Agreement draft for ${target}`,
+    document_draft:`Document draft for ${target}`,
+    copy_draft:`Copy draft for ${target}`,
+    calendar_invite_draft:`Calendar invitation draft for ${target}`,
+    introduction_email_draft:`Introduction draft involving ${target}`,
+    email_draft:`Email draft for ${target}`
+  };
+  const artifactTitle=titleByType[type]||`Prepared work for ${target}`;
+  const draftBody=type==='html_page_draft'
+    ? ''
+    : artifactPlainBody({kind:type,title:artifactTitle,target,instruction,record:{...record,id},evidenceRefs,missing});
   const base={
     source:'transcript_instruction',
     transcript_id:id,
@@ -245,23 +754,37 @@ function preparedArtifactForInstruction(instruction={},record={},linkage={},evid
     external_action_requested:!!instruction.external_action,
     authorization:instruction.authorization,
     review_required:true,
-    no_external_action:true
-  };
-  if(type==='proposal_draft')return {...base,kind:type,destination:'GHL/CRM proposal draft',title:`Proposal draft for ${target}`,sections:['Context heard in transcript','Recommended scope','Implementation path','Investment or pricing placeholder','Approval questions'],externalSend:false};
-  if(type==='invoice_draft')return {...base,kind:type,destination:'Invoice draft packet',title:`Invoice draft for ${target}`,sections:['Context heard in transcript','Amount or pricing placeholder','Terms needing confirmation','Approval questions'],externalSend:false,externalFinancialAction:false};
-  if(type==='agreement_draft')return {...base,kind:type,destination:'Agreement/SOW draft',title:`Agreement draft for ${target}`,sections:['Parties','Scope','Responsibilities','Timeline','Terms requiring human/legal review','Approval questions'],externalSend:false,legalReviewRequired:true};
-  if(type==='document_draft')return {...base,kind:type,destination:'Prepared document draft',title:`Document draft for ${target}`,sections:['Purpose','Context from transcript','Draft content','Open questions','Next review decision'],externalPublish:false};
-  if(type==='copy_draft')return {...base,kind:type,destination:'Copy draft',title:`Copy draft for ${target}`,sections:['Audience','Promise','Draft copy','CTA','Review questions'],externalPublish:false};
-  if(type==='html_page_draft')return {...base,kind:type,destination:'VAL workspace HTML artifact',title:`HTML page draft from transcript request`,filename:`${String(target||'val-page').toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'val-page'}.html`,html:'<!doctype html>\\n<html>\\n<head><meta charset=\"utf-8\"><title>Draft Page</title><style>body{font-family:Inter,system-ui,sans-serif;margin:0;color:#172033;background:#f7f3eb}main{max-width:920px;margin:0 auto;padding:72px 24px}section{margin-top:32px}a{color:#234f3b}</style></head>\\n<body>\\n  <main>\\n    <h1>Draft page from transcript request</h1>\\n    <p>VAL prepared this page structure from the meeting. Replace placeholders after project/repo context is confirmed.</p>\\n    <section><h2>Purpose</h2><p>Clarify the promise, audience, and next action from the transcript.</p></section>\\n    <section><h2>Next Step</h2><p>Review copy, attach assets, and confirm the publish target before release.</p></section>\\n  </main>\\n</body>\\n</html>',externalPublish:false};
-  if(type==='calendar_invite_draft')return {...base,kind:type,destination:'GHL/Calendar invitation draft',title:`Calendar invitation draft for ${target}`,attendees:safeArray(linkage.linked_people).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),timeHint:(instruction.instruction.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|at \d[^.]+)/i)||[])[0]||'',externalCalendarWrite:false};
-  if(type==='introduction_email_draft')return {...base,kind:type,destination:'Email draft with two recipients',title:`Introduction draft involving ${target}`,recipients:safeArray(linkage.linked_people).slice(0,2).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),relationship_match_required:true,externalSend:false};
-  return {...base,kind:type,destination:'Email draft',title:`Email draft for ${target}`,externalSend:false};
+	    no_external_action:true
+	  };
+	  if(type==='proposal_draft')return {...base,kind:type,destination:'GHL/CRM proposal draft',title:artifactTitle,body:draftBody,sections:['Context heard in transcript','Recommended scope','Implementation path','Investment or pricing placeholder','Approval questions'],externalSend:false};
+	  if(type==='invoice_draft')return {...base,kind:type,destination:'Invoice draft packet',title:artifactTitle,body:draftBody,sections:['Context heard in transcript','Amount or pricing placeholder','Terms needing confirmation','Approval questions'],externalSend:false,externalFinancialAction:false};
+	  if(type==='agreement_draft')return {...base,kind:type,destination:'Agreement/SOW draft',title:artifactTitle,body:draftBody,sections:['Parties','Scope','Responsibilities','Timeline','Terms requiring human/legal review','Approval questions'],externalSend:false,legalReviewRequired:true};
+	  if(type==='document_draft')return {...base,kind:type,destination:'Prepared document draft',title:artifactTitle,body:draftBody,sections:['Purpose','Context from transcript','Draft content','Open questions','Next review decision'],externalPublish:false};
+	  if(type==='copy_draft')return {...base,kind:type,destination:'Copy draft',title:artifactTitle,body:draftBody,sections:['Audience','Promise','Draft copy','CTA','Review questions'],externalPublish:false};
+	  if(type==='html_page_draft')return {...base,kind:type,destination:'VAL workspace HTML artifact',title:`${projectHintFromText([target,instruction.instruction,transcriptTitle(record)].join(' '),record)||'HTML'} dashboard draft`,filename:`${String(target||'val-page').toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'val-page'}.html`,html:artifactHtmlDraft({target,instruction,record:{...record,id},evidenceRefs,missing}),externalPublish:false};
+	  if(type==='calendar_invite_draft')return {...base,kind:type,destination:'GHL/Calendar invitation draft',title:artifactTitle,body:draftBody,attendees:safeArray(linkage.linked_people).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),timeHint:(instruction.instruction.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|at \d[^.]+)/i)||[])[0]||'',externalCalendarWrite:false};
+	  if(type==='introduction_email_draft')return {...base,kind:type,destination:'Email draft with two recipients',title:artifactTitle,body:draftBody,recipients:safeArray(linkage.linked_people).slice(0,2).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),relationship_match_required:true,externalSend:false};
+	  return {...base,kind:type,destination:'Email draft',title:artifactTitle,body:draftBody,externalSend:false};
 }
 function preparedWorkCandidates(record={},executiveInstructions=[],linkage={},evidenceRefs=[]){
   const id=record.id||record.transcriptId||record.transcript_id||'';
   return safeArray(executiveInstructions).map((instruction,i)=>{
+    const kind=preparedWorkType(instruction);
+    if(!kind)return null;
+    const sourceRefs=instruction.source_refs||evidenceRefs.slice(0,3);
+    const assessment=assessPreparedWork({
+      kind,
+      instruction,
+      record:{...record,id},
+      linkage,
+      sourceRefs,
+      extraMissing:missingContextForInstruction(instruction,linkage,kind)
+    });
+    if(!assessment.admitted)return preparedWorkNeedsInformationCandidate({id,index:i,instruction,record:{...record,id},linkage,sourceRefs,assessment});
     const artifact=preparedArtifactForInstruction(instruction,record,linkage,evidenceRefs);
     if(!artifact)return null;
+    const quality=validatePreparedArtifactQuality(artifact,assessment.brief);
+    if(!quality.passes)return preparedWorkNeedsInformationCandidate({id,index:i,instruction,record:{...record,id},linkage,sourceRefs,assessment:{...assessment,admitted:false,status:'needs_information',missingInformation:quality.issues,brief:{...assessment.brief,missingInformation:quality.issues}}});
     return {
       id:`prepared_${id}_${artifact.kind}_${i+1}`,
       category:'prepared_work',
@@ -286,7 +809,7 @@ function preparedWorkCandidates(record={},executiveInstructions=[],linkage={},ev
       linked_context:artifact.linked_context,
       continuation_task:artifact.continuation_task,
       prepared_artifact:artifact,
-      source_refs:instruction.source_refs||evidenceRefs.slice(0,3),
+      source_refs:sourceRefs,
       confidence:Math.min(0.92,Number(instruction.confidence)||0.68)
     };
   }).filter(Boolean);
@@ -316,7 +839,20 @@ function introCandidatesFromMatches({record={},linkage={},crmContacts=[],evidenc
   const id=record.id||record.transcriptId||record.transcript_id||'';
   const currentContact={...currentContactFromLinkage(linkage),summary:transcriptText(record),needs:transcriptIntroNeeds(record),evidence:evidenceRefs.map(ref=>({summary:ref.quote_or_summary||ref.quoteOrSummary||''}))};
   const intro=relationshipIntroCandidates({currentContact,crmContacts,limit:3});
-  return safeArray(intro.candidates).map((candidate,i)=>({
+  return safeArray(intro.candidates).map((candidate,i)=>{
+    const recipients=[candidate.personA,candidate.personB];
+    const instruction={
+      requested_action:'draft_introduction',
+      instruction:`Prepare an introduction between ${candidate.personA.name} and ${candidate.personB.name}. ${candidate.whyThisMayMatter||''}`,
+      target_person_or_record:candidate.personB.name,
+      confidence:candidate.confidence,
+      source_refs:evidenceRefs,
+      authorization:'approval_required'
+    };
+    const introLinkage={...linkage,linked_people:recipients,consentConfirmed:candidate.consentConfirmed===true};
+    const assessment=assessPreparedWork({kind:'introduction_email_draft',instruction,record,linkage:introLinkage,sourceRefs:evidenceRefs});
+    if(!assessment.admitted)return preparedWorkNeedsInformationCandidate({id,index:i,instruction,record,linkage:introLinkage,sourceRefs:evidenceRefs,assessment});
+    return {
     id:`intro_match_${id}_${i+1}`,
     category:'prepared_work',
     type:'relationship_introduction_candidate',
@@ -335,6 +871,7 @@ function introCandidatesFromMatches({record={},linkage={},crmContacts=[],evidenc
       source:'relationship_intro_matching',
       title:candidate.draft.subject,
       recipients:[candidate.personA,candidate.personB],
+      consentConfirmed:true,
       body:candidate.draft.body,
       relationship_match_required:false,
       externalSend:false,
@@ -342,7 +879,8 @@ function introCandidatesFromMatches({record={},linkage={},crmContacts=[],evidenc
     },
     source_refs:evidenceRefs.slice(0,3),
     confidence:candidate.confidence
-  }));
+    };
+  });
 }
 function executiveInstructionExtractor(record={},gate={}){
   if(!gate.is_usable)return [];
@@ -391,6 +929,8 @@ function createValTranscriptIntelligenceService({
   resolveIdentity=null,
   listRelationshipContacts=null,
   createContinuationTask=null,
+  recordSourceProcessing=null,
+  admitCanonicalWork=null,
   logger=console
 }={}){
   function store(){
@@ -428,7 +968,10 @@ function createValTranscriptIntelligenceService({
     if(resolveIdentity){
       for(const person of linkage.linked_people.slice(0,8)){
         const resolved=await resolveIdentity({email:person.email,name:person.name}).catch(()=>null);
-        if(resolved?.crm_contact_id)linkage.linked_crm_records.push({crm_contact_id:resolved.crm_contact_id,match_status:resolved.match_status,confidence:resolved.match_confidence});
+        if(resolved?.crm_contact_id){
+          person.contactId=resolved.crm_contact_id;
+          linkage.linked_crm_records.push({crm_contact_id:resolved.crm_contact_id,match_status:resolved.match_status,confidence:resolved.match_confidence});
+        }
       }
     }
     if(!linkage.linked_calendar_event)linkage.unresolved_links.push('calendar_event');
@@ -471,26 +1014,27 @@ function createValTranscriptIntelligenceService({
       const linked=task.linked_context||{};
       const project=linked.project||{};
       const relationships=safeArray(linked.relationships);
+      const hasPreparedWork=safeArray(task.prepared_work_ids).length>0;
       const payload={
         id:task.id||uuid('task'),
         title:task.title||'Continue transcript prepared work',
         contactName:relationships[0]?.name||relationships[0]?.email||'',
         dueDate:null,
         notes:[
-          task.why||task.context_summary||'Continuation task created from transcript prepared work.',
+          task.why||task.context_summary||(hasPreparedWork?'Continuation task created from transcript prepared work.':'Task created because the work brief is missing required information.'),
           project.name?`Project: ${project.name}${project.needs_creation?' (suggested/new project context)':''}`:'',
           task.completed_by_val?.length?'Completed by VAL:\n- '+task.completed_by_val.join('\n- '):'',
           task.remaining_context_needed?.length?'Context needed to finish:\n- '+task.remaining_context_needed.join('\n- '):'',
           'Internal VAL continuation task only. No email, CRM write, calendar write, publish, repository push, or external action happened.'
         ].filter(Boolean).join('\n\n'),
         details:[
-          {text:`Created from transcript prepared work: ${run.transcriptId||task.linked_context?.transcript?.id||''}`,ts:new Date().toISOString()},
+          {text:`Created from transcript ${hasPreparedWork?'prepared work':'work brief'}: ${run.transcriptId||task.linked_context?.transcript?.id||''}`,ts:new Date().toISOString()},
           {text:`Execution level: ${task.execution_level_label||task.execution_level||'unknown'}`,ts:new Date().toISOString()},
           ...(task.prepared_work_ids||[]).map(id=>({text:`Prepared work: ${id}`,ts:new Date().toISOString()}))
         ],
         completed:false,
         createdAt:new Date().toISOString(),
-        source:'transcript_prepared_work',
+        source:hasPreparedWork?'transcript_prepared_work':'transcript_work_brief_task',
         transcriptId:run.transcriptId||linked.transcript?.id||'',
         projectId:project.id||'',
         projectName:project.name||'',
@@ -516,6 +1060,28 @@ function createValTranscriptIntelligenceService({
     const contextualTasks=taskContextBuilder({...record,id},commitments);
     const relSignals=relationshipSignals({...record,id},safeArray(linkage.linked_people),commitments);
     const projSignals=projectSignals({...record,id});
+    let sourceProcessingRecord=null;
+    if(typeof recordSourceProcessing==='function'){
+      const processed=await recordSourceProcessing({transcript:{...record,id},notify:input.notify}).catch(error=>{
+        unknowns.push({source:'source_processing',reason:error.message});
+        return null;
+      });
+      sourceProcessingRecord=processed?.sourceProcessingRecord||null;
+    }
+    const canonicalWorkItems=[];
+    if(typeof admitCanonicalWork==='function'){
+      for(const commitment of commitments){
+        const admitted=await admitCanonicalWork({
+          ...canonicalWorkShape(commitment,{...record,id},linkage,projSignals),
+          sourceProcessingRecordId:sourceProcessingRecord?.id||'',
+          notify:input.notify
+        }).catch(error=>{
+          unknowns.push({source:'canonical_work_admission',commitmentId:commitment.id,reason:error.message});
+          return null;
+        });
+        if(admitted?.workItem)canonicalWorkItems.push(admitted.workItem);
+      }
+    }
     const capacity=capacityAndTone({...record,id});
     const courage=courageSignals({...record,id},commitments);
     const teachCandidates=teachValCandidates({...record,id});
@@ -523,23 +1089,27 @@ function createValTranscriptIntelligenceService({
     const crmContacts=typeof listRelationshipContacts==='function'?await listRelationshipContacts({record:{...record,id},linkage,limit:80}).catch(e=>{unknowns.push({source:'relationship_contacts',reason:e.message});return [];}):[];
     const confidence=gate.quality==='high'?0.78:gate.quality==='medium'?0.62:0.45;
     const readyCandidates=followUpCandidates({...record,id},commitments,relSignals.concat(projSignals))
+      .concat(transcriptMeetingOverviewPreparedWork({...record,id},commitments,relSignals,projSignals,linkage,evidenceRefs))
       .concat(preparedWorkCandidates({...record,id},executiveInstructions,linkage,evidenceRefs))
+      .concat(preparedWorkCandidatesFromTasks({...record,id},contextualTasks,linkage,evidenceRefs))
       .concat(introCandidatesFromMatches({record:{...record,id},linkage,crmContacts,evidenceRefs}));
-    const preparedByTaskId=new Map(readyCandidates.filter(c=>c.continuation_task?.id).map(c=>[c.continuation_task.id,c]));
+    const preparedByTaskId=new Map(readyCandidates.filter(c=>c.category==='prepared_work'&&c.continuation_task?.id).map(c=>[c.continuation_task.id,c]));
     const executionTasks=readyCandidates.filter(c=>c.continuation_task).map((candidate,i)=>({
       id:candidate.continuation_task.id||`execution_task_${i+1}`,
       title:candidate.continuation_task.title||candidate.title,
-      why:compactText(`VAL prepared work from transcript evidence and created this continuation handle: ${candidate.summary}`,500),
+      why:compactText(candidate.category==='prepared_work'
+        ? `VAL prepared work from transcript evidence and created this continuation handle: ${candidate.summary}`
+        : `VAL preserved the work packet as a task because it was not complete enough for Leverage: ${candidate.summary}`,500),
       source_quote:safeArray(candidate.source_refs)[0]?.quote_or_summary||'',
       context_summary:candidate.summary,
       due_hint:'',
       execution_level:candidate.execution_level,
       execution_level_label:candidate.execution_level_label,
-      autonomous_work_possible:candidate.execution_level!=='level_4_human_judgment_required',
+      autonomous_work_possible:candidate.category==='prepared_work'&&candidate.execution_level!=='level_4_human_judgment_required',
       continuation_status:candidate.completion_status==='complete_for_review'?'ready_for_review':'needs_context',
       completed_by_val:candidate.completed_by_val||[],
       remaining_context_needed:candidate.remaining_context_needed||[],
-      prepared_work_ids:[candidate.id],
+      prepared_work_ids:candidate.category==='prepared_work'?[candidate.id]:[],
       linked_context:candidate.linked_context,
       approval_policy:candidate.approval_policy||'approval_required',
       requires_approval:true,
@@ -560,7 +1130,7 @@ function createValTranscriptIntelligenceService({
     ];
     const noActionBase=noActionNeeded({commitments,relationshipSignalsList:relSignals,projectSignalsList:projSignals,teachCandidates});
     const noAction=executiveInstructions.length?{value:false,reason:'Transcript includes one or more explicit executive instructions.'}:noActionBase;
-    const final={transcript_id:id,title:transcriptTitle(record),what_changed:noAction.value?'Nothing material changed.':'Transcript produced follow-up intelligence that should be reviewed before action.',counts:{commitments:commitments.length,contextual_tasks:contextualTasks.length,relationship_signals:relSignals.length,project_signals:projSignals.length,teach_val_candidates:teachCandidates.length,ready_for_you_candidates:readyCandidates.length,executive_instructions:executiveInstructions.length,prepared_work_candidates:readyCandidates.filter(c=>c.category==='prepared_work').length,execution_continuation_tasks:executionTasks.length},no_external_action:true};
+    const final={transcript_id:id,title:transcriptTitle(record),source_processing_record_id:sourceProcessingRecord?.id||'',canonical_work_item_ids:canonicalWorkItems.map(item=>item.id),what_changed:noAction.value?'Nothing material changed.':'Transcript produced follow-up intelligence that should be reviewed before action.',counts:{commitments:commitments.length,canonical_work_items:canonicalWorkItems.length,contextual_tasks:contextualTasks.length,relationship_signals:relSignals.length,project_signals:projSignals.length,teach_val_candidates:teachCandidates.length,ready_for_you_candidates:readyCandidates.length,executive_instructions:executiveInstructions.length,prepared_work_candidates:readyCandidates.filter(c=>c.category==='prepared_work').length,execution_continuation_tasks:executionTasks.length},no_external_action:true};
     const run=await saveRun({id:input.runId||uuid('trintel'),tenantId:tenantId(),userId:userId(),transcriptId:id,status:'completed',qualityGateJson:gate,linkageJson:linkage,evidenceRefsJson:evidenceRefs,commitmentsJson:commitments,contextualTasksJson:contextualTasks,relationshipSignalsJson:relSignals,projectSignalsJson:projSignals,capacityAndToneContextJson:capacity,courageSignalsJson:courage,teachValCandidatesJson:teachCandidates,readyForYouCandidatesJson:readyCandidates,executiveInstructionsJson:executiveInstructions,chiefOfStaffSignalsJson:chief,momentumSignalsJson:momentum,approvalPoliciesJson:approvalPolicies,unknownsJson:unknowns,noActionNeededJson:noAction,finalJson:final,confidence,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
     const persistedContinuationTasks=await persistContinuationTasks(executionTasks,run);
     if(persistedContinuationTasks.length){
@@ -579,7 +1149,7 @@ function createValTranscriptIntelligenceService({
       }
     }
     logger.log?.(`[val-transcript-intel] processed ${id}`);
-    return {ok:true,run,no_action_needed:noAction,final,ready_for_you_candidates:readyCandidates,no_external_action:true};
+    return {ok:true,run,source_processing_record:sourceProcessingRecord,canonical_work_items:canonicalWorkItems,no_action_needed:noAction,final,ready_for_you_candidates:readyCandidates,no_external_action:true};
   }
   async function getIntelligence(transcriptId){
     if(hasPg()){
@@ -587,6 +1157,38 @@ function createValTranscriptIntelligenceService({
       return r.rows[0]?toCamelRow(r.rows[0]):null;
     }
     return store().transcriptIntelligenceRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&String(r.transcriptId)===String(transcriptId)).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0]||null;
+  }
+  async function reconcileCanonicalLineage(input={}){
+    const record=await loadTranscript(input);
+    const id=String(record.id||record.transcriptId||record.transcript_id||input.transcriptId||'');
+    if(!id)throw new Error('Transcript canonical reconciliation requires a transcript ID.');
+    const existing=input.run||await getIntelligence(id);
+    if(!existing)return intake({...input,transcript:{...record,id},notify:false});
+    const commitments=safeArray(existing.commitmentsJson||existing.commitments_json);
+    const linkage=existing.linkageJson||existing.linkage_json||{};
+    const projectSignalsList=safeArray(existing.projectSignalsJson||existing.project_signals_json);
+    const processed=typeof recordSourceProcessing==='function'
+      ? await recordSourceProcessing({transcript:{...record,id},notify:false})
+      : null;
+    const canonicalWorkItems=[];
+    if(typeof admitCanonicalWork==='function'){
+      for(const commitment of commitments){
+        const admitted=await admitCanonicalWork({
+          ...canonicalWorkShape(commitment,{...record,id},linkage,projectSignalsList),
+          sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',
+          notify:false
+        });
+        if(admitted?.workItem)canonicalWorkItems.push(admitted.workItem);
+      }
+    }
+    return {
+      ok:true,
+      run:existing,
+      source_processing_record:processed?.sourceProcessingRecord||null,
+      canonical_work_items:canonicalWorkItems,
+      reused_existing_intelligence:true,
+      no_external_action:true
+    };
   }
   async function prepareFollowUp(transcriptId){
     let run=await getIntelligence(transcriptId);
@@ -606,7 +1208,7 @@ function createValTranscriptIntelligenceService({
     }else rows=store().transcriptIntelligenceRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&safeArray(r.readyForYouCandidatesJson).length).slice(0,lim);
     return rows.flatMap(run=>safeArray(run.readyForYouCandidatesJson).map(c=>({source:'transcript_intelligence',run,id:c.id,transcriptId:run.transcriptId,status:'ready_for_review',title:c.title,summary:c.summary,handoff:c,sourceRefs:c.source_refs||run.evidenceRefsJson||[],confidence:c.confidence||run.confidence||0.65,createdAt:run.createdAt}))).slice(0,lim);
   }
-  return {intake,getIntelligence,prepareFollowUp,listReadyForYouCandidates};
+  return {intake,reconcileCanonicalLineage,getIntelligence,prepareFollowUp,listReadyForYouCandidates};
 }
 
-module.exports={createValTranscriptIntelligenceService,qualityGate,commitmentExtractor,taskContextBuilder,capacityAndTone,executiveInstructionExtractor,preparedWorkCandidates,preparedArtifactForInstruction,introCandidatesFromMatches,currentContactFromLinkage};
+module.exports={createValTranscriptIntelligenceService,qualityGate,commitmentExtractor,taskContextBuilder,canonicalWorkShape,capacityAndTone,executiveInstructionExtractor,preparedWorkType,preparedWorkCandidates,preparedWorkCandidatesFromTasks,preparedArtifactForInstruction,preparedWorkNeedsInformationCandidate,introCandidatesFromMatches,currentContactFromLinkage};

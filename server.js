@@ -13,23 +13,47 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const {createGhlMcpService} = require('./services/ghlMcpService');
 const {createKrispMcpService} = require('./services/krispMcpService');
+const {artifactRequiresContact,validEmail:validPreparedWorkEmail} = require('./services/valPreparedWorkAdmission');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
-const {DEFAULT_OBSERVERS} = require('./services/valIntelligenceSpine');
+const {DEFAULT_OBSERVERS,OBSERVER_PACKET_LENSES} = require('./services/valIntelligenceSpine');
+const {createAboutMeObserverReasoner} = require('./services/valAboutMeObserverReview');
+const {createEvidenceQualifiedObserverReasoner} = require('./services/valEvidenceQualifiedObserverReview');
+const {buildObserverEvidenceLedger} = require('./services/valObserverEvidence');
+const {ensureValBoardPacketTables} = require('./services/valBoardPacketsSchema');
+const {registerValBoardPacketsRoutes} = require('./services/valBoardPacketsRoutes');
+const {ensureValEnvelopeTables} = require('./services/valEnvelopesSchema');
+const {registerValEnvelopesRoutes} = require('./services/valEnvelopesRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
+const {ensureValExecutiveInboxQueueTables} = require('./services/valExecutiveInboxQueueSchema');
+const {
+  cachedSentHistory,
+  decideExecutiveInboxAdmission
+} = require('./services/valExecutiveInboxAdmission');
 const {registerValReadyForYouRoutes} = require('./services/valReadyForYouRoutes');
 const {ensureValMeetingPrepTables} = require('./services/valMeetingPrepSchema');
 const {registerValMeetingPrepRoutes} = require('./services/valMeetingPrepRoutes');
 const {ensureValTranscriptIntelligenceTables} = require('./services/valTranscriptIntelligenceSchema');
 const {registerValTranscriptIntelligenceRoutes} = require('./services/valTranscriptIntelligenceRoutes');
 const {registerValCommitmentsRoutes} = require('./services/valCommitmentsRoutes');
+const {ensureValCommitmentTables} = require('./services/valCommitmentsSchema');
 const {registerValDocumentsRoutes} = require('./services/valDocumentsRoutes');
 const {ensureValReviewUpdatesTables} = require('./services/valReviewUpdatesSchema');
 const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRoutes');
 const {ensureValSourceProcessingTables} = require('./services/valSourceProcessingSchema');
 const {registerValSourceProcessingRoutes} = require('./services/valSourceProcessingRoutes');
+const {createValSourceProcessingService,evidenceChunks} = require('./services/valSourceProcessing');
+const {createValCanonicalEmailIntake} = require('./services/valCanonicalEmailIntake');
+const {registerValCanonicalLineageRoutes} = require('./services/valCanonicalLineageRoutes');
+const {createChiefOfStaffReasoner} = require('./services/valChiefOfStaffReasoning');
+const {assessAlignmentAdmission} = require('./services/valAlignmentAdmission');
+const {assessChiefWelcome} = require('./services/valChiefWelcomeAdmission');
+const {createPreparedArtifactGenerator} = require('./services/valPreparedArtifactGenerator');
+const {ensureValCanonicalWorkTables} = require('./services/valCanonicalWorkSchema');
+const {verifyCanonicalLineageSchema} = require('./services/valCanonicalSchemaReadiness');
+const {registerValCanonicalWorkRoutes} = require('./services/valCanonicalWorkRoutes');
 const {ensureValProjectPinsTables} = require('./services/valProjectPinsSchema');
 const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes');
 const {ensureValCoworkTables} = require('./services/valCoworkSchema');
@@ -38,9 +62,15 @@ const {ensureValExternalActionTables} = require('./services/valExternalActionsSc
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
 const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
+const {ensureValEnvironmentTables} = require('./services/valEnvironmentsSchema');
+const {registerValEnvironmentsRoutes} = require('./services/valEnvironmentsRoutes');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
-const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
+const {isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
+const {
+  currentBoardBriefingSlot,
+  nextBoardBriefingSlot
+}=require('./services/valBoardBriefingSchedule');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
 const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
 const {
@@ -52,9 +82,23 @@ const {
 } = require('./services/leadContactValidation');
 const app     = express();
 const execFileAsync = promisify(execFile);
+let valBoardPackets = null;
+let valIntelligenceSpine = null;
+let valEnvelopes = null;
 
 function safeArray(value){
   return Array.isArray(value) ? value : [];
+}
+function jsonRecord(value){
+  if(value&&typeof value==='object')return value;
+  if(typeof value==='string'){
+    try{return JSON.parse(value);}catch(_){return {};}
+  }
+  return {};
+}
+
+function compactText(value='',limit=900){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
 }
 
 app.use(cors());
@@ -109,6 +153,22 @@ const CLIENT_CONFIG = {
   projectName: process.env.VAL_PROJECT_NAME || '',
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
+function hourInTenantTimezone(date=new Date(),timeZone=CLIENT_CONFIG.timezone){
+  try{
+    const hourPart=new Intl.DateTimeFormat('en-US',{
+      hour:'2-digit',
+      hourCycle:'h23',
+      timeZone:timeZone||'America/New_York'
+    }).formatToParts(date).find(part=>part.type==='hour');
+    const hour=Number(hourPart?.value);
+    if(Number.isInteger(hour))return hour;
+  }catch(_error){}
+  return date.getHours();
+}
+function tenantDaypart(date=new Date()){
+  const hour=hourInTenantTimezone(date);
+  return hour<12?'morning':(hour<17?'afternoon':'evening');
+}
 function envFlag(name){
   return /^(1|true|yes|on|coming_soon|disabled)$/i.test(String(process.env[name] || '').trim());
 }
@@ -119,8 +179,7 @@ function clientFeatureLocks(){
   const greg = clientLooksLikeGreg();
   return {
     projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
-    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg,
-    pipelineCommandRoom: IS_MARK_GOALL_DEPLOYMENT
+    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
   };
 }
 function requestBaseUrl(req=null){
@@ -140,7 +199,28 @@ const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
 const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',').map(v=>v.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.6-luna';
+const OPENAI_EXTRACTION_MODEL = process.env.VAL_EXTRACTION_MODEL || 'gpt-5-nano';
+const OPENAI_DEEP_REVIEW_MODEL = process.env.VAL_DEEP_REVIEW_MODEL || 'gpt-5.6-terra';
+const OPENAI_OBSERVER_MODEL = process.env.VAL_OBSERVER_MODEL || 'gpt-5-nano';
+const VAL_DAILY_AI_CALL_LIMIT = Math.max(1,Number(process.env.VAL_DAILY_AI_CALL_LIMIT)||200);
+const VAL_AI_DAILY_HARD_USD = Math.max(0.01,Number(process.env.VAL_AI_DAILY_HARD_USD)||1.50);
+const VAL_AI_INTERACTIVE_DAILY_SOFT_USD = Math.max(0.01,Number(process.env.VAL_AI_INTERACTIVE_DAILY_SOFT_USD)||0.75);
+const VAL_AI_INTERACTIVE_DAILY_HARD_USD = Math.max(
+  VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+  Number(process.env.VAL_AI_INTERACTIVE_DAILY_HARD_USD)||1.40
+);
+const VAL_AI_BOARD_DAILY_SOFT_USD = Math.max(0.01,Number(process.env.VAL_AI_BOARD_DAILY_SOFT_USD)||0.05);
+const VAL_AI_BOARD_DAILY_HARD_USD = Math.max(
+  VAL_AI_BOARD_DAILY_SOFT_USD,
+  Number(process.env.VAL_AI_BOARD_DAILY_HARD_USD)||0.10
+);
+const VAL_AI_BOARD_DAILY_CALL_LIMIT = Math.max(15,Number(process.env.VAL_AI_BOARD_DAILY_CALL_LIMIT)||45);
+const VAL_AI_DEEP_REVIEW_ENABLED = /^(1|true|yes)$/i.test(String(process.env.VAL_AI_DEEP_REVIEW_ENABLED||''));
+const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT)||42);
+const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
+const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
+  && !/^(1|true|yes)$/i.test(String(process.env.VAL_BOARD_LAUNCH_READY||''));
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -159,9 +239,8 @@ const ROCKETREACH_ENRICH_CONCURRENCY = Math.min(Math.max(Number(process.env.ROCK
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/api/v1';
 const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
-const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-2.5-flash-lite').split(',').map(v=>v.trim()).filter(Boolean);
+const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
+const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),50);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -200,15 +279,7 @@ const GOALL_LEAD_DISCOVERY_TIMEOUT_MS = Number(process.env.GOALL_LEAD_DISCOVERY_
 const GOALL_LEAD_IMPORT_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_IMPORT_CONCURRENCY)||2,1),10);
 const GOALL_LEAD_INDUSTRIES_PER_RUN = Math.min(Math.max(Number(process.env.GOALL_LEAD_INDUSTRIES_PER_RUN)||20,5),GOALL_LEAD_SEARCH_CALLS_MAX);
 const GOALL_LEAD_MIXED_JOB_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_MIXED_JOB_CONCURRENCY)||20,1),20);
-const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 60000;
-const GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW = Math.max(Number(process.env.GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW)||40,1);
-const GOALL_ALLOW_OPENAI_FALLBACK = /^(1|true|yes)$/i.test(String(process.env.GOALL_ALLOW_OPENAI_FALLBACK || ''));
-const GOALL_ALLOW_WEB_FALLBACK = /^(1|true|yes)$/i.test(String(process.env.GOALL_ALLOW_WEB_FALLBACK || ''));
-const GOALL_STAGED_GEMINI_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_STAGED_GEMINI_CONCURRENCY)||4,1),8);
-const GOALL_STAGED_RUN_TTL_MS = Math.max(Number(process.env.GOALL_STAGED_RUN_TTL_MS)||3600000,300000);
-const GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS = Math.min(Math.max(Number(process.env.GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS)||300,0),1500);
-const GOALL_STAGED_RESEARCH_ROW_DELAY_MS = Math.min(Math.max(Number(process.env.GOALL_STAGED_RESEARCH_ROW_DELAY_MS)||650,0),2500);
-const GOALL_STAGED_RAW_TARGET_MULTIPLIER = Math.min(Math.max(Number(process.env.GOALL_STAGED_RAW_TARGET_MULTIPLIER)||4,1),8);
+const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 12000;
 const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_OBSERVATION_TIMEOUT_MS)||22000,8000),60000);
 const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_RESPONSE_TIMEOUT_MS)||16000,8000),60000);
 const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
@@ -463,12 +534,6 @@ const GHL_LEAD_FIELD_IDS = {
   lead_scored_at: process.env.GHL_FIELD_LEAD_SCORED_AT || '',
   lead_rejected_reason: process.env.GHL_FIELD_LEAD_REJECTED_REASON || '',
   lead_scoring_version: process.env.GHL_FIELD_LEAD_SCORING_VERSION || '',
-  decision_maker_first_name: process.env.GHL_FIELD_DECISION_MAKER_FIRST_NAME || process.env.GHL_FIELD_DECISION_MAKER_FIRST || '',
-  decision_maker_last_name: process.env.GHL_FIELD_DECISION_MAKER_LAST_NAME || process.env.GHL_FIELD_DECISION_MAKER_LAST || '',
-  decision_maker_name: process.env.GHL_FIELD_DECISION_MAKER_NAME || '',
-  decision_maker_title: process.env.GHL_FIELD_DECISION_MAKER_TITLE || '',
-  decision_maker_email: process.env.GHL_FIELD_DECISION_MAKER_EMAIL || '',
-  decision_maker_phone: process.env.GHL_FIELD_DECISION_MAKER_PHONE || process.env.GHL_FIELD_DECISION_MAKERS_PHONE_NUMBER || '',
   scraped_annual_revenue: process.env.GHL_FIELD_SCRAPED_ANNUAL_REVENUE || (WESTWOOD_LEAD_PROFILE_ENABLED?'A8VvWiqnOUL2qCf2SqoF':''),
   scraped_number_of_employees: process.env.GHL_FIELD_SCRAPED_NUMBER_OF_EMPLOYEES || (WESTWOOD_LEAD_PROFILE_ENABLED?'WBP8IVZg9ktkreh6fjI7':''),
   industry: process.env.GHL_FIELD_INDUSTRY || '',
@@ -618,12 +683,6 @@ const GHL_LEAD_FIELD_KEYS = {
   lead_scored_at:'contact.lead_scored_at',
   lead_rejected_reason:'contact.lead_rejected_reason',
   lead_scoring_version:'contact.lead_scoring_version',
-  decision_maker_first_name:'contact.decision_maker_first_name',
-  decision_maker_last_name:'contact.decision_maker_last_name',
-  decision_maker_name:'contact.decision_maker_name',
-  decision_maker_title:'contact.decision_maker_title',
-  decision_maker_email:'contact.decision_maker_email',
-  decision_maker_phone:'contact.decision_maker_phone',
   scraped_annual_revenue:'contact.scraped_annual_revenue',
   scraped_number_of_employees:'contact.scraped_number_of_employees',
   industry:'contact.industry',
@@ -727,12 +786,6 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_scored_at:['lead scored at','lead_scored_at'],
   lead_rejected_reason:['lead rejected reason','lead_rejected_reason','rejected reason'],
   lead_scoring_version:['lead scoring version','lead_scoring_version'],
-  decision_maker_first_name:['decision maker first name','decision maker s first name','decision makers first name','decision_maker_first_name','decision_makers_first_name','decision maker first','decisionmakerfirstname'],
-  decision_maker_last_name:['decision maker last name','decision maker s last name','decision makers last name','decision_maker_last_name','decision_makers_last_name','decision maker last','decisionmakerlastname'],
-  decision_maker_name:['decision maker name','decision_maker_name','decision maker','decisionmakername'],
-  decision_maker_title:['decision maker title','decision_maker_title','decision maker s title','decision makers title','decisionmakertitle'],
-  decision_maker_email:['decision maker email','decision_maker_email','decision maker s email address','decision makers email address','decision_makers_email_address','decision maker email address'],
-  decision_maker_phone:['decision maker phone','decision_maker_phone','decision maker s phone number','decision makers phone number','decision_makers_phone_number','decision maker phone number'],
   linkedin_personal:['linkedin personal','linkedin personal url','linkedin profile url','linkedin_profile_url'],
   linkedin_company:['linkedin company','linkedin company url','linkedin_company_url'],
   linkedin_company_id:['linkedin company id','linkedin_company_id'],
@@ -895,20 +948,14 @@ function isBookEditorProject(){
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
-  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL])
+  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL,'jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
   .map(e=>String(e||'').trim().toLowerCase())
   .filter(Boolean));
-const KNOWN_RELATIONSHIP_EMAIL_ALIASES = (() => {
-  try{
-    const configured=JSON.parse(process.env.VAL_KNOWN_RELATIONSHIP_ALIASES_JSON||'{}');
-    return Object.fromEntries(Object.entries(configured||{}).map(([email,value])=>[
-      String(email||'').trim().toLowerCase(),
-      value
-    ]).filter(([email,value])=>email&&value&&typeof value==='object'));
-  }catch(_error){
-    return {};
-  }
-})();
+const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
+  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
+  'miken@goallprogram.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'},
+  'mikenonhof.wealth@gmail.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'}
+};
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -1055,11 +1102,11 @@ function realD3DayTranscriptReviewCandidates(){
 }
 function demoTemplate(){
   const tasks=[
-    {id:'demo-task-1',title:'Send revised scope to Elena',contactName:'Elena Brooks',dueDate:demoIso(0,16,0),notes:'Promise from investor prep. VAL can draft the first-30-days scope and place it in the Approval Queue.',details:[{text:'Created from transcript: Investor Prep With Elena',ts:demoIso(-1,11,20)},{text:'Open loop: make proof of executive adoption easier to understand.',ts:demoIso(-1,11,24)}],completed:false,createdAt:demoIso(-1,11,30)},
-    {id:'demo-task-2',title:'Ask Marcus for procurement owner',contactName:'Marcus Chen',dueDate:demoIso(0,13,15),notes:'Needed before the 2 PM enterprise demo. VAL can write the SMS or email and keep the opportunity from stalling.',details:[{text:'Relationship Radar flagged missing decision-maker.',ts:demoIso(0,8,15)},{text:'Marcus said onboarding load and vendor approval are the only remaining friction points.',ts:demoIso(0,8,44)}],completed:false,createdAt:demoIso(0,8,15)},
-    {id:'demo-task-3',title:'Review HealthBridge renewal risk',contactName:'Priya Raman',dueDate:demoIso(0,12,30),notes:'Renewal is strong, but implementation notes mention sponsor fatigue. VAL can draft a care-first check-in before any expansion conversation.',details:[{text:'Created from GHL notes and call transcript.',ts:demoIso(-2,15,10)},{text:'Capacity signal: do not push expansion until support strain is acknowledged.',ts:demoIso(-2,15,12)}],completed:false,createdAt:demoIso(-2,15,10)},
-    {id:'demo-task-4',title:'Prepare board update bullets',contactName:'Board',dueDate:demoIso(2,9,0),notes:'Use pipeline movement, relationship radar, saved-time outcomes, and the capacity drift warning. VAL can draft the update in an executive format.',details:[{text:'Board wants proof that fewer things are being dropped, not just more activity.',ts:demoIso(-1,9,0)}],completed:false,createdAt:demoIso(-1,9,0)},
-    {id:'demo-task-5',title:'Send Jordan the one-paragraph intro ask',contactName:'Jordan Lee',dueDate:demoIso(0,17,0),notes:'Jordan offered a warm path to Northstar. VAL can draft the exact paragraph so the user can approve it quickly.',details:[{text:'Created from retroactive meeting notes.',ts:demoIso(-1,17,2)},{text:'Jordan warned the ask should not sound like a pitch deck.',ts:demoIso(-1,17,4)}],completed:false,createdAt:demoIso(-3,14,20)},
+    {id:'demo-task-1',title:'Send revised scope to Elena',contactName:'Elena Brooks',contactId:'demo-contact-2',dueDate:demoIso(0,16,0),notes:'Promise from investor prep. VAL prepared the first-30-days scope for approval.',details:[{text:'Created from transcript: Investor Prep With Elena',ts:demoIso(-1,11,20)},{text:'Open loop: make proof of executive adoption easier to understand.',ts:demoIso(-1,11,24)}],completed:false,createdAt:demoIso(-1,11,30)},
+    {id:'demo-task-2',title:'Ask Marcus for procurement owner',contactName:'Marcus Chen',contactId:'demo-contact-1',dueDate:demoIso(0,13,15),notes:'Needed before the 2 PM enterprise demo. VAL prepared the pilot memo and procurement-owner ask for review.',details:[{text:'Relationship Radar flagged missing decision-maker.',ts:demoIso(0,8,15)},{text:'Marcus said onboarding load and vendor approval are the only remaining friction points.',ts:demoIso(0,8,44)}],completed:false,createdAt:demoIso(0,8,15)},
+    {id:'demo-task-3',title:'Review HealthBridge renewal risk',contactName:'Priya Raman',contactId:'demo-contact-3',dueDate:demoIso(0,12,30),notes:'Renewal is strong, but implementation notes mention sponsor fatigue. VAL prepared a care-first check-in for review.',details:[{text:'Created from GHL notes and call transcript.',ts:demoIso(-2,15,10)},{text:'Capacity signal: do not push expansion until support strain is acknowledged.',ts:demoIso(-2,15,12)}],completed:false,createdAt:demoIso(-2,15,10)},
+    {id:'demo-task-4',title:'Prepare board update bullets',contactName:'Board',dueDate:demoIso(2,9,0),notes:'Use pipeline movement, relationship radar, saved-time outcomes, and the capacity drift warning. VAL prepared the board update bullets for approval.',details:[{text:'Board wants proof that fewer things are being dropped, not just more activity.',ts:demoIso(-1,9,0)}],completed:false,createdAt:demoIso(-1,9,0)},
+    {id:'demo-task-5',title:'Send Jordan the one-paragraph intro ask',contactName:'Jordan Lee',contactId:'demo-contact-4',dueDate:demoIso(0,17,0),notes:'Jordan offered a warm path to Northstar. VAL prepared the exact paragraph for approval.',details:[{text:'Created from retroactive meeting notes.',ts:demoIso(-1,17,2)},{text:'Jordan warned the ask should not sound like a pitch deck.',ts:demoIso(-1,17,4)}],completed:false,createdAt:demoIso(-3,14,20)},
     {id:'demo-task-6',title:'Decide what not to start this week',contactName:'Avery Stone',dueDate:demoIso(0,18,0),notes:'VAL detected capacity drift: five open relationship loops, three active revenue conversations, and two strategic obligations are competing for attention.',details:[{text:'VAL recommendation: close Marcus, Elena, and Jordan before opening any new initiatives.',ts:demoIso(0,8,50)}],completed:false,createdAt:demoIso(0,8,50)}
   ];
   const calendarEvents=[
@@ -1094,10 +1141,11 @@ function demoTemplate(){
     ]
   };
   const drafts=[
-    {id:'demo-draft-1',userId:'demo-user',tenantId:'demo-val',draftType:'follow_up',contactId:'demo-contact-2',provider:'internal',subject:'Revised VAL scope',body:'Elena,\n\nI tightened the first 30 days into three phases: context capture, operating rhythm, and executive visibility.\n\nThe main outcome is simple: fewer dropped promises, cleaner follow-through, and a leadership layer that keeps momentum visible.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(0,8,25),updatedAt:demoIso(0,8,25)},
-    {id:'demo-draft-2',userId:'demo-user',tenantId:'demo-val',draftType:'email_reply',contactId:'demo-contact-1',provider:'internal',subject:'Pilot memo for today',body:'Marcus,\n\nHere is the short version for today: VAL can start with the two highest-friction workflows, show measurable follow-up capture, and keep onboarding light enough that your team does not need another system to manage.\n\nBefore we wrap today, I would also like to confirm who owns vendor approval so we can keep this from slowing down after the demo.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(0,8,40),updatedAt:demoIso(0,8,40)},
-    {id:'demo-draft-3',userId:'demo-user',tenantId:'demo-val',draftType:'relationship_outreach',contactId:'demo-contact-4',provider:'internal',subject:'Tight intro language',body:'Jordan,\n\nHere is the tight version you asked for:\n\nAvery built VAL for leaders whose relationships, meetings, and follow-through directly affect revenue. It listens across conversations, remembers commitments, prepares the next move, and keeps important people from falling through the cracks.\n\nIf someone in your network is constantly carrying too many high-value conversations at once, they are probably the right fit.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(-1,17,20),updatedAt:demoIso(-1,17,20)},
-    {id:'demo-draft-4',userId:'demo-user',tenantId:'demo-val',draftType:'renewal_checkin',contactId:'demo-contact-3',provider:'internal',subject:'Checking in before renewal review',body:'Priya,\n\nBefore we talk renewal, I want to acknowledge the implementation load your team has been carrying.\n\nI do not want to add pressure to a team that is already stretched. My first priority for tomorrow is to understand what needs to be simplified or supported so the value stays useful instead of becoming one more thing to manage.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(0,8,55),updatedAt:demoIso(0,8,55)}
+    {id:'demo-draft-1',userId:'demo-user',tenantId:'demo-val',draftType:'follow_up',contactId:'demo-contact-2',provider:'internal',subject:'Revised VAL scope',body:'Elena,\n\nI tightened the first 30 days into three phases: context capture, operating rhythm, and executive visibility.\n\nThe main outcome is simple: fewer dropped promises, cleaner follow-through, and a leadership layer that keeps momentum visible.\n\nAvery',status:'draft',sourceContext:{source:'demo',taskId:'demo-task-1',contactId:'demo-contact-2'},createdAt:demoIso(0,8,25),updatedAt:demoIso(0,8,25)},
+    {id:'demo-draft-2',userId:'demo-user',tenantId:'demo-val',draftType:'email_reply',contactId:'demo-contact-1',provider:'internal',subject:'Pilot memo for today',body:'Marcus,\n\nHere is the short version for today: VAL can start with the two highest-friction workflows, show measurable follow-up capture, and keep onboarding light enough that your team does not need another system to manage.\n\nBefore we wrap today, I would also like to confirm who owns vendor approval so we can keep this from slowing down after the demo.\n\nAvery',status:'draft',sourceContext:{source:'demo',taskId:'demo-task-2',contactId:'demo-contact-1'},createdAt:demoIso(0,8,40),updatedAt:demoIso(0,8,40)},
+    {id:'demo-draft-3',userId:'demo-user',tenantId:'demo-val',draftType:'relationship_outreach',contactId:'demo-contact-4',provider:'internal',subject:'Tight intro language',body:'Jordan,\n\nHere is the tight version you asked for:\n\nAvery built VAL for leaders whose relationships, meetings, and follow-through directly affect revenue. It listens across conversations, remembers commitments, prepares the next move, and keeps important people from falling through the cracks.\n\nIf someone in your network is constantly carrying too many high-value conversations at once, they are probably the right fit.\n\nAvery',status:'draft',sourceContext:{source:'demo',taskId:'demo-task-5',contactId:'demo-contact-4'},createdAt:demoIso(-1,17,20),updatedAt:demoIso(-1,17,20)},
+    {id:'demo-draft-4',userId:'demo-user',tenantId:'demo-val',draftType:'renewal_checkin',contactId:'demo-contact-3',provider:'internal',subject:'Checking in before renewal review',body:'Priya,\n\nBefore we talk renewal, I want to acknowledge the implementation load your team has been carrying.\n\nI do not want to add pressure to a team that is already stretched. My first priority for tomorrow is to understand what needs to be simplified or supported so the value stays useful instead of becoming one more thing to manage.\n\nAvery',status:'draft',sourceContext:{source:'demo',taskId:'demo-task-3',contactId:'demo-contact-3'},createdAt:demoIso(0,8,55),updatedAt:demoIso(0,8,55)},
+    {id:'demo-draft-5',userId:'demo-user',tenantId:'demo-val',draftType:'board_update',provider:'internal',subject:'Board update bullets',body:'Board update draft:\n\n- Open promises are now visible as commitments, not hidden in scattered meeting notes.\n- Marcus, Elena, Jordan, and Priya are the four relationship loops most affecting revenue and trust.\n- The next operating risk is capacity drift: too many valuable conversations are active without enough closure.\n- VAL recommendation: close the three revenue-facing loops first, then protect the recovery block before starting new work.\n\nAvery',status:'draft',sourceContext:{source:'demo',taskId:'demo-task-4'},createdAt:demoIso(0,9,5),updatedAt:demoIso(0,9,5)}
   ];
   const emails=[
     {provider:'gmail',messageId:'demo-email-1',threadId:'demo-thread-1',subject:'Pilot memo before 2 PM',from:{name:'Marcus Chen',email:'marcus@atlasops.com'},snippet:'Can you send the pilot memo before our 2 PM call?',bodyPreview:'Can you send the pilot memo before our 2 PM call? Procurement and onboarding are the main questions.',classification:'needs_reply',confidence:'high',reason:'Time-sensitive meeting prep and a direct request.',recommendedAction:'Draft reply',matchedContact:{name:'Marcus Chen'}},
@@ -1519,7 +1567,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','leadScraperDefinitions'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -2384,6 +2432,132 @@ function currentUserId(){
 function tenantId(){
   return CLIENT_CONFIG.clientSlug || 'default';
 }
+const INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS = 1;
+const ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY = 200;
+
+function generalLeadScraperSlotLimit(){
+  const additional=Math.max(0,Number(process.env.VAL_ADDITIONAL_SCRAPER_SLOTS)||0);
+  return INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS+additional;
+}
+function cleanScraperText(value,max=500){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+}
+function generalLeadScraperCriteria(input={}){
+  const businessTerms=cleanScraperText(input.businessTerms||input.business_terms||input.organizationType||input.category||input.keywords,300);
+  const roleTerms=cleanScraperText(input.roleTerms||input.role_terms||input.personRole||input.role,240);
+  const painPoints=cleanScraperText(input.painPoints||input.pain_points||input.painPoint,500);
+  const locations=cleanScraperText(input.locations||input.location||input.market||'United States',300);
+  const qualification=cleanScraperText(input.qualification||input.qualificationRule||input.criteria,1000);
+  const target=cleanScraperText(input.target||input.targetDescription||[businessTerms,roleTerms,painPoints].filter(Boolean).join(' | '),500);
+  return {
+    target,
+    businessTerms,
+    roleTerms,
+    painPoints,
+    locations,
+    qualification,
+    resultLimit:Math.min(Math.max(Number(input.resultLimit||input.limit)||12,1),50),
+    enrichContacts:input.enrichContacts===true
+  };
+}
+function generalLeadScraperPublicRow(row={}){
+  return {
+    id:row.id||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    name:row.name||'My lead scraper',
+    status:row.status||'active',
+    criteria:row.criteria_json||row.criteria||{},
+    destination:row.destination_json||row.destination||{},
+    automationPolicy:row.automation_policy_json||row.automationPolicy||{},
+    createdAt:row.created_at||row.createdAt||'',
+    updatedAt:row.updated_at||row.updatedAt||''
+  };
+}
+async function listGeneralLeadScrapers(){
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select * from val_lead_scraper_definitions where tenant_id=$1 order by updated_at desc',[tenantId()]);
+    return result.rows.map(generalLeadScraperPublicRow);
+  }
+  return valStore().leadScraperDefinitions
+    .filter(row=>row.tenantId===tenantId())
+    .sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))
+    .map(generalLeadScraperPublicRow);
+}
+async function saveGeneralLeadScraper(input={},requestedId=''){
+  const name=cleanScraperText(input.name||input.scraperName||'My lead scraper',100)||'My lead scraper';
+  const criteria=generalLeadScraperCriteria(input.criteria||input);
+  if(!criteria.target&&!criteria.businessTerms&&!criteria.roleTerms&&!criteria.painPoints){
+    throw Object.assign(new Error('Tell VAL what business, person, role, or pain point this scraper should find.'),{statusCode:400});
+  }
+  const current=await listGeneralLeadScrapers();
+  const existing=requestedId
+    ? current.find(row=>row.id===requestedId)
+    : input.createNew===true
+      ? null
+      : current.find(row=>row.status==='active');
+  if(requestedId&&!existing) throw Object.assign(new Error('This saved scraper was not found.'),{statusCode:404});
+  const activeCount=current.filter(row=>row.status==='active'&&row.id!==existing?.id).length;
+  if(!existing&&activeCount>=generalLeadScraperSlotLimit()){
+    throw Object.assign(new Error(`This VAL includes one active saved scraper. Additional active scrapers are $${ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY}/month each.`),{
+      statusCode:402,
+      code:'additional_scraper_slot_required',
+      entitlement:{included:INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS,active:activeCount,limit:generalLeadScraperSlotLimit(),additionalPriceMonthly:ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY}
+    });
+  }
+  const now=new Date().toISOString();
+  const row={
+    id:existing?.id||uuid('scraper'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    name,
+    status:'active',
+    criteria,
+    destination:input.destination||existing?.destination||{},
+    automationPolicy:{
+      mode:'prepare_and_queue',
+      ...(existing?.automationPolicy||{}),
+      ...(input.automationPolicy||{})
+    },
+    createdAt:existing?.createdAt||now,
+    updatedAt:now
+  };
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`insert into val_lead_scraper_definitions
+      (id,tenant_id,user_id,name,status,criteria_json,destination_json,automation_policy_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9::timestamptz,now()),now())
+      on conflict (id) do update set
+        name=excluded.name,status=excluded.status,criteria_json=excluded.criteria_json,
+        destination_json=excluded.destination_json,automation_policy_json=excluded.automation_policy_json,updated_at=now()
+      where val_lead_scraper_definitions.tenant_id=excluded.tenant_id
+      returning *`,[row.id,row.tenantId,row.userId,row.name,row.status,JSON.stringify(row.criteria),JSON.stringify(row.destination),JSON.stringify(row.automationPolicy),row.createdAt]);
+    return generalLeadScraperPublicRow(result.rows[0]);
+  }
+  const store=valStore();
+  const index=store.leadScraperDefinitions.findIndex(item=>item.id===row.id&&item.tenantId===row.tenantId);
+  if(index>=0) store.leadScraperDefinitions[index]=row;
+  else store.leadScraperDefinitions.push(row);
+  saveValStore(store);
+  return generalLeadScraperPublicRow(row);
+}
+async function archiveGeneralLeadScraper(id){
+  const current=await listGeneralLeadScrapers();
+  const existing=current.find(row=>row.id===id);
+  if(!existing) throw Object.assign(new Error('This saved scraper was not found.'),{statusCode:404});
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`update val_lead_scraper_definitions set status='archived',updated_at=now()
+      where id=$1 and tenant_id=$2 returning *`,[id,tenantId()]);
+    return generalLeadScraperPublicRow(result.rows[0]);
+  }
+  const store=valStore();
+  const row=store.leadScraperDefinitions.find(item=>item.id===id&&item.tenantId===tenantId());
+  row.status='archived';
+  row.updatedAt=new Date().toISOString();
+  saveValStore(store);
+  return generalLeadScraperPublicRow(row);
+}
 function transcriptWebhookToken(){
   return process.env.TRANSCRIPT_WEBHOOK_TOKEN || crypto.createHmac('sha256',SESSION_SECRET).update(`transcript:${tenantId()}`).digest('hex').slice(0,48);
 }
@@ -2603,9 +2777,6 @@ async function getIntegrationCredential(provider,credentialType,userId=currentVa
     [0] || null;
 }
 async function resolveIntegrationSecret(provider,credentialType,fallback=''){
-  if(String(provider||'').toLowerCase()==='ghl' && fallback){
-    return fallback || '';
-  }
   if(String(credentialType||'')==='api_key'&&tenantApiKeyProvider(provider)){
     return resolveTenantApiKey(provider,{fallback,allowPlatformFallback:platformKeyFallbackAllowed(provider),sourceLabel:'resolveIntegrationSecret'});
   }
@@ -2772,8 +2943,25 @@ async function testTenantApiKey(req,provider){
   let ok=false, message='';
   try{
     if(p.testType==='openai_models'){
-      const r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${key}`}});
-      ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
+      const model=OPENAI_EXTRACTION_MODEL;
+      const body={
+        model,
+        input:[{role:'user',content:'Reply with OK.'}],
+        max_output_tokens:32
+      };
+      const r=await fetchWithTimeout('https://api.openai.com/v1/responses',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},
+        body:JSON.stringify(body)
+      },15000,'OpenAI key validation');
+      const payload=await readJsonResponse(r);
+      ok=r.ok&&!payload.error;
+      const upstreamMessage=String(payload.error?.message||'');
+      message=ok
+        ?'Connected'
+        :/(quota|billing|credit balance|insufficient credit)/i.test(upstreamMessage)
+          ?'Your OpenAI key is saved, but its OpenAI API project has no available credits. Add API billing or credits in OpenAI, then press Save, test, and enter VAL again.'
+          :(upstreamMessage||`Your ${p.displayName} key could not generate a response. Please check its quota and billing. (${r.status})`);
     }else if(p.testType==='anthropic_models'){
       const r=await fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01'}});
       ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
@@ -3008,6 +3196,7 @@ async function purgeTenantData({req,confirmation}={}){
       ['val_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
       ['email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_executive_inbox_queue','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['tenant_api_keys','tenant_id=$1',[tenant]],
       ['tenant_provider_approvals','tenant_id=$1',[tenant]],
       ['tenant_dashboard_studio_overrides','tenant_id=$1',[tenant]],
@@ -3253,6 +3442,7 @@ async function resetValLocalContentForCleanStart({req,confirmation}={}){
         await add('unified_conversations',()=>cleanStartDeleteTable(client,'unified_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('email_action_log',()=>cleanStartDeleteTable(client,'email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('email_rules',()=>cleanStartDeleteTable(client,'email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]));
+        await add('val_executive_inbox_queue',()=>cleanStartDeleteTable(client,'val_executive_inbox_queue','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_messages',()=>cleanStartDeleteTable(client,'val_messages','conversation_id in (select id from val_conversations where user_id=$1)',[userId]));
         await add('val_conversations',()=>cleanStartDeleteTable(client,'val_conversations','user_id=$1',[userId]));
         await add('val_task_calendar_blocks',()=>cleanStartDeleteTable(client,'val_task_calendar_blocks','tenant_id=$1 and user_id=$2',[tenant,userId]));
@@ -3323,7 +3513,7 @@ async function dbQuery(sql,params){
   try{
     return await pgPool.query(sql,params);
   }catch(e){
-    console.error('Postgres query failed:',e.message);
+    console.error('Postgres query failed:',e.message,'SQL:',String(sql||'').replace(/\s+/g,' ').trim().slice(0,240));
     if(['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','57P01','57P02','57P03','08000','08003','08006'].includes(e.code)){
       console.error('Postgres unavailable, falling back to file store:',e.message);
       try{ await pgPool.end(); }catch(_){}
@@ -3598,6 +3788,7 @@ function teachValMemoryRow(row){
 }
 async function getTeachValSession(id=''){
   await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
   if(pgPool){
     const args=[tenantId(),currentUserId()];
     let where='tenant_id=$1 and user_id=$2';
@@ -3609,8 +3800,57 @@ async function getTeachValSession(id=''){
   const found=rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&(!id||r.id===id)).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
   return teachValSessionRow(found);
 }
+function configuredValOwnerEmails(){
+  return [
+    process.env.ADMIN_EMAIL,
+    process.env.VAL_OWNER_EMAIL,
+    ...String(process.env.VAL_OWNER_EMAILS||'').split(',')
+  ].map(value=>String(value||'').trim().toLowerCase()).filter(Boolean);
+}
+function currentOwnerMayClaimLegacyWitnessing(){
+  const user=currentValUser();
+  if(!user?.id||String(user.role||'').toLowerCase()!=='owner') return false;
+  const configured=configuredValOwnerEmails();
+  return configured.length===0||configured.includes(String(user.email||'').trim().toLowerCase());
+}
+async function reclaimLegacyTenantWitnessingForCurrentOwner(){
+  if(!pgPool||!currentOwnerMayClaimLegacyWitnessing()) return {claimed:false,count:0};
+  const user=currentValUser();
+  const tenant=tenantId();
+  const legacyUserId=tenant;
+  if(!user?.id||user.id===legacyUserId) return {claimed:false,count:0};
+  const legacy=(await dbQuery(
+    'select count(*)::int as count from teach_val_onboarding_sessions where tenant_id=$1 and user_id=$2',
+    [tenant,legacyUserId]
+  )).rows[0];
+  const count=Number(legacy?.count||0);
+  if(!count) return {claimed:false,count:0};
+  const client=await pgPool.connect();
+  try{
+    await client.query('begin');
+    for(const table of [
+      'teach_val_onboarding_sessions',
+      'teach_val_imports',
+      'teach_val_memory_items',
+      'val_first_look_runs',
+      'val_first_look_candidate_analyses',
+      'val_first_look_candidates',
+      'val_first_look_change_sets'
+    ]){
+      await client.query(`update ${table} set user_id=$1 where tenant_id=$2 and user_id=$3`,[user.id,tenant,legacyUserId]);
+    }
+    await client.query('commit');
+    return {claimed:true,count};
+  }catch(error){
+    await client.query('rollback').catch(()=>{});
+    throw error;
+  }finally{
+    client.release();
+  }
+}
 async function getTeachValWitnessingResumeSession(){
   await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
   if(pgPool){
     const r=await dbQuery(`select s.* from teach_val_onboarding_sessions s
       where s.tenant_id=$1 and s.user_id=$2 and s.status in ('draft','committed')
@@ -3630,6 +3870,36 @@ async function getTeachValWitnessingResumeSession(){
       if(a.status!==b.status) return a.status==='draft'?-1:1;
       return new Date(b.updatedAt||0)-new Date(a.updatedAt||0);
     })[0];
+  return teachValSessionRow(found);
+}
+
+async function getTeachValCompletedWitnessingSession(){
+  await valDbReady;
+  await reclaimLegacyTenantWitnessingForCurrentOwner();
+  if(pgPool){
+    const r=await dbQuery(`select s.* from teach_val_onboarding_sessions s
+      where s.tenant_id=$1 and s.user_id=$2 and s.status='committed'
+      and exists (
+        select 1 from teach_val_imports i
+        where i.tenant_id=s.tenant_id and i.user_id=s.user_id and i.session_id=s.id
+        and i.category='witness_partnership_agreement'
+        and coalesce(i.status,'') not ilike '%Needs Clarification%'
+      )
+      order by s.updated_at desc limit 1`,[tenantId(),currentUserId()]);
+    return teachValSessionRow(r.rows[0]);
+  }
+  const {rows:sessions}=teachValStoreArray('teachValOnboardingSessions');
+  const {rows:imports}=teachValStoreArray('teachValImports');
+  const found=sessions
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.status==='committed')
+    .filter(row=>imports.some(item=>
+      item.tenantId===tenantId()&&
+      item.userId===currentUserId()&&
+      item.sessionId===row.id&&
+      item.category==='witness_partnership_agreement'&&
+      !/Needs Clarification/i.test(String(item.status||''))
+    ))
+    .sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
   return teachValSessionRow(found);
 }
 async function teachValWitnessingSessionIsComplete(session){
@@ -4035,7 +4305,7 @@ async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
     'Project Manager candidate actions must stay one of: yes_create_project, no_not_project, unsure_ask_user.'
   ].join('\n');
   const user=`Knowledge card: ${card.title||category}\nInternal extraction guidance:\n${promptUsed||card.prompt||''}\n\nUser-supplied context:\n${String(rawResponse).slice(0,30000)}`;
-  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true,task:'extraction'}).catch(()=>null);
   let parsed=null;
   try{parsed=raw?JSON.parse(raw):null;}catch(e){}
   if(!parsed){
@@ -4136,6 +4406,18 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     futureConsumers:['val_os','morning_briefing','review_queue']
   },
   {
+    id:'chief_priorities',
+    category:'witness_chief_priorities',
+    title:'Chief of Staff Priorities',
+    visibleQuestion:'When the Board sees everything, what should your Chief of Staff optimize for first?',
+    questionGoal:'Capture the three priority lenses the Chief of Staff should use when ordering Observer responses into Home, Alignment, and Leverage.',
+    whyThisCardExistsNow:'The Board can observe from every lens, but the Chief of Staff needs the user-specific ordering rule before deciding what deserves attention first.',
+    permanenceProfile:'constitution',
+    creates:['chief_of_staff.optimization_priorities','home_briefing_ordering_rules','alignment_priority_rules','decision_weighting'],
+    immediateConsumers:['witness_response','chief_of_staff_synthesis','morning_briefing'],
+    futureConsumers:['home_welcome','alignment_queue','leverage_queue','board_packet_ranking']
+  },
+  {
     id:'connect_sources',
     category:'witness_connect_sources',
     title:'Connect Your World',
@@ -4176,7 +4458,7 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     category:'witness_documents_templates',
     title:'Documents and Templates',
     visibleQuestion:'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
-    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Classify each artifact as Document or Template; for Documents, identify the relationship or project; for Templates, identify what it is used for.',
+    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Preserve the selected document category. Independently identify any relationship or project the artifact belongs to and, for Templates, what it is used for.',
     whyThisCardExistsNow:'VAL needs to classify artifacts as documents or templates before interpreting or reusing them.',
     permanenceProfile:'mixed',
     creates:['uploaded_documents','uploaded_templates','document_relationship_links','document_project_links','template_use_cases','template_preservation_rules'],
@@ -4199,7 +4481,7 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     id:'partnership_agreement',
     category:'witness_partnership_agreement',
     title:'Partnership Promise',
-    visibleQuestion:'Here is what VAL learned, what VAL will support, and what VAL will protect.',
+    visibleQuestion:'What would make the first 30 days with VAL feel genuinely supportive?',
     questionGoal:'Provide a warm, encouraging final overview of what VAL learned, how VAL will support the user, what VAL will protect, and what VAL will keep asking before assuming.',
     whyThisCardExistsNow:'The final step should leave the user feeling accompanied, protected, and encouraged, not merely finished with setup.',
     permanenceProfile:'constitution',
@@ -4448,6 +4730,89 @@ async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[
       throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
     }
   }
+}
+
+function witnessingUploadIds(rawResponse=''){
+  return [...String(rawResponse||'').matchAll(/\bVAL file id:\s*([a-z0-9:_-]+)/ig)]
+    .map(match=>String(match[1]||'').trim())
+    .filter(Boolean)
+    .slice(0,8);
+}
+
+async function witnessingUploadedDocumentContext(rawResponse=''){
+  const ids=witnessingUploadIds(rawResponse);
+  if(!ids.length)return {documents:[],modelContext:''};
+  await valDbReady;
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(
+      `select id,type,title,raw_text,metadata,created_at
+       from val_transcripts
+       where user_id=$1 and id=any($2::text[])`,
+      [VAL_USER_ID,ids]
+    );
+    rows=(result.rows||[]).map(row=>({
+      id:row.id,
+      type:row.type,
+      title:row.title||'Uploaded document',
+      rawText:row.raw_text||'',
+      metadata:row.metadata||{},
+      createdAt:row.created_at?.toISOString?.()||row.created_at||''
+    }));
+  }else{
+    rows=(valStore().transcripts||[]).filter(row=>ids.includes(String(row.id||'')));
+  }
+  const byId=new Map(rows.map(row=>[String(row.id||''),row]));
+  const documents=ids.map(id=>byId.get(id)).filter(Boolean).filter(row=>{
+    const metadata=row.metadata||{};
+    return String(row.type||'')==='knowledge_document'
+      && String(metadata.uploadedVia||metadata.uploaded_via||'')==='val_witnessing_session';
+  }).map(row=>({
+    id:String(row.id||''),
+    title:String(row.title||row.metadata?.fileName||'Uploaded document'),
+    docType:String(row.metadata?.docType||row.metadata?.doc_type||'knowledge_document'),
+    rawText:String(row.rawText||row.raw_text||'').trim()
+  })).filter(row=>row.rawText);
+  const modelContext=documents.map((document,index)=>[
+    `Attached Witnessing document ${index+1}: ${document.title}`,
+    `VAL file id: ${document.id}`,
+    `Document type: ${document.docType}`,
+    'Document text:',
+    document.rawText
+  ].join('\n')).join('\n\n');
+  return {documents,modelContext};
+}
+function witnessingDocumentReceiptTurn({card,rawResponse,documents=[],nextCard=null}={}){
+  const graph=normalizePartnershipProtocolGraph({
+    facts:documents.map(document=>({
+      claim:`VAL preserved the full extracted text of ${document.title} (${document.rawText.length.toLocaleString('en-US')} characters).`,
+      status:'confirmed',
+      confidence_source:'successful_document_extraction',
+      evidence_refs:['current_answer']
+    })),
+    observations:[],
+    hypotheses:[],
+    next_question_recommendation:{
+      question:nextCard?.visibleQuestion||'',
+      why:'The documents are safely stored. Observer interpretation continues independently from this conversation step.',
+      evidence_refs:['current_answer']
+    }
+  },card,rawResponse);
+  const count=documents.length;
+  return {
+    graph,
+    witness:{
+      lines:[
+        `I saved ${count} document${count===1?'':'s'} and preserved the full extracted text.`,
+        'The Board reading is running separately, so you do not need to wait here or upload the files again.',
+        'Each Observer will either show the source-backed context it found or say that the document held no meaningful signal for its lens.'
+      ],
+      confirmation_options:[],
+      follow_up_lines:[],
+      carried_questions:[],
+      next_question:nextCard?.visibleQuestion||''
+    }
+  };
 }
 function userFacingWitnessLine(line=''){
   return String(line||'')
@@ -5020,7 +5385,7 @@ async function summarizeTeachValInterview(transcript){
   const clean=String(transcript||'').trim();
   if(!clean) throw new Error('Add the voice interview transcript before saving this stage.');
   const system='Summarize a Teach VAL About You onboarding interview. Return strict JSON with keys: executive_profile, company_context, current_projects, important_relationships, lessons_learned, frustrations, preferences, process_gaps, priorities, raw_transcript.';
-  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true,task:'extraction'}).catch(()=>null);
   try{return raw?JSON.parse(raw):{raw_transcript:clean};}catch(e){return {executive_profile:{summary:clean.slice(0,800)},raw_transcript:clean};}
 }
 function teachValCompiledPayload({session,imports,items,testMode=false}){
@@ -6850,6 +7215,25 @@ async function initValDb(){
       metadata jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists val_source_sync_checkpoints (
+      tenant_id text not null,
+      user_id text not null,
+      source text not null,
+      last_successful_sync_at timestamptz,
+      metadata_json jsonb not null default '{}',
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,source)
+    );
+    create table if not exists val_transcript_deletions (
+      tenant_id text not null,
+      user_id text not null,
+      transcript_id text not null,
+      source_key text,
+      title text,
+      deleted_at timestamptz not null default now(),
+      metadata_json jsonb not null default '{}',
+      primary key (tenant_id,user_id,transcript_id)
+    );
     create table if not exists transcripts (
       transcript_id text primary key,
       user_id text not null default 'default',
@@ -7206,6 +7590,20 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists val_lead_scraper_definitions (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      name text not null,
+      status text not null default 'active',
+      criteria_json jsonb not null default '{}',
+      destination_json jsonb not null default '{}',
+      automation_policy_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists val_lead_scraper_definitions_tenant_status_idx
+      on val_lead_scraper_definitions (tenant_id,status,updated_at desc);
     create table if not exists val_templates (
       id text primary key,
       user_id text not null default 'default',
@@ -7615,6 +8013,33 @@ async function initValDb(){
       user_agent text,
       created_at timestamptz not null default now()
     );
+    create table if not exists val_ai_daily_usage (
+      tenant_id text not null,
+      user_id text not null,
+      usage_date date not null default current_date,
+      call_count integer not null default 0,
+      input_tokens bigint not null default 0,
+      output_tokens bigint not null default 0,
+      reserved_cost_micros bigint not null default 0,
+      spent_cost_micros bigint not null default 0,
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,usage_date)
+    );
+    alter table val_ai_daily_usage add column if not exists reserved_cost_micros bigint not null default 0;
+    alter table val_ai_daily_usage add column if not exists spent_cost_micros bigint not null default 0;
+    create table if not exists val_ai_daily_lane_usage (
+      tenant_id text not null,
+      user_id text not null,
+      usage_date date not null default current_date,
+      lane text not null,
+      call_count integer not null default 0,
+      input_tokens bigint not null default 0,
+      output_tokens bigint not null default 0,
+      reserved_cost_micros bigint not null default 0,
+      spent_cost_micros bigint not null default 0,
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id,usage_date,lane)
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists tenant_feature_flags_tenant_idx on tenant_feature_flags(tenant_id,feature_key);
@@ -7626,6 +8051,7 @@ async function initValDb(){
     create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
     create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
+    create index if not exists val_transcript_deletions_source_idx on val_transcript_deletions(tenant_id,user_id,source_key);
     create index if not exists identity_links_lookup_idx on identity_links(tenant_id,user_id,entity_type,normalized_value);
     create index if not exists identity_links_source_idx on identity_links(tenant_id,user_id,source_type,source_id);
     create index if not exists val_decisions_source_idx on val_decisions(tenant_id,user_id,source_type,source_id,status);
@@ -7656,14 +8082,25 @@ async function initValDb(){
     create index if not exists hearth_packet_receipts_packet_idx on hearth_packet_receipts(tenant_id,user_id,packet_name,status,created_at desc);
   `);
   await ensureValIntelligenceSpineTables({dbQuery,logger:console});
+  await ensureValBoardPacketTables({dbQuery,logger:console});
+  await ensureValEnvelopeTables({dbQuery,logger:console});
   await ensureValConversationIdentityTables({dbQuery,logger:console});
   await ensureValMeetingPrepTables({dbQuery,logger:console});
   await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
+  await ensureValCommitmentTables({dbQuery,logger:console});
   await ensureValReviewUpdatesTables({dbQuery,logger:console});
   await ensureValSourceProcessingTables({dbQuery,logger:console});
+  await ensureValCanonicalWorkTables({dbQuery,logger:console});
   await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
+  await ensureValEnvironmentTables({dbQuery,logger:console});
+  await ensureValExecutiveInboxQueueTables({dbQuery,logger:console});
+  await dbQuery(`
+    update transcript_tasks
+    set status='created', needs_approval=false
+    where status='staged' or needs_approval=true
+  `);
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
     await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
@@ -7705,7 +8142,44 @@ async function initValDb(){
   await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
-const valDbReady = initValDb().then(()=>seedAdminUser()).catch(e=>console.error('VAL DB init error:',e.message));
+let valDatabaseReadiness={
+  ok:!process.env.DATABASE_URL,
+  status:process.env.DATABASE_URL?'initializing':'not_configured',
+  canonicalLineage:process.env.DATABASE_URL?{ok:false,status:'initializing'}:{ok:false,status:'not_configured'},
+  error:''
+};
+const valDbReady = initValDb()
+  .then(async()=>{
+    await seedAdminUser();
+    if(!pgPool){
+      valDatabaseReadiness={
+        ok:!IS_PRODUCTION,
+        status:IS_PRODUCTION?'not_ready':'file_store',
+        canonicalLineage:{ok:false,status:'not_configured'},
+        error:IS_PRODUCTION?'Postgres is required for canonical lineage readiness.':''
+      };
+      return valDatabaseReadiness.ok;
+    }
+    const canonicalLineage=await verifyCanonicalLineageSchema({dbQuery});
+    valDatabaseReadiness={
+      ok:canonicalLineage.ok,
+      status:canonicalLineage.ok?'ready':'not_ready',
+      canonicalLineage,
+      error:canonicalLineage.ok?'':'Canonical lineage schema is incomplete.'
+    };
+    if(!canonicalLineage.ok)console.error('VAL DB canonical lineage readiness failed:',JSON.stringify(canonicalLineage));
+    return canonicalLineage.ok;
+  })
+  .catch(e=>{
+    valDatabaseReadiness={
+      ok:false,
+      status:'failed',
+      canonicalLineage:{ok:false,status:'failed'},
+      error:e.message
+    };
+    console.error('VAL DB init error:',e.message);
+    return false;
+  });
 
 function loginHtml(){
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${CLIENT_CONFIG.brandName} Login</title><style>
@@ -7836,6 +8310,7 @@ function isPublicPath(req){
   if(isLocalVoicePreview) return true;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
+  if(p==='/api/val/ghl/voice-turn'&&req.method==='POST') return true;
   return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
@@ -7847,13 +8322,16 @@ async function requireAuth(req,res,next){
     return requestContext.run({user,demo:true,demoState:state},()=>next());
   }
   await valDbReady;
+  const sessionUser=await getSessionUser(req);
+  if(sessionUser){
+    req.valUser=sessionUser;
+    return requestContext.run({user:sessionUser},()=>next());
+  }
   if(PUBLIC_HEARTH_TEST_MODE){
     const user=await publicHearthTestUser();
     req.valUser=user;
     return requestContext.run({user,publicHearthTest:true},()=>next());
   }
-  const user=await getSessionUser(req);
-  if(user){req.valUser=user;return requestContext.run({user},()=>next());}
   if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
   return res.redirect('/login');
 }
@@ -7874,7 +8352,7 @@ function clientIsolationWarnings(){
 
 function statusPayload(){
   return {
-    status:'VAL Proxy OK',
+    status:valDatabaseReadiness.ok?'VAL Proxy OK':'VAL Proxy Not Ready',
     app:CLIENT_CONFIG.clientSlug,
     time:new Date().toISOString(),
     client:CLIENT_CONFIG,
@@ -7901,6 +8379,10 @@ function statusPayload(){
       leadContactValidation:'strict-v2',
       demoMode:DEMO_MODE,
       publicHearthTestMode:PUBLIC_HEARTH_TEST_MODE
+    },
+    readiness:{
+      ok:valDatabaseReadiness.ok,
+      database:valDatabaseReadiness
     }
   };
 }
@@ -7917,8 +8399,15 @@ app.get('/',async(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
   return res.sendFile(path.join(__dirname,'hearth-prototype.html'));
 });
-app.get('/api/health',(req,res)=>res.json(statusPayload()));
-app.get('/health',(req,res)=>res.json(statusPayload()));
+app.get('/api/health',(req,res)=>{
+  const payload=statusPayload();
+  res.status(payload.readiness.ok?200:503).json(payload);
+});
+app.get('/favicon.ico',(req,res)=>res.status(204).end());
+app.get('/health',(req,res)=>{
+  const payload=statusPayload();
+  res.status(payload.readiness.ok?200:503).json(payload);
+});
 app.get('/login',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
   if(PUBLIC_HEARTH_TEST_MODE) return res.redirect('/dashboard');
@@ -8033,7 +8522,8 @@ app.get('/api/public-config',(req,res)=>{
     clientSlug: CLIENT_CONFIG.clientSlug,
     clientName: CLIENT_CONFIG.clientName,
     brandName: CLIENT_CONFIG.brandName,
-    pipelineDashboardUrl: process.env.VAL_PIPELINE_DASHBOARD_URL || (IS_MARK_GOALL_DEPLOYMENT?'https://mark-goall-val-production.up.railway.app/call-center-dashboards':''),
+    timezone: CLIENT_CONFIG.timezone,
+    voiceWidgetId: process.env.GHL_VOICE_WIDGET_ID || '6a6253197742c156ecacd8ca',
     featureFlags: clientFeatureLocks()
   });
 });
@@ -8076,9 +8566,14 @@ async function tenantOpenAIConnectionReadiness(){
   ]);
   const saved=normalizeTenantApiKeyRow(row);
   const keyLooksValid=tenantApiKeyLooksValid('openai',secret);
+  const tenantConnected=!!(keyLooksValid&&saved?.status==='connected');
+  const approvedServiceKey=!!(OPENAI_KEY&&platformKeyFallbackAllowed('openai'));
   return {
-    connected:!!(keyLooksValid&&saved?.status==='connected'),
-    status:saved?.status||'not_connected',
+    connected:tenantConnected||approvedServiceKey,
+    tenantConnected,
+    approvedServiceKey,
+    source:tenantConnected?'tenant_vault':(approvedServiceKey?'approved_service_key':'not_connected'),
+    status:tenantConnected?'connected':(approvedServiceKey?'connected':(saved?.status||'not_connected')),
     lastUpdatedAt:saved?.lastUpdatedAt||'',
     lastTestedAt:saved?.lastTestedAt||''
   };
@@ -8093,7 +8588,7 @@ async function witnessingOpenAIReadiness(){
     ok:true,
     openai,
     continuationAllowed,
-    requiresOpenAIKey:!openai.connected&&!continuationAllowed
+    requiresOpenAIKey:!openai.connected
   };
 }
 async function requireOpenAIForNewWitnessing(res){
@@ -8110,11 +8605,14 @@ async function requireOpenAIForNewWitnessing(res){
   return true;
 }
 async function witnessingConnectionStatusPayload(){
-  const [google,microsoftTokens]=await Promise.all([
+  const [google,googleAccounts,microsoftTokens]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
+    listGoogleAccounts({hydrate:true}).catch(()=>[]),
     loadOAuthTokens('microsoft').catch(()=>null)
   ]);
   const openai=await tenantOpenAIConnectionReadiness();
+  const anthropicStatuses=await tenantApiKeyConnectionStatuses().catch(()=>[]);
+  const anthropic=anthropicStatuses.find(item=>item.provider==='anthropic')||{};
   const krisp=await krispOAuthConnectionStatus().catch(error=>({connected:false,error:error.message||'Krisp needs to reconnect.'}));
   return {
     ok:true,
@@ -8127,6 +8625,8 @@ async function witnessingConnectionStatusPayload(){
         connected:!!google.connected,
         action:'oauth',
         actionHref:'/auth/google',
+        addActionHref:'/auth/google?mode=add',
+        accounts:googleAccounts,
         learns:'Gmail, Google Calendar, Drive, and Docs context.',
         limits:'VAL reads evidence only. It never sends, changes a calendar, or shares a file without approval.',
         missingScopes:google.missingScopes||[],
@@ -8167,6 +8667,19 @@ async function witnessingConnectionStatusPayload(){
         learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
         limits:'A saved key is encrypted and never shown again.',
         error:''
+      },
+      {
+        id:'anthropic',
+        label:'Anthropic / Claude',
+        configured:anthropic.status==='connected',
+        status:anthropic.status||'not_connected',
+        connected:anthropic.status==='connected',
+        lastUpdatedAt:anthropic.lastUpdatedAt||'',
+        lastTestedAt:anthropic.lastTestedAt||'',
+        action:'credential',
+        learns:'Nothing from your world. This provides an optional Claude model connection for approved VAL workflows.',
+        limits:'A saved key is encrypted and never shown again. VAL does not use it unless a workflow is configured to do so.',
+        error:''
       }
     ]
   };
@@ -8182,7 +8695,7 @@ app.get('/api/val/witnessing/readiness',async(req,res)=>{
 app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
   try{
     const provider=String(req.params.provider||'').trim().toLowerCase();
-    if(!['openai','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
+    if(!['openai','anthropic','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
     const apiKey=String(req.body.apiKey||req.body.key||req.body.token||'').trim();
     if(!apiKey) return res.status(400).json({ok:false,error:'Paste the connection key before saving it.'});
     await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub'}});
@@ -8358,6 +8871,24 @@ app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/teach-val/onboarding/:id/reopen-witnessing-card/:cardId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Witnessing Session not found.'});
+    const card=partnershipProtocolCardFor(req.params.cardId);
+    if(!card)return res.status(404).json({ok:false,error:'Witnessing card not found.'});
+    const state=normalizeTeachValState(session.state);
+    state.reopenedWitnessingCard={
+      cardId:card.id,
+      category:card.category,
+      reopenedAt:new Date().toISOString(),
+      preservesCompletedSession:session.status==='committed'||state.stage==='complete'
+    };
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({...await teachValStateResponse(session.id),reopenedCard:card});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
   try{
     const session=await getTeachValSession(req.params.id);
@@ -8444,6 +8975,13 @@ app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+function witnessingPacketTypeForCategory(category=''){
+  const value=String(category||'').toLowerCase();
+  if(/relationship|people|contact|support|partnership/.test(value))return 'relational_context_packet';
+  if(/capacity|operating|energy|boundary|schedule|environment|work_preference/.test(value))return 'operating_context_packet';
+  return 'identity_context_packet';
+}
+
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)=>{
   try{
     const session=await getTeachValSession(req.params.id);
@@ -8452,10 +8990,20 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This answer belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach your answer to the wrong question.'});
     if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
     if(card.id==='source_review')return res.status(409).json({ok:false,error:'The First Look is prepared directly from your connected sources. Use Prepare my First Look so VAL can show exactly what it read.'});
-    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
+    const uploadedDocumentContext=await witnessingUploadedDocumentContext(rawResponse);
+    const isDocumentStep=card.id==='documents_templates';
+    const sessionState=normalizeTeachValState(session.state);
+    const updatingCompletedSession=!!(
+      sessionState.reopenedWitnessingCard?.preservesCompletedSession&&
+      sessionState.reopenedWitnessingCard?.cardId===card.id
+    );
+    if(!isDocumentStep&&!(await requireOpenAIForNewWitnessing(res))) return;
+    const observedResponse=uploadedDocumentContext.modelContext
+      ? `${rawResponse}\n\n${uploadedDocumentContext.modelContext}`
+      : rawResponse;
     const nextCard=nextPartnershipProtocolCard(card);
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
@@ -8479,7 +9027,9 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
         evidence_refs:['current_answer']
       }
     },card,rawResponse) : null;
-    const {graph,witness}=isSourceConnectionStep
+    const {graph,witness}=isDocumentStep
+      ? witnessingDocumentReceiptTurn({card,rawResponse,documents:uploadedDocumentContext.documents,nextCard})
+      : isSourceConnectionStep
       ? {
           graph:sourceConnectionGraph,
           witness:{
@@ -8490,7 +9040,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
             next_question:nextCard?.visibleQuestion||''
           }
         }
-      : await generatePartnershipProtocolTurn({card,rawResponse,priorImports});
+      : await generatePartnershipProtocolTurn({card,rawResponse:observedResponse,priorImports});
     const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph,confirmation:sourceConnectionConfirmation});
     const evidenceChain=priorEvidenceChain.concat([integrityChain]);
     const currentState=partnershipCurrentState(evidenceChain,nextCard);
@@ -8512,6 +9062,14 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       card:{id:card.id,category:card.category,title:card.title},
       livingExecutiveGraph:graph,
       witness,
+      uploadedDocuments:uploadedDocumentContext.documents.map(document=>({
+        id:document.id,
+        title:document.title,
+        docType:document.docType,
+        characters:document.rawText.length,
+        textExtracted:true,
+        observerReviewStatus:'queued'
+      })),
       integrityChain,
       evidenceChain:compactPartnershipEvidenceChain(evidenceChain),
       currentState,
@@ -8540,14 +9098,42 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       structuredSummary,
       extractedItems:partnershipGraphItems(card.category,graph),
       reviewed:isSourceConnectionStep,
-      status:isSourceConnectionStep?'Confirmed':'Witnessed'
+      status:isSourceConnectionStep?'Confirmed':(isDocumentStep?'Saved':'Witnessed')
     });
-    const state=normalizeTeachValState(session.state);
-    state.progress[card.category]='Witnessed';
-    state.stage=card.category;
+    await processCanonicalBoardEvidence({
+      sourceType:'witnessing',
+      sourceId:saved.id,
+      sourceTitle:card.title,
+      rawText:[
+        `User response:\n${rawResponse}`,
+        structuredSummary.integrityChain?.O?.claim?`VAL observation:\n${structuredSummary.integrityChain.O.claim}`:'',
+        `Structured Witnessing context:\n${JSON.stringify(structuredSummary)}`
+      ].filter(Boolean).join('\n\n'),
+      createdAt:saved.createdAt,
+      domainRoutes:['witnessing','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'witnessing_answer',
+        sessionId:session.id,
+        category:card.category,
+        status:saved.status,
+        boardPacketType:witnessingPacketTypeForCategory(card.category)
+      }
+    });
+    const state=sessionState;
+    state.progress[card.category]=isDocumentStep?'Saved':'Witnessed';
+    state.stage=updatingCompletedSession?'complete':card.category;
     session.state=state;
     await saveTeachValSession(session);
-    res.json({ok:true,card,graph,witness,advance:isSourceConnectionStep,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    res.json({
+      ok:true,
+      card,
+      graph,
+      witness,
+      advance:!updatingCompletedSession&&(isSourceConnectionStep||isDocumentStep),
+      updatingCompletedSession,
+      import:teachValPublicImport(saved),
+      state:await teachValStateResponse(session.id)
+    });
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(req,res)=>{
@@ -8558,6 +9144,11 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
     if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This confirmation belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach it to the wrong question.'});
     if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
     const imports=await listTeachValImports(session.id);
+    const sessionState=normalizeTeachValState(session.state);
+    const updatingCompletedSession=!!(
+      sessionState.reopenedWitnessingCard?.preservesCompletedSession&&
+      sessionState.reopenedWitnessingCard?.cardId===card.id
+    );
     const existing=imports.find(i=>i.category===card.category);
     if(!existing)return res.status(404).json({ok:false,error:'Witnessing card has not been answered yet.'});
     const value=String(req.body.confirmation||req.body.value||'yes').trim().toLowerCase();
@@ -8589,7 +9180,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
     ));
     const nextCard=nextPartnershipProtocolCard(card);
     let nextQuestion='';
-    if(confirmation.status==='confirmed'&&nextCard){
+    if(confirmation.status==='confirmed'&&nextCard&&!updatingCompletedSession){
       nextQuestion=await composePartnershipProtocolNextQuestion({
         currentCard:card,
         nextCard,
@@ -8609,7 +9200,34 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
       reviewed:confirmation.status==='confirmed',
       status:confirmation.status==='confirmed'?'Confirmed':'Needs Clarification'
     });
-    res.json({ok:true,card,confirmation,nextQuestion,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    await processCanonicalBoardEvidence({
+      sourceType:'witnessing',
+      sourceId:saved.id,
+      sourceTitle:card.title,
+      rawText:[
+        `User response:\n${saved.rawResponse}`,
+        structuredSummary.integrityChain?.O?.claim?`VAL observation:\n${structuredSummary.integrityChain.O.claim}`:'',
+        `User confirmation:\n${JSON.stringify(confirmation)}`,
+        `Structured Witnessing context:\n${JSON.stringify(structuredSummary)}`
+      ].filter(Boolean).join('\n\n'),
+      createdAt:saved.createdAt,
+      domainRoutes:['witnessing','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'witnessing_confirmation',
+        sessionId:session.id,
+        category:card.category,
+        status:saved.status,
+        boardPacketType:witnessingPacketTypeForCategory(card.category)
+      }
+    });
+    if(updatingCompletedSession){
+      sessionState.stage='complete';
+      sessionState.progress[card.category]='Confirmed';
+      delete sessionState.reopenedWitnessingCard;
+      session.state=sessionState;
+      await saveTeachValSession(session);
+    }
+    res.json({ok:true,card,confirmation,nextQuestion,updatingCompletedSession,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{
@@ -8863,6 +9481,7 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     const state=normalizeTeachValState(session.state);
     let webhook={status:testMode?'test_mode':'not_configured',message:testMode?'Test mode: payload built but not sent to production memory.':'No external onboarding webhook configured. Stored in local VAL onboarding memory.'};
     let promotion={memoryCount:0,evidenceItemId:'',observationCount:0,intelligence:null};
+    let boardReceipt={status:testMode?'test_mode':'not_started',packetId:'',itemPacketCount:0,observerCount:14};
     if(!testMode){
       await insertTeachValMemoryItems(included);
       if(operationalInsights.length){
@@ -8886,6 +9505,40 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
         });
       }
       promotion=await promoteTeachValOnboardingToCoreMemory({session,imports,items:included,payload});
+      const completeSessionSummary=included
+        .map(item=>`${item.title||item.category}: ${compactText(item.summary||item.title||'',700)}`)
+        .filter(Boolean)
+        .join('\n');
+      const completeSessionResult=await processCanonicalBoardEvidence({
+        sourceType:'witnessing',
+        sourceId:session.id,
+        sourceTitle:'Completed Witnessing Session',
+        rawText:completeSessionSummary||'The user completed the Witnessing Session.',
+        sourceRefs:included.slice(0,14).map(item=>({
+          sourceType:'witnessing',
+          sourceId:item.id||`${session.id}:${item.category}`,
+          quoteOrSummary:compactText(item.summary||item.title||'',420),
+          confidence:item.confidence||0.9
+        })),
+        domainRoutes:['witnessing','board_of_observers','chief_of_staff'],
+        metadata:{
+          source:'witnessing_session_committed',
+          sessionId:session.id,
+          complete:true,
+          boardPacketType:'identity_context_packet',
+          answers:included.map(item=>({
+            category:item.category,
+            title:item.title,
+            summary:compactText(item.summary||'',700)
+          }))
+        }
+      });
+      boardReceipt={
+        status:completeSessionResult?'received':'unavailable',
+        packetId:completeSessionResult?.sourcePacket?.id||'',
+        itemPacketCount:completeSessionResult?.sourcePackets?.length||0,
+        observerCount:14
+      };
       const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
       if(url){
         try{
@@ -8909,8 +9562,13 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     session.status=testMode?'test_completed':'committed';
     session.state=state;
     await saveTeachValSession(session);
+    if(!testMode){
+      void backfillBoardPackets({days:3650,limit:300}).catch(error=>{
+        console.warn('[val-board] post-Witnessing reconciliation deferred:',error.message);
+      });
+    }
     await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status,promotion,operationalInsightCount:operationalInsights.length},success:webhook.status!=='failed'}).catch(()=>{});
-    res.json({ok:true,payload,webhook,promotion,operationalInsights:testMode?operationalInsights:operationalInsights.map(i=>({id:i.id,title:i.title,category:i.data?.sourceCategory,hasRuleDraft:!!i.data?.ruleDraft,targetRooms:i.data?.targetRooms||[]})),memory:testMode?[]:await listTeachValMemory(session.id),state});
+    res.json({ok:true,payload,webhook,promotion,boardReceipt,operationalInsights:testMode?operationalInsights:operationalInsights.map(i=>({id:i.id,title:i.title,category:i.data?.sourceCategory,hasRuleDraft:!!i.data?.ruleDraft,targetRooms:i.data?.targetRooms||[]})),memory:testMode?[]:await listTeachValMemory(session.id),state});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
@@ -9492,6 +10150,18 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const requestedDays=Number(req.query.days||req.body?.days)||14;
     const activeDays=Math.max(1,Math.min(90,Number.isFinite(requestedDays)?requestedDays:14));
     const limit=Number(req.query.limit||req.body?.limit)||30;
+    const incremental=req.query.incremental==='1'||req.body?.incremental===true;
+    const [syncCheckpoint,outlookSyncCheckpoint,sentHistoryCheckpoint]=incremental
+      ? await Promise.all([
+          sourceSyncCheckpoint('gmail').catch(()=>null),
+          sourceSyncCheckpoint('outlook').catch(()=>null),
+          sourceSyncCheckpoint('gmail_sent_history').catch(()=>null)
+        ])
+      : [null,null,null];
+    const checkpointDate=syncCheckpoint?.lastSuccessfulSyncAt?new Date(syncCheckpoint.lastSuccessfulSyncAt):null;
+    const afterDate=checkpointDate&&Number.isFinite(checkpointDate.getTime())
+      ? checkpointDate.toISOString().slice(0,10).replace(/-/g,'/')
+      : '';
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     if(!gmailStatus.connected){
@@ -9504,37 +10174,44 @@ async function emailIntelligencePayload(req,{force=false}={}){
         needsAttention:[],needsReply:[],waitingOnResponse:[],lowPriority:[],draftSuggestions:[],relationshipContext:[]
       };
     }
-    const recentQuery=`in:anywhere -in:sent newer_than:${activeDays}d`;
-    const unreadQuery=`in:anywhere -in:sent is:unread newer_than:${activeDays}d`;
-    const documentQuery=`in:anywhere has:attachment newer_than:${activeDays}d`;
-    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook]=await Promise.all([
+    const recentQuery=afterDate?`in:anywhere -in:sent after:${afterDate}`:`in:anywhere -in:sent newer_than:${activeDays}d`;
+    const unreadQuery=afterDate?`in:anywhere -in:sent is:unread after:${afterDate}`:`in:anywhere -in:sent is:unread newer_than:${activeDays}d`;
+    const documentQuery=afterDate?`in:anywhere has:attachment after:${afterDate}`:`in:anywhere has:attachment newer_than:${activeDays}d`;
+    const sentQuery=afterDate?`in:sent after:${afterDate}`:`in:sent newer_than:${activeDays}d`;
+    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook,sentHistoryGmail]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
-      fetchGmailMessages({query:`in:sent newer_than:${activeDays}d`,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:sentQuery,maxResults:Math.max(limit,150),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
       fetchGmailMessages({query:documentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:documentQuery})),
-      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+      fetchUnifiedOutlookEmails(limit,{receivedAfter:outlookSyncCheckpoint?.lastSuccessfulSyncAt||''}).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'})),
+      incremental&&!sentHistoryCheckpoint
+        ? fetchGmailSentNetworkMessages().catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail'}))
+        : Promise.resolve({emails:[],needsAuth:false,provider:'gmail',skipped:true})
     ]);
+    const durableSentMap=new Map();
+    [...safeArray(sentHistoryGmail.emails),...safeArray(sentGmail.emails)].forEach(email=>{
+      const key=email.messageId||email.id||email.threadId||'';
+      if(key&&!durableSentMap.has(key))durableSentMap.set(key,email);
+    });
+    const durableSentGmail=Array.from(durableSentMap.values());
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
     const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),0);
-    const scanCorpus=[...Array.from(gmailMap.values()),...(sentGmail.emails||[]),...(outlook.emails||[])];
+    const scanCorpus=[...Array.from(gmailMap.values()),...durableSentGmail,...(outlook.emails||[])];
     const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
       const withMetrics={...email,senderMetrics:emailSenderMetrics(email,scanCorpus)};
       const c=classifyExecutiveEmail(withMetrics,rules);
       return {...withMetrics,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
-    const preparedDraftResults=await Promise.all(emails.map(async email=>{
-      const draft=await prepareEmailDraftIfNeeded(email,rules).catch(()=>null);
-      if(draft)email.preparedDraft=draft;
-      return draft;
-    }));
     const durableEmailMap=new Map();
-    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+    [...emails,...(documentGmail.emails||[]),...durableSentGmail].forEach(email=>{
       const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
       if(key&&!durableEmailMap.has(key))durableEmailMap.set(key,email);
     });
-    const durableEmailResults=await Promise.all(Array.from(durableEmailMap.values()).map(email=>valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message})))).catch(()=>[]);
+    const durableEmailResults=await mapWithConcurrency(Array.from(durableEmailMap.values()),12,email=>
+      valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message}))
+    ).catch(()=>[]);
     const evidenceResults=await saveEmailEvidenceBatch(emails);
     const relationshipIntake=evidenceResults.reduce((acc,result)=>{
       const intake=result?.relationshipIntake||{};
@@ -9552,13 +10229,31 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const projectManagerIntake=await processEmailDocumentSourceProcessing(Array.from(sourceProcessingEmailMap.values()),{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[error.message],noExternalAction:true}));
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
-    const draftsPrepared=preparedDraftResults.filter(Boolean).length;
+    const draftsPrepared=0;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
-    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error].filter(Boolean);
+    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error,sentHistoryGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
-    else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
+    else{
+      gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();
+      gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;
+      gmailSyncStatus.lastAnalyzedCount=emails.length;
+      gmailSyncStatus.lastQuery=recentQuery;
+      if(incremental)await saveSourceSyncCheckpoint('gmail',{lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,metadata:{recentQuery,unreadQuery,sentQuery,documentQuery,fetched:gmailSyncStatus.lastFetchedCount}}).catch(()=>{});
+      if(incremental&&!sentHistoryCheckpoint&&!sentHistoryGmail.error&&!sentHistoryGmail.needsAuth){
+        await saveSourceSyncCheckpoint('gmail_sent_history',{
+          lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,
+          metadata:{query:sentHistoryGmail.query||'in:sent newer_than:90d',fetched:safeArray(sentHistoryGmail.emails).length}
+        }).catch(()=>{});
+      }
+    }
+    if(incremental&&!outlook.error&&!outlook.needsAuth){
+      await saveSourceSyncCheckpoint('outlook',{
+        lastSuccessfulSyncAt:new Date().toISOString(),
+        metadata:{fetched:safeArray(outlook.emails).length}
+      }).catch(()=>{});
+    }
     return {
       ok:true,
       source:'gmail',
@@ -9566,9 +10261,9 @@ async function emailIntelligencePayload(req,{force=false}={}){
       needsReply:emails.filter(e=>e.classification==='needs_reply'),
       lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)),
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
-      draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
+      draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:durableSentGmail.length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       relationshipIntake,
@@ -9624,6 +10319,250 @@ function executiveInboxResolved(email={},resolutions=executiveInboxResolutionRow
   const key=executiveInboxThreadKey(email);
   return !!key&&resolutions.some(row=>row.threadKey===key||((row.threadId||'')&&(row.threadId===email.threadId))||((row.messageId||'')&&(row.messageId===email.messageId)));
 }
+function executiveInboxDurablePayload(item={}){
+  const bodyText=String(item.bodyText||item.bodyPreview||item.snippet||htmlToReadableEmailText(item.bodyHtml||'')).trim();
+  return {
+    provider:item.provider||'email',
+    id:item.id||'',
+    messageId:item.messageId||item.id||'',
+    threadId:item.threadId||'',
+    conversationId:item.conversationId||item.threadId||item.messageId||item.id||'',
+    subject:item.subject||'(No subject)',
+    from:item.from||{},
+    to:safeArray(item.to),
+    cc:safeArray(item.cc),
+    date:item.date||item.receivedAt||'',
+    receivedAt:item.receivedAt||item.date||'',
+    snippet:item.snippet||bodyText.slice(0,320),
+    bodyPreview:item.bodyPreview||bodyText.slice(0,1200),
+    bodyText,
+    bodyHtml:'',
+    headers:item.headers||{},
+    labels:safeArray(item.labels),
+    attachments:safeArray(item.attachments),
+    hasAttachments:!!item.hasAttachments,
+    webLink:item.webLink||'',
+    classification:item.classification||'',
+    recommendedAction:item.recommendedAction||'',
+    matchedContact:item.matchedContact||{},
+    matchedRuleId:item.matchedRuleId||'',
+    requiresApproval:item.requiresApproval!==false,
+    confidence:item.confidence||'',
+    senderMetrics:item.senderMetrics||{},
+    reason:item.reason||'',
+    preparedDraft:item.preparedDraft||null,
+    queueKind:item.queueKind||'needs_judgment',
+    status:item.status||'ready_for_review',
+    executiveInboxAdmission:item.executiveInboxAdmission||{}
+  };
+}
+async function listDurableExecutiveInboxQueue({limit=60,offset=0,active=true}={}){
+  const lim=Math.max(1,Math.min(Number(limit)||60,200));
+  const skip=Math.max(0,Number(offset)||0);
+  if(pgPool){
+    const result=await dbQuery(`
+      select payload_json
+      from val_executive_inbox_queue
+      where tenant_id=$1 and user_id=$2 and active=$3
+      order by verified_at desc
+      limit $4 offset $5
+    `,[tenantId(),currentUserId(),active,lim,skip]);
+    return safeArray(result?.rows).map(row=>row.payload_json||{}).filter(item=>item&&typeof item==='object');
+  }
+  return safeArray(valStore().executiveInboxDurableQueue)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.active!==false)===active)
+    .sort((a,b)=>String(b.verifiedAt||'').localeCompare(String(a.verifiedAt||'')))
+    .slice(skip,skip+lim)
+    .map(row=>row.payload||{});
+}
+async function countDurableExecutiveInboxQueue({active=true}={}){
+  if(pgPool){
+    const result=await dbQuery('select count(*)::int as count from val_executive_inbox_queue where tenant_id=$1 and user_id=$2 and active=$3',[tenantId(),currentUserId(),active]);
+    return Number(result?.rows?.[0]?.count)||0;
+  }
+  return safeArray(valStore().executiveInboxDurableQueue)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.active!==false)===active).length;
+}
+async function durableOutboundRecipientEmails(){
+  if(pgPool){
+    const result=await dbQuery(`
+      select distinct lower(coalesce(person->>'email',person->>'address','')) as email
+      from email_messages message
+      cross join lateral jsonb_array_elements(
+        coalesce(message.recipients_json,'[]'::jsonb)
+        || coalesce(message.cc_json,'[]'::jsonb)
+        || coalesce(message.bcc_json,'[]'::jsonb)
+      ) person
+      where message.tenant_id=$1
+        and message.user_id=$2
+        and message.direction='outbound'
+    `,[tenantId(),currentUserId()]);
+    return new Set(safeArray(result?.rows).map(row=>normalizeExecutiveEmailAddress(row.email)).filter(Boolean));
+  }
+  const recipients=new Set();
+  safeArray(valStore().emailMessages).forEach(row=>{
+    if(row.tenantId!==tenantId()||row.userId!==currentUserId()||String(row.direction||'').toLowerCase()!=='outbound')return;
+    safeArray(row.recipientsJson||row.recipients_json)
+      .concat(safeArray(row.ccJson||row.cc_json),safeArray(row.bccJson||row.bcc_json))
+      .forEach(person=>{
+        const email=normalizeExecutiveEmailAddress(person?.email||person?.address||person);
+        if(email)recipients.add(email);
+      });
+  });
+  return recipients;
+}
+async function mergeDurableExecutiveInboxQueue(items=[]){
+  const payloads=safeArray(items).map(executiveInboxDurablePayload).filter(item=>item.conversationId);
+  if(pgPool){
+    await dbQuery(`
+      with incoming as (
+        select value as payload
+        from jsonb_array_elements($3::jsonb)
+      )
+      insert into val_executive_inbox_queue
+        (id,tenant_id,user_id,conversation_id,thread_id,message_id,queue_kind,active,payload_json,verified_at,created_at,updated_at)
+      select
+        'exec_inbox_' || md5($1 || ':' || $2 || ':' || (payload->>'conversationId')),
+        $1,
+        $2,
+        payload->>'conversationId',
+        coalesce(payload->>'threadId',''),
+        coalesce(payload->>'messageId',''),
+        coalesce(payload->>'queueKind','needs_judgment'),
+        true,
+        payload,
+        now(),
+        now(),
+        now()
+      from incoming
+      on conflict (tenant_id,user_id,conversation_id)
+      do update set
+        thread_id=excluded.thread_id,
+        message_id=excluded.message_id,
+        queue_kind=excluded.queue_kind,
+        active=true,
+        payload_json=excluded.payload_json,
+        verified_at=now(),
+        updated_at=now()
+    `,[tenantId(),currentUserId(),JSON.stringify(payloads)]);
+    return payloads;
+  }
+  const store=valStore();
+  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue);
+  payloads.forEach(payload=>{
+    const index=store.executiveInboxDurableQueue.findIndex(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.conversationId===payload.conversationId);
+    const row={tenantId:tenantId(),userId:currentUserId(),conversationId:payload.conversationId,active:true,verifiedAt:new Date().toISOString(),payload};
+    if(index>=0)store.executiveInboxDurableQueue[index]=row;
+    else store.executiveInboxDurableQueue.push(row);
+  });
+  saveValStore(store);
+  return payloads;
+}
+async function admitSafeListedExecutiveInboxMessages(email=''){
+  const address=normalizeExecutiveEmailAddress(email);
+  if(!address)return [];
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(`
+      select provider,message_id,thread_id,unified_conversation_id,direction,sender_json,
+             recipients_json,cc_json,subject,body_preview,body_text,snippet,labels_json,
+             has_attachments,web_link,received_at,sent_at,raw_json
+      from email_messages
+      where tenant_id=$1 and user_id=$2
+        and direction='inbound'
+        and lower(coalesce(sender_json->>'email',sender_json->>'address',''))=$3
+      order by coalesce(received_at,sent_at) desc nulls last, updated_at desc
+      limit 200
+    `,[tenantId(),currentUserId(),address]);
+    rows=safeArray(result?.rows).map(row=>({
+      provider:row.provider||'email',
+      id:row.message_id,
+      messageId:row.message_id,
+      threadId:row.thread_id||'',
+      conversationId:row.unified_conversation_id||row.thread_id||row.message_id,
+      subject:row.subject||'(No subject)',
+      from:row.sender_json||{email:address},
+      to:safeArray(row.recipients_json),
+      cc:safeArray(row.cc_json),
+      date:row.received_at?.toISOString?.()||row.received_at||row.sent_at?.toISOString?.()||row.sent_at||'',
+      receivedAt:row.received_at?.toISOString?.()||row.received_at||'',
+      snippet:row.snippet||row.body_preview||'',
+      bodyPreview:row.body_preview||row.snippet||'',
+      bodyText:row.body_text||row.body_preview||row.snippet||'',
+      labels:safeArray(row.labels_json),
+      hasAttachments:!!row.has_attachments,
+      webLink:row.web_link||'',
+      raw:row.raw_json||{}
+    }));
+  }else{
+    rows=safeArray(valStore().emailMessages).filter(row=>{
+      const sender=row.senderJson||row.sender_json||row.sender||row.from||{};
+      return String(row.direction||'').toLowerCase()==='inbound'
+        && normalizeExecutiveEmailAddress(sender.email||sender.address||'')===address;
+    });
+  }
+  const safeContacts=executiveInboxSafeContactRows();
+  const suppressions=executiveInboxSuppressionRows();
+  const resolutions=executiveInboxResolutionRows();
+  const newestByConversation=new Map();
+  rows.forEach(row=>{
+    const key=String(row.conversationId||row.unifiedConversationId||row.threadId||row.messageId||row.id||'');
+    if(key&&!newestByConversation.has(key))newestByConversation.set(key,row);
+  });
+  const admitted=Array.from(newestByConversation.values()).filter(row=>decideExecutiveInboxAdmission({
+    email:row,
+    suppressions,
+    safeContacts,
+    resolved:executiveInboxResolved(row,resolutions)
+  }).admitted).map(row=>({
+    ...row,
+    id:'executive-inbox-'+(row.threadId||row.messageId||row.id),
+    queueKind:'needs_judgment',
+    status:'ready_for_review',
+    classification:'needs_attention',
+    reason:'This sender is on your Executive Inbox Safe List.',
+    recommendedAction:'Review this conversation',
+    executiveInboxAdmission:{
+      admitted:true,
+      rule:'manual_executive_contact_override',
+      reason:'The user explicitly added this sender to the Executive Inbox Safe List.',
+      safeListed:true
+    }
+  }));
+  if(admitted.length)await mergeDurableExecutiveInboxQueue(admitted);
+  return admitted;
+}
+async function archiveDurableExecutiveInboxThread({provider='email',threadId='',messageId='',resolution={}}={}){
+  const threadKey=[provider,threadId||messageId].join(':');
+  if(pgPool){
+    const result=await dbQuery(`
+      update val_executive_inbox_queue
+      set active=false,
+          payload_json=payload_json||$4::jsonb,
+          updated_at=now()
+      where tenant_id=$1 and user_id=$2
+        and (
+          ($3<>'' and (thread_id=$3 or (payload_json->>'provider'=$6 and payload_json->>'threadId'=$3)))
+          or ($5<>'' and (message_id=$5 or payload_json->>'messageId'=$5))
+        )
+      returning payload_json
+    `,[tenantId(),currentUserId(),threadId,JSON.stringify({status:'resolved',archive:{...resolution,threadKey}}),messageId,provider]);
+    return safeArray(result?.rows).map(row=>row.payload_json||{});
+  }
+  const store=valStore();
+  const archived=[];
+  store.executiveInboxDurableQueue=safeArray(store.executiveInboxDurableQueue).map(row=>{
+    if(row.tenantId!==tenantId()||row.userId!==currentUserId())return row;
+    const payload=row.payload||{};
+    const matches=(threadId&&payload.threadId===threadId)||(messageId&&(payload.messageId===messageId||payload.id===messageId));
+    if(!matches)return row;
+    const next={...row,active:false,updatedAt:new Date().toISOString(),payload:{...payload,status:'resolved',archive:{...resolution,threadKey}}};
+    archived.push(next.payload);
+    return next;
+  });
+  saveValStore(store);
+  return archived;
+}
 function executiveInboxSentRequestText(email={}){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
   return /\?|(\b(can you|could you|will you|would you|please|let me know|confirm|review|send|share|thoughts|feedback|available|availability|when can|do you have|are you able)\b)/i.test(text);
@@ -9657,15 +10596,215 @@ function executiveInboxHumanReason({email={},kind='',known=false,hasSent=false,a
   if(known)return 'This is here because this sender is already part of your relationship context.';
   return email.reason||'This thread appears to need your judgment.';
 }
-async function canonicalExecutiveInboxQueue(req,{force=false}={}){
-  const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150}};
+function executiveInboxPriorityScore(level=''){
+  return {critical:5,high:4,medium:3,low:2,suppressed:1,unknown:0}[String(level||'unknown').toLowerCase()]||0;
+}
+function executiveInboxMessageFromContext(context={}){
+  return context.current_message || context.currentMessage || context.latest_inbound || context.latestInbound || context.latest_outbound || context.latestOutbound || {};
+}
+function executiveInboxCachedEmailFromClassification(result={},index=0){
+  const context=result.context||{};
+  const classification=result.classification||{};
+  const message=executiveInboxMessageFromContext(context);
+  const inbound=context.latest_inbound || context.latestInbound || message || {};
+  const sender=message.from || inbound.from || inbound.sender || {};
+  const waitingOnOther=!!(context.waiting_on_other || context.waitingOnOther || classification.conversation_state==='waiting_on_them');
+  const waitingOnUser=!!(context.waiting_on_user || context.waitingOnUser || classification.conversation_state==='waiting_on_user');
+  const priority=String(classification.priority_level || classification.priorityLevel || 'medium').toLowerCase();
+  const queueKind=waitingOnOther?'waiting_for_response':'needs_judgment';
+  return {
+    id:'executive-inbox-cached-' + (context.conversationId || message.messageId || context.threadId || classification.id || index),
+    provider:message.provider || context.provider || 'email',
+    messageId:message.messageId || message.id || context.currentMessageId || classification.currentMessageId || '',
+    conversationId:context.conversationId || classification.conversationId || '',
+    threadId:message.threadId || context.threadId || classification.threadId || '',
+    subject:message.subject || context.thread_summary || 'Saved conversation',
+    from:{name:sender.name || sender.displayName || sender.email || 'Saved contact',email:sender.email || ''},
+    date:message.receivedAt || message.date || message.sentAt || context.latestMessageAt || classification.createdAt || '',
+    receivedAt:message.receivedAt || message.date || context.latestMessageAt || classification.createdAt || '',
+    snippet:message.snippet || message.bodyPreview || context.thread_summary || classification.why_now || '',
+    bodyPreview:message.bodyPreview || message.snippet || classification.why_now || context.thread_summary || '',
+    bodyText:message.bodyText || message.body_text || message.bodyPreview || message.snippet || '',
+    queueKind,
+    status:waitingOnOther?'waiting_for_response':(waitingOnUser?'ready_for_review':'needs_context'),
+    classification:waitingOnOther?'waiting_on_response':'needs_reply',
+    reason:classification.why_now || classification.whyNow || 'Saved conversation context is waiting for review.',
+    recommendedAction:waitingOnOther?'Waiting for response':'Review and respond if needed',
+    confidence:classification.confidence || 0,
+    executiveInboxAdmission:classification.executive_inbox_admission || classification.executiveInboxAdmission || {},
+    source:'durable_executive_inbox',
+    priorityLevel:priority,
+    sourceRefs:classification.source_refs || classification.sourceRefs || context.source_refs || []
+  };
+}
+function executiveInboxDraftConversationId(draft={}){
+  const source=draft.sourceContext||draft.source_context||{};
+  return String(
+    source.conversationId ||
+    source.conversation_id ||
+    source.sourceContext?.conversationId ||
+    source.source_context?.conversation_id ||
+    draft.conversationId ||
+    draft.conversation_id ||
+    ''
+  );
+}
+function executiveInboxNewestByConversation(rows=[]){
+  const byConversation=new Map();
+  safeArray(rows).forEach(row=>{
+    const context=row.context||row.contextJson||row.context_json||{};
+    const key=String(row.conversationId||row.unifiedConversationId||context.conversationId||row.threadId||row.emailThreadId||row.currentMessageId||row.id||'');
+    if(!key)return;
+    const previous=byConversation.get(key);
+    const rowTime=Date.parse(row.createdAt||row.created_at||'')||0;
+    const previousTime=Date.parse(previous?.createdAt||previous?.created_at||'')||0;
+    if(!previous||rowTime>=previousTime)byConversation.set(key,row);
+  });
+  return Array.from(byConversation.values());
+}
+async function localExecutiveInboxQueue(req,{limit=30,timeoutMs=3500}={}){
+  const lim=Math.max(1,Math.min(Number(limit)||30,200));
+  const offset=Math.max(0,Number(req.query?.offset)||0);
+  if(!valExecutiveInbox?.listHighSignalClassifications){
+    return {ok:true,source:'canonical_executive_inbox_cached',items:[],queue:[],emails:[],needsReply:[],needsAttention:[],waitingOnResponse:[],draftSuggestions:[],lowPriority:[],errors:['Saved Executive Inbox index is unavailable.'],summary:{total:0,buckets:{},source:'cached_unavailable'}};
+  }
+  const timed=await Promise.race([
+    Promise.all([
+      listDurableExecutiveInboxQueue({limit:lim,offset}),
+      valExecutiveInbox.listHighSignalClassifications({limit:Math.min(200,Math.max(lim*4,120))}),
+      valExecutiveInbox.reviewDrafts({limit:100}).catch(()=>({drafts:[]})),
+      durableOutboundRecipientEmails()
+    ]).then(([durableItems,results,draftResult,outboundRecipients])=>({durableItems,results,drafts:safeArray(draftResult?.drafts),outboundRecipients})),
+    new Promise((resolve)=>setTimeout(()=>resolve({timeout:true,durableItems:[],results:[],drafts:[],outboundRecipients:new Set(),error:'Saved Executive Inbox context is still indexing.'}),timeoutMs))
+  ]);
+  const suppressions=executiveInboxSuppressionRows();
+  const safeContacts=executiveInboxSafeContactRows();
+  const resolutions=executiveInboxResolutionRows();
+  const draftsByConversation=new Map();
+  safeArray(timed.drafts)
+    .filter(draft=>String(draft.status||'ready_for_review')==='ready_for_review'&&!executiveInboxDraftLooksGeneric(draft))
+    .forEach(draft=>{
+      const key=executiveInboxDraftConversationId(draft);
+      if(!key)return;
+      const previous=draftsByConversation.get(key);
+      const rowTime=Date.parse(draft.updatedAt||draft.updated_at||draft.createdAt||draft.created_at||'')||0;
+      const previousTime=Date.parse(previous?.updatedAt||previous?.updated_at||previous?.createdAt||previous?.created_at||'')||0;
+      if(!previous||rowTime>=previousTime)draftsByConversation.set(key,draft);
+    });
+  const durableItems=safeArray(timed.durableItems);
+  const indexedRows=executiveInboxNewestByConversation(timed.results)
+    .filter((row)=>{
+      const priority=String(row.priority_level || row.priorityLevel || 'unknown').toLowerCase();
+      return priority !== 'suppressed' && executiveInboxPriorityScore(priority) >= 3;
+    })
+    .map((row,index)=>{
+      const classification={
+        ...row,
+        priority_level:row.priorityLevel||row.priority_level,
+        why_now:row.whyNow||row.why_now,
+        conversation_state:row.conversationState||row.conversation_state,
+        source_refs:row.sourceRefs||row.source_refs
+      };
+      const context={
+        ...(row.context||row.contextJson||row.context_json||{}),
+        conversationId:row.conversationId||row.unifiedConversationId||'',
+        threadId:row.threadId||row.emailThreadId||'',
+        currentMessageId:row.currentMessageId||'',
+        source_refs:row.sourceRefs||row.source_refs||[]
+      };
+      return {email:executiveInboxCachedEmailFromClassification({classification,context},index),context};
+    });
+  const sourceRowsByConversation=new Map();
+  durableItems.forEach(email=>{
+    const key=String(email.conversationId||email.threadId||email.messageId||email.id||'');
+    if(key)sourceRowsByConversation.set(key,{email,context:{current_message:email,sender_metrics:email.senderMetrics||{}},durable:true});
+  });
+  indexedRows.forEach(row=>{
+    const email=row.email||{};
+    const key=String(email.conversationId||email.threadId||email.messageId||email.id||'');
+    if(key&&!sourceRowsByConversation.has(key))sourceRowsByConversation.set(key,{...row,durable:false});
+  });
+  const sourceRows=Array.from(sourceRowsByConversation.values());
+  const diagnostics={source:durableItems.length?'durable_plus_classification_index':'classification_fallback',indexed:sourceRows.length,deduplicated:0,admitted:0,outboxContacts:timed.outboundRecipients?.size||0,executiveContacts:safeContacts.length,filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},draftsAttached:0};
+  const rows=sourceRows
+    .map(({email,context})=>{
+      const priorAdmission=email.executiveInboxAdmission||{};
+      const admission=decideExecutiveInboxAdmission({
+        email,
+        context,
+        suppressions,
+        safeContacts,
+        hasSentHistory:priorAdmission.hasSentHistory === true || (
+          timed.outboundRecipients?.has(normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'')) ||
+          cachedSentHistory(context,email)
+        ),
+        waitingOnOther:email.queueKind==='waiting_for_response',
+        clearAsk:priorAdmission.clearAsk ?? executiveInboxInboundAskText(email),
+        resolved:executiveInboxResolved(email,resolutions)
+      });
+      diagnostics.deduplicated+=1;
+      if(!admission.admitted){
+        const key={
+          resolved_thread:'resolved',
+          manual_not_executive_contact:'suppressed',
+          unsubscribe_or_list_mail:'unsubscribeOrListMail',
+          calendar_notice:'calendarNotice',
+          no_outbox_history:'noOutboxHistory',
+          no_executive_action:'noExecutiveAction'
+        }[admission.rule];
+        if(key)diagnostics.filtered[key]+=1;
+        return null;
+      }
+      const preparedDraft=email.queueKind==='waiting_for_response'
+        ? null
+        : (email.preparedDraft || draftsByConversation.get(email.conversationId) || draftsByConversation.get(email.threadId));
+      if(preparedDraft)diagnostics.draftsAttached+=1;
+      diagnostics.admitted+=1;
+      return {...email,preparedDraft,executiveInboxAdmission:admission,reason:admission.reason};
+    })
+    .filter(Boolean);
+  const items=rows.filter((item)=>item.messageId || item.threadId || item.conversationId || item.subject);
+  const durableConversationIds=new Set(durableItems.map(item=>String(item.conversationId||item.threadId||item.messageId||item.id||'')));
+  const historicalItems=items.filter(item=>!durableConversationIds.has(String(item.conversationId||item.threadId||item.messageId||item.id||'')));
+  if(historicalItems.length)await mergeDurableExecutiveInboxQueue(historicalItems);
+  const buckets=items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{});
+  const total=items.length;
+  return {
+    ok:true,
+    source:'canonical_executive_inbox_cached',
+    cached:true,
+    staleAllowed:true,
+    message:items.length?'Showing saved Executive Inbox conversations. Use Scan to refresh Gmail/Outlook.':'No saved conversations currently cross the Executive Inbox gate. Use Scan to refresh Gmail/Outlook.',
+    items,
+    queue:items,
+    emails:items,
+    needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
+    needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
+    waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
+    draftSuggestions:items.filter(item=>item.preparedDraft),
+    lowPriority:[],
+    errors:timed.timeout?[timed.error]:[],
+    providers:{gmail:{status:'saved_context',needsAuth:false,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt},outlook:{status:'saved_context',needsAuth:false}},
+    pagination:{offset,limit:lim,total,hasMore:offset+items.length<total},
+    summary:{total,buckets,source:durableItems.length?'durable_plus_classification_index':'classification_fallback',cacheOnly:true,activeWindow:'Saved Executive Inbox queue, rechecked through current rules.',executiveInboxDiagnostics:diagnostics},
+    diagnostics
+  };
+}
+async function canonicalExecutiveInboxQueue(req,{force=false,preferCached=!force}={}){
+  if(preferCached){
+    return localExecutiveInboxQueue(req,{limit:req.query?.limit||30});
+  }
+  const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150,incremental:'1'}};
   const data=await emailIntelligencePayload(queryReq,{force});
   if(data.ok===false)return {...data,items:[],queue:[]};
   const suppressions=executiveInboxSuppressionRows();
   const safeContacts=executiveInboxSafeContactRows();
   const resolutions=executiveInboxResolutionRows();
-  const profilesPromise=listRelationshipProfiles({limit:800}).catch(()=>[]);
-  const sentCache=new Map();
+  const [profiles,outboundRecipients]=await Promise.all([
+    listRelationshipProfiles({limit:800}).catch(()=>[]),
+    durableOutboundRecipientEmails().catch(()=>new Set())
+  ]);
+  const profilesPromise=Promise.resolve(profiles);
   const rows=sortEmailsNewestFirst(data.emails||[]);
   const byThread=new Map();
   rows.forEach(email=>{
@@ -9676,7 +10815,9 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
     fetchedMessages:rows.length,
     uniqueThreads:byThread.size,
     admitted:0,
-    filtered:{resolved:0,suppressed:0,oneSided:0,noRelationshipOrSentHistory:0,noAskOrKnownContact:0},
+    outboxContacts:outboundRecipients.size,
+    executiveContacts:safeContacts.length,
+    filtered:{resolved:0,suppressed:0,unsubscribeOrListMail:0,calendarNotice:0,noOutboxHistory:0,noExecutiveAction:0},
     providerCounts:{
       gmailRecent:data.providers?.gmail?.recentInboxCount||0,
       gmailUnread:data.providers?.gmail?.unreadCount||0,
@@ -9695,23 +10836,38 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
     const safeListed=executiveInboxSafeListed(email,safeContacts);
     const known=safeListed || await executiveInboxKnownContact(email,profilesPromise);
     const metrics=email.senderMetrics||{};
-    const hasSent=Number(metrics.outboundToSenderCount||0)>0 || await executiveInboxHasAnySentMailTo(senderEmail,sentCache);
-    const oneSided=Number(metrics.inboundFromSenderCount||0)>=3&&!hasSent&&!known;
-    if(oneSided){diagnostics.filtered.oneSided+=1;return null;}
+    const hasSent=Number(metrics.outboundToSenderCount||0)>0 || outboundRecipients.has(senderEmail);
     const sentByOwner=emailWasSentByOwner(email);
     const waiting=sentByOwner&&executiveInboxSentRequestText(email);
     const ask=executiveInboxInboundAskText(email);
-    if(!waiting&&!known&&!hasSent){diagnostics.filtered.noRelationshipOrSentHistory+=1;return null;}
-    if(!waiting&&!known&&!ask){diagnostics.filtered.noAskOrKnownContact+=1;return null;}
+    const admission=decideExecutiveInboxAdmission({
+      email,
+      suppressions,
+      safeContacts,
+      hasSentHistory:hasSent,
+      waitingOnOther:waiting,
+      clearAsk:ask,
+      resolved:false
+    });
+    if(!admission.admitted){
+      const key={
+        unsubscribe_or_list_mail:'unsubscribeOrListMail',
+        calendar_notice:'calendarNotice',
+        no_outbox_history:'noOutboxHistory',
+        no_executive_action:'noExecutiveAction'
+      }[admission.rule];
+      if(key)diagnostics.filtered[key]+=1;
+      return null;
+    }
     const kind=waiting?'waiting_for_response':'needs_judgment';
-    const reason=executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
+    const reason=admission.reason || executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
     const status=waiting?'waiting_for_response':'ready_for_review';
-    const preparedDraft=email.preparedDraft || (!waiting ? await prepareEmailDraftIfNeeded({
+    const preparedDraft=!waiting ? await prepareSourceBackedExecutiveInboxDraft({
       ...email,
       classification:'needs_reply',
       reason,
       recommendedAction:'Draft a reply for approval.'
-    },data.rules||[]).catch(()=>null) : null);
+    },data.rules||[]).catch(()=>null) : null;
     return {
       ...email,
       preparedDraft,
@@ -9722,30 +10878,26 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
       reason,
       recommendedAction:waiting?'Waiting for response':'Review and respond if needed',
       executiveInboxAdmission:{
+        ...admission,
         kind,
         knownContact:known,
-        safeListed,
-        hasSentHistory:hasSent,
-        clearAsk:ask,
-        manualResolutionRequired:true,
-        reason
+        manualResolutionRequired:true
       }
     };
   });
   const items=candidates.filter(Boolean);
   diagnostics.admitted=items.length;
+  await mergeDurableExecutiveInboxQueue(items);
+  const savedQueue=await localExecutiveInboxQueue(queryReq,{limit:Math.min(200,Number(req.query?.limit)||150)});
   return {
     ...data,
+    ...savedQueue,
     source:'canonical_executive_inbox',
-    items,
-    queue:items,
-    emails:items,
-    needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
-    needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
-    waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
+    cached:false,
+    refreshed:true,
     draftSuggestions:[],
     lowPriority:[],
-    summary:{...(data.summary||{}),total:items.length,buckets:items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{}),executiveInboxDiagnostics:diagnostics},
+    summary:{...(data.summary||{}),...(savedQueue.summary||{}),executiveInboxDiagnostics:diagnostics},
     diagnostics
   };
 }
@@ -9755,6 +10907,26 @@ app.get('/api/val/executive-inbox/queue',async(req,res)=>{
     await auditLog({req,action:'executive_inbox_queue_loaded',resourceType:'executive_inbox',metadata:{count:result.items?.length||0,source:'canonical'},success:result.ok!==false}).catch(()=>{});
     res.status(result.ok===false?400:200).json(result);
   }catch(e){res.status(500).json({ok:false,error:e.message,items:[],queue:[]});}
+});
+app.get('/api/val/executive-inbox/archive',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(200,Number(req.query.limit)||60));
+    const offset=Math.max(0,Number(req.query.offset)||0);
+    const resolutions=executiveInboxResolutionRows();
+    const [inactiveRows,legacyActiveRows]=await Promise.all([
+      listDurableExecutiveInboxQueue({limit:200,offset:0,active:false}),
+      listDurableExecutiveInboxQueue({limit:200,offset:0,active:true})
+    ]);
+    const byConversation=new Map();
+    inactiveRows.concat(legacyActiveRows).filter(item=>executiveInboxResolved(item,resolutions)||item.status==='resolved'||item.archive?.threadKey).forEach(item=>{
+      const key=item.conversationId||item.threadId||item.messageId||item.id;
+      if(key&&!byConversation.has(key))byConversation.set(key,item);
+    });
+    const archived=Array.from(byConversation.values());
+    const items=archived.slice(offset,offset+limit);
+    const total=archived.length;
+    res.json({ok:true,items,queue:items,emails:items,pagination:{offset,limit,total,hasMore:offset+items.length<total}});
+  }catch(e){res.status(500).json({ok:false,error:e.message,items:[]});}
 });
 app.get('/api/val/executive-inbox/thread',async(req,res)=>{
   try{
@@ -9775,8 +10947,10 @@ app.get('/api/val/executive-inbox/attachment',async(req,res)=>{
     const attachmentId=String(req.query.attachmentId||'').trim();
     const filename=String(req.query.filename||'email-attachment').trim().slice(0,220)||'email-attachment';
     const mimeType=String(req.query.mimeType||'application/octet-stream').trim()||'application/octet-stream';
+    const googleProvider=String(req.query.googleProvider||'google').trim();
     if(!messageId||!attachmentId)return res.status(400).json({ok:false,error:'Message id and attachment id are required.',noExternalAction:true});
-    const payload=await gmailFetchJson(
+    const payload=await gmailFetchJsonForProvider(
+      googleProvider,
       `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {},
       'Gmail email attachment'
@@ -9790,7 +10964,7 @@ app.get('/api/val/executive-inbox/attachment',async(req,res)=>{
       text='';
     }
     const previewable=/^(image\/|application\/pdf$|text\/)/i.test(mimeType) && buffer.length <= 8*1024*1024;
-    await auditLog({req,action:'executive_inbox_attachment_viewed',resourceType:'executive_inbox_attachment',resourceId:[messageId,attachmentId].join(':'),metadata:{messageId,attachmentId,filename,mimeType,size:buffer.length},success:true}).catch(()=>{});
+    await auditLog({req,action:'executive_inbox_attachment_viewed',resourceType:'executive_inbox_attachment',resourceId:[googleProvider,messageId,attachmentId].join(':'),metadata:{googleProvider,messageId,attachmentId,filename,mimeType,size:buffer.length},success:true}).catch(()=>{});
     res.json({
       ok:true,
       filename,
@@ -9817,8 +10991,9 @@ app.post('/api/val/executive-inbox/safe-contact',async(req,res)=>{
     if(existing)Object.assign(existing,row);
     else store.executiveInboxSafeContacts.unshift(row);
     saveValStore(store);
+    const admitted=await admitSafeListedExecutiveInboxMessages(email);
     await auditLog({req,action:'executive_inbox_safe_contact_marked',resourceType:'executive_inbox_safe_contact',resourceId:email,metadata:{email,name},success:true}).catch(()=>{});
-    res.json({ok:true,safeContact:existing||row});
+    res.json({ok:true,safeContact:existing||row,executiveContactCount:executiveInboxSafeContactRows().length,admittedCount:admitted.length,items:admitted});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/executive-inbox/link-context',async(req,res)=>{
@@ -9879,6 +11054,7 @@ app.post('/api/val/executive-inbox/resolve-thread',async(req,res)=>{
     if(existing)Object.assign(existing,row);
     else store.executiveInboxResolutions.unshift(row);
     saveValStore(store);
+    await archiveDurableExecutiveInboxThread({provider,threadId,messageId,resolution:existing||row});
     await auditLog({req,action:'executive_inbox_thread_resolved',resourceType:'executive_inbox_thread',resourceId:threadKey,metadata:{threadId,messageId},success:true}).catch(()=>{});
     res.json({ok:true,resolution:existing||row});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -10089,7 +11265,13 @@ app.get('/guide',(req,res)=>{
     res.type('html').send(guideHtml(markdown));
   });
 });
-app.use('/data',(_req,res)=>res.sendStatus(404));
+app.use((req,res,next)=>{
+  const sourcePath=decodeURIComponent(String(req.path||'')).replace(/^\/+/,'');
+  const privateRootFile=/^(?:server\.js|package(?:-lock)?\.json|railway\.json|Procfile|\.env(?:\..*)?)$/i.test(sourcePath);
+  const privateDirectory=/^(?:services|test|tests|docs|data|scripts|node_modules|\.git)(?:\/|$)/i.test(sourcePath);
+  if(privateRootFile||privateDirectory)return res.status(404).type('text').send('Not found');
+  next();
+});
 app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'hearth-prototype.html'));});
 app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
@@ -10143,6 +11325,37 @@ let googleTokens = {}; // hot cache; durable copy lives in Postgres scoped by te
 let googleTokensLoaded = false;
 let lastGoogleAuthError = null;
 let gmailSyncStatus = {lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',lastFetchedCount:0,lastAnalyzedCount:0,lastQuery:''};
+async function sourceSyncCheckpoint(source=''){
+  const key=String(source||'').trim().toLowerCase();
+  if(!key)return null;
+  if(pgPool){
+    const result=await dbQuery('select source,last_successful_sync_at,metadata_json,updated_at from val_source_sync_checkpoints where tenant_id=$1 and user_id=$2 and source=$3 limit 1',[tenantId(),currentUserId(),key]);
+    const row=result?.rows?.[0];
+    return row?{source:row.source,lastSuccessfulSyncAt:row.last_successful_sync_at?.toISOString?.()||row.last_successful_sync_at||'',metadata:row.metadata_json||{},updatedAt:row.updated_at?.toISOString?.()||row.updated_at||''}:null;
+  }
+  return safeArray(valStore().sourceSyncCheckpoints).find(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.source===key)||null;
+}
+async function saveSourceSyncCheckpoint(source='',{lastSuccessfulSyncAt=new Date().toISOString(),metadata={}}={}){
+  const key=String(source||'').trim().toLowerCase();
+  if(!key)return null;
+  const row={tenantId:tenantId(),userId:currentUserId(),source:key,lastSuccessfulSyncAt,metadata,updatedAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery(`
+      insert into val_source_sync_checkpoints (tenant_id,user_id,source,last_successful_sync_at,metadata_json,updated_at)
+      values ($1,$2,$3,$4,$5,now())
+      on conflict (tenant_id,user_id,source)
+      do update set last_successful_sync_at=excluded.last_successful_sync_at,metadata_json=excluded.metadata_json,updated_at=now()
+    `,[row.tenantId,row.userId,row.source,row.lastSuccessfulSyncAt,JSON.stringify(metadata||{})]);
+    return row;
+  }
+  const store=valStore();
+  store.sourceSyncCheckpoints=safeArray(store.sourceSyncCheckpoints);
+  const index=store.sourceSyncCheckpoints.findIndex(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.source===key);
+  if(index>=0)store.sourceSyncCheckpoints[index]=row;
+  else store.sourceSyncCheckpoints.push(row);
+  saveValStore(store);
+  return row;
+}
 
 function validGoogleClientId(id=GOOGLE_CLIENT_ID){
   return /^\d+[-\w]*\.apps\.googleusercontent\.com$/.test(String(id||'').trim());
@@ -10216,6 +11429,27 @@ async function loadOAuthTokens(provider){
   }
   const tokens=valStore().oauthTokens||{};
   return tokens[`${tenant}:${userId}:${provider}`] ? decryptOAuthTokens(tokens[`${tenant}:${userId}:${provider}`]) : null;
+}
+
+async function listOAuthTokenRecords(providerPrefix=''){
+  await valDbReady;
+  const userId=currentUserId();
+  const tenant=tenantId();
+  const prefix=String(providerPrefix||'').trim();
+  if(pgPool){
+    const r=await dbQuery(
+      `select provider,tokens,updated_at from val_oauth_tokens
+       where tenant_id=$1 and user_id=$2 and (provider=$3 or provider like $4)
+       order by case when provider=$3 then 0 else 1 end, updated_at asc`,
+      [tenant,userId,prefix,`${prefix}:%`]
+    );
+    return (r.rows||[]).map(row=>({provider:row.provider,tokens:decryptOAuthTokens(row.tokens||{}),updatedAt:row.updated_at?.toISOString?.()||row.updated_at||''}));
+  }
+  const tokens=valStore().oauthTokens||{};
+  return Object.entries(tokens)
+    .filter(([key])=>key===`${tenant}:${userId}:${prefix}`||key.startsWith(`${tenant}:${userId}:${prefix}:`))
+    .map(([key,value])=>({provider:key.slice(`${tenant}:${userId}:`.length),tokens:decryptOAuthTokens(value),updatedAt:value.updated_at||''}))
+    .sort((a,b)=>a.provider===prefix?-1:b.provider===prefix?1:String(a.updatedAt).localeCompare(String(b.updatedAt)));
 }
 
 const KRISP_OAUTH_CLIENT_ID_ENV_NAMES = ['KRISP_OAUTH_CLIENT_ID','KRISP_CLIENT_ID'];
@@ -10408,6 +11642,102 @@ async function ensureGoogleTokensLoaded(){
   googleTokensLoaded = true;
 }
 
+function googleAccountId(email=''){
+  return crypto.createHash('sha256').update(String(email||'').trim().toLowerCase()).digest('hex').slice(0,16);
+}
+function googleProviderForEmail(email=''){
+  return `google:${googleAccountId(email)}`;
+}
+function googleOAuthState(payload={}){
+  const body=Buffer.from(JSON.stringify({...payload,tenantId:tenantId(),userId:currentUserId(),issuedAt:Date.now()})).toString('base64url');
+  const signature=crypto.createHmac('sha256',GOOGLE_CLIENT_SECRET||'val-google-oauth').update(body).digest('base64url');
+  return `${body}.${signature}`;
+}
+function parseGoogleOAuthState(value=''){
+  try{
+    const [body,signature]=String(value||'').split('.');
+    const expected=crypto.createHmac('sha256',GOOGLE_CLIENT_SECRET||'val-google-oauth').update(body).digest('base64url');
+    if(!body||!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))return null;
+    const payload=JSON.parse(Buffer.from(body,'base64url').toString('utf8'));
+    if(payload.tenantId!==tenantId()||payload.userId!==currentUserId()||Date.now()-Number(payload.issuedAt||0)>15*60*1000)return null;
+    return payload;
+  }catch(error){return null;}
+}
+async function googleProfile(accessToken=''){
+  if(!accessToken)return {};
+  const response=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:`Bearer ${accessToken}`}});
+  const data=await readJsonResponse(response);
+  if(!response.ok)throw new Error(data?.error?.message||`Google profile lookup failed (${response.status})`);
+  return {email:String(data.emailAddress||'').trim().toLowerCase(),historyId:String(data.historyId||'')};
+}
+async function listGoogleAccounts({hydrate=false}={}){
+  let records=await listOAuthTokenRecords('google');
+  if(hydrate){
+    for(const record of records){
+      if(record.tokens.account_email)continue;
+      try{
+        const profile=await googleProfile(await getGoogleTokenForProvider(record.provider));
+        if(profile.email){
+          record.tokens={...record.tokens,account_email:profile.email,account_label:profile.email,account_id:googleAccountId(profile.email),is_primary:record.provider==='google',gmail_history_id:profile.historyId};
+          await saveOAuthTokens(record.provider,record.tokens);
+        }
+      }catch(error){}
+    }
+    records=await listOAuthTokenRecords('google');
+  }
+  return records.map((record,index)=>({
+    provider:record.provider,
+    accountId:record.tokens.account_id||googleAccountId(record.tokens.account_email||record.provider),
+    email:record.tokens.account_email||'',
+    label:record.tokens.account_label||record.tokens.account_email||`Google account ${index+1}`,
+    primary:record.provider==='google',
+    connected:!!(record.tokens.access_token||record.tokens.refresh_token),
+    scopes:googleScopeList(record.tokens),
+    missingGmailScopes:missingGoogleScopes(REQUIRED_GMAIL_SCOPES,record.tokens),
+    updatedAt:record.updatedAt||''
+  }));
+}
+
+async function getGoogleTokenForProvider(provider='google'){
+  const key=String(provider||'google');
+  if(key==='google')return getGoogleToken();
+  let tokens=await loadOAuthTokens(key);
+  if(!tokens)return null;
+  const expiresAt=(tokens.issued_at||0)+(tokens.expires_in||3600)*1000-60000;
+  if(tokens.access_token&&Date.now()<expiresAt)return tokens.access_token;
+  if(!tokens.refresh_token)return null;
+  const response=await fetch('https://oauth2.googleapis.com/token',{
+    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,refresh_token:tokens.refresh_token,grant_type:'refresh_token'})
+  });
+  const fresh=await readJsonResponse(response);
+  if(!response.ok||fresh.error)throw new Error(fresh.error_description||fresh.error||`Google token refresh failed (${response.status})`);
+  tokens={...tokens,...fresh,refresh_token:fresh.refresh_token||tokens.refresh_token,issued_at:Date.now()};
+  await saveOAuthTokens(key,tokens);
+  return tokens.access_token||null;
+}
+
+async function gmailFetchJsonForProvider(provider='google',url,options={},label='Gmail request'){
+  let token=await getGoogleTokenForProvider(provider);
+  if(!token)throw new Error('Google auth required');
+  let response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+  let data=await readJsonResponse(response);
+  if(response.status===401){
+    const saved=await loadOAuthTokens(provider);
+    if(saved?.refresh_token){
+      await saveOAuthTokens(provider,{...saved,access_token:'',issued_at:0});
+      if(provider==='google'){googleTokens={...googleTokens,access_token:'',issued_at:0};}
+      token=await getGoogleTokenForProvider(provider);
+      if(token){
+        response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+        data=await readJsonResponse(response);
+      }
+    }
+  }
+  if(!response.ok)throw new Error(data?.error?.message||`${label} failed (${response.status})`);
+  return data;
+}
+
 function googleScopeList(tokens=googleTokens){
   return String(tokens?.scope||'').split(/\s+/).map(s=>s.trim()).filter(Boolean);
 }
@@ -10529,8 +11859,13 @@ app.get('/auth/google', (req, res) => {
     lastGoogleAuthError=problems.join('; ');
     return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth needs configuration</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(redirectUri)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(requestBaseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
   }
+  const mode=String(req.query.mode||'primary')==='add'?'add':'primary';
+  const requestedProvider=String(req.query.provider||'google');
+  const provider=requestedProvider==='google'||requestedProvider.startsWith('google:')?requestedProvider:'google';
+  const state=googleOAuthState({mode,provider});
   const scopes = GOOGLE_SCOPES.join(' ');
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
+  const prompt=mode==='add'?'select_account consent':'consent';
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=${encodeURIComponent(prompt)}&include_granted_scopes=true&state=${encodeURIComponent(state)}`;
   res.redirect(url);
 });
 
@@ -10625,7 +11960,9 @@ app.get('/auth/callback', async (req, res) => {
     const problems=googleOAuthConfigProblems(req);
     if(problems.length) throw new Error(problems.join('; '));
     const redirectUri=googleRedirectUri(req);
-    const existingTokens = await loadOAuthTokens('google') || googleTokens || {};
+    const parsedState=parseGoogleOAuthState(req.query.state||'');
+    if(req.query.state&&!parsedState)throw new Error('This Google connection request expired. Return to VAL and start it again.');
+    const oauthState=parsedState||{mode:'primary',provider:'google'};
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {'Content-Type':'application/x-www-form-urlencoded'},
@@ -10638,18 +11975,33 @@ app.get('/auth/callback', async (req, res) => {
     });
     const exchangedTokens = await r.json();
     if(exchangedTokens.error) throw new Error(exchangedTokens.error_description || exchangedTokens.error);
-    googleTokens = {
+    const profile=await googleProfile(exchangedTokens.access_token);
+    if(!profile.email)throw new Error('Google connected, but Gmail did not identify the account address.');
+    const existingAccounts=await listGoogleAccounts();
+    const matching=existingAccounts.find(account=>account.email===profile.email);
+    const targetProvider=matching?.provider||(oauthState.mode==='add'?googleProviderForEmail(profile.email):oauthState.provider||'google');
+    const existingTokens = await loadOAuthTokens(targetProvider) || (targetProvider==='google'?googleTokens:{}) || {};
+    const nextTokens = {
       ...existingTokens,
       ...exchangedTokens,
-      refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || process.env.GOOGLE_REFRESH_TOKEN
+      refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || (targetProvider==='google'?process.env.GOOGLE_REFRESH_TOKEN:'') || '',
+      account_email:profile.email,
+      account_label:profile.email,
+      account_id:googleAccountId(profile.email),
+      is_primary:targetProvider==='google',
+      gmail_history_id:profile.historyId
     };
-    googleTokens.issued_at = Date.now();
-    googleTokensLoaded = true;
+    nextTokens.issued_at = Date.now();
+    if(targetProvider==='google'){
+      googleTokens=nextTokens;
+      googleTokensLoaded = true;
+    }
     lastGoogleAuthError = null;
-    await saveOAuthTokens('google',googleTokens);
-    console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token, 'scope count:', googleScopeList().length);
-    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'google',metadata:{scopes:googleScopeList(),hasRefreshToken:!!googleTokens.refresh_token},success:true}).catch(()=>{});
-    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Google connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>Google Calendar, Gmail, Drive, and Docs are connected to VAL.</h2><p>Returning to VAL now.</p><p><a href="/">Return to VAL</a></p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'google'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
+    await saveOAuthTokens(targetProvider,nextTokens);
+    console.log('Google account stored:',profile.email,'provider:',targetProvider,'refresh_token present:',!!nextTokens.refresh_token);
+    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:targetProvider,metadata:{email:profile.email,primary:targetProvider==='google',scopes:googleScopeList(nextTokens),hasRefreshToken:!!nextTokens.refresh_token},success:true}).catch(()=>{});
+    const connectedCopy=targetProvider==='google'?'Google Calendar, Gmail, Drive, and Docs are connected to VAL.':`${profile.email} is connected as an additional Gmail inbox.`;
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Google connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>${escapeHtml(connectedCopy)}</h2><p>Returning to VAL now.</p><p><a href="/">Return to VAL</a></p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'google'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
   }
@@ -10874,15 +12226,21 @@ async function fetchOutlookCalendarEvents(start,end,maxResults=75){
   }));
 }
 
-async function fetchGoogleCalendarEvents(start,end,maxResults=50){
-  const token = await getGoogleToken();
-  if(!token) throw new Error('Google auth required');
+async function fetchGoogleCalendarEventsForAccount({account,start,end,maxResults=50}={}){
+  const googleProvider=account?.provider||'google';
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  const scopes=googleScopeList(accountTokens);
+  const calendarReadable=scopes.includes('https://www.googleapis.com/auth/calendar.readonly')||scopes.includes('https://www.googleapis.com/auth/calendar.events');
+  if(!calendarReadable)throw new Error(`Reconnect ${account?.email||'Google'} to grant Calendar permission.`);
+  const token=await getGoogleTokenForProvider(googleProvider);
+  if(!token)throw new Error(`${account?.email||'Google'} needs to reconnect.`);
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=${maxResults}&maxAttendees=50`;
   const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
   const d = await r.json();
   if(d.error) throw new Error(d.error.message || 'Google calendar error');
   return (d.items||[]).map(e=>({
-    id: e.id,
+    id:`${googleProvider}:${e.id}`,
+    providerEventId:e.id,
     summary: e.summary||'(No title)',
     title: e.summary||'(No title)',
     startTime: e.start?.dateTime||e.start?.date,
@@ -10893,10 +12251,49 @@ async function fetchGoogleCalendarEvents(start,end,maxResults=50){
     organizer:e.organizer?{name:e.organizer.displayName||'',email:e.organizer.email||''}:{},
     status: e.status,
     source: 'google',
-    calendarName: 'Google Calendar',
+    calendarName:account?.email?`${account.email} Calendar`:'Google Calendar',
+    googleProvider,
+    accountId:account?.accountId||'',
+    accountEmail:account?.email||'',
+    sourceAccount:account?.email||account?.label||'Google',
     meetingLink:e.hangoutLink||(e.conferenceData?.entryPoints||[]).find(p=>p.entryPointType==='video')?.uri||'',
     raw:e
   }));
+}
+
+function googleCalendarEventDedupeKey(event={}){
+  const raw=event.raw||{};
+  if(raw.iCalUID)return `ical:${String(raw.iCalUID).toLowerCase()}`;
+  return [event.title||event.summary||'',event.startTime||'',event.endTime||'',event.organizer?.email||'']
+    .map(value=>String(value||'').trim().toLowerCase())
+    .join('|');
+}
+
+async function fetchGoogleCalendarEvents(start,end,maxResults=50){
+  const accounts=(await listGoogleAccounts()).filter(account=>account.connected);
+  if(!accounts.length)throw new Error('Google auth required');
+  const results=await Promise.allSettled(accounts.map(account=>fetchGoogleCalendarEventsForAccount({account,start,end,maxResults})));
+  const events=[];
+  const errors=[];
+  results.forEach((result,index)=>{
+    if(result.status==='fulfilled')events.push(...result.value);
+    else errors.push(`${accounts[index]?.email||'Google'}: ${result.reason?.message||result.reason}`);
+  });
+  if(!events.length&&errors.length)throw new Error(errors.join(' | '));
+  const merged=new Map();
+  events.forEach(event=>{
+    const key=googleCalendarEventDedupeKey(event);
+    const existing=merged.get(key);
+    if(!existing){
+      merged.set(key,{...event,sourceAccounts:[event.sourceAccount].filter(Boolean)});
+      return;
+    }
+    const sourceAccounts=Array.from(new Set([...(existing.sourceAccounts||[]),event.sourceAccount].filter(Boolean)));
+    merged.set(key,{...existing,sourceAccounts});
+  });
+  return Array.from(merged.values())
+    .sort((a,b)=>new Date(a.startTime||0)-new Date(b.startTime||0))
+    .slice(0,Math.min(Number(maxResults)||50,2500));
 }
 
 function defaultTaskCalendarSettings(){
@@ -11488,10 +12885,12 @@ function executiveInboxDraftLooksGeneric(draft={}){
   const body=String(draft.body||draft.writerOutput?.body||draft.sourceContext?.writerOutput?.body||'').replace(/\s+/g,' ').trim().toLowerCase();
   if(!body)return false;
   const hasOldOpening=/thank you for your note[. ]+i wanted to respond thoughtfully/i.test(body);
+  const hasPlaceholderOpening=/thank you for sending this over[. ]+i saw your note about/i.test(body);
+  const defersInsteadOfDrafting=/i(?:’|')ll review the details and come back with the clean next step/i.test(body);
   const exposesRules=/writing rules val used/i.test(body);
   const onlyClassifierReason=/saw this needs attention because asks for a response or decision/i.test(body);
   const onlyClassifierAction=/here is what i recommend as the next step[.: ]+draft a reply for approval/i.test(body);
-  return exposesRules || hasOldOpening || onlyClassifierReason || onlyClassifierAction;
+  return exposesRules || hasOldOpening || hasPlaceholderOpening || defersInsteadOfDrafting || onlyClassifierReason || onlyClassifierAction;
 }
 function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
@@ -11621,6 +13020,38 @@ async function prepareEmailDraftIfNeeded(email,rules=[]){
     status:'ready_for_review',
     sourceContext
   });
+}
+async function prepareSourceBackedExecutiveInboxDraft(email,rules=[]){
+  if(!emailShouldPrepareDraft(email))return null;
+  const existing=await existingExecutiveInboxDraftForEmail(email);
+  if(existing&&String(existing.body||'').trim()&&!executiveInboxDraftLooksGeneric(existing))return existing;
+  if(!valExecutiveInbox?.generateDraft)return null;
+  const writingRules=executiveInboxWritingRuleText(rules);
+  const conversationId=email.conversationId||email.threadId||email.messageId||'';
+  const result=await valExecutiveInbox.generateDraft({
+    context:{
+      conversationId,
+      threadId:email.threadId||'',
+      current_message:email,
+      latest_inbound:email,
+      sender_metrics:email.senderMetrics||{}
+    },
+    classification:{
+      conversation_state:'active',
+      waiting_on_user:true,
+      waiting_on_other:false,
+      priority_level:'high',
+      executive_meaning:email.reason||email.recommendedAction||'This thread needs executive judgment.',
+      why_now:email.reason||email.recommendedAction||'This thread needs executive judgment.',
+      approval_policy:'approval_required',
+      from:email.from||{}
+    },
+    writingRules
+  });
+  const draft=result?.draft||null;
+  return draft&&String(draft.body||'').trim()&&!executiveInboxDraftLooksGeneric(draft)&&String(draft.status||result.status||'ready_for_review')==='ready_for_review'
+    ? draft
+    : null;
 }
 function emailEvidenceStatus(email){
   const classification=String(email.classification||'').toLowerCase();
@@ -11827,7 +13258,9 @@ function sourceProcessingDocumentsFromEmail(email={}){
         sourceType:`${email.provider||'email'}_attachment`,
         sourceId:[email.messageId||email.id||email.threadId||'email',attachment.id||attachment.attachmentId||filename].join(':'),
         sourceUrl:email.webLink||'',
-        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`
+        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`,
+        googleProvider:email.googleProvider||email.google_provider||'google',
+        accountEmail:email.accountEmail||email.account_email||''
       };
     });
   const driveDocuments=sourceProcessingDriveDocumentsFromEmail(email)
@@ -12102,51 +13535,38 @@ async function recentEmailActions(userId,limit=200){
   }
   return (valStore().emailActionLog||[]).filter(a=>a.tenantId===tenantId()&&a.userId===userId).slice(-limit).reverse();
 }
-async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
-  await ensureGoogleTokensLoaded();
-  const token=await getGoogleToken();
-  if(token) await hydrateGoogleTokenScopes(token);
-  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
-  if(missing.length) return {emails:[],needsAuth:true,missingScopes:missing,error:'Reconnect Google to grant Gmail read permission.',provider:'gmail',userId,tenantId:tenantIdValue};
-  if(!token)return {emails:[],needsAuth:true,missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),error:lastGoogleAuthError||'Google auth required',provider:'gmail',userId,tenantId:tenantIdValue};
+async function fetchGmailMessagesForAccount({account,userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
+  const googleProvider=account?.provider||'google';
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly'],accountTokens);
+  const token=await getGoogleTokenForProvider(googleProvider);
+  if(missing.length)return {emails:[],needsAuth:true,missingScopes:missing,error:`Reconnect ${account?.email||'Google'} to grant Gmail read permission.`,provider:'gmail',googleProvider,userId,tenantId:tenantIdValue};
+  if(!token)return {emails:[],needsAuth:true,missingScopes:missing,error:`${account?.email||'Google'} needs to reconnect.`,provider:'gmail',googleProvider,userId,tenantId:tenantIdValue};
   const limit=Math.min(Number(maxResults)||20,500);
   const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${encodeURIComponent(limit)}`;
   let d;
-  try{d=await gmailFetchJson(searchUrl,{},'Gmail message search');}
-  catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};}
+  try{d=await gmailFetchJsonForProvider(googleProvider,searchUrl,{},'Gmail message search');}
+  catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',googleProvider,missingScopes:missing,query,userId,tenantId:tenantIdValue};}
   const messages=d.messages||[];
   const details=await mapWithConcurrency(messages.slice(0,limit),5,async m=>{
     const format=includeBody?'full':'full';
     try{
-      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
-      return normalizeGmailMessage(md);
+      const md=await gmailFetchJsonForProvider(googleProvider,`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
+      return {...normalizeGmailMessage(md),googleProvider,accountId:account?.accountId||'',accountEmail:account?.email||'',sourceAccount:account?.email||account?.label||'Google'};
     }catch(e){return null;}
   });
-  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
+  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',googleProvider,accountEmail:account?.email||'',missingScopes:missing,query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
+}
+async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false,googleProvider=''}={}){
+  const accounts=(await listGoogleAccounts()).filter(account=>account.connected&&(!googleProvider||account.provider===googleProvider));
+  if(!accounts.length)return {emails:[],needsAuth:true,missingScopes:REQUIRED_GMAIL_SCOPES,error:'Google auth required',provider:'gmail',userId,tenantId:tenantIdValue};
+  const results=await Promise.all(accounts.map(account=>fetchGmailMessagesForAccount({account,userId,tenantId:tenantIdValue,query,maxResults,includeBody})));
+  const emails=sortEmailsNewestFirst(results.flatMap(result=>result.emails||[])).slice(0,Math.min(Number(maxResults)||20,500));
+  const errors=results.filter(result=>result.error).map(result=>`${result.accountEmail||'Google'}: ${result.error}`);
+  return {emails,needsAuth:results.every(result=>result.needsAuth),provider:'gmail',accounts:results.map(result=>({email:result.accountEmail||'',provider:result.googleProvider||'',count:(result.emails||[]).length,error:result.error||''})),errors,query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:emails.length};
 }
 async function fetchGmailSentNetworkMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId()}={}){
-  await ensureGoogleTokensLoaded();
-  const token=await getGoogleToken();
-  if(token)await hydrateGoogleTokenScopes(token);
-  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
-  if(missing.length||!token)return {emails:[],needsAuth:true,missingScopes:missing,error:lastGoogleAuthError||'Reconnect Google to grant Gmail read permission.',provider:'gmail',userId,tenantId:tenantIdValue};
-  const query='in:sent newer_than:90d';
-  let listing;
-  try{
-    const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=500`;
-    listing=await gmailFetchJson(searchUrl,{},'Gmail sent mail search');
-  }catch(error){
-    return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(error.message),error:error.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};
-  }
-  const headerQuery=new URLSearchParams({format:'metadata'});
-  for(const header of ['To','Cc','Subject','Date'])headerQuery.append('metadataHeaders',header);
-  const details=await mapWithConcurrency((listing.messages||[]).slice(0,500),12,async(message)=>{
-    try{
-      const url=`https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}?${headerQuery.toString()}`;
-      return normalizeGmailMessage(await gmailFetchJson(url,{},'Gmail sent mail recipient detail'));
-    }catch(error){return null;}
-  });
-  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:(listing.messages||[]).length};
+  return fetchGmailMessages({userId,tenantId:tenantIdValue,query:'in:sent newer_than:90d',maxResults:500,includeBody:false});
 }
 async function fetchUnifiedGmailEmails(limit=20){
   return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
@@ -12208,10 +13628,19 @@ async function fetchOutlookMessageAttachments(token,messageId){
     return [];
   }
 }
-async function fetchUnifiedOutlookEmails(limit=20){
+async function fetchUnifiedOutlookEmails(limit=20,{receivedAfter=''}={}){
   const token=await getMicrosoftToken();
   if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
-  const url=`https://graph.microsoft.com/v1.0/me/messages?$top=${encodeURIComponent(limit)}&$orderby=receivedDateTime desc&$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead`;
+  const query=new URLSearchParams({
+    '$top':String(limit),
+    '$orderby':'receivedDateTime desc',
+    '$select':'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead'
+  });
+  const receivedAfterDate=receivedAfter?new Date(receivedAfter):null;
+  if(receivedAfterDate&&Number.isFinite(receivedAfterDate.getTime())){
+    query.set('$filter',`receivedDateTime ge ${receivedAfterDate.toISOString()}`);
+  }
+  const url=`https://graph.microsoft.com/v1.0/me/messages?${query.toString()}`;
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
@@ -12552,10 +13981,12 @@ async function collectContextContactCandidates(input={}){
       const metadata=profile.metadata||{};
       const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
       addCandidate({
-        id:`relationship-profile:${profile.id}`,
+        id:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'')||`relationship-profile:${profile.id}`,
+        contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||''),
         relationshipProfileId:profile.id,
         name:profile.displayName||profile.name||'',
         email:relationshipProfilePrimaryEmail(profile),
+        phone:relationshipProfilePrimaryPhone(profile),
         company:metadata.company||metadata.organization||relationshipEnrichment?.organization||'',
         summary:profile.summary||'',
         relationshipProfile:profile,
@@ -12616,10 +14047,53 @@ function resolvedCrmContactId(contact={}){
   if(contact.source==='ghl_contact'&&contact.id)return String(contact.id);
   return '';
 }
+function calendarEventEvidenceText(event={},provider='calendar'){
+  return [
+    `Provider: ${provider}`,
+    `Title: ${event.title||event.summary||'Calendar event'}`,
+    `Starts: ${event.startTime||event.start_time||event.start||''}`,
+    `Ends: ${event.endTime||event.end_time||event.end||''}`,
+    event.location?`Location: ${event.location}`:'',
+    safeArray(event.attendees).length?`Attendees: ${safeArray(event.attendees).map(attendee=>attendee.email||attendee.name||attendee.displayName||'').filter(Boolean).join(', ')}`:'',
+    event.description||event.notes||''
+  ].filter(Boolean).join('\n');
+}
+async function processCalendarEventsForBoard(events=[],provider='calendar'){
+  if(!valTranscriptSourceProcessing?.processEvidenceSource)return [];
+  const results=[];
+  const queue=safeArray(events).slice(0,200);
+  for(let index=0;index<queue.length;index+=4){
+    const batch=queue.slice(index,index+4);
+    const processed=await Promise.all(batch.map(event=>{
+      const sourceId=String(event.id||event.eventId||event.calendarEventId||'').trim();
+      if(!sourceId)return null;
+      return valTranscriptSourceProcessing.processEvidenceSource({
+        sourceType:'calendar_event',
+        sourceId:`${provider}:${sourceId}`,
+        sourceTitle:event.title||event.summary||'Calendar event',
+        rawText:calendarEventEvidenceText(event,provider),
+        createdAt:event.createdAt||event.created_at||event.startTime||event.start_time||event.start||'',
+        witnessObservation:`VAL read "${event.title||event.summary||'Calendar event'}" from the ${provider} calendar.`,
+        executiveRelevance:{calendar_event_read:true,meeting_context_available:true},
+        domainRoutes:['calendar','board_of_observers','meeting_prep'],
+        metadata:{source:'calendar_provider_sync',provider,calendarEventId:sourceId,noExternalAction:true}
+      }).catch(error=>{
+        console.warn(`[val-source] ${provider} calendar evidence failed:`,error.message);
+        return null;
+      });
+    }));
+    results.push(...processed.filter(Boolean));
+  }
+  return results;
+}
 async function loadContextCalendarEvents(start,end){
   const events=[],errors=[];
   for(const [label,fn] of [['google',()=>fetchGoogleCalendarEvents(start,end,150)],['outlook',()=>fetchOutlookCalendarEvents(start,end,150)],['val',()=>fetchValCalendarEvents(start,end)],['ghl',()=>fetchGhlCalendarEvents(start,end)]]){
-    try{events.push(...await fn());}catch(e){errors.push(`${label}: ${e.message}`);}
+    try{
+      const loaded=await fn();
+      events.push(...loaded);
+      if(label!=='val')void processCalendarEventsForBoard(loaded,label);
+    }catch(e){errors.push(`${label}: ${e.message}`);}
   }
   return {events,errors};
 }
@@ -12666,6 +14140,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
   if(!email||OWNER_EMAILS.has(email))return null;
   if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(email))return null;
   const name=cleanPersonName(attendee.name||contact.name||contact.contactName||'',email);
+  const phone=normalizeContextPhone(contact.phone||contact.contactPhone||contact.phoneNumber||contact.raw?.phone||contact.raw?.contactPhone||'');
   const title=String(event.title||event.summary||'Calendar meeting').trim()||'Calendar meeting';
   const start=event.startTime||event.start||event.date||new Date().toISOString();
   const eventId=String(event.id||event.eventId||event.calendarEventId||stableKey([title,start].join(' ')));
@@ -12673,6 +14148,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
   const metadata={
     source:'calendar_attendee_auto_packet',
     email,
+    phone,
     networkAdmission:'calendar_attendee',
     calendarAttendeeAutoContact:true,
     calendarAttendeeLastSeenAt:start,
@@ -12737,6 +14213,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
       source:'relationship_profile',
       name:name||email,
       email,
+      phone,
       company:contact.company||contact.companyName||contact.organization||'',
       relationshipEnrichment:contact.relationshipEnrichment||relationshipSavedPublicEnrichment(profile?.metadataJson||profile?.metadata||{})||null,
       raw:{...(contact.raw||{}),relationshipProfileId:profile?.id||'',metadata:profile?.metadataJson||profile?.metadata||{},calendarAttendeeAutoContact:true}
@@ -12857,6 +14334,130 @@ function splitPeopleFromText(text){
   const seen=new Set();
   return emails.concat(names).filter(p=>{const k=personKey(p.name,p.email);if(seen.has(k))return false;seen.add(k);return true;});
 }
+const AI_CONTEXT_DIGEST_KIND='ai_context_digest';
+const AI_CONTEXT_COMPACTION_AFTER_DAYS=Math.max(1,Number(process.env.VAL_AI_CONTEXT_COMPACTION_AFTER_DAYS)||3);
+const AI_CONTEXT_COMPACTION_INTERVAL_MS=Math.max(60*60*1000,Number(process.env.VAL_AI_CONTEXT_COMPACTION_INTERVAL_MS)||24*60*60*1000);
+const AI_CONTEXT_COMPACTION_SCAN_LIMIT=Math.max(100,Math.min(Number(process.env.VAL_AI_CONTEXT_COMPACTION_SCAN_LIMIT)||900,3000));
+function aiContextCreatedAt(row={}){
+  return row.createdAt||row.created_at||row.deliveredAt||row.delivered_at||row.updatedAt||row.updated_at||'';
+}
+function aiContextCompactLine(row={}){
+  const kind=row.kind||row.packetType||row.packet_type||row.sourceType||row.source_type||'source';
+  const summary=row.summary||row.title||'';
+  const raw=row.rawText||row.raw_text||row.content||'';
+  return `[${kind}] ${String(summary||raw).replace(/\s+/g,' ').trim().slice(0,520)}`;
+}
+function aiContextSourceFamily(value=''){
+  const source=String(value||'').toLowerCase();
+  if(/email|gmail|outlook|unified_conversation|inbox/.test(source))return 'email';
+  if(/transcript|krisp|meeting_evidence/.test(source))return 'transcript';
+  if(/calendar|appointment|meeting_context/.test(source))return 'calendar';
+  if(/witness|teach_val|onboarding|identity_context|relational_context|operating_context/.test(source))return 'witnessing';
+  if(/cowork|co_work|chat|voice|ghl_voice/.test(source))return 'conversation';
+  if(/relationship|contact|stewardship|rolodex/.test(source))return 'relationship';
+  if(/project/.test(source))return 'project';
+  if(/document|upload|google_doc|attachment|file/.test(source))return 'document';
+  if(/task|commitment|approval|external_action|sent_action/.test(source))return 'action';
+  if(/linkedin|public|apollo|outscraper|research/.test(source))return 'public_context';
+  if(source)return source.replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)||'general';
+  return 'general';
+}
+function aiContextFamilyForRow(row={}){
+  const metadata=typeof row.metadata==='string'?(()=>{try{return JSON.parse(row.metadata);}catch(e){return {};}})():(row.metadata||row.metadataJson||row.metadata_json||{});
+  return aiContextSourceFamily(metadata.sourceFamily||metadata.source||row.sourceType||row.source_type||row.kind||row.packetType||row.packet_type);
+}
+function aiContextBucketKey(dateValue){
+  const date=new Date(dateValue||0);
+  if(isNaN(date.getTime()))return 'undated';
+  const bucket=Math.floor(date.getTime()/(AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000));
+  const start=new Date(bucket*AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000).toISOString().slice(0,10);
+  const end=new Date((bucket+1)*AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000-1).toISOString().slice(0,10);
+  return `${start}_${end}`;
+}
+function buildAiContextDigest({family,bucket,rows=[]}={}){
+  const sorted=rows.slice().sort((a,b)=>(Number(b.importance||2)-Number(a.importance||2))||String(aiContextCreatedAt(b)).localeCompare(String(aiContextCreatedAt(a))));
+  const sourceIds=sorted.map(row=>String(row.id||row.sourceId||row.source_id||'')).filter(Boolean);
+  const fingerprint=crypto.createHash('sha256').update([family,bucket,sourceIds.join('|')].join('|')).digest('hex').slice(0,24);
+  const highlights=sorted.slice(0,55).map(aiContextCompactLine).filter(Boolean).join('\n');
+  return {
+    id:`ai_digest_${family}_${bucket}_${fingerprint}`.replace(/[^a-zA-Z0-9:_-]+/g,'_').slice(0,240),
+    kind:AI_CONTEXT_DIGEST_KIND,
+    summary:`AI-usable ${family.replace(/_/g,' ')} context digest for ${bucket.replace('_',' to ')} (${rows.length} source item${rows.length===1?'':'s'}).`,
+    rawText:highlights||`No high-signal ${family} context lines were available.`,
+    importance:4,
+    metadata:{
+      aiUsableContext:true,
+      sourceFamily:family,
+      bucket,
+      compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS,
+      sourceIds,
+      sourceCount:rows.length,
+      fingerprint,
+      keptOriginals:true,
+      retentionContract:'Original source receipts are retained. Prompts retrieve this digest for speed and recent direct sources for evidence.'
+    }
+  };
+}
+async function compactAiUsableContext(){
+  await valDbReady;
+  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+  const cutoff=new Date(Date.now()-AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000).toISOString();
+  const rows=[];
+  if(pgPool){
+    const memory=await dbQuery("select id,kind,summary,raw_text,importance,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind not in ($3,'memory_condensation') order by created_at desc limit $4",[VAL_USER_ID,cutoff,AI_CONTEXT_DIGEST_KIND,AI_CONTEXT_COMPACTION_SCAN_LIMIT]).catch(()=>({rows:[]}));
+    rows.push(...(memory.rows||[]));
+    const packets=await dbQuery("select id,source_type,source_id,packet_type,title,summary,primary_observers_json,source_refs_json,payload_json,created_at from val_board_packets where user_id=$1 and created_at < $2 and prototype=false order by created_at desc limit $3",[VAL_USER_ID,cutoff,AI_CONTEXT_COMPACTION_SCAN_LIMIT]).catch(()=>({rows:[]}));
+    rows.push(...(packets.rows||[]).map(packet=>({
+      id:packet.id,
+      kind:`board_packet:${packet.packet_type}`,
+      sourceType:packet.source_type,
+      summary:packet.title||packet.summary||'Board packet',
+      raw_text:[packet.summary,`Primary observers: ${safeArray(packet.primary_observers_json).join(', ')}`].filter(Boolean).join('\n'),
+      importance:4,
+      metadata:{source:'board_packet',sourceFamily:packet.source_type,packetType:packet.packet_type,sourceId:packet.source_id,sourceRefs:packet.source_refs_json||[]},
+      created_at:packet.created_at
+    })));
+  }else{
+    const store=valStore();
+    rows.push(...(store.memoryItems||[]).filter(row=>new Date(row.createdAt||0)<new Date(cutoff)&&![AI_CONTEXT_DIGEST_KIND,'memory_condensation'].includes(row.kind)));
+    rows.push(...(store.valBoardPackets||[]).filter(packet=>new Date(packet.createdAt||0)<new Date(cutoff)&&packet.prototype!==true).map(packet=>({
+      id:packet.id,
+      kind:`board_packet:${packet.packetType}`,
+      sourceType:packet.sourceType,
+      summary:packet.title||packet.summary||'Board packet',
+      rawText:[packet.summary,`Primary observers: ${safeArray(packet.primaryObserversJson).join(', ')}`].filter(Boolean).join('\n'),
+      importance:4,
+      metadata:{source:'board_packet',sourceFamily:packet.sourceType,packetType:packet.packetType,sourceId:packet.sourceId,sourceRefs:packet.sourceRefsJson||[]},
+      createdAt:packet.createdAt
+    })));
+  }
+  if(!rows.length)return {ok:true,created:0,sourceItems:0,keptOriginals:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+  const existing=await recentMemoryItems(3650,2000).catch(()=>[]);
+  const existingFingerprints=new Set(existing.filter(item=>item.kind===AI_CONTEXT_DIGEST_KIND).map(item=>item.metadata?.fingerprint).filter(Boolean));
+  const groups={};
+  for(const row of rows){
+    const family=aiContextFamilyForRow(row);
+    const bucket=aiContextBucketKey(aiContextCreatedAt(row));
+    const key=`${family}|${bucket}`;
+    (groups[key]=groups[key]||{family,bucket,rows:[]}).rows.push(row);
+  }
+  let created=0;
+  for(const group of Object.values(groups)){
+    const digest=buildAiContextDigest(group);
+    if(existingFingerprints.has(digest.metadata.fingerprint))continue;
+    let saved=true;
+    await saveMemoryItem(digest).catch(error=>{
+      if(/duplicate key|unique/i.test(String(error?.message||error))){
+        saved=false;
+        return;
+      }
+      throw error;
+    });
+    existingFingerprints.add(digest.metadata.fingerprint);
+    if(saved) created++;
+  }
+  return {ok:true,created,sourceItems:rows.length,groups:Object.keys(groups).length,keptOriginals:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+}
 async function recentMemoryItems(days=30,limit=120){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState || {};
@@ -12874,13 +14475,14 @@ async function recentMemoryItems(days=30,limit=120){
 }
 async function condenseOlderMemory(){
   await valDbReady;
+  const aiContext=await compactAiUsableContext();
   const cutoff=new Date(Date.now()-30*24*60*60*1000),items=[];
-  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true};
+  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true,aiContext};
   if(pgPool){
-    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind <> 'memory_condensation' order by created_at asc limit 500",[VAL_USER_ID,cutoff.toISOString()]);
+    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind not in ('memory_condensation',$3) order by created_at asc limit 500",[VAL_USER_ID,cutoff.toISOString(),AI_CONTEXT_DIGEST_KIND]);
     items.push(...r.rows.map(x=>({id:x.id,kind:x.kind,summary:x.summary||'',rawText:x.raw_text||'',metadata:x.metadata||{},createdAt:x.created_at?.toISOString()||''})));
-  }else items.push(...(valStore().memoryItems||[]).filter(x=>new Date(x.createdAt||0)<cutoff&&x.kind!=='memory_condensation').slice(0,500));
-  if(!items.length)return {ok:true,created:0,keptOriginals:true};
+  }else items.push(...(valStore().memoryItems||[]).filter(x=>new Date(x.createdAt||0)<cutoff&&!['memory_condensation',AI_CONTEXT_DIGEST_KIND].includes(x.kind)).slice(0,500));
+  if(!items.length)return {ok:true,created:0,keptOriginals:true,aiContext};
   const groups={};items.forEach(item=>{const d=new Date(item.createdAt||0),key=isNaN(d)?'undated':d.toISOString().slice(0,7);(groups[key]=groups[key]||[]).push(item);});
   let created=0;
   for(const [month,rows] of Object.entries(groups)){
@@ -12889,7 +14491,7 @@ async function condenseOlderMemory(){
     const highlights=rows.sort((a,b)=>Number(b.importance||1)-Number(a.importance||1)).slice(0,40).map(x=>`[${x.kind}] ${x.summary||String(x.rawText||'').slice(0,240)}`).join('\n');
     await saveMemoryItem({kind:'memory_condensation',summary:`Condensed VAL memory for ${month} (${rows.length} original items retained)`,rawText:highlights,importance:4,metadata:{fingerprint,month,sourceIds,sourceCount:rows.length,keptOriginals:true,condensedAt:new Date().toISOString()}});created++;
   }
-  return {ok:true,created,sourceItems:items.length,keptOriginals:true};
+  return {ok:true,created,sourceItems:items.length,keptOriginals:true,aiContext};
 }
 function relationshipScore(contact){
   const ev=contact.evidence||[];
@@ -13354,21 +14956,312 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
   const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_backfill'}).catch(error=>({ok:false,origin:'email_backfill',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
   return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,sourceProcessing:{projectManagers:projectManagerIntake},providerErrors};
 }
+function boardBackfillJsonValue(value,fallback){
+  if(value===undefined||value===null||value==='')return fallback;
+  if(typeof value==='object')return value;
+  try{return JSON.parse(value);}
+  catch(e){return fallback;}
+}
+function boardBackfillArray(value){
+  const parsed=boardBackfillJsonValue(value,[]);
+  return Array.isArray(parsed)?parsed:[];
+}
+function boardBackfillObject(value){
+  const parsed=boardBackfillJsonValue(value,{});
+  return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+}
+function boardBackfillIso(value){
+  if(!value)return '';
+  if(value instanceof Date)return Number.isNaN(value.getTime())?'':value.toISOString();
+  return String(value||'');
+}
+function boardBackfillFirstText(...values){
+  for(const value of values){
+    if(typeof value==='string'&&value.trim())return compactText(value,1200);
+    if(value&&typeof value==='object'){
+      const found=value.executiveSummary||value.executive_summary||value.summary||value.title||value.content||value.text||value.description;
+      if(found)return compactText(found,1200);
+    }
+  }
+  return '';
+}
+async function boardBackfillTranscriptRuns(limit=120){
+  const lim=Math.max(1,Math.min(Number(limit)||120,300));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from transcript_intelligence_runs where tenant_id=$1 and user_id=$2 order by created_at desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().transcriptIntelligenceRuns||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+async function boardBackfillEmailMessages(limit=120){
+  const lim=Math.max(1,Math.min(Number(limit)||120,300));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from email_messages where tenant_id=$1 and user_id=$2 order by coalesce(received_at,sent_at,created_at) desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().emailMessages||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+async function boardBackfillCalendarEvents(limit=80){
+  const lim=Math.max(1,Math.min(Number(limit)||80,200));
+  if(pgPool){
+    await valDbReady;
+    const r=await dbQuery(`select * from val_calendar_events where tenant_id=$1 and user_id=$2 order by coalesce(start_time,created_at) desc limit $3`,[tenantId(),currentUserId(),lim]).catch(()=>({rows:[]}));
+    return r.rows||[];
+  }
+  return (valStore().calendarEvents||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()).slice(0,lim);
+}
+function boardBackfillTranscriptPayloadFromRun(run={}){
+  const final=boardBackfillObject(run.finalJson||run.final_json);
+  const evidenceRefs=boardBackfillArray(run.evidenceRefsJson||run.evidence_refs_json);
+  const commitments=boardBackfillArray(run.commitmentsJson||run.commitments_json);
+  const contextualTasks=boardBackfillArray(run.contextualTasksJson||run.contextual_tasks_json);
+  const readyForYou=boardBackfillArray(run.readyForYouCandidatesJson||run.ready_for_you_candidates_json);
+  const executiveInstructions=boardBackfillArray(run.executiveInstructionsJson||run.executive_instructions_json);
+  const relationshipSignals=boardBackfillArray(run.relationshipSignalsJson||run.relationship_signals_json);
+  const projectSignals=boardBackfillArray(run.projectSignalsJson||run.project_signals_json);
+  const sourceId=String(run.transcriptId||run.transcript_id||run.sourceId||run.source_id||run.id||'').trim();
+  const title=boardBackfillFirstText(final.title,final.meetingTitle,final.transcriptTitle,evidenceRefs[0]?.sourceLabel,evidenceRefs[0]?.title,`Transcript ${sourceId}`)||`Transcript ${sourceId}`;
+  const summary=boardBackfillFirstText(final.executiveSummary,final.summary,readyForYou[0],commitments[0],relationshipSignals[0],projectSignals[0],title);
+  const keyDecisions=boardBackfillArray(final.keyDecisions||final.key_decisions).concat(boardBackfillArray(run.chiefOfStaffSignalsJson||run.chief_of_staff_signals_json)).slice(0,20);
+  const tasks=commitments.concat(contextualTasks).map(item=>typeof item==='string'?{taskTitle:item,content:item}:item).filter(Boolean);
+  return {
+    sourceId,
+    title,
+    summary:{executiveSummary:summary,summary},
+    analysis:{...final,keyDecisions,tasks,actionItems:tasks,relationshipUpdates:relationshipSignals,projectSignals,executiveInstructions,readyForYouCandidates:readyForYou},
+    counts:{commitments:commitments.length,contextualTasks:contextualTasks.length,preparedWork:readyForYou.length,relationshipSignals:relationshipSignals.length,projectSignals:projectSignals.length},
+    createdDrafts:readyForYou,
+    stagedTasks:tasks,
+    createdTasks:[]
+  };
+}
+function boardBackfillTranscriptPayloadFromRecord(record={},detail={}){
+  const sourceId=String(record.id||record.transcriptId||detail.id||detail.transcriptId||'').trim();
+  const title=detail.title||record.title||record.meetingTitle||`Transcript ${sourceId}`;
+  const summary=boardBackfillFirstText(detail.summary?.executiveSummary,detail.summary?.summary,record.metadata?.summary,record.rawText,title);
+  const tasks=safeArray(detail.tasks).map(item=>({taskTitle:item.taskTitle||item.title||item.content||'',content:item.taskTitle||item.title||item.content||'',sourceQuote:item.sourceQuote||item.evidence||'',assignedToName:item.assignedToName||item.assignedPerson||'',dueDate:item.dueDate||null,confidence:item.confidence||0.65})).filter(item=>item.taskTitle);
+  const nativeActions=transcriptKrispNativeMetadata(record.metadata||{}).nativeActionItems.map(item=>typeof item==='string'?{taskTitle:item,content:item}:item);
+  return {
+    sourceId,
+    title,
+    summary:{executiveSummary:summary,summary},
+    analysis:{executiveSummary:summary,tasks:tasks.length?tasks:nativeActions,actionItems:tasks.length?tasks:nativeActions,keyDecisions:[],relationshipUpdates:[]},
+    counts:{tasksExtracted:(tasks.length||nativeActions.length),nativeActions:nativeActions.length},
+    stagedTasks:tasks.length?tasks:nativeActions,
+    createdTasks:[],
+    createdDrafts:[]
+  };
+}
+function boardBackfillEmailMessageFromRow(row={}){
+  const sender=boardBackfillObject(row.senderJson||row.sender_json||row.sender||row.from);
+  return {
+    id:row.id,
+    provider:row.provider||'email',
+    messageId:row.messageId||row.message_id||row.currentMessageId||row.current_message_id||row.id,
+    threadId:row.threadId||row.thread_id||row.emailThreadId||row.email_thread_id||'',
+    unifiedConversationId:row.unifiedConversationId||row.unified_conversation_id||'',
+    direction:row.direction||row.conversation_state||'unknown',
+    subject:row.subject||row.executiveMeaning||row.executive_meaning||'Email conversation',
+    bodyPreview:row.bodyPreview||row.body_preview||row.snippet||row.whyNow||row.why_now||'',
+    bodyText:row.bodyText||row.body_text||row.snippet||'',
+    snippet:row.snippet||'',
+    from:sender,
+    sender,
+    recipients:boardBackfillArray(row.recipientsJson||row.recipients_json||row.recipients),
+    receivedAt:boardBackfillIso(row.receivedAt||row.received_at||row.createdAt||row.created_at),
+    sentAt:boardBackfillIso(row.sentAt||row.sent_at)
+  };
+}
+function boardBackfillCalendarEventFromRow(row={}){
+  return {
+    id:row.id,
+    title:row.title||row.summary||'Calendar event',
+    summary:row.title||row.summary||'Calendar event',
+    source:row.source||'val',
+    startTime:boardBackfillIso(row.startTime||row.start_time),
+    endTime:boardBackfillIso(row.endTime||row.end_time),
+    attendees:boardBackfillArray(row.attendees||row.attendees_json),
+    metadata:boardBackfillObject(row.metadata||row.metadata_json)
+  };
+}
+async function backfillBoardPackets({days=3650,limit=160,skipTranscripts=false,skipEmail=false,skipCalendar=false,skipCommitments=false,skipProfiles=false}={}){
+  const result={processed:{transcriptRuns:0,transcriptArchives:0,emailMessages:0,calendarEvents:0,commitments:0,relationshipProfiles:0,projectProfiles:0},packets:0,errors:[],triggered:false};
+  if(!valBoardPackets)return {...result,skipped:true,reason:'Board packet service unavailable'};
+  const lim=Math.max(1,Math.min(Number(limit)||160,300));
+  const createdPackets=[];
+  const addPackets=packets=>{
+    const list=safeArray(packets).filter(Boolean);
+    createdPackets.push(...list);
+    result.packets+=list.length;
+  };
+  const seenTranscriptIds=new Set();
+  if(!skipTranscripts){
+    for(const run of await boardBackfillTranscriptRuns(lim)){
+      try{
+        const payload=boardBackfillTranscriptPayloadFromRun(run);
+        if(!payload.sourceId)continue;
+        const transcript=await getTranscriptForValIntelligence(payload.sourceId);
+        const rawText=String(transcript?.rawTranscript||transcript?.raw_text||transcript?.rawText||transcript?.transcriptText||transcript?.text||'').trim();
+        if(!rawText)throw new Error('The original transcript text could not be recovered; no summary-only Board packet was created.');
+        seenTranscriptIds.add(String(payload.sourceId));
+        const processed=await processCanonicalBoardEvidence({
+          sourceType:'transcript',
+          sourceId:payload.sourceId,
+          sourceTitle:payload.title,
+          rawText,
+          createdAt:transcript?.createdAt||transcript?.created_at||run.createdAt||run.created_at||'',
+          domainRoutes:['transcripts','board_of_observers','canonical_work'],
+          metadata:{source:'canonical_board_backfill',historicalReconciliation:true,noExternalAction:true}
+        });
+        addPackets(processed?.sourcePackets);
+        result.processed.transcriptRuns++;
+      }catch(e){result.errors.push({source:'transcript_intelligence_runs',id:run.id||run.transcript_id||'',error:e.message});}
+    }
+    const [records,index]=await Promise.all([
+      transcriptArchiveRecords(days,lim).catch(()=>[]),
+      transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))
+    ]);
+    for(const record of mergeTranscriptMigrationRecords(records,index).slice(0,lim)){
+      try{
+        const id=String(record.id||record.transcriptId||'');
+        if(!id||seenTranscriptIds.has(id))continue;
+        const detailRow=(index.transcripts||[]).find(t=>String(t.transcriptId)===id);
+        const detail=record.detail||(detailRow?transcriptDetailFromIndex(index,detailRow):{});
+        const rawText=String(record.rawText||record.raw_text||record.rawTranscript||record.raw_transcript||detail.rawText||detail.raw_text||'').trim();
+        if(!rawText)throw new Error('The original transcript text could not be recovered; no summary-only Board packet was created.');
+        const payload=boardBackfillTranscriptPayloadFromRecord(record,detail);
+        const processed=await processCanonicalBoardEvidence({
+          sourceType:'transcript',
+          sourceId:payload.sourceId,
+          sourceTitle:payload.title,
+          rawText,
+          createdAt:record.createdAt||record.created_at||detail.createdAt||detail.created_at||'',
+          domainRoutes:['transcripts','board_of_observers','canonical_work'],
+          metadata:{source:'canonical_board_backfill',historicalReconciliation:true,noExternalAction:true}
+        });
+        addPackets(processed?.sourcePackets);
+        result.processed.transcriptArchives++;
+      }catch(e){result.errors.push({source:'transcript_archive',id:record.id||'',error:e.message});}
+    }
+  }
+  if(!skipEmail){
+    for(const row of await boardBackfillEmailMessages(lim)){
+      try{
+        const message=boardBackfillEmailMessageFromRow(row);
+        const rawText=[
+          `Direction: ${message.direction||'unknown'}`,
+          `Subject: ${message.subject||'(no subject)'}`,
+          message.bodyText||message.bodyPreview||message.snippet||''
+        ].filter(Boolean).join('\n');
+        const processed=await processCanonicalBoardEvidence({
+          sourceType:'email',
+          sourceId:message.messageId||message.id,
+          sourceTitle:message.subject||'Email message',
+          rawText,
+          createdAt:message.receivedAt||message.sentAt||'',
+          domainRoutes:['executive_inbox','board_of_observers','relationships'],
+          metadata:{source:'canonical_board_backfill',provider:message.provider||'',threadId:message.threadId||'',historicalReconciliation:true,noExternalAction:true}
+        });
+        addPackets(processed?.sourcePackets);
+        result.processed.emailMessages++;
+      }catch(e){result.errors.push({source:'email_messages',id:row.id||row.message_id||'',error:e.message});}
+    }
+  }
+  if(!skipCalendar){
+    for(const row of await boardBackfillCalendarEvents(Math.min(lim,120))){
+      try{
+        const event=boardBackfillCalendarEventFromRow(row);
+        const processed=await processCanonicalBoardEvidence({
+          sourceType:'calendar_event',
+          sourceId:`${event.source||'val'}:${event.id}`,
+          sourceTitle:event.title,
+          rawText:calendarEventEvidenceText(event,event.source||'val'),
+          createdAt:event.startTime||'',
+          domainRoutes:['calendar','board_of_observers','meeting_prep'],
+          metadata:{source:'canonical_board_backfill',provider:event.source||'val',historicalReconciliation:true,noExternalAction:true}
+        });
+        addPackets(processed?.sourcePackets);
+        result.processed.calendarEvents++;
+      }catch(e){result.errors.push({source:'val_calendar_events',id:row.id||'',error:e.message});}
+    }
+  }
+  if(!skipCommitments&&valCommitments?.list){
+    try{
+      const commitments=await valCommitments.list({limit:lim});
+      for(const commitment of safeArray(commitments.commitments)){
+        try{
+          const processed=await processCanonicalBoardEvidence({
+            sourceType:'task',
+            sourceId:`commitment:${commitment.id}`,
+            sourceTitle:commitment.title||'Commitment',
+            rawText:[
+              'Event: commitment_indexed',
+              commitment.title||'',
+              commitment.description||commitment.summary||'',
+              commitment.evidence_quote||commitment.evidenceQuote||''
+            ].filter(Boolean).join('\n'),
+            sourceRefs:commitment.source_refs||commitment.sourceRefs||[],
+            domainRoutes:['tasks','commitments','board_of_observers','chief_of_staff'],
+            metadata:{source:'canonical_board_backfill',commitmentId:commitment.id,historicalReconciliation:true,noExternalAction:true}
+          });
+          addPackets(processed?.sourcePackets);
+          result.processed.commitments++;
+        }catch(e){result.errors.push({source:'commitment',id:commitment.id||'',error:e.message});}
+      }
+    }catch(e){result.errors.push({source:'commitments',error:e.message});}
+  }
+  if(!skipProfiles){
+    try{
+      const profiles=await listRelationshipProfiles({limit:lim});
+      for(const profile of safeArray(profiles)){
+        try{
+          const sourceType=profile.profileType==='project'?'project_profile':'relationship_profile';
+          const processed=await processCanonicalBoardEvidence({
+            sourceType,
+            sourceId:profile.id||profile.profileKey||profile.projectId||profile.personId,
+            sourceTitle:profile.displayName||profile.name||profile.projectName||'Profile',
+            rawText:relationshipProfileEvidenceText(profile),
+            sourceRefs:profile.sourceRefs||profile.source_refs||profile.metadataJson?.sourceRefs||[],
+            domainRoutes:[profile.profileType==='project'?'projects':'relationships','board_of_observers','chief_of_staff'],
+            metadata:{source:'canonical_board_backfill',eventType:'profile_reconciled',historicalReconciliation:true,noExternalAction:true}
+          });
+          addPackets(processed?.sourcePackets);
+          if(profile.profileType==='project')result.processed.projectProfiles++;else result.processed.relationshipProfiles++;
+        }catch(e){result.errors.push({source:'relationship_profile',id:profile.id||profile.profileKey||'',error:e.message});}
+      }
+    }catch(e){result.errors.push({source:'relationship_profiles',error:e.message});}
+  }
+  const reviewablePackets=createdPackets.filter(packet=>packet?.status==='active'&&!packet.prototype);
+  result.triggered=reviewablePackets.length>0;
+  return {...result,generatedAt:new Date().toISOString()};
+}
 async function backfillValIntelligence(options={}){
   if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
   const days=Math.max(1,Math.min(3650,Number(options.days)||3650));
   const transcriptLimit=Math.max(1,Math.min(500,Number(options.transcriptLimit)||250));
   const emailLimit=Math.max(1,Math.min(100,Number(options.emailLimit)||100));
+  const boardLimit=Math.max(1,Math.min(300,Number(options.boardLimit)||160));
   const [transcripts,email]=await Promise.all([
     options.skipTranscripts?Promise.resolve({processed:0,observations:0,relationshipEvents:0,agencyMoves:0,errors:[]}):backfillTranscriptEvidence({days,limit:transcriptLimit}),
     options.skipEmail?Promise.resolve({processed:0,saved:0,providerErrors:[]}):backfillEmailEvidence({days:Math.min(days,365),limit:emailLimit})
   ]);
+  const boardPackets=options.skipBoardPackets?{skipped:true,processed:{},packets:0,errors:[]}:await backfillBoardPackets({
+    days,
+    limit:boardLimit,
+    skipTranscripts:options.skipTranscripts,
+    skipEmail:options.skipEmail,
+    skipCalendar:options.skipCalendar,
+    skipCommitments:options.skipCommitments,
+    skipProfiles:options.skipProfiles
+  });
   const [counts,briefing,storedRelationships]=await Promise.all([
     executiveBriefingCounts(),
     buildExecutiveBriefing().catch(()=>null),
     relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
   ]);
-  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,boardPackets,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
 }
 
 function mapGoogleEvent(ev){
@@ -13583,9 +15476,6 @@ function apolloPersonTitles(){
 function normalizeApolloPerson(person,lead={}){
   const org=person.organization || person.account || person.current_organization || {};
   const name=person.name || person.full_name || [person.first_name,person.last_name].filter(Boolean).join(' ');
-  const emails=extractEmailsFromValue(person);
-  const personEmail=normalizeEmailAddress(person.email || person.email_address || person.work_email || person.personal_email || person.primary_email || emails.find(isLikelyPersonEmail) || emails[0] || '');
-  const rawPhone=person.phone || person.phone_number || person.mobile_phone || person.mobile_phone_number || person.work_phone || person.primary_phone || person.sanitized_phone || '';
   return {
     found:!!(name || person.linkedin_url || person.title),
     id:person.id || person.person_id || '',
@@ -13597,32 +15487,14 @@ function normalizeApolloPerson(person,lead={}){
     city:person.city || '',
     state:person.state || '',
     country:person.country || '',
-    email:personEmail,
-    phone:normalizePhoneNumber(rawPhone),
     emailStatus:person.email_status || person.contact_email_status || '',
     rawPreview:JSON.stringify(person).slice(0,1400)
   };
 }
 
-function normalizedPersonName(value){
-  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-}
-
-function personNameMatches(a,b){
-  const left=normalizedPersonName(a);
-  const right=normalizedPersonName(b);
-  if(!left || !right) return false;
-  if(left===right) return true;
-  const leftParts=left.split(' ').filter(Boolean);
-  const rightParts=right.split(' ').filter(Boolean);
-  if(leftParts.length<2 || rightParts.length<2) return false;
-  return leftParts[0]===rightParts[0] && leftParts[leftParts.length-1]===rightParts[rightParts.length-1];
-}
-
 function scoreApolloPerson(person,lead){
   let score=0;
   const title=String(person.title||'').toLowerCase();
-  if(personNameMatches(person.name,lead.decisionMakerName)) score+=180;
   if(/\b(owner|founder|ceo|chief executive|president)\b/.test(title)) score+=100;
   else if(/\b(managing partner|partner|principal|practice owner|executive director)\b/.test(title)) score+=85;
   else if(/\b(operations|general manager|office manager|human resources|hr director)\b/.test(title)) score+=60;
@@ -13637,8 +15509,6 @@ function scoreApolloPerson(person,lead){
     else if(targetCompany.includes(personCompany) || personCompany.includes(targetCompany)) score+=55;
   }
   if(person.linkedinUrl) score+=12;
-  if(isLikelyPersonEmail(person.email)) score+=20;
-  if(validPhone(person.phone)) score+=12;
   if(person.name) score+=10;
   return score;
 }
@@ -13648,84 +15518,267 @@ async function lookupApolloDecisionMaker(lead={}){
   if(!apolloKey) return {configured:false,error:'APOLLO_API_KEY is not set'};
   const domain=leadDomain(lead.website||'');
   const company=lead.organizationName||lead.name||'';
-  const params=new URLSearchParams();
-  apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
-  ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
-  if(lead.decisionMakerName) params.append('person_names[]',lead.decisionMakerName);
-  if(domain) params.append('q_organization_domains_list[]',domain);
-  if(!domain && company) params.set('q_keywords',company);
-  if(lead.state) params.append('organization_locations[]',lead.state);
-  else if(lead.location) params.append('organization_locations[]',lead.location);
-  params.set('include_similar_titles','false');
-  params.set('page','1');
-  params.set('per_page','10');
-  const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
-  const response=await fetchWithTimeout(url,{
-    method:'POST',
-    headers:{
-      accept:'application/json',
-      'Content-Type':'application/json',
-      'x-api-key':apolloKey,
-      Authorization:`Bearer ${apolloKey}`
-    }
-  },APOLLO_REQUEST_TIMEOUT_MS,'Apollo decision-maker lookup');
-  const data=await readJsonResponse(response);
-  if(!response.ok) return {configured:true,error:data.message || data.error || `Apollo ${response.status}`};
-  const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
-  const people=rawPeople.map(p=>normalizeApolloPerson(p,lead)).filter(p=>p.found);
-  const targetName=String(lead.decisionMakerName||'').trim();
-  const targetLinkedIn=String(lead.linkedinPersonalUrl||'').trim().toLowerCase();
-  const ranked=people
-    .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
-    .filter(p=>{
-      if(targetName){
-        return personNameMatches(p.name,targetName) || (targetLinkedIn && String(p.linkedinUrl||'').toLowerCase()===targetLinkedIn);
+  const headers={
+    accept:'application/json',
+    'Content-Type':'application/json',
+    'x-api-key':apolloKey,
+    Authorization:`Bearer ${apolloKey}`
+  };
+  const searchPeople=async(extraParams={},label='Apollo decision-maker lookup')=>{
+    const rows=[];
+    for(let page=1; page<=APOLLO_PEOPLE_SEARCH_PAGES; page++){
+      const params=new URLSearchParams();
+      apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
+      ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
+      if(domain) params.append('q_organization_domains_list[]',domain);
+      if(!domain && company) params.set('q_keywords',company);
+      Object.entries(extraParams||{}).forEach(([key,value])=>{
+        safeArray(value).forEach(item=>params.append(key,item));
+        if(!Array.isArray(value)&&value!==undefined&&value!==null&&String(value).trim())params.append(key,value);
+      });
+      params.set('include_similar_titles','true');
+      params.set('page',String(page));
+      params.set('per_page',String(APOLLO_PEOPLE_SEARCH_PER_PAGE));
+      const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
+      const response=await fetchWithTimeout(url,{method:'POST',headers},APOLLO_REQUEST_TIMEOUT_MS,label);
+      const data=await readJsonResponse(response);
+      if(!response.ok){
+        if(page===1) throw new Error(data.message || data.error || `Apollo ${response.status}`);
+        break;
       }
-      return p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain);
-    })
+      const raw=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
+      rows.push(...raw);
+      if(raw.length<APOLLO_PEOPLE_SEARCH_PER_PAGE)break;
+    }
+    return rows;
+  };
+  const rankPeople=(rawPeople=[])=>rawPeople
+    .map(p=>normalizeApolloPerson(p,lead))
+    .filter(p=>p.found)
+    .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
+    .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain))
     .sort((a,b)=>b.matchScore-a.matchScore);
-  if(!ranked.length) return {configured:true,error:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
+  let rawPeople=[];
+  let companySearchError='';
+  try{
+    rawPeople=await searchPeople({},'Apollo decision-maker lookup');
+  }catch(error){
+    return {configured:true,error:error.message||'Apollo decision-maker lookup failed',rawCount:0};
+  }
+  let ranked=rankPeople(rawPeople);
+  if(!ranked.length && company){
+    try{
+      // company keyword fallback mirrors manual Apollo search before asking people search for organization_ids[].
+      const companyParams=new URLSearchParams();
+      companyParams.set('q_organization_name',company);
+      companyParams.set('q_keywords',company);
+      companyParams.set('page','1');
+      companyParams.set('per_page','10');
+      if(domain) companyParams.set('q_organization_domains_list[]',domain);
+      const companyUrl=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_companies/search?${companyParams.toString()}`;
+      const companyResponse=await fetchWithTimeout(companyUrl,{method:'POST',headers},APOLLO_REQUEST_TIMEOUT_MS,'Apollo company keyword lookup');
+      const companyData=await readJsonResponse(companyResponse);
+      if(!companyResponse.ok) throw new Error(companyData.message || companyData.error || `Apollo company ${companyResponse.status}`);
+      const organizationIds=safeArray(companyData.organizations||companyData.accounts||companyData.companies)
+        .map(org=>org.id||org.organization_id||org.account_id)
+        .filter(Boolean)
+        .slice(0,3);
+      if(organizationIds.length){
+        const organizationPeople=await searchPeople({'organization_ids[]':organizationIds},'Apollo organization decision-maker lookup');
+        rawPeople=rawPeople.concat(organizationPeople);
+        ranked=rankPeople(rawPeople);
+      }
+    }catch(error){
+      companySearchError=error.message||String(error);
+    }
+  }
+  if(!ranked.length) return {configured:true,error:companySearchError?`Apollo did not find a confident decision-maker match after company lookup: ${companySearchError}`:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
   return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:rawPeople.length};
 }
 
 async function enrichProspectWithApollo(p){
-  const alreadyHasPersonEmail=isLikelyPersonEmail(p.decisionMakerEmail||p.personEmail||p.email);
-  const alreadyHasPersonPhone=validPhone(p.decisionMakerPhone||p.personPhone||'');
-  if(alreadyHasPersonEmail && alreadyHasPersonPhone) return {...p,apolloStatus:p.apolloStatus||'skipped because decision-maker email and phone already exist'};
+  if(p.decisionMakerName || p.linkedinPersonalUrl) return p;
   const apollo=await lookupApolloDecisionMaker(p).catch(e=>({configured:!!APOLLO_API_KEY,error:e.message}));
   const data=apollo?.data||{};
-  if(!data.name && !data.linkedinUrl && !data.email && !data.phone){
+  if(!data.name && !data.linkedinUrl){
     return {
       ...p,
       apollo,
       apolloStatus:apollo?.error||'Apollo did not return a decision-maker'
     };
   }
-  const personEmail=isLikelyPersonEmail(data.email)?data.email:'';
-  const personPhone=validPhone(data.phone)?data.phone:'';
   return {
     ...p,
     decisionMakerName:p.decisionMakerName||data.name||'',
     decisionMakerTitle:p.decisionMakerTitle||data.title||'',
-    decisionMakerEmail:p.decisionMakerEmail||personEmail,
-    decisionMakerPhone:p.decisionMakerPhone||personPhone,
-    personEmail:p.personEmail||personEmail,
-    personPhone:p.personPhone||personPhone,
-    email:personEmail||p.email||'',
-    phone:p.phone||personPhone||'',
     linkedinPersonalUrl:p.linkedinPersonalUrl||data.linkedinUrl||'',
     linkedinMatchConfidence:data.matchScore>=160?'high':'medium',
-    linkedinMatchNotes:`Apollo matched ${data.name||p.decisionMakerName||'a likely contact'}${data.title?' - '+data.title:''}${data.company?' at '+data.company:''}`,
+    linkedinMatchNotes:`Apollo matched ${data.name||'a likely contact'}${data.title?' - '+data.title:''}${data.company?' at '+data.company:''}`,
     apollo,
-    apolloStatus:`matched ${data.name||p.decisionMakerName||'likely decision-maker'}${data.title?' - '+data.title:''}${personEmail?' with email':''}${personPhone?' with phone':''}`
+    apolloStatus:`matched ${data.name||'likely decision-maker'}${data.title?' - '+data.title:''}`
+  };
+}
+
+function linkedInActivityDate(url=''){
+  const activityId=String(url||'').match(/activity-(\d{16,22})/i)?.[1]||'';
+  if(!activityId)return '';
+  try{
+    const milliseconds=Number(BigInt(activityId)>>22n);
+    const date=new Date(milliseconds);
+    return Number.isFinite(date.getTime())?date.toISOString():'';
+  }catch(_error){
+    return '';
+  }
+}
+
+function linkedInPublicMetaContent(html='',name='description'){
+  const escaped=String(name||'description').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const patterns=[
+    new RegExp(`<meta[^>]+(?:property|name)=["'](?:og:)?${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`,'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["'](?:og:)?${escaped}["'][^>]*>`,'i')
+  ];
+  for(const pattern of patterns){
+    const match=String(html||'').match(pattern);
+    if(match?.[1])return decodeBasicHtml(match[1]).replace(/\s+/g,' ').trim();
+  }
+  return '';
+}
+
+async function readPublicLinkedInPost(post={}){
+  const url=String(post.url||'').trim();
+  if(!/linkedin\.com\/(posts|feed\/update)\//i.test(url))return {...post,contentSource:'search_snippet'};
+  try{
+    const response=await fetchWithTimeout(url,{
+      headers:{
+        'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+        'Accept-Language':'en-US,en;q=0.9'
+      }
+    },10000,'LinkedIn public post metadata');
+    if(!response.ok)return {...post,contentSource:'search_snippet'};
+    const html=await response.text();
+    const description=linkedInPublicMetaContent(html,'description');
+    return description.length>=60
+      ? {...post,text:description.slice(0,1200),contentSource:'linkedin_public_metadata'}
+      : {...post,contentSource:'search_snippet'};
+  }catch(_error){
+    return {...post,contentSource:'search_snippet'};
+  }
+}
+
+function linkedInStructuredPosts(html='',personalLinkedIn=''){
+  const profileSlug=String(personalLinkedIn||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+  const records=[];
+  const visit=(value)=>{
+    if(Array.isArray(value)){
+      value.forEach(visit);
+      return;
+    }
+    if(!value||typeof value!=='object')return;
+    const types=safeArray(value['@type']).concat(typeof value['@type']==='string'?[value['@type']]:[]);
+    if(types.some(type=>String(type).toLowerCase()==='discussionforumposting'))records.push(value);
+    if(value['@graph'])visit(value['@graph']);
+  };
+  for(const match of String(html||'').matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
+    try{visit(JSON.parse(match[1]));}catch(_error){}
+  }
+  return records.map(record=>{
+    const authorUrl=typeof record.author==='object'?String(record.author?.url||''):String(record.author||'');
+    const authorSlug=authorUrl.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+    const mainUrl=typeof record.mainEntityOfPage==='object'
+      ? String(record.mainEntityOfPage?.['@id']||record.mainEntityOfPage?.url||'')
+      : String(record.mainEntityOfPage||'');
+    return {
+      date:String(record.datePublished||record.dateCreated||linkedInActivityDate(mainUrl||record.url)||''),
+      text:String(record.text||record.articleBody||record.description||'').replace(/\s+/g,' ').trim().slice(0,5000),
+      url:String(record.url||mainUrl||'').trim(),
+      authorName:typeof record.author==='object'?String(record.author?.name||'').trim():'',
+      authorSlug,
+      contentSource:'linkedin_public_profile'
+    };
+  }).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update)\//i.test(post.url))
+    .filter(post=>!profileSlug||!post.authorSlug||post.authorSlug===profileSlug)
+    .filter((post,index,array)=>array.findIndex(item=>item.url===post.url)===index)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
+    .slice(0,6);
+}
+
+async function lookupPublicLinkedInProfilePosts(personalLinkedIn=''){
+  const profileUrl=normalizeLinkedInWatchUrl(personalLinkedIn);
+  if(!/linkedin\.com\/in\//i.test(profileUrl))return {configured:false,postsLastWeek:[],rawCount:0,error:'A personal LinkedIn profile URL is required.'};
+  try{
+    let response;
+    for(let attempt=0;attempt<3;attempt+=1){
+      if(attempt)await sleep(1800*attempt);
+      response=await fetchWithTimeout(`${profileUrl}/recent-activity/all/`,{
+        redirect:'follow',
+        headers:{
+          'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+          'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language':'en-US,en;q=0.9',
+          'Cache-Control':'no-cache',
+          'Referer':'https://www.linkedin.com/'
+        }
+      },12000,'LinkedIn public profile activity');
+      if(response.status!==999)break;
+      await response.text().catch(()=>{});
+    }
+    if(!response.ok)return {configured:true,provider:'linkedin_public_profile',postsLastWeek:[],rawCount:0,error:`LinkedIn profile returned ${response.status}.`};
+    const html=await response.text();
+    const posts=linkedInStructuredPosts(html,profileUrl);
+    return {
+      configured:true,
+      provider:'linkedin_public_profile',
+      query:profileUrl,
+      postsLastWeek:posts,
+      rawCount:posts.length,
+      error:posts.length?'':'LinkedIn did not expose readable public posts for this profile.'
+    };
+  }catch(error){
+    return {configured:true,provider:'linkedin_public_profile',postsLastWeek:[],rawCount:0,error:error.message||'LinkedIn public profile could not be read.'};
+  }
+}
+
+async function lookupOutscraperLinkedInPersonalPosts(attendee={},profile={},personalLinkedIn=''){
+  const slug=String(personalLinkedIn||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]||'';
+  const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
+  const queries=[
+    slug?`site:linkedin.com/posts ${slug}`:'',
+    slug?`site:linkedin.com/feed/update ${slug}`:'',
+    name?`site:linkedin.com/posts "${name}"`:''
+  ].filter(Boolean);
+  const attempts=[];
+  const matches=[];
+  for(const query of queries.slice(0,2)){
+    const search=await lookupOutscraperGoogleSearch(query,{
+      timeoutMs:OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS,
+      label:'LinkedIn watched profile search'
+    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,query,error:error.message,results:[]}));
+    attempts.push({query,error:search.error||'',rawCount:Number(search.rawCount||0)});
+    matches.push(...safeArray(search.results)
+      .filter(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))
+      .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,{...attendee,linkedinUrl:personalLinkedIn},{},profile)));
+    if(matches.length>=3)break;
+  }
+  const discoveredPosts=matches.map(result=>({
+    date:linkedInActivityDate(result.url),
+    text:dashboardShortText([result.title,result.snippet].filter(Boolean).join(': '),'',700),
+    url:result.url
+  })).filter(post=>post.text&&post.url).filter((post,index,array)=>array.findIndex(item=>item.url===post.url)===index)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
+    .slice(0,6);
+  const posts=await Promise.all(discoveredPosts.map(readPublicLinkedInPost));
+  const errors=attempts.map(attempt=>attempt.error).filter(Boolean);
+  return {
+    configured:attempts.length>0||!!OUTSCRAPER_API_KEY,
+    provider:'outscraper_google_search',
+    query:attempts.map(attempt=>attempt.query).join(' | '),
+    postsLastWeek:posts,
+    rawCount:attempts.reduce((sum,attempt)=>sum+attempt.rawCount,0),
+    error:posts.length?'':(errors[0]||'No public LinkedIn post results were returned for this personal profile.')
   };
 }
 
 async function lookupOutscraperLinkedIn(attendee, profile){
-  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
-  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
-  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
-  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
   const organization = profile?.company || profile?.organization || profile?.metadata?.company || profile?.metadata?.organization || '';
   const email=normalizeContextEmail(attendee.email||relationshipProfilePrimaryEmail(profile)||'');
   const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
@@ -13733,19 +15786,47 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
   const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
   const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
-  const query = personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || companyLinkedIn || organization || usableDomain || email;
+  if(/linkedin\.com\/in\//i.test(personalLinkedIn)){
+    const direct=await lookupPublicLinkedInProfilePosts(personalLinkedIn);
+    if(direct.postsLastWeek?.length)return direct;
+    if(attendee.strictLatest)return direct;
+    const fallback=await lookupOutscraperLinkedInPersonalPosts(attendee,profile,personalLinkedIn);
+    return fallback.postsLastWeek?.length
+      ? fallback
+      : {...fallback,error:fallback.error||direct.error};
+  }
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
+  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
+  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
+  const companySlug=String(companyLinkedIn||personalLinkedIn||'').match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]||'';
+  const query = companySlug || [name, organization || usableDomain].filter(Boolean).join(' ') || name || organization || usableDomain || email;
   if(query) url.searchParams.set('query', query);
   url.searchParams.set('async','false');
   const response = await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts');
   const data = await readJsonResponse(response);
   if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
-  const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
-  const recentPosts = posts.slice(0,12).map(p=>({
+  const rows = Array.isArray(data.data) ? data.data.flat(6).filter(Boolean) : [];
+  const embeddedError=rows.find(row=>row&&typeof row==='object'&&!Array.isArray(row)&&row.error)?.error||'';
+  const posts=rows.flatMap(row=>{
+    if(!row||typeof row!=='object'||Array.isArray(row))return [];
+    return safeArray(row.posts||row.linkedin_posts||row.items).length
+      ? safeArray(row.posts||row.linkedin_posts||row.items)
+      : [row];
+  });
+  const recentPosts = posts.slice(0,24).map(p=>({
     date:p.date || p.posted_at || p.created_at || '',
     text:String(p.text || p.post_text || p.content || p.description || p.title || '').slice(0,700),
     url:p.url || p.post_url || p.link || ''
   })).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update|pulse)\//i.test(post.url||'')).slice(0,6);
-  return {configured:true, query, postsLastWeek:recentPosts, rawCount:posts.length};
+  return {
+    configured:true,
+    provider:'outscraper_linkedin_company_posts',
+    query,
+    postsLastWeek:recentPosts,
+    rawCount:posts.length,
+    error:recentPosts.length?'':(embeddedError||'Outscraper returned no readable LinkedIn posts for this company profile.')
+  };
 }
 
 function meetingPrepPublicSearchQueries(attendee={}, contact={}, profile={}){
@@ -14232,9 +16313,6 @@ async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
     name:o.name,
     status:o.status,
     stage,
-    pipelineId:o.pipelineId||o.pipeline_id||o.pipeline?.id||'',
-    pipelineStageId:o.pipelineStageId||o.pipeline_stage_id||o.pipelineStage?.id||o.stage?.id||'',
-    pipelineName:o.pipeline?.name||o.pipelineName||o.pipeline_name||'',
     value:o.monetaryValue,
     contactName:o.contact?.name||o.contactName||'',
     contactId,
@@ -14261,45 +16339,17 @@ app.get('/api/pipeline',async(req,res)=>{
       return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL account configuration'}});
     }
     const now=Date.now();
-    const requestedLimit=Math.min(Math.max(Number(req.query.limit)||250,1),500);
     const batches=await Promise.allSettled(accounts.map(async account=>{
-      const [found,pipelineResponse]=await Promise.all([
-        fetchGhlOpportunitiesForAccount(account,{status:req.query.status||'open',limit:requestedLimit}),
-        ghlTryForAccount(account,'GET',`/opportunities/pipelines?locationId=${encodeURIComponent(account.locationId)}`)
-      ]);
+      const found=await fetchGhlOpportunitiesForAccount(account,{status:'open',limit:100});
       const opps=found.data?.opportunities||[];
       const enriched=await mapWithConcurrency(opps,6,o=>enrichGhlOpportunityForAccount(o,account,now));
-      const pipelines=pipelineResponse.ok
-        ? (pipelineResponse.data?.pipelines||pipelineResponse.data?.data||[])
-        : [];
-      const pipelineById=new Map(pipelines.map(p=>[String(p.id||p._id||''),p]));
-      const stageById=new Map();
-      pipelines.forEach(p=>{
-        (p.stages||p.pipelineStages||[]).forEach(stage=>{
-          stageById.set(String(stage.id||stage._id||''),{
-            stageName:stage.name||stage.title||'Unknown Stage',
-            pipelineId:String(p.id||p._id||''),
-            pipelineName:p.name||p.title||'Unassigned pipeline'
-          });
-        });
-      });
-      const normalized=enriched.map(opportunity=>{
-        const directPipeline=pipelineById.get(String(opportunity.pipelineId||''));
-        const stageMatch=stageById.get(String(opportunity.pipelineStageId||''));
-        return {
-          ...opportunity,
-          pipelineId:opportunity.pipelineId||stageMatch?.pipelineId||'',
-          pipelineName:opportunity.pipelineName||directPipeline?.name||directPipeline?.title||stageMatch?.pipelineName||'Unassigned pipeline',
-          stage:opportunity.stage==='Unknown Stage'&&stageMatch?.stageName?stageMatch.stageName:opportunity.stage
-        };
-      });
-      return {account,path:found.path,attempts:found.attempts,opportunities:normalized,total:found.data?.meta?.total||opps.length,pipelines:pipelines.map(p=>({id:p.id||p._id,name:p.name||p.title||'',stages:(p.stages||p.pipelineStages||[]).map(s=>({id:s.id||s._id,name:s.name||s.title||''}))}))};
+      return {account,path:found.path,attempts:found.attempts,opportunities:enriched,total:found.data?.meta?.total||opps.length};
     }));
     const successful=batches.filter(b=>b.status==='fulfilled').map(b=>b.value);
     const errors=batches.filter(b=>b.status==='rejected').map((b,i)=>({account:accounts[i]?.label,error:b.reason?.message||String(b.reason)}));
     const enriched=successful.flatMap(b=>b.opportunities);
     const stalled=enriched.filter(o=>o.stalled);
-    res.json({pipelineActive:successful.reduce((n,b)=>n+b.total,0)||enriched.length,stalledDeals:stalled.length,opportunities:enriched,pipelines:successful.flatMap(b=>b.pipelines||[]),_debug:{configured:true,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts})),errors}});
+    res.json({pipelineActive:successful.reduce((n,b)=>n+b.total,0)||enriched.length,stalledDeals:stalled.length,opportunities:enriched,_debug:{configured:true,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts})),errors}});
   }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{error:e.message}});}
 });
 
@@ -14422,7 +16472,7 @@ function normalizeSidebarCalendarEvent(ev,source){
   };
 }
 
-const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(OWNER_EMAILS);
+const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
 function sidebarCalendarAttendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SIDEBAR_SELF_CALENDAR_EMAILS.has(email)));
@@ -14992,6 +17042,18 @@ app.post('/api/val/os/external-action-packets/:id/update',async(req,res)=>{
   }catch(e){res.status(/not found/i.test(e.message)?404:400).json({ok:false,error:e.message});}
 });
 
+async function recordPublicResearchBoardEvent({id='',title='',summary='',sourceRefs=[],payload={}}={}){
+  return processCanonicalBoardEvidence({
+    sourceType:'public_research',
+    sourceId:id||stableKey(`public_research_${title}_${summary}`),
+    sourceTitle:title||'Public research result',
+    rawText:summary,
+    sourceRefs,
+    domainRoutes:['board_of_observers','relationships','projects'],
+    metadata:{source:'public_research',payload,noExternalAction:true}
+  });
+}
+
 app.post('/api/val/leads/research',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -15002,6 +17064,12 @@ app.post('/api/val/leads/research',async(req,res)=>{
     if(DEMO_MODE){
       const lead={...demoLeads({market:location||'United States',limit:1})[0],organizationName:company,location:location||'Demo Market'};
       const content=`company_payload:\nCompany Name: ${lead.organizationName}\nIndustry: ${lead.industry}\nPrimary Service: ${lead.primaryService}\nBusiness Model: B2B services\nLocation(s): ${lead.location}\nWebsite Status: active\n\ngoogle_raw:\n${lead.googleRaw}\n\ncompany_signals_raw:\n- Hiring activity: ${lead.hiringActivity}\n- Careers page: ${lead.careersPage}\n- Operational indicators: ${lead.operationalIndicators}\n\ncompany_news_raw:\n${lead.newsRaw}\n\nlinkedin_personal_url:\n${lead.linkedinPersonalUrl}\n\nlinkedin_company_url:\n${lead.linkedinCompanyUrl}`;
+      void recordPublicResearchBoardEvent({
+        id:`lead_research_demo_${stableKey(company+'_'+location)}`,
+        title:`Lead research: ${company}`,
+        summary:content,
+        payload:{company,location,contactId,demo:true}
+      });
       return res.json({ok:true,company,location,content:withDemoCta(content),fields:parseLeadFieldOutputs(content),ghlUpdate:{updated:!!contactId,demo:true}});
     }
     const user=[
@@ -15026,6 +17094,12 @@ app.post('/api/val/leads/research',async(req,res)=>{
       importance:3,
       metadata:{company,location,contactId,ghlUpdate}
     }).catch(()=>{});
+    void recordPublicResearchBoardEvent({
+      id:`lead_research_${stableKey(company+'_'+location+'_'+content)}`,
+      title:`Lead research: ${company}`,
+      summary:content,
+      payload:{company,location,contactId,fields,ghlUpdate}
+    });
     res.json({ok:true,company,location,content,fields,ghlUpdate});
   }catch(e){res.status(500).json({error:e.message});}
 });
@@ -15049,6 +17123,12 @@ app.post('/api/val/leads/discover',async(req,res)=>{
       importance:3,
       metadata:{market:discovered.market,criteria:discovered.criteria,limit:discovered.report?.requestedViableLeads,report:discovered.report}
     }).catch(()=>{});
+    void recordPublicResearchBoardEvent({
+      id:`prospect_discovery_${stableKey(discovered.market+'_'+discovered.criteria+'_'+content)}`,
+      title:`Prospect discovery: ${discovered.criteria} in ${discovered.market}`,
+      summary:content,
+      payload:{market:discovered.market,criteria:discovered.criteria,report:discovered.report}
+    });
     res.json({...discovered,content});
   }catch(e){
     const fallback=leadDiscoveryErrorPayload(req.body||{},e);
@@ -15087,47 +17167,6 @@ app.post('/api/val/leads/discover-preview',async(req,res)=>{
   }
 });
 
-app.post('/api/val/leads/staged-runs',async(req,res)=>{
-  try{
-    cleanupGoallStagedRuns();
-    if(DEMO_MODE){
-      const run=createGoallStagedLeadRun({...req.body,limit:Math.min(Number(req.body?.limit)||12,12)});
-      return res.json(publicLeadRunView(run));
-    }
-    const run=createGoallStagedLeadRun(req.body||{});
-    res.json(publicLeadRunView(run));
-  }catch(e){
-    res.status(500).json({ok:false,error:e.message});
-  }
-});
-
-app.post('/api/val/leads/upload-csv-staged-runs',upload.single('file'),async(req,res)=>{
-  try{
-    cleanupGoallStagedRuns();
-    const file=req.file;
-    if(!file) return res.status(400).json({ok:false,error:'Choose a CSV file of GOALL employer leads to enrich.'});
-    if(!/\.csv$/i.test(file.originalname||'')&&!/csv|plain|spreadsheet/i.test(file.mimetype||'')){
-      return res.status(400).json({ok:false,error:'Choose a .csv file with company and location columns.'});
-    }
-    const rows=parseGoallLeadCsv(file.buffer.toString('utf8'));
-    if(!rows.length) return res.status(400).json({ok:false,error:'VAL could not find any business rows in that CSV.'});
-    const payload={...(req.body||{}),leadProfile:'goall',sourceType:'csv_upload',csvFileName:file.originalname||'uploaded leads.csv'};
-    const leads=rows.map((row,index)=>goallCsvLeadFromRow(row,index,payload)).filter((lead)=>lead.organizationName||lead.name);
-    if(!leads.length) return res.status(400).json({ok:false,error:'VAL needs at least one company or business name column to enrich uploaded leads.'});
-    const run=createGoallCsvStagedLeadRun(payload,leads);
-    res.json(publicLeadRunView(run));
-  }catch(e){
-    res.status(500).json({ok:false,error:e.message});
-  }
-});
-
-app.get('/api/val/leads/staged-runs/:runId',async(req,res)=>{
-  cleanupGoallStagedRuns();
-  const run=goallStagedLeadRuns.get(String(req.params.runId||''));
-  if(!run) return res.status(404).json({ok:false,error:'Staged GOALL run was not found. Start a new scraper run.'});
-  res.json(publicLeadRunView(run));
-});
-
 app.post('/api/val/leads/import-approved',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -15141,10 +17180,8 @@ app.post('/api/val/leads/import-approved',async(req,res)=>{
       criteria:String(body.criteria||'Approved GOALL lead import'),
       organizationType:String(body.organizationType||'businesses'),
       employeeMinimum:donorValue(body.employeeMinimum)||300,
-	      tag:normalizeLeadTag(body.tag||body.organizationType),
-	      importTag:String(body.importTag||body.sourceTag||body.csvSourceTag||'').trim(),
-	      sourceTag:String(body.sourceTag||body.importTag||body.csvSourceTag||'').trim(),
-	      scraped:body.scraped||body.outscraper||{},
+      tag:normalizeLeadTag(body.tag||body.organizationType),
+      scraped:body.scraped||body.outscraper||{},
       leads:Array.isArray(body.leads)?body.leads:[],
       leadProfile:body.leadProfile||body.searchPlan?.leadProfile||'',
       searchPlan:body.searchPlan||null,
@@ -15160,6 +17197,59 @@ app.get('/api/frisson/custom-fields/status',async(req,res)=>{
   try{
     res.json(await frissonCustomFieldStatus());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.get('/api/val/lead-scrapers',async(req,res)=>{
+  try{
+    const scrapers=await listGeneralLeadScrapers();
+    res.json({
+      ok:true,
+      scrapers,
+      entitlement:{
+        included:INCLUDED_GENERAL_LEAD_SCRAPER_SLOTS,
+        active:scrapers.filter(row=>row.status==='active').length,
+        limit:generalLeadScraperSlotLimit(),
+        additionalPriceMonthly:ADDITIONAL_GENERAL_LEAD_SCRAPER_PRICE_MONTHLY
+      }
+    });
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/val/lead-scrapers',async(req,res)=>{
+  try{
+    const scraper=await saveGeneralLeadScraper(req.body||{});
+    res.json({ok:true,scraper});
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,code:e.code||'',entitlement:e.entitlement||null});
+  }
+});
+
+app.put('/api/val/lead-scrapers/:id',async(req,res)=>{
+  try{
+    const scraper=await saveGeneralLeadScraper(req.body||{},req.params.id);
+    res.json({ok:true,scraper});
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,code:e.code||'',entitlement:e.entitlement||null});
+  }
+});
+
+app.delete('/api/val/lead-scrapers/:id',async(req,res)=>{
+  try{res.json({ok:true,scraper:await archiveGeneralLeadScraper(req.params.id)});}
+  catch(e){res.status(e.statusCode||500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/val/lead-scrapers/discover-preview',async(req,res)=>{
+  try{
+    const criteria=generalLeadScraperCriteria(req.body?.criteria||req.body||{});
+    const result=await withTimeout(
+      discoverGeneralLeadProspects(criteria),
+      GOALL_LEAD_DISCOVERY_TIMEOUT_MS,
+      'General lead scrape timed out before results returned'
+    );
+    res.json(result);
+  }catch(e){
+    res.status(e.statusCode||500).json({ok:false,error:e.message,leads:[]});
+  }
 });
 
 app.post('/api/frisson/organizations/discover-preview',async(req,res)=>{
@@ -15388,6 +17478,41 @@ app.delete('/api/ghl/contacts/:id/tags',async(req,res)=>{
 // 11-13. CONVERSATION TOOLS
 // ════════════════════════════════════════════════════════
 
+async function recordGhlConversationMessagesForBoard(data={},conversationId=''){
+  const messages=safeArray(data.messages||data.conversation?.messages||data.data?.messages);
+  const results=[];
+  for(const message of messages.slice(-100)){
+    const messageType=String(message.type||message.messageType||message.message_type||'').toLowerCase();
+    if(messageType&&!/sms|text/.test(messageType))continue;
+    const body=String(message.body||message.message||message.text||'').trim();
+    if(!body)continue;
+    const sourceId=message.id||message.messageId||stableKey(`ghl_sms_${conversationId}_${message.dateAdded||message.createdAt||body}`);
+    const result=await processCanonicalBoardEvidence({
+      sourceType:'sms',
+      sourceId,
+      sourceTitle:`${String(message.direction||'').toLowerCase()==='outbound'?'Sent':'Received'} SMS`,
+      rawText:body,
+      createdAt:message.dateAdded||message.createdAt||message.created_at||'',
+      sourceRefs:[{
+        sourceType:'sms',
+        sourceId,
+        quoteOrSummary:body,
+        confidence:1,
+        createdAt:message.dateAdded||message.createdAt||message.created_at||''
+      }],
+      domainRoutes:['relationships','board_of_observers','executive_inbox'],
+      metadata:{
+        source:'ghl_conversation',
+        direction:message.direction||'',
+        conversationId,
+        contactId:message.contactId||message.contact_id||''
+      }
+    });
+    if(result)results.push(result);
+  }
+  return results;
+}
+
 app.get('/api/ghl/conversations',async(req,res)=>{
   try{
     const {limit=20,query,status}=req.query;
@@ -15399,12 +17524,29 @@ app.get('/api/ghl/conversations',async(req,res)=>{
 });
 
 app.get('/api/ghl/conversations/:id/messages',async(req,res)=>{
-  try{res.json(await ghl('GET',`/conversations/${req.params.id}/messages`));}
+  try{
+    const data=await ghl('GET',`/conversations/${req.params.id}/messages`);
+    void recordGhlConversationMessagesForBoard(data,req.params.id);
+    res.json(data);
+  }
   catch(e){res.status(500).json({error:e.message});}
 });
 
 app.post('/api/ghl/conversations/:id/messages',async(req,res)=>{
-  try{res.json(await ghl('POST',`/conversations/messages`,{...req.body,conversationId:req.params.id}));}
+  try{
+    const data=await ghl('POST',`/conversations/messages`,{...req.body,conversationId:req.params.id});
+    void recordGhlConversationMessagesForBoard({
+      messages:[{
+        ...(data.message||data),
+        id:data.message?.id||data.id,
+        type:req.body.type||'SMS',
+        direction:'outbound',
+        body:req.body.message||req.body.body||req.body.text||'',
+        contactId:req.body.contactId||req.body.contact_id||''
+      }]
+    },req.params.id);
+    res.json(data);
+  }
   catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -15665,28 +17807,71 @@ async function loadTasks(){
   }
   return readTasks();
 }
+async function recordTaskLifecycleForBoard(task={},eventType='task_updated'){
+  const taskId=String(task.id||'').trim();
+  if(!taskId)return null;
+  return processCanonicalBoardEvidence({
+    sourceType:'task',
+    sourceId:taskId,
+    sourceTitle:task.title||'Task',
+    rawText:[
+      `Event: ${eventType}`,
+      `Status: ${task.completed?'completed':(task.deleted?'deleted':'open')}`,
+      task.title?`Task: ${task.title}`:'',
+      task.notes||'',
+      task.contactName?`Relationship: ${task.contactName}`:'',
+      task.dueDate?`Evidence-based due date: ${task.dueDate}`:'No due date was supplied.'
+    ].filter(Boolean).join('\n'),
+    sourceRefs:safeArray(task.sourceRefs||task.source_refs||task.details)
+      .filter(detail=>detail&&(detail.sourceId||detail.source_id||detail.transcriptId||detail.transcript_id))
+      .map(detail=>({
+        sourceType:detail.sourceType||detail.source_type||(detail.transcriptId||detail.transcript_id?'transcript':'task'),
+        sourceId:detail.sourceId||detail.source_id||detail.transcriptId||detail.transcript_id||taskId,
+        quoteOrSummary:detail.sourceQuote||detail.source_quote||detail.summary||task.title||'Task evidence',
+        confidence:Number(detail.confidence)||0.85
+      })),
+    domainRoutes:['tasks','board_of_observers','chief_of_staff'],
+    metadata:{
+      source:'task_persistence',
+      eventType,
+      originalSourceType:task.source||task.sourceType||task.source_type||'',
+      originalSourceId:task.sourceId||task.source_id||task.transcriptId||task.transcript_id||'',
+      completed:!!task.completed,
+      dueDateSupplied:!!task.dueDate,
+      noExternalAction:true
+    }
+  });
+}
 async function saveTask(task){
   task={...task};
   task.title=String(task.title||'Untitled task').trim()||'Untitled task';
   task.contactName=task.contactName||'';
-  if(!task.dueDate&&!task.completed) task.dueDate=new Date(Date.now()+24*60*60*1000).toISOString();
+  task.dueDate=task.dueDate||null;
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
     if(state){
       const clean={...task,id:task.id||uuid('demo-task'),title:String(task.title||'Untitled task').trim()||'Untitled task',createdAt:task.createdAt||new Date().toISOString()};
       const idx=state.tasks.findIndex(t=>t.id===clean.id);
       if(idx>=0) state.tasks[idx]=clean; else state.tasks.push(clean);
+      await recordTaskLifecycleForBoard(clean,clean.completed?'task_completed':(idx>=0?'task_updated':'task_created'));
+      return clean;
     }
-    return;
+    return task;
   }
   await valDbReady;
   if(pgPool){
+    let existingTask=null;
+    if(task.id){
+      const existing=await dbQuery('select * from val_tasks where id=$1 and user_id=$2 limit 1',[task.id,VAL_USER_ID]);
+      existingTask=existing.rows?.[0]?rowToTask(existing.rows[0]):null;
+    }
     if(!task.completed){
       const dupe=await dbQuery('select id,details from val_tasks where user_id=$1 and completed=false and lower(title)=lower($2) and lower(coalesce(contact_name,\'\'))=lower($3) limit 1',[VAL_USER_ID,task.title,task.contactName]);
       if(dupe.rows[0]&&dupe.rows[0].id!==task.id){
         task.id=dupe.rows[0].id;
         const existingDetails=Array.isArray(dupe.rows[0].details)?dupe.rows[0].details:[];
         task.details=existingDetails.concat(task.details||[]);
+        existingTask=existingTask||rowToTask(dupe.rows[0]);
       }
     }
     await dbQuery(`
@@ -15694,24 +17879,30 @@ async function saveTask(task){
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11::timestamptz,now()),now())
       on conflict (id) do update set title=excluded.title, contact_name=excluded.contact_name, due_date=excluded.due_date, notes=excluded.notes, details=excluded.details, completed=excluded.completed, completed_at=excluded.completed_at, completed_by=excluded.completed_by, updated_at=now()
     `,[task.id,VAL_USER_ID,task.title||'Untitled task',task.contactName||'',task.dueDate||null,task.notes||'',JSON.stringify(task.details||[]),!!task.completed,task.completedAt||null,task.completedBy||'',task.createdAt||null]);
-    return;
+    await recordTaskLifecycleForBoard(task,task.completed&&!existingTask?.completed?'task_completed':(existingTask?'task_updated':'task_created'));
+    return task;
   }
   const tasks=readTasks();
+  let existingTask=tasks.find(existing=>existing?.id===task.id)||null;
   if(!task.completed){
     const dupe=tasks.find(t=>t&&t.id!==task.id&&!t.completed&&String(t.title||'').toLowerCase()===String(task.title||'').toLowerCase()&&String(t.contactName||'').toLowerCase()===String(task.contactName||'').toLowerCase());
     if(dupe){
       task.id=dupe.id;
       task.details=(Array.isArray(dupe.details)?dupe.details:[]).concat(task.details||[]);
+      existingTask=existingTask||dupe;
     }
   }
   const idx=tasks.findIndex(t=>t.id===task.id);
   if(idx>=0)tasks[idx]=task; else tasks.push(task);
   writeTasks(tasks);
+  await recordTaskLifecycleForBoard(task,task.completed&&!existingTask?.completed?'task_completed':(existingTask?'task_updated':'task_created'));
+  return task;
 }
 async function replaceTasks(tasks){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
     if(state) state.tasks=cloneDemo(tasks);
+    for(const task of tasks)await recordTaskLifecycleForBoard(task,task.completed?'task_completed':'task_updated');
     return;
   }
   await valDbReady;
@@ -15723,16 +17914,24 @@ async function replaceTasks(tasks){
   const byId={};
   existing.concat(tasks).forEach(t=>{if(t&&t.id)byId[t.id]=t;});
   writeTasks(Object.keys(byId).map(id=>byId[id]));
+  for(const task of tasks)await recordTaskLifecycleForBoard(task,task.completed?'task_completed':'task_updated');
 }
 async function deleteTask(id){
+  const existing=await findTaskById(id).catch(()=>null);
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
     if(state) state.tasks=(state.tasks||[]).filter(t=>t.id!==id);
+    if(existing)await recordTaskLifecycleForBoard({...existing,deleted:true},'task_deleted');
     return;
   }
   await valDbReady;
-  if(pgPool){ await dbQuery('delete from val_tasks where user_id=$1 and id=$2',[VAL_USER_ID,id]); return; }
+  if(pgPool){
+    await dbQuery('delete from val_tasks where user_id=$1 and id=$2',[VAL_USER_ID,id]);
+    if(existing)await recordTaskLifecycleForBoard({...existing,deleted:true},'task_deleted');
+    return;
+  }
   writeTasks(readTasks().filter(t=>t.id!==id));
+  if(existing)await recordTaskLifecycleForBoard({...existing,deleted:true},'task_deleted');
 }
 function cleanAutoTaskTitle(line){
   return String(line||'')
@@ -16105,6 +18304,44 @@ app.put('/api/val/templates/:templateKey',async(req,res)=>{
 function rowToDraft(row){
   return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,draftType:row.draft_type,contactId:row.contact_id||'',provider:row.provider,subject:row.subject||'',body:row.body||'',status:row.status,sourceContext:row.source_context_json||{},createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
 }
+async function recordInternalDraftBoardEvent(draft={}){
+  if(!draft?.id)return null;
+  const sourceRefs=draft.sourceContext?.sourceRefs||draft.sourceContext?.source_refs||[];
+  const packet=await processCanonicalBoardEvidence({
+    sourceType:'draft',
+    sourceId:draft.id,
+    sourceTitle:draft.subject||draft.draftType||'Prepared draft',
+    rawText:[draft.subject,draft.body].filter(Boolean).join('\n\n'),
+    sourceRefs,
+    domainRoutes:['leverage','board_of_observers'],
+    metadata:{
+      source:'internal_draft',
+      draftType:draft.draftType||'',
+      status:draft.status||'draft',
+      contactId:draft.contactId||'',
+      sourceContext:draft.sourceContext||{},
+      noExternalAction:true
+    }
+  });
+  if(/linkedin_(?:comment|post|dm)_draft|social_(?:comment|post)_draft/i.test(String(draft.draftType||''))){
+    await processCanonicalBoardEvidence({
+      sourceType:'linkedin_visibility',
+      sourceId:draft.id,
+      sourceTitle:draft.subject||'LinkedIn draft prepared',
+      rawText:[draft.subject,draft.body].filter(Boolean).join('\n\n'),
+      sourceRefs,
+      domainRoutes:['linkedin_visibility','relationships','board_of_observers'],
+      metadata:{
+        source:'internal_draft',
+        eventType:'draft_prepared',
+        draftType:draft.draftType,
+        contactId:draft.contactId||'',
+        noExternalAction:true
+      }
+    });
+  }
+  return packet;
+}
 async function saveInternalDraft(payload){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
@@ -16113,6 +18350,7 @@ async function saveInternalDraft(payload){
       const idx=state.drafts.findIndex(d=>d.id===draft.id);
       if(idx>=0) state.drafts[idx]={...state.drafts[idx],...draft}; else state.drafts.unshift(draft);
     }
+    void recordInternalDraftBoardEvent(draft);
     return draft;
   }
   await valDbReady;
@@ -16126,6 +18364,7 @@ async function saveInternalDraft(payload){
     `,[draft.id,draft.userId,draft.tenantId,draft.draftType,draft.contactId,draft.provider,draft.subject,draft.body,draft.status,JSON.stringify(draft.sourceContext)]);
     const saved=rowToDraft(r.rows[0]);
     await auditLog({tenantId:draft.tenantId,userId:draft.userId,action:'draft_created',resourceType:'draft',resourceId:saved.id,metadata:{draftType:saved.draftType,provider:saved.provider,status:saved.status,source:saved.sourceContext?.source||''},success:true}).catch(()=>{});
+    void recordInternalDraftBoardEvent(saved);
     return saved;
   }
   const store=valStore();store.drafts=store.drafts||[];
@@ -16134,6 +18373,7 @@ async function saveInternalDraft(payload){
   if(idx>=0)store.drafts[idx]={...store.drafts[idx],...record}; else store.drafts.unshift(record);
   saveValStore(store);
   await auditLog({tenantId:draft.tenantId,userId:draft.userId,action:'draft_created',resourceType:'draft',resourceId:record.id,metadata:{draftType:record.draftType,provider:record.provider,status:record.status,source:record.sourceContext?.source||''},success:true}).catch(()=>{});
+  void recordInternalDraftBoardEvent(record);
   return record;
 }
 async function listDrafts(status=''){
@@ -16152,6 +18392,239 @@ async function listDrafts(status=''){
   }
   return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
 }
+function normalizeLinkedInWatchUrl(value=''){
+  const raw=String(value||'').trim();
+  if(!raw)return '';
+  let parsed;
+  try{
+    parsed=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);
+  }catch(_error){
+    return '';
+  }
+  const host=String(parsed.hostname||'').toLowerCase().replace(/^www\./,'');
+  if(host!=='linkedin.com')return '';
+  const match=String(parsed.pathname||'').match(/^\/(in|company)\/([^/?#]+)/i);
+  if(!match)return '';
+  return `https://www.linkedin.com/${match[1].toLowerCase()}/${match[2].replace(/\/+$/,'')}`;
+}
+function linkedinWatchNameFromUrl(url=''){
+  const match=String(url||'').match(/linkedin\.com\/(?:in|company)\/([^/?#]+)/i);
+  const slug=decodeURIComponent(match?.[1]||'').replace(/[-_]+/g,' ').replace(/\b\w/g,char=>char.toUpperCase()).trim();
+  return slug||'LinkedIn profile';
+}
+function linkedinProfileUrl(profile={}){
+  return normalizeLinkedInWatchUrl(profile.linkedinUrl||profile.linkedin_url||profile.metadata?.linkedinUrl||profile.metadata?.linkedin_url||'');
+}
+function linkedinProfileIsWatched(profile={}){
+  return Boolean(linkedinProfileUrl(profile))&&profile.metadata?.linkedinWatch!==false;
+}
+function linkedInVerifiedCachedPosts(profile={}){
+  const metadata=profile.metadata||{};
+  const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
+  return safeArray(
+    receipts.linkedInLatestPosts||
+    metadata.linkedInLatestPosts||
+    metadata.linkedinLatestPosts||
+    metadata.linkedin_latest_posts
+  ).filter(post=>post?.contentSource==='linkedin_public_profile');
+}
+function publicLinkedInWatchedProfile(profile={}){
+  const metadata=profile.metadata||{};
+  const linkedinUrl=linkedinProfileUrl(profile);
+  const cachedVerifiedPosts=linkedInVerifiedCachedPosts(profile);
+  const refreshFailed=metadata.linkedinLastRefreshStatus==='error';
+  return {
+    id:profile.id,
+    name:profile.displayName||linkedinWatchNameFromUrl(linkedinUrl),
+    linkedinUrl,
+    explicit:metadata.linkedinWatch===true,
+    lastCheckedAt:metadata.linkedinLastCheckedAt||'',
+    lastRefreshStatus:metadata.linkedinLastRefreshStatus||'not_checked',
+    lastRefreshMessage:refreshFailed&&cachedVerifiedPosts.length
+      ? `${metadata.linkedinLastRefreshMessage||'LinkedIn refresh is temporarily unavailable.'} The last ${cachedVerifiedPosts.length} verified post${cachedVerifiedPosts.length===1?' remains':'s remain'} visible.`
+      : (metadata.linkedinLastRefreshMessage||'Ready to check for current posts.'),
+    postCount:refreshFailed&&cachedVerifiedPosts.length
+      ? cachedVerifiedPosts.length
+      : Number(metadata.linkedinLastPostCount||0),
+    provider:metadata.linkedinProvider||'outscraper'
+  };
+}
+async function prepareLinkedInCommentDraft(profile={},post={}){
+  const postText=String(post.text||post.summary||post.title||'').trim();
+  if(!postText)return null;
+  const learning=await listDraftLearningExamples({artifactKind:'linkedin_comment_draft',limit:6}).catch(()=>[]);
+  const raw=await callValModel({
+    system:[
+      'Write one review-only LinkedIn comment for the account owner.',
+      'Respond to the specific idea in the post. Sound human, warm, intelligent, and concise.',
+      'Use 1 to 4 sentences. Do not summarize the whole post.',
+      'Do not use generic applause, networking language, a sales pitch, invented familiarity, or a call to action.',
+      'Approved examples may guide voice and rhythm only; never reuse their facts or names.',
+      'Nothing is posted or sent. Return strict JSON with body and used_evidence.'
+    ].join('\n'),
+    user:JSON.stringify({
+      person:profile.displayName||profile.name||'',
+      relationshipContext:String(profile.summary||'').slice(0,1200),
+      post:{text:postText.slice(0,5000),url:post.url||'',date:post.date||''},
+      approvedDraftLearning:learning.map(item=>({outcome:item.outcome,finalDraft:item.finalDraft})),
+      required:{body:'complete comment draft',used_evidence:'one exact phrase from the post'}
+    }),
+    maxTokens:600,
+    json:true,
+    timeoutMs:20000
+  });
+  let parsed={};
+  try{parsed=typeof raw==='string'?JSON.parse(raw):raw||{};}catch(_){parsed={};}
+  const body=String(parsed.body||parsed.comment||'').trim();
+  const evidence=String(parsed.used_evidence||parsed.usedEvidence||'').trim();
+  const normalizedPostText=postText.replace(/\s+/g,' ').trim().toLowerCase();
+  const normalizedEvidence=evidence.replace(/\s+/g,' ').trim().toLowerCase();
+  if(body.length<18||normalizedEvidence.length<4||!normalizedPostText.includes(normalizedEvidence))return null;
+  return {body,usedEvidence:evidence};
+}
+async function refreshLinkedInVisibility({limit=20}={}){
+  const profiles=(await listRelationshipProfiles({limit:600}))
+    .filter(profile=>profile.profileType==='person')
+    .filter(linkedinProfileIsWatched)
+    .sort((a,b)=>{
+      const priority=profile=>Number(Boolean(profile.metadata?.linkedinSupport||profile.metadata?.supportCircle||profile.metadata?.vip))*10+Number(profile.confidence||0);
+      return priority(b)-priority(a);
+    })
+    .slice(0,Math.max(1,Math.min(Number(limit)||20,40)));
+  const existingDrafts=await listDrafts();
+  const results=await Promise.all(profiles.map(async profile=>{
+    const checkedAt=new Date().toISOString();
+    const linkedinUrl=linkedinProfileUrl(profile);
+    const existingMetadata=profile.metadata||{};
+    const previousCheckedAt=new Date(existingMetadata.linkedinLastCheckedAt||0).getTime();
+    const refreshAgeMs=Date.now()-previousCheckedAt;
+    const cachedVerifiedPosts=linkedInVerifiedCachedPosts(profile);
+    if(Number.isFinite(previousCheckedAt)&&previousCheckedAt>0&&refreshAgeMs<10*60*1000){
+      return {
+        profileId:profile.id,
+        name:profile.displayName,
+        linkedinUrl,
+        configured:true,
+        error:existingMetadata.linkedinLastRefreshStatus==='error'?(existingMetadata.linkedinLastRefreshMessage||'LinkedIn refresh is cooling down.'):'',
+        status:'cached',
+        checkedAt:existingMetadata.linkedinLastCheckedAt,
+        postCount:cachedVerifiedPosts.length,
+        draftCount:0,
+        cached:true
+      };
+    }
+    const lookup=await lookupOutscraperLinkedIn({
+      name:profile.displayName,
+      email:relationshipProfilePrimaryEmail(profile),
+      linkedinUrl,
+      strictLatest:true
+    },profile).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,postsLastWeek:[],rawCount:0}));
+    const posts=safeArray(lookup.postsLastWeek).slice(0,3).map((post,index)=>({
+      id:post.url||stableKey(`linkedin:${profile.id}:${post.date||index}`),
+      date:post.date||'',
+      text:String(post.text||'').trim(),
+      summary:String(post.text||'').trim(),
+      url:post.url||'',
+      authorName:String(post.authorName||'').trim(),
+      contentSource:post.contentSource||'provider_post_body',
+      source:'outscraper_linkedin_post'
+    })).filter(post=>post.text&&post.url);
+    const urlSlug=String(linkedinUrl).match(/linkedin\.com\/(?:in|company)\/([^/?#]+)/i)?.[1]?.replace(/[-_]/g,'').toLowerCase()||'';
+    const currentNameKey=String(profile.displayName||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const observedAuthorName=String(posts[0]?.authorName||'').trim();
+    const displayName=observedAuthorName&&(currentNameKey===urlSlug||(!String(profile.displayName||'').includes(' ')&&observedAuthorName.includes(' ')))
+      ? observedAuthorName
+      : profile.displayName;
+    const metadata=profile.metadata||{};
+    const sourceReceipts=metadata.sourceReceipts||{};
+    const verifiedPostsForReceipt=posts.length?posts:cachedVerifiedPosts;
+    await saveRelationshipProfile({
+      ...profile,
+      displayName,
+      metadataJson:{
+        ...metadata,
+        linkedinUrl,
+        linkedin_url:linkedinUrl,
+        linkedinWatch:metadata.linkedinWatch!==false,
+        sourceReceipts:posts.length?{...sourceReceipts,linkedInLatestPosts:posts}:sourceReceipts,
+        ...(posts.length?{linkedInLatestPosts:posts}:{}),
+        linkedinLastCheckedAt:checkedAt,
+        linkedinLastRefreshStatus:lookup.error?'error':(posts.length?'posts_found':'no_recent_posts'),
+        linkedinLastRefreshMessage:lookup.error
+          ? `LinkedIn check needs attention: ${lookup.error}${cachedVerifiedPosts.length?' The last verified posts remain visible.':''}`
+          : (posts.length
+            ? `${posts.length} current post${posts.length===1?'':'s'} found.`
+            : 'Checked successfully. No current posts were returned for this profile.'),
+        linkedinLastPostCount:lookup.error?cachedVerifiedPosts.length:posts.length,
+        linkedinProvider:lookup.provider||'outscraper'
+      }
+    });
+    if(!posts.length)return {profileId:profile.id,name:displayName,linkedinUrl,configured:lookup.configured!==false,error:lookup.error||'',status:lookup.error?'error':'no_recent_posts',checkedAt,postCount:verifiedPostsForReceipt.length,draftCount:0,cached:Boolean(verifiedPostsForReceipt.length)};
+    let draftCount=0;
+    let draftError='';
+    const latest=posts[0];
+    const alreadyPrepared=existingDrafts.some(draft=>{
+      const context=draft.sourceContext||{};
+      const known=context.latestLinkedInPost||{};
+      return /linkedin_comment_draft/i.test(String(draft.draftType||''))&&String(known.url||context.postUrl||'')===String(latest.url||'');
+    });
+    if(!alreadyPrepared&&latest.contentSource==='search_snippet'){
+      draftError='Post found, but its readable body was not available. Open the post before asking VAL to draft a response.';
+    }else if(!alreadyPrepared){
+      const prepared=await prepareLinkedInCommentDraft(profile,latest).catch((error)=>{
+        draftError=error.message||'Draft preparation did not finish.';
+        return null;
+      });
+      if(prepared){
+        await saveInternalDraft({
+          draftType:'linkedin_comment_draft',
+          contactId:profile.id,
+          provider:'internal',
+          subject:`LinkedIn comment for ${displayName||profile.email||'relationship'}`,
+          body:prepared.body,
+          status:'ready_for_review',
+          sourceContext:{
+            source:'linkedin_visibility_refresh',
+            contact:{id:profile.id,name:displayName,email:profile.email,linkedinUrl:profile.linkedinUrl},
+            latestLinkedInPost:latest,
+            usedEvidence:prepared.usedEvidence,
+            noExternalAction:true
+          }
+        });
+        draftCount=1;
+      }else if(!draftError){
+        draftError='VAL found the post but could not produce a draft grounded closely enough in its words.';
+      }
+    }
+    if(draftError){
+      await saveRelationshipProfile({
+        ...profile,
+        metadataJson:{
+          ...metadata,
+          linkedinUrl,
+          linkedin_url:linkedinUrl,
+          linkedinWatch:metadata.linkedinWatch!==false,
+          sourceReceipts:{...sourceReceipts,linkedInLatestPosts:posts},
+          linkedInLatestPosts:posts,
+          linkedinLastCheckedAt:checkedAt,
+          linkedinLastRefreshStatus:'draft_error',
+          linkedinLastRefreshMessage:draftError,
+          linkedinLastPostCount:posts.length,
+          linkedinProvider:lookup.provider||'outscraper'
+        }
+      });
+    }
+    return {profileId:profile.id,name:displayName,linkedinUrl,configured:true,error:draftError,status:draftError?'draft_error':'posts_found',checkedAt,postCount:posts.length,draftCount};
+  }));
+  return {
+    ok:true,
+    checked:profiles.length,
+    postCount:results.reduce((sum,row)=>sum+Number(row.postCount||0),0),
+    draftCount:results.reduce((sum,row)=>sum+Number(row.draftCount||0),0),
+    configured:results.some(row=>row.configured),
+    results
+  };
+}
 app.get('/api/val/drafts',async(req,res)=>{
   try{
     let drafts=await listDrafts(req.query.status||'');
@@ -16160,12 +18633,190 @@ app.get('/api/val/drafts',async(req,res)=>{
     res.json({ok:true,drafts});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.get('/api/val/linkedin/visibility',async(req,res)=>{
+  try{
+    const [profiles,drafts]=await Promise.all([
+      listRelationshipProfiles({limit:300}),
+      listDrafts()
+    ]);
+    const linkedinDrafts=drafts.filter(draft=>/linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||'')));
+    const watchedProfiles=profiles.filter(profile=>profile.profileType==='person'&&linkedinProfileIsWatched(profile)).map(publicLinkedInWatchedProfile);
+    const items=[];
+    const usedDrafts=new Set();
+    profiles.filter(profile=>profile.profileType==='person').forEach(profile=>{
+      const metadata=profile.metadata||{};
+      const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
+      const storedPosts=safeArray(
+        receipts.linkedInLatestPosts||
+        metadata.linkedInLatestPosts||
+        metadata.linkedinLatestPosts||
+        metadata.linkedin_latest_posts
+      );
+      const posts=metadata.linkedinLastRefreshStatus==='error'
+        ? storedPosts.filter(post=>post?.contentSource==='linkedin_public_profile')
+        : storedPosts;
+      posts.slice(0,3).forEach((post,index)=>{
+        const draft=linkedinDrafts.find(candidate=>{
+          if(usedDrafts.has(candidate.id))return false;
+          const context=candidate.sourceContext||{};
+          const contact=context.contact||{};
+          const latest=context.latestLinkedInPost||{};
+          const samePost=String(latest.url||context.postUrl||'')===String(post.url||post.postUrl||'');
+          const sameContact=[candidate.contactId,context.contactId,contact.id,contact.contactId,contact.crmContactId]
+            .filter(Boolean)
+            .some(value=>String(value)===String(profile.id)||String(value)===String(profile.personId));
+          return samePost||sameContact;
+        });
+        if(draft)usedDrafts.add(draft.id);
+        items.push({
+          id:`${profile.id}:linkedin:${post.id||post.postId||index}`,
+          contact:profile.displayName||profile.email||'Relationship',
+          contactId:profile.id,
+          postPreview:String(post.summary||post.title||post.text||post.body||'A current LinkedIn signal is attached to this relationship.').trim(),
+          whyItMatters:String(
+            post.whyItMatters||
+            post.why_it_matters||
+            profile.opportunities?.[0]?.content||
+            profile.opportunities?.[0]?.summary||
+            profile.openLoops?.[0]?.content||
+            profile.openLoops?.[0]?.summary||
+            `This is ${profile.displayName||'this relationship'}'s latest public thinking. Review whether your perspective would add something specific before commenting.`
+          ).trim(),
+          draftComment:draft?.body||'',
+          draftId:draft?.id||'',
+          postUrl:String(post.url||post.postUrl||post.linkedinUrl||profile.linkedinUrl||'').trim(),
+          sourceType:'relationship_linkedin_receipt',
+          sourceId:post.id||post.postId||profile.id,
+          sourceDate:post.date||post.createdAt||post.publishedAt||profile.lastObservedAt||''
+        });
+      });
+    });
+    linkedinDrafts.filter(draft=>!usedDrafts.has(draft.id)).forEach(draft=>{
+      const context=draft.sourceContext||{};
+      const contact=context.contact||{};
+      const latest=context.latestLinkedInPost||{};
+      items.push({
+        id:draft.id,
+        contact:contact.name||context.contactName||draft.subject||'LinkedIn draft',
+        contactId:draft.contactId||contact.id||contact.contactId||'',
+        postPreview:String(latest.summary||latest.title||latest.text||context.signal||'Prepared from saved LinkedIn relationship context.').trim(),
+        whyItMatters:String(context.whyItMatters||contact.reason||'VAL prepared this from saved relationship evidence and held publishing for review.').trim(),
+        draftComment:draft.body||'',
+        draftId:draft.id,
+        postUrl:String(latest.url||latest.postUrl||contact.linkedinUrl||contact.linkedin_url||'').trim(),
+        sourceType:'linkedin_draft',
+        sourceId:draft.id,
+        sourceDate:draft.updatedAt||draft.createdAt||''
+      });
+    });
+    items.sort((a,b)=>new Date(b.sourceDate||0)-new Date(a.sourceDate||0));
+    res.json({
+      ok:true,
+      source:'live_relationship_and_draft_receipts',
+      items:items.slice(0,80),
+      count:items.length,
+      watchedProfiles,
+      watchedCount:watchedProfiles.length,
+      refreshReceipt:{
+        checked:watchedProfiles.filter(profile=>profile.lastCheckedAt).length,
+        posts:watchedProfiles.reduce((sum,profile)=>sum+profile.postCount,0),
+        needsAttention:watchedProfiles.filter(profile=>['error','draft_error'].includes(profile.lastRefreshStatus)).length,
+        lastCheckedAt:watchedProfiles.map(profile=>profile.lastCheckedAt).filter(Boolean).sort().at(-1)||''
+      },
+      noDemoData:true
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/linkedin/visibility/refresh',async(req,res)=>{
+  try{
+    const refreshed=await refreshLinkedInVisibility({limit:req.body?.limit||20});
+    const profiles=await listRelationshipProfiles({limit:300});
+    const drafts=await listDrafts();
+    await auditLog({
+      req,
+      action:'linkedin_visibility_refreshed',
+      resourceType:'linkedin_visibility',
+      metadata:{checked:refreshed.checked,postCount:refreshed.postCount,draftCount:refreshed.draftCount},
+      success:true
+    }).catch(()=>{});
+    res.json({...refreshed,profilesChecked:profiles.length,draftsAvailable:drafts.filter(draft=>/linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||''))).length,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,noExternalAction:true});
+  }
+});
+app.post('/api/val/linkedin/watched-profiles',async(req,res)=>{
+  try{
+    const linkedinUrl=normalizeLinkedInWatchUrl(req.body?.linkedinUrl||req.body?.url||'');
+    if(!linkedinUrl)return res.status(400).json({ok:false,error:'Add a full LinkedIn profile or company URL.'});
+    const requestedName=String(req.body?.name||'').replace(/\s+/g,' ').trim().slice(0,160);
+    const profiles=await listRelationshipProfiles({limit:800});
+    const existing=profiles.find(profile=>linkedinProfileUrl(profile)===linkedinUrl)||null;
+    const name=requestedName||existing?.displayName||linkedinWatchNameFromUrl(linkedinUrl);
+    const metadata=existing?.metadata||{};
+    const profile=await saveRelationshipProfile({
+      ...(existing||{}),
+      profileType:'person',
+      profileKey:existing?.profileKey||`linkedin:${stableKey(linkedinUrl)}`,
+      displayName:name,
+      summary:existing?.summary||'Added by the user to LinkedIn profiles VAL watches.',
+      relationshipStatus:existing?.relationshipStatus||'watched on LinkedIn',
+      confidence:Math.max(Number(existing?.confidence||0),0.7),
+      metadataJson:{
+        ...metadata,
+        linkedinUrl,
+        linkedin_url:linkedinUrl,
+        linkedinWatch:true,
+        linkedinWatchAddedAt:metadata.linkedinWatchAddedAt||new Date().toISOString(),
+        linkedinLastRefreshStatus:metadata.linkedinLastRefreshStatus||'not_checked',
+        linkedinLastRefreshMessage:metadata.linkedinLastRefreshMessage||'Ready to check for current posts.',
+        source:metadata.source||'linkedin_watch_list',
+        noExternalAction:true
+      }
+    });
+    res.json({ok:true,profile:publicLinkedInWatchedProfile(publicRelationshipProfile(profile)),message:`${name} is now on the LinkedIn watch list. Refresh when you want VAL to check for current posts.`,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,noExternalAction:true});
+  }
+});
+app.delete('/api/val/linkedin/watched-profiles/:id',async(req,res)=>{
+  try{
+    const profiles=await listRelationshipProfiles({limit:800});
+    const existing=profiles.find(profile=>String(profile.id)===String(req.params.id));
+    if(!existing)return res.status(404).json({ok:false,error:'Watched LinkedIn profile not found.'});
+    await saveRelationshipProfile({
+      ...existing,
+      metadataJson:{
+        ...(existing.metadata||{}),
+        linkedinWatch:false,
+        linkedinWatchRemovedAt:new Date().toISOString(),
+        noExternalAction:true
+      }
+    });
+    res.json({ok:true,message:`${existing.displayName||'This profile'} is no longer watched. The relationship record was preserved.`,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,noExternalAction:true});
+  }
+});
 app.post('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,draft:await saveInternalDraft(req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/drafts/:id',async(req,res)=>{
   try{
     const existing=(await listDrafts()).find(d=>d.id===req.params.id);
     if(!existing)return res.status(404).json({ok:false,error:'Draft not found'});
-    res.json({ok:true,draft:await saveInternalDraft({...existing,...req.body,id:req.params.id})});
+    const draft=await saveInternalDraft({...existing,...req.body,id:req.params.id});
+    if(String(existing.body||'').trim()!==String(draft.body||'').trim()){
+      await recordDraftLearning({
+        outcome:'edited_saved',
+        artifactKind:draft.draftType||'internal_draft',
+        subject:draft.subject,
+        originalBody:existing.body,
+        finalBody:draft.body,
+        draftId:draft.id,
+        sourceRefs:draft.sourceContext?.sourceRefs||[]
+      }).catch(()=>{});
+    }
+    res.json({ok:true,draft});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/gmail/drafts',async(req,res)=>{
@@ -17094,9 +19745,49 @@ function krispThirtyDayWindow(days=30){
   const start=new Date(end.getTime()-Math.max(1,Number(days)||30)*24*60*60*1000);
   return {start:start.toISOString(),end:end.toISOString(),days:Math.max(1,Number(days)||30)};
 }
+async function transcriptWasDeleted(transcriptId='',sourceKey=''){
+  const id=String(transcriptId||'').trim();
+  const source=String(sourceKey||'').trim();
+  if(!id&&!source)return false;
+  if(pgPool){
+    const result=await dbQuery(`
+      select transcript_id
+      from val_transcript_deletions
+      where tenant_id=$1 and user_id=$2
+        and (transcript_id=$3 or ($4<>'' and source_key=$4))
+      limit 1
+    `,[tenantId(),currentUserId(),id,source]);
+    return !!result?.rows?.[0];
+  }
+  return safeArray(valStore().transcriptDeletions).some(row=>
+    row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.transcriptId===id||(source&&row.sourceKey===source))
+  );
+}
+async function saveTranscriptDeletion({transcriptId='',sourceKey='',title='',metadata={}}={}){
+  const id=String(transcriptId||'').trim();
+  if(!id)throw new Error('transcriptId is required.');
+  const row={tenantId:tenantId(),userId:currentUserId(),transcriptId:id,sourceKey:String(sourceKey||'').trim(),title:String(title||'').trim(),deletedAt:new Date().toISOString(),metadata};
+  if(pgPool){
+    await dbQuery(`
+      insert into val_transcript_deletions (tenant_id,user_id,transcript_id,source_key,title,deleted_at,metadata_json)
+      values ($1,$2,$3,$4,$5,$6,$7)
+      on conflict (tenant_id,user_id,transcript_id)
+      do update set source_key=excluded.source_key,title=excluded.title,deleted_at=excluded.deleted_at,metadata_json=excluded.metadata_json
+    `,[row.tenantId,row.userId,row.transcriptId,row.sourceKey,row.title,row.deletedAt,JSON.stringify(metadata||{})]);
+    return row;
+  }
+  const store=valStore();
+  store.transcriptDeletions=safeArray(store.transcriptDeletions);
+  const index=store.transcriptDeletions.findIndex(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.transcriptId===id);
+  if(index>=0)store.transcriptDeletions[index]=row;
+  else store.transcriptDeletions.push(row);
+  saveValStore(store);
+  return row;
+}
 async function krispTranscriptAlreadyStored(transcriptId=''){
   const id=String(transcriptId||'').trim();
   if(!id)return false;
+  if(await transcriptWasDeleted(id))return true;
   if(DEMO_MODE)return (requestContext.getStore()?.demoState?.transcripts||[]).some(row=>String(row.id)===id);
   await valDbReady;
   if(pgPool){
@@ -17135,7 +19826,12 @@ async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={
 async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgress=async()=>{}}={}){
   if(await cleanStartSourceIntakeLocked())throw new Error('VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.');
   if(!(await krispMcp.isConfigured()))throw new Error('Krisp is not connected.');
+  const checkpoint=await sourceSyncCheckpoint('krisp').catch(()=>null);
   const window=krispThirtyDayWindow(days);
+  if(checkpoint?.lastSuccessfulSyncAt){
+    const checkpointTime=new Date(checkpoint.lastSuccessfulSyncAt);
+    if(Number.isFinite(checkpointTime.getTime()))window.start=checkpointTime.toISOString();
+  }
   const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
   const report=(state,message,extra={})=>onProgress({type:'progress',source:'krisp',state,message,...extra});
   await report('reading','Krisp is listing meeting transcripts from the last '+window.days+' days.');
@@ -17151,6 +19847,10 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
   };
   if(!receipts.length){
     await report('complete','Krisp did not return a transcript receipt in the last '+window.days+' days.',{count:0});
+    await saveSourceSyncCheckpoint('krisp',{
+      lastSuccessfulSyncAt:new Date().toISOString(),
+      metadata:{window,found:0,imported:0,alreadyPresent:0}
+    }).catch(()=>{});
     return result;
   }
   await report('reading','Krisp returned '+receipts.length+' transcript receipt'+(receipts.length===1?'':'s')+'. VAL is preserving the original material exactly as Krisp provided it.',{count:receipts.length});
@@ -17197,6 +19897,7 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
     ? `Krisp intake finished: ${result.imported} saved, ${result.alreadyPresent} already present, and ${result.failed} unavailable for review.`
     : `Krisp intake finished: ${result.imported} exact transcript${result.imported===1?'':'s'} saved and ${result.alreadyPresent} already present.`;
   await report(result.failed?'partial':'complete',outcome,{count:result.imported,receipt:result});
+  if(!result.failed)await saveSourceSyncCheckpoint('krisp',{lastSuccessfulSyncAt:new Date().toISOString(),metadata:{window,found:result.found,imported:result.imported,alreadyPresent:result.alreadyPresent}}).catch(()=>{});
   return result;
 }
 function firstLookWitnessingRoutingRules(witnessing=[]){
@@ -18075,7 +20776,9 @@ async function linkedGmailAttachmentContextForQuery(query='',projectContext=null
   const messageId=String(selected.sourceId||raw.messageId||raw.message_id||'').trim();
   const attachmentId=String(raw.attachmentId||raw.attachment_id||'').trim();
   if(!messageId||!attachmentId) return '';
-  const payload=await gmailFetchJson(
+  const googleProvider=String(selected.googleProvider||raw.googleProvider||raw.google_provider||'google');
+  const payload=await gmailFetchJsonForProvider(
+    googleProvider,
     `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
     {},
     'Gmail document attachment'
@@ -19897,13 +22600,89 @@ async function saveMemoryItem(payload){
   const id=payload.id||uuid('mem');
   const rawText=payload.rawText||payload.transcript||payload.summary||'';
   if(pgPool){
-    await dbQuery('insert into val_memory_items (id,user_id,kind,summary,raw_text,importance,metadata,created_at) values ($1,$2,$3,$4,$5,$6,$7,now())',[id,VAL_USER_ID,payload.kind||payload.type||'note',payload.summary||null,rawText,payload.importance||1,JSON.stringify(payload.metadata||{})]);
+    const result=await dbQuery('insert into val_memory_items (id,user_id,kind,summary,raw_text,importance,metadata,created_at) values ($1,$2,$3,$4,$5,$6,$7,now()) on conflict (id) do nothing returning id',[id,VAL_USER_ID,payload.kind||payload.type||'note',payload.summary||null,rawText,payload.importance||1,JSON.stringify(payload.metadata||{})]);
+    return {id,persisted:Boolean(result?.rows?.[0]),deduplicated:!result?.rows?.[0]};
   }else{
     const store=valStore();
     store.memoryItems.unshift({id,userId:VAL_USER_ID,kind:payload.kind||payload.type||'note',summary:payload.summary||'',rawText,importance:payload.importance||1,metadata:payload.metadata||{},createdAt:new Date().toISOString()});
     saveValStore(store);
   }
   return {id};
+}
+function draftLearningFingerprint(value=''){
+  return crypto.createHash('sha256').update(String(value||'')).digest('hex').slice(0,24);
+}
+async function recordDraftLearning({
+  outcome='edited_saved',
+  artifactKind='prepared_work',
+  subject='',
+  originalBody='',
+  finalBody='',
+  draftId='',
+  readyForYouId='',
+  sourceRefs=[]
+}={}){
+  const finalText=String(finalBody||'').trim();
+  if(!finalText)return null;
+  const originalText=String(originalBody||'').trim();
+  const id=`draft_learning_${draftLearningFingerprint([
+    tenantId(),
+    currentUserId(),
+    outcome,
+    draftId,
+    readyForYouId,
+    finalText
+  ].join('|'))}`;
+  const payload={
+    outcome,
+    artifactKind,
+    subject:String(subject||'').trim(),
+    originalDraft:originalText.slice(0,12000),
+    finalDraft:finalText.slice(0,12000),
+    changed:originalText!==finalText
+  };
+  return saveMemoryItem({
+    id,
+    kind:'draft_learning',
+    summary:`${String(outcome||'draft feedback').replace(/_/g,' ')}: ${subject||artifactKind||'prepared work'}`,
+    rawText:JSON.stringify(payload),
+    importance:outcome==='approved_and_sent'?5:outcome==='approved'?4:3,
+    metadata:{
+      source:'prepared_work_feedback',
+      outcome,
+      artifactKind,
+      subject:String(subject||'').trim(),
+      draftId,
+      readyForYouId,
+      sourceRefs:safeArray(sourceRefs).slice(0,12),
+      changed:payload.changed,
+      tenantId:tenantId(),
+      userId:currentUserId()
+    }
+  });
+}
+async function listDraftLearningExamples({artifactKind='',limit=8}={}){
+  const rows=await recentMemoryItems(3650,400).catch(()=>[]);
+  const requested=String(artifactKind||'').trim();
+  return rows
+    .filter(row=>row.kind==='draft_learning')
+    .map(row=>{
+      let data={};
+      try{data=JSON.parse(row.rawText||'{}');}catch(_){data={};}
+      return {
+        artifactKind:data.artifactKind||row.metadata?.artifactKind||'',
+        outcome:data.outcome||row.metadata?.outcome||'',
+        subject:data.subject||row.metadata?.subject||'',
+        finalDraft:data.finalDraft||''
+      };
+    })
+    .filter(row=>row.finalDraft)
+    .sort((a,b)=>{
+      const score=value=>value==='approved_and_sent'?3:value==='approved'?2:1;
+      return score(b.outcome)-score(a.outcome);
+    })
+    .filter(row=>!requested||row.artifactKind===requested||['email_draft','introduction_email_draft'].includes(requested)&&['email_draft','introduction_email_draft'].includes(row.artifactKind))
+    .slice(0,Math.max(1,Math.min(Number(limit)||8,12)));
 }
 const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
 const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
@@ -20476,6 +23255,28 @@ function relationshipObservationBucket(type){
   if(type==='relationship_signal')return 'relationshipSignals';
   return '';
 }
+function relationshipProfileEvidenceText(profile={}){
+  const volatileKeys=new Set(['createdAt','created_at','updatedAt','updated_at','lastObservedAt','last_observed_at','calculatedAt','calculated_at']);
+  return JSON.stringify(profile,(key,value)=>volatileKeys.has(key)?undefined:value);
+}
+async function recordRelationshipProfileBoardPacket(profile={},eventType='profile_updated'){
+  if(!profile)return null;
+  const profileType=String(profile.profileType||profile.profile_type||'relationship').toLowerCase();
+  const isProject=profileType==='project'||profile.projectId||profile.project_id;
+  const sourceType=isProject?'project_profile':'relationship_profile';
+  const sourceId=profile.id||profile.profileKey||profile.profile_key||profile.projectId||profile.project_id||profile.personId||profile.person_id;
+  const sourceTitle=profile.displayName||profile.display_name||profile.name||profile.projectName||profile.project_name||'Profile updated';
+  const result=await processCanonicalBoardEvidence({
+    sourceType,
+    sourceId,
+    sourceTitle,
+    rawText:relationshipProfileEvidenceText(profile),
+    sourceRefs:profile.sourceRefs||profile.source_refs||profile.metadata?.sourceRefs||profile.metadataJson?.sourceRefs||[],
+    domainRoutes:[isProject?'projects':'relationships','board_of_observers','chief_of_staff'],
+    metadata:{source:'profile_persistence',eventType,profileType,noExternalAction:true}
+  });
+  return result?.sourcePacket||null;
+}
 async function saveRelationshipProfile(target={}){
   const now=new Date().toISOString();
   const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
@@ -20486,7 +23287,9 @@ async function saveRelationshipProfile(target={}){
     const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
     if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
     else rows.push(row);
-    return i>=0?rows[i]:row;
+    const saved=i>=0?rows[i]:row;
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+    return saved;
   }
   await valDbReady;
   if(pgPool){
@@ -20494,13 +23297,17 @@ async function saveRelationshipProfile(target={}){
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
       on conflict (tenant_id,profile_type,profile_key) do update set person_id=coalesce(nullif(excluded.person_id,''),relationship_profiles.person_id), organization_id=coalesce(nullif(excluded.organization_id,''),relationship_profiles.organization_id), project_id=coalesce(nullif(excluded.project_id,''),relationship_profiles.project_id), display_name=coalesce(nullif(excluded.display_name,''),relationship_profiles.display_name), metadata_json=relationship_profiles.metadata_json||excluded.metadata_json, updated_at=now()
       returning *`,[row.id,row.tenantId,row.profileType,row.profileKey,row.personId,row.organizationId,row.projectId,row.displayName,row.summary,row.relationshipStatus,row.confidence,row.lastObservedAt,JSON.stringify(row.metadataJson)]);
-    return transcriptPgRow(r.rows[0]);
+    const saved=transcriptPgRow(r.rows[0]);
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+    return saved;
   }
   const store=valStore(),rows=transcriptFileArray(store,'relationshipProfiles'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
   if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
   else rows.push(row);
   saveValStore(store);
-  return i>=0?rows[i]:row;
+  const saved=i>=0?rows[i]:row;
+  void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+  return saved;
 }
 async function relationshipTimelineRows(profileType,profileKey){
   if(DEMO_MODE)return (transcriptDemoArray('relationshipTimelineEvents')||[]).filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
@@ -20540,10 +23347,14 @@ async function recalculateRelationshipProfile(profileType,profileKey){
   if(DEMO_MODE||!pgPool){
     if(profile)Object.assign(profile,payload,{metadataJson:packetMetadata,updatedAt:new Date().toISOString()});
     if(storeForProfile)saveValStore(storeForProfile);
-    return profile||payload;
+    const saved=profile||{...payload,profileType,profileKey,metadataJson:packetMetadata};
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_recalculated');
+    return saved;
   }
   const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,metadata_json=relationship_profiles.metadata_json||$20::jsonb,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey,JSON.stringify(packetMetadata)]);
-  return transcriptPgRow(r.rows[0]);
+  const saved=transcriptPgRow(r.rows[0]);
+  void recordRelationshipProfileBoardPacket(saved,'relationship_profile_recalculated');
+  return saved;
 }
 async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
   const profile=await saveRelationshipProfile({...target,confidence:observation.confidence||0,metadataJson:{source:'relationship_engine',targetMetadata:target.metadata||{}}});
@@ -22837,6 +25648,14 @@ function dashboardConclusionFromMove(move={},profilesById=new Map(),evidenceById
   const {email,...restTargetMeta}=targetMeta;
   return {...move,...restTargetMeta,...emailFields,title,why,summary:why,impact,target,evidenceIds,observationIds:move.sourceObservationIds||[]};
 }
+function dashboardDraftArtifactKind(draft={}){
+  if(draft.draftType==='meeting_recap')return 'meeting_overview_email_draft';
+  const source=draft.sourceContext||{};
+  const rawKind=String(draft.draftType||'reply').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return (source.source==='executive_inbox_review_only'||/^(?:reply|follow_up|holding|clarification|introduction)$/.test(rawKind))&&!(new RegExp('(?:^|_)email(?:_|$)').test(rawKind))
+    ?`email_${rawKind}_draft`
+    :(rawKind||'internal_draft');
+}
 function dashboardDraftQuality(draft={}){
   const body=String(draft.body||''),subject=String(draft.subject||'');
   const problems=[];
@@ -22846,37 +25665,96 @@ function dashboardDraftQuality(draft={}){
   if(/VAL:\s*I can start[^.]*live web access/i.test(body))problems.push('tool_fragment');
   if((body.match(/Next steps:/gi)||[]).length>1||body.length>3500)problems.push('too_noisy');
   const ctx=draft.sourceContext||{};
-  const recipient=ctx.recipient||ctx.recipientEmail||ctx.to||(Array.isArray(ctx.recipients)?ctx.recipients.join(', '):'');
+  const recipient=ctx.recipient?.email
+    ||(typeof ctx.recipient==='string'?ctx.recipient:'')
+    ||ctx.recipientEmail
+    ||ctx.to
+    ||ctx.draftBrief?.recipient?.email
+    ||safeArray(ctx.recipients).map(person=>person?.email||person?.address||person).filter(value=>typeof value==='string'&&value.trim()).join(', ');
+  const conversation=ctx.conversationContext||{};
+  const inbound=conversation.latest_inbound||conversation.current_message||{};
+  const headers=inbound.headers||{};
+  const sourceRefs=safeArray(ctx.draftBrief?.source_refs||ctx.draftBrief?.sourceRefs)
+    .concat(safeArray(conversation.source_refs||conversation.sourceRefs))
+    .filter(ref=>(ref.source_id||ref.sourceId)&&(ref.quote_or_summary||ref.quoteOrSummary));
+  const sourceId=inbound.messageId||inbound.id||ctx.currentMessageId||ctx.messageId||ctx.threadId||ctx.transcriptId||ctx.transcript_id||'';
+  const sourceExcerpt=inbound.bodyText||inbound.bodyPreview||inbound.snippet||inbound.subject||ctx.meetingTitle||ctx.transcriptTitle||'';
+  const executiveInboxDraft=ctx.source==='executive_inbox_review_only';
+  const sourceEmail={
+    from:inbound.from||ctx.draftBrief?.recipient||ctx.recipient||{},
+    subject:inbound.subject||draft.subject||'',
+    snippet:inbound.snippet||'',
+    bodyPreview:inbound.bodyPreview||'',
+    bodyText:inbound.bodyText||'',
+    headers
+  };
+  const recipientAddress=normalizeExecutiveEmailAddress(inbound.from?.email||ctx.draftBrief?.recipient?.email||ctx.recipient?.email||ctx.recipientEmail||ctx.to||'');
+  const preparedArtifactKind=dashboardDraftArtifactKind(draft);
+  const recipientEmails=String(recipient||'').split(/[;,]/).map(value=>value.trim()).filter(validPreparedWorkEmail);
+  if(artifactRequiresContact(preparedArtifactKind)&&!recipientEmails.length)problems.push('missing_recipient');
+  if(executiveInboxDraft&&!sourceRefs.length&&!(sourceId&&dashboardCleanText(sourceExcerpt)))problems.push('missing_source_evidence');
+  if(executiveInboxDraft&&(relationshipEmailIsGenericMailbox(recipientAddress)||relationshipEmailHasUnsubscribeSignal(sourceEmail)||relationshipEmailHasBulkSignal(sourceEmail)||emailLooksAutomatedSystemNotice(sourceEmail)||emailLooksTransactionalOrBulk(sourceEmail)))problems.push('bulk_or_subscription_mail');
+  if(/\bThank you for sending this over\b[\s\S]*\bcome back with the clean next step\b/i.test(body))problems.push('generic_placeholder_reply');
+  if(draft.status==='ready_for_review'&&draft.draftType!=='meeting_recap'&&ctx.qa?.passes!==true)problems.push('missing_review_qa');
   const ready=!problems.length&&!!dashboardCleanText(subject||body);
   return {ready,problems,recipient:dashboardCleanText(recipient||ctx.contactName||''),context:dashboardShortText(ctx.transcriptTitle||ctx.meetingTitle||ctx.source||draft.draftType||'Draft', 'Draft', 90)};
 }
 function dashboardReadyDraft(draft={}){
+  if(!['draft','ready_for_review'].includes(String(draft.status||'draft')))return null;
   const quality=dashboardDraftQuality(draft);
   if(!quality.ready)return null;
-  const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
+  const label=draft.subject||quality.recipient&&`Draft for ${quality.recipient}`||'Draft ready';
   const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
   const source=draft.sourceContext||{};
   const transcriptId=source.transcriptId||source.transcript_id||'';
-  const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(draft.draftType||'internal_draft');
+  const conversation=source.conversationContext||{};
+  const inbound=conversation.latest_inbound||conversation.current_message||{};
+  const recipients=[
+    ...safeArray(source.recipients),
+    source.recipient?.email,
+    source.recipientEmail,
+    source.to,
+    source.draftBrief?.recipient?.email
+  ].map(value=>String(value||'').trim()).filter((value,index,list)=>value&&list.indexOf(value)===index);
+  const recipientEmail=recipients[0]||'';
+  const artifactKind=dashboardDraftArtifactKind(draft);
+  const sourceRefs=safeArray(source.draftBrief?.source_refs||source.draftBrief?.sourceRefs)
+    .concat(safeArray(conversation.source_refs||conversation.sourceRefs))
+    .filter(ref=>(ref.source_id||ref.sourceId)&&(ref.quote_or_summary||ref.quoteOrSummary))
+    .map(ref=>({source_type:ref.source_type||ref.sourceType||'email_message',source_id:ref.source_id||ref.sourceId||'',quote_or_summary:ref.quote_or_summary||ref.quoteOrSummary||'',confidence:Number(ref.confidence||0.82)}));
+  if(!sourceRefs.length){
+    const sourceId=inbound.messageId||inbound.id||source.currentMessageId||source.messageId||source.threadId||transcriptId||draft.id;
+    const excerpt=inbound.bodyText||inbound.bodyPreview||inbound.snippet||inbound.subject||source.meetingTitle||source.transcriptTitle||draft.subject||'Prepared draft';
+    sourceRefs.push({source_type:transcriptId?'transcript':'email_message',source_id:sourceId,quote_or_summary:dashboardShortText(excerpt,'Prepared draft source',500),confidence:0.82});
+  }
   return {
     id:draft.id,
+    draftId:draft.id,
     title:dashboardShortText(label,'Draft ready',80),
-    summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),
+    summary:quality.recipient
+      ?dashboardShortText(`Prepared for ${quality.recipient}. Review, edit, approve, or hold.`,'Review prepared draft.',140)
+      :dashboardShortText(quality.context||draft.body,'Review prepared draft.',140),
     reason_it_matters:dashboardShortText(source.meetingTitle||source.transcriptTitle||quality.context||'Prepared work is ready for review before anything is sent.','Prepared work is ready for review.',180),
     view:'drafts',
     target:{type:'draft',id:draft.id},
     draftType:draft.draftType,
     status:draft.status,
+    createdAt:draft.createdAt||draft.updatedAt||'',
+    provider:draft.provider||'internal',
+    threadId:source.threadId||'',
+    messageId:source.currentMessageId||source.messageId||'',
+    to:recipientEmail,
+    recipientEmail,
     quality,
     sourceType:transcriptId?'transcript':'draft',
     sourceId:transcriptId||draft.id,
-    sourceRefs:transcriptId?[{source_type:'transcript',source_id:transcriptId,quote_or_summary:source.meetingTitle||source.transcriptTitle||draft.subject||'Transcript-created draft',confidence:0.86}]:[{source_type:'draft',source_id:draft.id,quote_or_summary:draft.subject||'Prepared draft',confidence:0.78}],
+    sourceRefs,
     preparedArtifactKind:artifactKind,
-    preparedArtifact:{kind:artifactKind,title:draft.subject||label,body:draft.body||'',recipients:source.recipients||[],externalSend:false,reviewRequired:true},
+    preparedArtifact:{kind:artifactKind,draftId:draft.id,title:draft.subject||label,subject:draft.subject||label,body:draft.body||'',to:recipientEmail,recipientEmail,recipients,provider:draft.provider||'internal',threadId:source.threadId||'',messageId:source.currentMessageId||source.messageId||'',externalSend:false,reviewRequired:true},
     preparedWorkPacket:{prepared_work_type:artifactKind,trigger_source_id:transcriptId||draft.id,work_product:draft.body||draft.subject||label,approval_needed:true,execution_path:'review_then_send_email',can_val_act_status:'approval_required'},
     canValActStatus:'approval_required',
     homeAdmission:{preparedWorkPacketComplete:true},
-    metadata:{source:source.source||'internal_draft',transcriptId,preparedArtifactKind:artifactKind,noExternalAction:true,noExternalSend:true,recipients:source.recipients||[]},
+    metadata:{source:source.source||'internal_draft',draftId:draft.id,transcriptId,preparedArtifactKind:artifactKind,noExternalAction:true,noExternalSend:true,recipientEmail,recipients,provider:draft.provider||'internal',threadId:source.threadId||'',messageId:source.currentMessageId||source.messageId||''},
     portalPhrases:[...new Set(portalPhrases)].slice(0,5)
   };
 }
@@ -22913,6 +25791,20 @@ function transcriptHomeNextMove(transcript={}){
   if(/projection|dashboard|Mike/i.test(summary+question))return 'Finish the projections/dashboard handoff with Mike so the agency work has a clean next step.';
   if(/Grace AI|calendar/i.test(summary+question))return 'Confirm the Grace AI calendar path before the follow-up goes out.';
   return dashboardShortText(question,'Review the meeting overview and confirm the next follow-up.',180);
+}
+function transcriptHomeProjectEnvelope(transcript={}){
+  const text=[transcript.title,transcript.summary?.executiveSummary,transcript.summary?.clientSummary,transcript.summaryPreview,transcript.preview].filter(Boolean).join(' ');
+  if(/\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff|Mike/i.test(text)){
+    return {envelopeType:'project',displayName:'GOALL',projectName:'GOALL',managerColorName:'Taffy',managerColorHex:'#ee78bf',reason:'Project context wins before relationship context.'};
+  }
+  return null;
+}
+function transcriptHomeObserverName(transcript={},nextMove=''){
+  const text=[transcript.title,transcript.summary?.executiveSummary,transcript.summary?.clientSummary,transcript.summaryPreview,nextMove].filter(Boolean).join(' ');
+  if(/\bGOALL\b|project|dashboard|handoff|artifact|build|proposal|deliverable/i.test(text))return 'Project';
+  if(/\btrust|warmth|repair|relationship|tone|distance|presence/i.test(text))return 'Relationship';
+  if(/\bdeadline|calendar|appointment|meeting|Monday|Friday|timing/i.test(text))return 'Calendar';
+  return 'Meaning';
 }
 function transcriptMeetingOverviewFallbackDraft(transcript={},sourceRef={}){
   const summary=transcriptHomeSummary(transcript);
@@ -22956,18 +25848,24 @@ function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
   const summary=transcriptHomeSummary(transcript);
   if(!summary)return null;
   const createdAt=transcript.createdAt||transcript.receivedAt||new Date().toISOString();
-  const sourceRef={source_type:'transcript',source_id:transcript.id,quote_or_summary:summary,confidence:0.9,created_at:createdAt};
+  const envelope=transcriptHomeProjectEnvelope(transcript);
+  const sourceRef={source_type:'transcript',source_id:transcript.id,quote_or_summary:summary,confidence:0.9,created_at:createdAt,projectName:envelope?.projectName||'',managerColorName:envelope?.managerColorName||''};
   const recapDraft=drafts.find(d=>d.draftType==='meeting_recap'&&String(d.sourceContext?.transcriptId||'')===String(transcript.id));
   const nextMove=transcriptHomeNextMove(transcript);
+  const observerName=transcriptHomeObserverName(transcript,nextMove);
   const base={
     id:`home_transcript_${transcript.id}`,
     sourceType:'transcript',
     sourceId:transcript.id,
     sourceRefs:[sourceRef],
+    envelope,
+    projectName:envelope?.projectName||'',
+    managerColorName:envelope?.managerColorName||'',
     evidence:[{id:transcript.id,sourceType:'transcript',title:label,summary,occurredAt:createdAt}],
     createdAt,
     confidence:0.9,
     target:{type:'transcript',id:transcript.id,label},
+    observerName,
     homeAdmission:{velocityRoundTablePassed:true,whyNowPacketComplete:true},
     velocityRoundTablePassed:true
   };
@@ -22975,42 +25873,6 @@ function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
     velocity:{...base,title:`${label} moved forward.`,summary,reason_it_matters:'A fresh transcript was processed and changed what Home should show first.',whatChanged:summary,type:'transcript_movement'},
     alignment:{...base,id:`home_alignment_${transcript.id}`,title:nextMove,summary:nextMove,why:nextMove,reason_it_matters:'This is the one judgment that keeps the fresh meeting from becoming another open loop.',whyNowPacket:{why_now:nextMove,decision_needed:'Choose or edit the next follow-up before the meeting context goes stale.',cost_if_delayed:'The meeting momentum may cool and the dashboard/projections blocker may stay vague.',evidence_refs:[sourceRef],confidence:0.9}},
     readyDraft:recapDraft?dashboardReadyDraft(recapDraft):transcriptMeetingOverviewFallbackDraft(transcript,sourceRef)
-  };
-}
-function buildFreshTranscriptDailyWitness(transcript={},packet={}){
-  if(!transcript?.id||!packet?.velocity)return null;
-  const label=transcriptHomeLabel(transcript);
-  const summary=transcriptHomeSummary(transcript);
-  const nextMove=transcriptHomeNextMove(transcript);
-  const text=[summary,nextMove].join(' ');
-  let second='VAL read the transcript and the work is moving.';
-  if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
-    second='Missed-call textback, email aliases, Apollo, and the call-center path all look like they moved forward.';
-  }else if(/happy|good|resolved|ready|complete/i.test(text)){
-    second='The conversation looks like it moved in the right direction.';
-  }
-  const third=nextMove;
-  return {
-    display_greeting:[`${label} moved forward.`,second,third].filter(Boolean).join('\n'),
-    greeting_lines:[`${label} moved forward.`,second,third].filter(Boolean),
-    permission_line:packet.readyDraft?'I also found the meeting overview draft for review.':'Keep the flow going while the context is fresh.',
-    moment_type:'fresh_transcript',
-    what_was_witnessed:summary,
-    what_it_cost_or_represented:nextMove,
-    evidence:[packet.velocity],
-    confidence:0.9,
-    voice_note:'recognize',
-    internalUnderstanding:{
-      greeting_context:'Fresh transcript processed and promoted to Home.',
-      current_day_state:'fresh_transcript',
-      observed_pattern:summary,
-      confidence:0.9,
-      evidence:[packet.velocity],
-      prepared_work:packet.readyDraft?[packet.readyDraft]:[],
-      suggested_tone:'warm',
-      things_intentionally_not_mentioned:[]
-    },
-    generatedAt:new Date().toISOString()
   };
 }
 function dashboardCardEvidenceFromMove(move={}){
@@ -23072,7 +25934,30 @@ function dashboardDedupeCardItems(items=[]){
   }
   return out;
 }
-function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],freshTranscriptPacket=null}={}){
+function dashboardPreparedWorkDedupeKey(item={}){
+  const metadata=evidenceJsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  const artifact=item.preparedArtifact||item.prepared_artifact||metadata.preparedArtifact||metadata.prepared_artifact||{};
+  const kind=String(item.preparedArtifactKind||item.prepared_artifact_kind||metadata.preparedArtifactKind||artifact.kind||'').toLowerCase();
+  const title=dashboardCleanText(artifact.subject||artifact.title||item.title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ');
+  const recipients=safeArray(artifact.recipients||metadata.recipients)
+    .map(person=>String(person?.email||person?.address||person||'').trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const day=String(item.createdAt||item.created_at||'').slice(0,10);
+  if(/meeting_(?:overview|recap)/.test(kind))return `meeting|${title}|${recipients}|${day}`;
+  return `${kind}|${String(item.threadId||item.messageId||metadata.threadId||metadata.messageId||item.sourceId||item.source_id||item.draftId||item.id||'').toLowerCase()}`;
+}
+function dashboardDedupePreparedWork(items=[]){
+  const seen=new Set();
+  return safeArray(items).filter(item=>{
+    const key=dashboardPreparedWorkDedupeKey(item);
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],readyForYouItems=[],freshTranscriptPacket=null}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
   const evidenceById=dashboardEvidenceLookupMap(evidenceItems);
@@ -23095,12 +25980,17 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
     const detail=dashboardShortText((e.risks||[])[0]||(e.opportunities||[])[0]||e.summary||e.state,'Evidence-backed momentum signal.',120);
     return dashboardNormalizeCardItem('momentum',{id:e.id,title,summary:detail,detail,state,entity_type:e.target?.type||e.profileType||'entity',entity_id:e.id,momentum_direction:state,reason:detail,evidence:e.evidence||[],target:e.target||{type:'entity',id:e.id},createdAt:e.lastObservedAt});
   }).slice(0,4);
-  const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
-  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...(onboarding?.ready||[]),...readyDrafts].filter(Boolean).slice(0,8))).slice(0,5);
+  const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,12);
+  const readyQueueItems=dashboardNormalizeCardCollection('ready_for_you',safeArray(readyForYouItems));
+  const ready=dashboardNormalizeCardCollection('ready_for_you',dashboardDedupePreparedWork([freshTranscriptPacket?.readyDraft,...readyQueueItems,...readyDrafts].filter(Boolean))).slice(0,12);
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
-  return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest}};
+  const riskSignals=dashboardDedupeCardItems(dashboardNormalizeCardCollection('highest_leverage',conclusions
+    .filter(m=>!['ignored','quiet'].includes(m.priorityBand))
+    .filter(m=>m.moveType==='review_risk'||Number(m.riskScore)>=20)
+    .slice(0,100)));
+  return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,riskSignals,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest,riskSignals}};
 }
 function teachValOnboardingReflection(items=[]){
   const memories=Array.isArray(items)?items:[];
@@ -23165,7 +26055,7 @@ function executiveThemeFromMoves(moves=[],profiles=[]){
   const relationship=profiles.filter(p=>p.profileType==='person'&&(p.openLoopCount||p.riskCount||p.opportunityCount)).length;
   const meetings=active.filter(m=>['schedule_meeting','prepare_meeting'].includes(m.moveType)).length;
   if(close>=Math.max(risk,meetings,2))return {title:'Close Open Loops',why:`${close} relationship or commitment loops are asking for closure.`};
-  if(risk>0)return {title:'Protect Trust',why:`${risk} risk signal${risk===1?'':'s'} should be reviewed before they grow quietly.`};
+  if(risk>0)return {title:'Protect Trust',why:'Relationship is watching trust risk before it grows quietly.'};
   if(relationship>0)return {title:'Relationship Velocity',why:`${relationship} people have relationship momentum, risk, or opportunity signals.`};
   if(meetings>0)return {title:'Prepare Conversations',why:`${meetings} meeting-related move${meetings===1?'':'s'} are ready for preparation.`};
   return {title:'Discern, Then Move',why:'VAL is watching the evidence and keeping noisy items out of your way.'};
@@ -23176,12 +26066,258 @@ function profileVelocity(profile={}){
   if(profile.openLoopCount>0)return 'Waiting on closure';
   return 'Observed';
 }
+function chiefRecommendationEnvelope(recommendation={}){
+  const candidate=safeArray(recommendation.nextCandidatesJson||recommendation.next_candidates_json)[0]
+    ||chiefPacketCandidateFromRecommendation(recommendation)
+    ||recommendation;
+  const supplied=evidenceJsonValue(candidate.envelope,{});
+  const projectId=String(candidate.projectId||candidate.project_id||(supplied.type==='project'?supplied.id:'')||'').trim();
+  const projectName=String(candidate.projectName||candidate.project_name||(supplied.type==='project'?supplied.name:'')||'').trim();
+  if(projectId||projectName)return {
+    envelopeType:'project',
+    id:projectId,
+    displayName:projectName||projectId,
+    projectId,
+    projectName:projectName||projectId,
+    reason:'This work is already attached to a project envelope.'
+  };
+  const relationshipId=String(candidate.relationshipId||candidate.relationship_id||(supplied.type==='relationship'?supplied.id:'')||'').trim();
+  const relationshipName=String(candidate.relationshipName||candidate.relationship_name||(supplied.type==='relationship'?supplied.name:'')||'').trim();
+  if(relationshipId||relationshipName)return {
+    envelopeType:'relationship',
+    id:relationshipId,
+    displayName:relationshipName||relationshipId,
+    relationshipId,
+    relationshipName:relationshipName||relationshipId,
+    reason:'No project envelope was attached, so the grounded relationship envelope is preserved.'
+  };
+  return null;
+}
+function homeNormalizeSourceRef(ref={}){
+  return {
+    source_type:String(ref.source_type||ref.sourceType||ref.type||'unknown'),
+    source_id:String(ref.source_id||ref.sourceId||ref.id||''),
+    quote_or_summary:dashboardShortText(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||'', '', 900),
+    confidence:Math.max(0,Math.min(1,Number(ref.confidence)||0.65)),
+    created_at:ref.created_at||ref.createdAt||new Date().toISOString()
+  };
+}
+function chiefCompletedPacketIds(recommendation={}){
+  const feedback=evidenceJsonValue(recommendation.userFeedbackJson||recommendation.user_feedback_json,{});
+  return new Set(safeArray(feedback.completedPacketIds||feedback.completed_packet_ids).map(String).filter(Boolean));
+}
+function chiefPacketCandidateFromRecommendation(recommendation={}){
+  return evidenceJsonValue(recommendation.anxietyVsMomentumJson||recommendation.anxiety_vs_momentum_json,{})?.current_packet || null;
+}
+function chiefCandidateSourceRefs(candidate={},fallbackRefs=[]){
+  const refs=safeArray(candidate.evidence||candidate.sourceRefs||candidate.source_refs).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary);
+  return refs.length?refs:fallbackRefs;
+}
+function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackRefs=[]){
+  if(!candidate)return null;
+  const packetId=String(candidate.packetId||candidate.packet_id||'');
+  const sourceRefs=chiefCandidateSourceRefs(candidate,fallbackRefs);
+  const title=dashboardShortText(candidate.title||recommendation.title||'Chief of Staff recommendation','Chief of Staff recommendation',180);
+  const summary=dashboardShortText(candidate.summary||recommendation.recommendation||recommendation.why||title,title,260);
+  const observerLine=safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers).slice(0,3).join(', ');
+  const why=dashboardShortText([
+    summary,
+    observerLine?`Board lens: ${observerLine}.`:'',
+    recommendation.why||''
+  ].filter(Boolean).join(' '), summary, 320);
+  const envelope=chiefRecommendationEnvelope(candidate);
+  const candidateEvidenceConfidence=Math.max(0,...sourceRefs.map(ref=>Number(ref.confidence)||0));
+  const confidence=Number(index===0?recommendation.confidence:candidateEvidenceConfidence)||0;
+  const actionNeeded=dashboardShortText(
+    index===0
+      ? (recommendation.anxietyVsMomentumJson?.momentum_signal||recommendation.recommendation||title)
+      : (candidate.alignmentAction||candidate.alignment_action||title),
+    title,
+    360
+  );
+  const exactSourceQuote=sourceRefs[0]?.quote_or_summary||'';
+  const alignmentAdmission=assessAlignmentAdmission({
+    actionText:actionNeeded,
+    objectText:title,
+    exactSourceQuote,
+    sourceRefs,
+    confidence
+  });
+  if(!alignmentAdmission.passed)return null;
+  const boardObservers=[candidate.leadObserver||candidate.lead_observer]
+    .filter(Boolean)
+    .concat(safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers))
+    .concat(safeArray(candidate.observers).filter(observer=>observer?.status!=='no_signal').map(observer=>observer.observer))
+    .map(String)
+    .filter((name,observerIndex,names)=>name&&names.indexOf(name)===observerIndex);
+  const observerFindings=safeArray(candidate.observers)
+    .filter(observer=>observer?.status!=='no_signal'&&observer?.finding)
+    .map(observer=>({
+      observer:String(observer.observer||'Observer'),
+      observerId:String(observer.observerId||observer.observer_id||''),
+      observerVersion:String(observer.observerVersion||observer.observer_version||''),
+      observerRunId:String(observer.observerRunId||observer.observer_run_id||''),
+      eventRunId:String(observer.eventRunId||observer.event_run_id||recommendation.eventRunId||recommendation.event_run_id||''),
+      promptKey:String(observer.promptKey||observer.prompt_key||''),
+      packetId:String(observer.packetId||observer.packet_id||packetId),
+      sourceType:String(observer.sourceType||observer.source_type||candidate.sourceType||candidate.source_type||''),
+      sourceId:String(observer.sourceId||observer.source_id||candidate.sourceId||candidate.source_id||''),
+      sourceProcessingRecordId:String(observer.sourceProcessingRecordId||observer.source_processing_record_id||candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),
+      canonicalWorkItemId:String(observer.canonicalWorkItemId||observer.canonical_work_item_id||candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),
+      status:String(observer.status||'observed'),
+      finding:dashboardShortText(observer.finding,'',320),
+      watching:dashboardShortText(observer.watching,'',280),
+      concern:dashboardShortText(observer.concern,'',240),
+      question:dashboardShortText(observer.question,'',200),
+      people:safeArray(observer.people).map(String).filter(Boolean).slice(0,8),
+      projects:safeArray(observer.projects).map(String).filter(Boolean).slice(0,6),
+      decisionObjects:safeArray(observer.decisionObjects||observer.decision_objects).map(String).filter(Boolean).slice(0,6),
+      evidence:safeArray(observer.evidence).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary).slice(0,8),
+      reviewedAt:observer.reviewedAt||observer.reviewed_at||'',
+      confidence:Math.max(0,Math.min(1,Number(observer.confidence)||0))
+    }));
+  return {
+    id:`chief_alignment_${recommendation.id}_${packetId||index}`,
+    chiefRecommendationId:recommendation.id,
+    chiefQueuePacketId:packetId,
+    canonicalWorkItemId:String(candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),
+    sourceProcessingRecordId:String(candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),
+    sourceType:'chief_of_staff_recommendation',
+    sourceId:recommendation.id,
+    sourceRefs,
+    envelope,
+    projectName:envelope?.projectName||'',
+    managerColorName:envelope?.managerColorName||'',
+    title:index===0?dashboardShortText(recommendation.recommendation||title,title,180):title,
+    chiefHeadline:dashboardShortText(recommendation.title||title,title,180),
+    summary:index===0?dashboardShortText(recommendation.recommendation||summary,summary,220):summary,
+    why,
+    reason_it_matters:why,
+    ifIgnored:dashboardShortText(recommendation.opposingView||recommendation.anxietyVsMomentumJson?.anxiety_signal||'', '', 180),
+    target:{type:'chief_of_staff_recommendation',id:recommendation.id,label:recommendation.title||title},
+    observerName:'Chief of Staff',
+    boardObservers,
+    observerFindings,
+    confidence,
+    whyNowPacket:{
+      why_now:index===0?(recommendation.recommendation||title):title,
+      decision_needed:recommendation.anxietyVsMomentumJson?.momentum_signal || summary,
+      action_needed:actionNeeded,
+      cost_if_delayed:recommendation.anxietyVsMomentumJson?.anxiety_signal || 'This Board-selected move may remain an open loop.',
+      evidence_refs:sourceRefs.length?sourceRefs:[{source_type:'chief_of_staff_recommendation',source_id:recommendation.id,quote_or_summary:why,confidence}],
+      confidence
+    },
+    homeAdmission:{whyNowPacketComplete:alignmentAdmission.passed},
+    metadata:{source:'chief_of_staff_recommendation',chiefRecommendationId:recommendation.id,chiefQueuePacketId:packetId,canonicalWorkItemId:String(candidate.canonicalWorkItemId||candidate.canonical_work_item_id||''),sourceProcessingRecordId:String(candidate.sourceProcessingRecordId||candidate.source_processing_record_id||''),roundTableRunId:recommendation.roundTableRunId||recommendation.round_table_run_id||'',eventRunId:recommendation.eventRunId||recommendation.event_run_id||'',chiefQueueIndex:index,alignmentAdmission}
+  };
+}
+function buildChiefDailyWitness(chiefItem={}){
+  if(!chiefItem?.chiefRecommendationId||!chiefItem?.canonicalWorkItemId)return null;
+  const observerName=String(chiefItem.boardObservers?.[0]||chiefItem.observerFindings?.[0]?.observer||'Board').trim();
+  const finding=dashboardShortText(
+    chiefItem.observerFindings?.find(item=>item.observer===observerName)?.finding
+    || chiefItem.observerFindings?.[0]?.finding
+    || chiefItem.chiefHeadline
+    || chiefItem.why
+    || chiefItem.summary
+    || '',
+    '',
+    260
+  ).replace(/^I\s+(?:am\s+)?(?:seeing|watching|noticing)\s+/i,'');
+  if(!finding)return null;
+  const findingSentence=finding.replace(/[.!?]+$/,'');
+  const welcomeAdmission=assessChiefWelcome({
+    observerName,
+    finding:findingSentence,
+    sourceRefs:chiefItem.sourceRefs,
+    confidence:chiefItem.confidence
+  });
+  if(!welcomeAdmission.passed)return null;
+  const first=`Good ${tenantDaypart()}, ${String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there'}.`;
+  const observerBrief=`${observerName} is seeing ${findingSentence.charAt(0).toLowerCase()}${findingSentence.slice(1)}.`;
+  const second='I put the clearest next decision in Alignment.';
+  return {
+    display_greeting:[first,observerBrief,second].join('\n'),
+    greeting_lines:[first,observerBrief,second],
+    perspective:observerBrief,
+    observerName,
+    permission_line:'Nothing sends, imports, or changes externally unless you approve it.',
+    moment_type:'chief_of_staff_briefing',
+    what_was_witnessed:finding,
+    what_it_cost_or_represented:chiefItem.ifIgnored||chiefItem.why||'',
+    evidence:[chiefItem],
+    confidence:Number(chiefItem.confidence||0.72),
+    voice_note:'chief_of_staff',
+    internalUnderstanding:{
+      greeting_context:'The Chief of Staff selected the highest-ranked source-backed Board deduction.',
+      current_day_state:'chief_ranked_attention',
+      observed_pattern:finding,
+      envelope:chiefItem.envelope||null,
+      confidence:Number(chiefItem.confidence||0.72),
+      evidence:[chiefItem],
+      prepared_work:[],
+      suggested_tone:'direct',
+      things_intentionally_not_mentioned:[],
+      welcomeAdmission
+    },
+    generatedAt:new Date().toISOString()
+  };
+}
+function buildQuietChiefDailyWitness(){
+  const date=new Date();
+  const name=String(CLIENT_CONFIG.clientName||'there').trim().split(/\s+/)[0]||'there';
+  const first=`Good ${tenantDaypart(date)}, ${name}.`;
+  const second='Nothing from the Board has earned your attention yet.';
+  const third='I will keep the desk clear until something does.';
+  return {
+    display_greeting:[first,second,third].join('\n'),
+    greeting_lines:[first,second,third],
+    perspective:second,
+    observerName:'Chief of Staff',
+    permission_line:'No action is being assigned.',
+    moment_type:'chief_of_staff_quiet',
+    what_was_witnessed:'No source-backed Board deduction passed the Chief of Staff welcome gate.',
+    what_it_cost_or_represented:'Home stays quiet rather than filling the room with activity.',
+    evidence:[],
+    confidence:1,
+    voice_note:'quiet',
+    internalUnderstanding:{
+      greeting_context:'No source-backed Board brief earned Home.',
+      current_day_state:'chief_of_staff_quiet',
+      observed_pattern:'',
+      confidence:1,
+      evidence:[],
+      prepared_work:[],
+      suggested_tone:'direct',
+      things_intentionally_not_mentioned:['Fresh transcript activity and ungrounded Observer language do not become the Welcome message.']
+    },
+    generatedAt:date.toISOString()
+  };
+}
+function chiefRecommendationHomeItems(recommendation={}){
+  if(!recommendation||!recommendation.id)return null;
+  const sourceRefs=safeArray(recommendation.sourceRefsJson||recommendation.source_refs_json).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary);
+  const completed=chiefCompletedPacketIds(recommendation);
+  const current=chiefPacketCandidateFromRecommendation(recommendation);
+  const candidates=[current,...safeArray(recommendation.nextCandidatesJson||recommendation.next_candidates_json)]
+    .filter(item=>item&&(item.packetId||item.packet_id||item.title))
+    .filter(item=>!completed.has(String(item.packetId||item.packet_id||'')));
+  if(candidates.length){
+    return candidates.map((candidate,index)=>chiefCandidateHomeItem(recommendation,candidate,index,sourceRefs)).filter(Boolean);
+  }
+  return [chiefCandidateHomeItem(recommendation,{title:recommendation.title,summary:recommendation.recommendation,evidence:sourceRefs,packetId:''},0,sourceRefs)].filter(Boolean);
+}
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[])]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue,canonicalTaskQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:100}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.listItems?valReadyForYou.listItems({limit:20}).catch(error=>{console.warn('[ready-for-you] Home briefing queue read failed:',error.message);return null;}):Promise.resolve(null),valCanonicalWork?.taskProjection?valCanonicalWork.taskProjection({limit:500}).catch(error=>{console.warn('[canonical-work] Home Chief queue load failed:',error.message);return null;}):Promise.resolve(null)]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
   const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
   const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);
-  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,freshTranscriptPacket});
+  const readyForYouItems=Array.isArray(readyForYouQueue?.preparedItems)
+    ? readyForYouQueue.preparedItems
+    : (Array.isArray(readyForYouQueue?.prepared_items)
+      ? readyForYouQueue.prepared_items
+      : safeArray(readyForYouQueue?.items));
+  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket});
   const top=dashboard.highestLeverageMove?[dashboard.highestLeverageMove]:[];
   const also=dashboard.alsoImportant;
   const watching=dashboard.watching;
@@ -23193,7 +26329,22 @@ async function buildExecutiveBriefing(){
   const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
   const whatChanged=dashboard.whatChanged;
   const theme=executiveThemeFromMoves(moves,profiles);
-  const highest=top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
+  const chiefItemsByWorkId=new Map(chiefRecommendations
+    .filter(item=>['active','pending','ready'].includes(String(item.status||'active').toLowerCase()))
+    .flatMap(chiefRecommendationHomeItems)
+    .filter(item=>item?.canonicalWorkItemId)
+    .map(item=>[[item.canonicalWorkItemId,item.chiefRecommendationId].map(String).join(':'),item]));
+  const chiefHomeItems=safeArray(canonicalTaskQueue?.tasks)
+    .filter(item=>item.chief_recommendation_id&&item.chief_rank!==null&&item.chief_rank!==undefined&&Number.isFinite(Number(item.chief_rank)))
+    .sort((a,b)=>Number(a.chief_rank)-Number(b.chief_rank))
+    .map(item=>chiefItemsByWorkId.get([item.canonical_work_item_id||item.id,item.chief_recommendation_id].map(String).join(':')))
+    .filter(Boolean)
+    .filter((item,index,items)=>{
+      const packetId=String(item.chiefQueuePacketId||'').trim();
+      return !packetId || items.findIndex(candidate=>String(candidate.chiefQueuePacketId||'').trim()===packetId)===index;
+    });
+  const chiefHomeItem=chiefHomeItems[0]||null;
+  const highest=chiefHomeItem||top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
   const momentum=dashboard.momentum.length?dashboard.momentum:(onboarding.momentum.length?onboarding.momentum:[
     up.length?{title:'Momentum Increasing',detail:up.slice(0,3).join(', '),state:'up'}:null,
     down.length?{title:'Momentum Needs Attention',detail:down.slice(0,3).join(', '),state:'risk'}:null,
@@ -23206,17 +26357,20 @@ async function buildExecutiveBriefing(){
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
   const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
-  const dailyWitness=buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
-    || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
-  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
+  const dailyWitness=buildChiefDailyWitness(chiefHomeItem)
+    || buildQuietChiefDailyWitness();
+  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,chiefRecommendation:chiefHomeItem||null,chiefAlignmentQueue:chiefHomeItems,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
+  const worriedAbout=[...(briefing.watching||[]),...(briefing.ignored||[])].slice(0,4).map(m=>m.title).filter(Boolean);
   const relationshipDossiers=(briefing.people||[]).map(p=>p.relationshipDossier).filter(Boolean).slice(0,4).map(relationshipDossierPromptContext).filter(Boolean);
   return [
     briefing.dailyWitness?.display_greeting?`Daily Witness Greeting: ${briefing.dailyWitness.display_greeting.replace(/\n/g,' / ')}`:'',
     `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
     briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
+    worriedAbout.length?'what VAL is worried about: '+worriedAbout.join('; '):'',
+    briefing.people?.length?'relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
     briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
     relationshipDossiers.length?'Relationship Dossiers:\n'+relationshipDossiers.join('\n\n'):'',
     briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
@@ -23904,6 +27058,7 @@ function transcriptOverviewInvitees(transcript={},calendarEvent={}){
   const buckets=[
     calendarEvent.attendees,
     transcript.attendees,
+    transcript.participants,
     transcript.invitees,
     transcript.calendarEvent?.attendees,
     transcript.calendar_event?.attendees,
@@ -24009,16 +27164,37 @@ function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
 }
 async function transcriptCalendarEventForOverview(transcript={}){
   const nested=[transcript.calendarEvent,transcript.calendar_event,transcript.event,transcript.metadata?.calendarEvent,transcript.metadata?.calendar_event,transcript.metadata?.meetingMatch,transcript.sourcePayloadMetadata?.calendarEvent,transcript.sourcePayloadMetadata?.calendar_event,transcript.sourcePayloadMetadata?.meetingMatch].find(event=>event&&typeof event==='object'&&Array.isArray(event.attendees));
-  if(nested)return nested;
+  if(nested&&transcriptCalendarEventCompatible(transcript,nested))return nested;
   const id=String(transcript.calendarEventId||transcript.calendar_event_id||transcript.meetingId||transcript.meeting_id||transcript.metadata?.calendarEventId||transcript.metadata?.calendar_event_id||transcript.sourcePayloadMetadata?.calendarEventId||transcript.sourcePayloadMetadata?.calendar_event_id||'').trim();
-  if(!id)return {};
-  await valDbReady;
-  if(pgPool){
-    const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
-    const row=r.rows[0];
-    return row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+  let linked={};
+  if(id){
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
+      const row=r.rows[0];
+      linked=row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+    }else{
+      linked=(valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+    }
+    if(transcriptCalendarEventCompatible(transcript,linked))return linked;
   }
-  return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+  const occurredAt=new Date(transcript.meetingDatetime||transcript.occurredAt||transcript.createdAt||Date.now());
+  if(Number.isNaN(occurredAt.getTime()))return {};
+  const start=new Date(occurredAt);start.setDate(start.getDate()-14);
+  const end=new Date(occurredAt);end.setDate(end.getDate()+2);
+  const normalizedTranscriptTitle=String(transcript.title||transcript.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  if(!normalizedTranscriptTitle)return {};
+  const loaded=await loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
+  const exactMatches=(loaded.events||[]).filter(event=>{
+    const eventTitle=String(event.title||event.summary||event.name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+    return eventTitle===normalizedTranscriptTitle&&Array.isArray(event.attendees)&&event.attendees.some(attendee=>validEmail(attendee?.email));
+  });
+  exactMatches.sort((left,right)=>{
+    const leftDistance=Math.abs(occurredAt.getTime()-new Date(left.startTime||left.start||0).getTime());
+    const rightDistance=Math.abs(occurredAt.getTime()-new Date(right.startTime||right.start||0).getTime());
+    return leftDistance-rightDistance;
+  });
+  return exactMatches[0]||{};
 }
 function transcriptCalendarEventCompatible(transcript={},event={}){
   if(!event||!Object.keys(event).length)return false;
@@ -24214,6 +27390,60 @@ async function clearTranscriptStaging(transcriptId){
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
   const store=valStore();for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'])store[key]=transcriptFileArray(store,key).filter(row=>row.transcriptId!==transcriptId);saveValStore(store);
 }
+async function transcriptRecordById(transcriptId=''){
+  const id=String(transcriptId||'').trim();
+  if(!id)return null;
+  if(DEMO_MODE){
+    return safeArray(requestContext.getStore()?.demoState?.transcripts).find(row=>String(row.id||row.transcriptId)===id)||null;
+  }
+  await valDbReady;
+  if(pgPool){
+    const archive=await dbQuery('select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and id=$2 limit 1',[VAL_USER_ID,id]);
+    if(archive.rows?.[0]){
+      const row=archive.rows[0];
+      return {id:row.id,type:row.type,title:row.title||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||''};
+    }
+    const indexed=await dbQuery('select transcript_id,source,meeting_title,meeting_datetime,created_at from transcripts where user_id=$1 and transcript_id=$2 limit 1',[VAL_USER_ID,id]);
+    if(indexed.rows?.[0]){
+      const row=indexed.rows[0];
+      return {id:row.transcript_id,type:'transcript',title:row.meeting_title||'',rawText:'',metadata:{source:row.source||'',timestamp:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||''},createdAt:row.created_at?.toISOString?.()||row.created_at||''};
+    }
+    return null;
+  }
+  return safeArray(valStore().transcripts).find(row=>String(row.id||row.transcriptId)===id)
+    || transcriptFileArray(valStore(),'transcriptIndex').find(row=>String(row.transcriptId||row.id)===id)
+    || null;
+}
+async function deleteTranscriptForUser(transcriptId=''){
+  const id=String(transcriptId||'').trim();
+  if(!id)throw new Error('transcriptId is required.');
+  const record=await transcriptRecordById(id);
+  if(!record)throw Object.assign(new Error('Transcript not found.'),{statusCode:404});
+  const metadata=record.metadata||{};
+  const sourceKey=String(metadata.documentId||metadata.sourceId||metadata.source_id||'').trim();
+  await saveTranscriptDeletion({transcriptId:id,sourceKey,title:record.title||'',metadata:{source:metadata.source||record.type||'',deletedBy:'user'}});
+  await clearTranscriptStaging(id);
+  if(pgPool){
+    await dbQuery('delete from meeting_transcript_links where tenant_id=$1 and user_id=$2 and transcript_id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from val_decisions where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=$4',[tenantId(),currentUserId(),'transcript',id]).catch(()=>{});
+    await dbQuery('delete from evidence_items where tenant_id=$1 and source_type=$2 and source_id=$3',[tenantId(),'transcript',id]).catch(()=>{});
+    await dbQuery('delete from val_memory_items where tenant_id=$1 and user_id=$2 and metadata->>\'transcriptId\'=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from transcripts where tenant_id=$1 and user_id=$2 and transcript_id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+    await dbQuery('delete from val_transcripts where tenant_id=$1 and user_id=$2 and id=$3',[tenantId(),currentUserId(),id]).catch(()=>{});
+  }else{
+    const store=valStore();
+    store.transcripts=safeArray(store.transcripts).filter(row=>String(row.id)!==id);
+    store.transcriptIndex=transcriptFileArray(store,'transcriptIndex').filter(row=>String(row.transcriptId)!==id);
+    ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','meetingTranscriptLinks'].forEach(key=>{
+      store[key]=transcriptFileArray(store,key).filter(row=>String(row.transcriptId)!==id);
+    });
+    store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType==='transcript'&&String(row.sourceId)===id));
+    store.evidenceItems=transcriptFileArray(store,'evidenceItems').filter(row=>!(row.sourceType==='transcript'&&String(row.sourceId)===id));
+    store.memoryItems=transcriptFileArray(store,'memoryItems').filter(row=>String(row.metadata?.transcriptId||'')!==id);
+    saveValStore(store);
+  }
+  return {deleted:true,transcriptId:id,title:record.title||'',sourceKey};
+}
 async function clearAllTranscriptDataForTenant({requireJessa=false}={}){
   if(requireJessa&&CLIENT_CONFIG.clientSlug!=='jessa-val') throw new Error('Full transcript cleanup is enabled only for jessa_val.');
   if(DEMO_MODE){
@@ -24303,12 +27533,15 @@ async function saveTranscript(payload){
   if(rawText){
     const chunks=memoryChunks(rawText);
     for(let i=0;i<chunks.length;i++){
-      await saveMemoryItem({kind:type,summary:chunks.length>1?`${payload.title||type} (${i+1}/${chunks.length})`:payload.title||type,rawText:chunks[i],metadata:{...metadata,transcriptId:id,chunkIndex:i+1,chunkCount:chunks.length},importance:payload.importance||1});
+      const chunkFingerprint=crypto.createHash('sha256').update([id,type,i+1,chunks[i]].join('|')).digest('hex').slice(0,28);
+      await saveMemoryItem({id:`transcript_memory_${chunkFingerprint}`,kind:type,summary:chunks.length>1?`${payload.title||type} (${i+1}/${chunks.length})`:payload.title||type,rawText:chunks[i],metadata:{...metadata,transcriptId:id,chunkIndex:i+1,chunkCount:chunks.length,chunkFingerprint},importance:payload.importance||1});
     }
     const people=splitPeopleFromText([payload.title,rawText,JSON.stringify(metadata)].join(' ')).slice(0,8);
     const openLoops=extractOpenLoopsFromText(rawText,'transcript',payload.timestamp||payload.createdAt||new Date().toISOString()).slice(0,10);
     if(people.length||openLoops.length){
+      const relationshipFingerprint=crypto.createHash('sha256').update([id,'relationship_memory',people.map(p=>p.name||p.email).join('|'),openLoops.map(loop=>loop.text).join('|')].join('|')).digest('hex').slice(0,28);
       await saveMemoryItem({
+        id:`transcript_relationship_${relationshipFingerprint}`,
         kind:'relationship_memory',
         summary:`Relationship context from ${payload.title||type}`,
         rawText:[
@@ -24338,15 +27571,22 @@ async function updateTranscriptMetadata(id,updates={}){
   const store=valStore(),row=(store.transcripts||[]).find(t=>String(t.id)===String(id));
   if(row){row.metadata={...(row.metadata||{}),...updates};saveValStore(store);}
 }
-async function recentTranscripts(days=7){
-  if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.transcripts || []);
+async function recentTranscripts(days=7,limit=0){
+  const boundedLimit=Number(limit)>0?Math.max(1,Math.min(Number(limit),500)):0;
+  if(DEMO_MODE){
+    const rows=cloneDemo(requestContext.getStore()?.demoState?.transcripts || []);
+    return boundedLimit?rows.slice(0,boundedLimit):rows;
+  }
   await valDbReady;
   const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
   if(pgPool){
-    const r=await dbQuery('select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and created_at >= $2 order by created_at desc',[VAL_USER_ID,since]);
+    const params=[VAL_USER_ID,since];
+    const limitSql=boundedLimit?(params.push(boundedLimit),` limit $${params.length}`):'';
+    const r=await dbQuery(`select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and created_at >= $2 order by created_at desc${limitSql}`,params);
     return r.rows.map(row=>({id:row.id,type:row.type,title:row.title||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?row.created_at.toISOString():''}));
   }
-  return (valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
+  const rows=(valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
+  return boundedLimit?rows.slice(0,boundedLimit):rows;
 }
 function isTranscriptLikeType(type=''){
   const kind=String(type||'').toLowerCase();
@@ -24732,7 +27972,22 @@ async function saveValCalendarEvent(event){
     if(idx>=0)store.calendarEvents[idx]={...store.calendarEvents[idx],...record}; else store.calendarEvents.unshift(record);
     saveValStore(store);
   }
-  return {id:record.id,title:record.title,summary:record.title,startTime:record.startTime,endTime:record.endTime,attendees:record.attendees,source:'val',calendarName:'VAL Retroactive Meetings',metadata:record.metadata};
+  const saved={id:record.id,title:record.title,summary:record.title,startTime:record.startTime,endTime:record.endTime,attendees:record.attendees,source:'val',calendarName:'VAL Retroactive Meetings',metadata:record.metadata};
+  await processCanonicalBoardEvidence({
+    sourceType:'calendar_event',
+    sourceId:`val:${record.id}`,
+    sourceTitle:record.title,
+    rawText:calendarEventEvidenceText(saved,'val'),
+    createdAt:record.startTime,
+    domainRoutes:['calendar','board_of_observers','meeting_prep'],
+    metadata:{
+      source:'val_calendar_event_saved',
+      provider:'val',
+      calendarEventId:record.id,
+      noExternalAction:true
+    }
+  });
+  return saved;
 }
 async function fetchValCalendarEvents(start,end){
   await valDbReady;
@@ -25075,8 +28330,339 @@ async function ghlPlatformContext(query,dashboard,opts={}){
     notes?'Targeted GHL note and call transcript history:\n'+notes:''
   ].filter(Boolean).join('\n\n');
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
-  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
+let valReasoningUnavailableUntil=0;
+let valReasoningUnavailableReason='';
+function valReasoningCapacityError(error){
+  return /(quota|billing|credit balance|plans & billing|insufficient credit)/i.test(String(error?.message||error||''));
+}
+const localAiDailyUsage=new Map();
+const OPENAI_MODEL_PRICING_PER_MILLION={
+  'gpt-5-nano':{input:0.05,cachedInput:0.005,output:0.40},
+  'gpt-5.6-luna':{input:1.00,cachedInput:0.10,output:6.00},
+  'gpt-5.6-terra':{input:2.50,cachedInput:0.25,output:15.00},
+  'gpt-5.6-sol':{input:5.00,cachedInput:0.50,output:30.00},
+  'gpt-5.5':{input:5.00,cachedInput:0.50,output:30.00}
+};
+function valAiLane(value='interactive'){
+  const lane=String(value||'interactive').trim().toLowerCase();
+  return lane==='board'||lane==='deep_review'?lane:'interactive';
+}
+function valAiLaneBudget(lane='interactive'){
+  if(lane==='board')return {
+    softUsd:VAL_AI_BOARD_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_BOARD_DAILY_HARD_USD,
+    callLimit:VAL_AI_BOARD_DAILY_CALL_LIMIT
+  };
+  if(lane==='deep_review')return {
+    softUsd:VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_INTERACTIVE_DAILY_HARD_USD,
+    callLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+  return {
+    softUsd:VAL_AI_INTERACTIVE_DAILY_SOFT_USD,
+    hardUsd:VAL_AI_INTERACTIVE_DAILY_HARD_USD,
+    callLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+}
+function valAiModelPricing(model=''){
+  const clean=String(model||'').trim().toLowerCase();
+  const exact=OPENAI_MODEL_PRICING_PER_MILLION[clean];
+  if(exact)return exact;
+  const family=Object.keys(OPENAI_MODEL_PRICING_PER_MILLION).find(key=>clean.startsWith(`${key}-`));
+  return family?OPENAI_MODEL_PRICING_PER_MILLION[family]:OPENAI_MODEL_PRICING_PER_MILLION['gpt-5.6-sol'];
+}
+function valAiEstimatedInputTokens(system='',messages=[]){
+  const chars=String(system||'').length+safeArray(messages).reduce((sum,message)=>sum+String(message?.content||'').length,0);
+  return Math.max(1,Math.ceil(chars/4));
+}
+function valAiCostMicros({model='',inputTokens=0,cachedInputTokens=0,outputTokens=0}={}){
+  const pricing=valAiModelPricing(model);
+  const cached=Math.max(0,Math.min(Number(cachedInputTokens)||0,Number(inputTokens)||0));
+  const uncached=Math.max(0,(Number(inputTokens)||0)-cached);
+  const usd=(uncached*pricing.input+cached*pricing.cachedInput+(Number(outputTokens)||0)*pricing.output)/1_000_000;
+  return Math.max(0,Math.ceil(usd*1_000_000));
+}
+function valAiReservationMicros({model='',system='',messages=[],maxTokens=0}={}){
+  return valAiCostMicros({
+    model,
+    inputTokens:valAiEstimatedInputTokens(system,messages),
+    outputTokens:Math.max(1,Number(maxTokens)||1)
+  });
+}
+function valAiBudgetError({lane,budget,global=false}={}){
+  const label=global?'daily AI':lane==='board'?'scheduled Board':lane==='deep_review'?'Deep Review':'interactive VAL';
+  const limit=global?VAL_AI_DAILY_HARD_USD:budget.hardUsd;
+  return new Error(`${label} reached its $${Number(limit).toFixed(2)} daily safety budget. No additional paid model calls will run in this lane today.`);
+}
+async function releaseValAiReservation({lane='interactive',reservedCostMicros=0,releaseLane=true}={}){
+  const reserved=Math.max(0,Number(reservedCostMicros)||0);
+  if(!reserved)return;
+  if(pgPool){
+    await dbQuery(
+      `update val_ai_daily_usage
+       set reserved_cost_micros=greatest(0,reserved_cost_micros-$1),updated_at=now()
+       where tenant_id=$2 and user_id=$3 and usage_date=current_date`,
+      [reserved,tenantId(),currentUserId()]
+    ).catch(()=>{});
+    if(releaseLane){
+      await dbQuery(
+        `update val_ai_daily_lane_usage
+         set reserved_cost_micros=greatest(0,reserved_cost_micros-$1),updated_at=now()
+         where tenant_id=$2 and user_id=$3 and usage_date=current_date and lane=$4`,
+        [reserved,tenantId(),currentUserId(),lane]
+      ).catch(()=>{});
+    }
+    return;
+  }
+  const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  const state=localAiDailyUsage.get(key)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  state.reservedCostMicros=Math.max(0,state.reservedCostMicros-reserved);
+  if(releaseLane&&state.lanes[lane])state.lanes[lane].reservedCostMicros=Math.max(0,state.lanes[lane].reservedCostMicros-reserved);
+  localAiDailyUsage.set(key,state);
+}
+async function reserveValAiCall({lane='interactive',model='',system='',messages=[],maxTokens=0}={}){
+  lane=valAiLane(lane);
+  if(lane==='deep_review'&&!VAL_AI_DEEP_REVIEW_ENABLED){
+    throw new Error('Deep Review is off. It must be explicitly enabled before VAL can use the Terra reasoning lane.');
+  }
+  const budget=valAiLaneBudget(lane);
+  const reservedCostMicros=valAiReservationMicros({model,system,messages,maxTokens});
+  const globalHardMicros=Math.round(VAL_AI_DAILY_HARD_USD*1_000_000);
+  const laneHardMicros=Math.round(budget.hardUsd*1_000_000);
+  const scopeKey=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  if(pgPool){
+    const globalResult=await dbQuery(
+      `insert into val_ai_daily_usage (tenant_id,user_id,usage_date,call_count,reserved_cost_micros,updated_at)
+       values ($1,$2,current_date,1,$3,now())
+       on conflict (tenant_id,user_id,usage_date) do update
+       set call_count=val_ai_daily_usage.call_count+1,
+           reserved_cost_micros=val_ai_daily_usage.reserved_cost_micros+$3,
+           updated_at=now()
+       where val_ai_daily_usage.call_count < $4
+         and val_ai_daily_usage.spent_cost_micros+val_ai_daily_usage.reserved_cost_micros+$3 <= $5
+       returning call_count,spent_cost_micros,reserved_cost_micros`,
+      [tenantId(),currentUserId(),reservedCostMicros,VAL_DAILY_AI_CALL_LIMIT,globalHardMicros]
+    );
+    if(!globalResult?.rows?.length)throw valAiBudgetError({lane,budget,global:true});
+    const laneResult=await dbQuery(
+      `insert into val_ai_daily_lane_usage (tenant_id,user_id,usage_date,lane,call_count,reserved_cost_micros,updated_at)
+       values ($1,$2,current_date,$3,1,$4,now())
+       on conflict (tenant_id,user_id,usage_date,lane) do update
+       set call_count=val_ai_daily_lane_usage.call_count+1,
+           reserved_cost_micros=val_ai_daily_lane_usage.reserved_cost_micros+$4,
+           updated_at=now()
+       where val_ai_daily_lane_usage.call_count < $5
+         and val_ai_daily_lane_usage.spent_cost_micros+val_ai_daily_lane_usage.reserved_cost_micros+$4 <= $6
+       returning call_count,spent_cost_micros,reserved_cost_micros`,
+      [tenantId(),currentUserId(),lane,reservedCostMicros,budget.callLimit,laneHardMicros]
+    );
+    if(!laneResult?.rows?.length){
+      await releaseValAiReservation({lane,reservedCostMicros,releaseLane:false});
+      throw valAiBudgetError({lane,budget});
+    }
+    return {
+      dailyCallNumber:Number(globalResult.rows[0].call_count)||1,
+      laneCallNumber:Number(laneResult.rows[0].call_count)||1,
+      lane,
+      budget,
+      reservedCostMicros
+    };
+  }
+  const state=localAiDailyUsage.get(scopeKey)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  const laneState=state.lanes[lane]||{callCount:0,reservedCostMicros:0,spentCostMicros:0,inputTokens:0,outputTokens:0};
+  if(state.callCount+1>VAL_DAILY_AI_CALL_LIMIT||state.spentCostMicros+state.reservedCostMicros+reservedCostMicros>globalHardMicros){
+    throw valAiBudgetError({lane,budget,global:true});
+  }
+  if(laneState.callCount+1>budget.callLimit||laneState.spentCostMicros+laneState.reservedCostMicros+reservedCostMicros>laneHardMicros){
+    throw valAiBudgetError({lane,budget});
+  }
+  state.callCount+=1;
+  state.reservedCostMicros+=reservedCostMicros;
+  laneState.callCount+=1;
+  laneState.reservedCostMicros+=reservedCostMicros;
+  state.lanes[lane]=laneState;
+  localAiDailyUsage.set(scopeKey,state);
+  return {dailyCallNumber:state.callCount,laneCallNumber:laneState.callCount,lane,budget,reservedCostMicros};
+}
+async function recordValAiUsage({usage={},reservation={},model=''}={}){
+  const inputTokens=Number(usage.input_tokens)||0;
+  const outputTokens=Number(usage.output_tokens)||0;
+  const cachedInputTokens=Number(usage.input_tokens_details?.cached_tokens)||0;
+  const spentCostMicros=valAiCostMicros({model,inputTokens,cachedInputTokens,outputTokens});
+  const reservedCostMicros=Math.max(0,Number(reservation.reservedCostMicros)||0);
+  const lane=valAiLane(reservation.lane);
+  if(pgPool){
+    const results=await Promise.all([
+      dbQuery(
+        `update val_ai_daily_usage
+         set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,
+             reserved_cost_micros=greatest(0,reserved_cost_micros-$3),
+             spent_cost_micros=spent_cost_micros+$4,updated_at=now()
+         where tenant_id=$5 and user_id=$6 and usage_date=current_date`,
+        [inputTokens,outputTokens,reservedCostMicros,spentCostMicros,tenantId(),currentUserId()]
+      ),
+      dbQuery(
+        `update val_ai_daily_lane_usage
+         set input_tokens=input_tokens+$1,output_tokens=output_tokens+$2,
+             reserved_cost_micros=greatest(0,reserved_cost_micros-$3),
+             spent_cost_micros=spent_cost_micros+$4,updated_at=now()
+         where tenant_id=$5 and user_id=$6 and usage_date=current_date and lane=$7
+         returning spent_cost_micros`,
+        [inputTokens,outputTokens,reservedCostMicros,spentCostMicros,tenantId(),currentUserId(),lane]
+      )
+    ]).catch(error=>console.warn('[val-ai-usage] receipt persistence failed:',error.message));
+    const laneSpentMicros=Number(results?.[1]?.rows?.[0]?.spent_cost_micros)||0;
+    const laneSoftMicros=Math.round(valAiLaneBudget(lane).softUsd*1_000_000);
+    if(laneSpentMicros>=laneSoftMicros){
+      console.warn(`[val-ai-budget] ${lane} crossed its $${valAiLaneBudget(lane).softUsd.toFixed(2)} daily soft budget at $${(laneSpentMicros/1_000_000).toFixed(4)}.`);
+    }
+  }else{
+    const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+    const state=localAiDailyUsage.get(key);
+    const laneState=state?.lanes?.[lane];
+    if(state&&laneState){
+      state.inputTokens=(state.inputTokens||0)+inputTokens;
+      state.outputTokens=(state.outputTokens||0)+outputTokens;
+      state.reservedCostMicros=Math.max(0,state.reservedCostMicros-reservedCostMicros);
+      state.spentCostMicros+=spentCostMicros;
+      laneState.inputTokens+=inputTokens;
+      laneState.outputTokens+=outputTokens;
+      laneState.reservedCostMicros=Math.max(0,laneState.reservedCostMicros-reservedCostMicros);
+      laneState.spentCostMicros+=spentCostMicros;
+      localAiDailyUsage.set(key,state);
+    }
+  }
+  return {inputTokens,outputTokens,cachedInputTokens,spentCostMicros,lane};
+}
+function valAiBudgetRow(row={},lane=''){
+  const budget=lane?valAiLaneBudget(lane):null;
+  const spentCostUsd=(Number(row.spent_cost_micros||row.spentCostMicros)||0)/1_000_000;
+  const reservedCostUsd=(Number(row.reserved_cost_micros||row.reservedCostMicros)||0)/1_000_000;
+  return {
+    lane:lane||undefined,
+    callCount:Number(row.call_count||row.callCount)||0,
+    inputTokens:Number(row.input_tokens||row.inputTokens)||0,
+    outputTokens:Number(row.output_tokens||row.outputTokens)||0,
+    spentCostUsd,
+    reservedCostUsd,
+    projectedCostUsd:spentCostUsd+reservedCostUsd,
+    softBudgetUsd:budget?.softUsd,
+    hardBudgetUsd:budget?.hardUsd,
+    softWarning:!!budget&&spentCostUsd+reservedCostUsd>=budget.softUsd,
+    stopped:!!budget&&spentCostUsd+reservedCostUsd>=budget.hardUsd
+  };
+}
+async function valAiBudgetStatus(){
+  const models={
+    extraction:OPENAI_EXTRACTION_MODEL,
+    boardObservers:OPENAI_OBSERVER_MODEL,
+    chiefOfStaff:OPENAI_CHAT_MODEL,
+    interactive:OPENAI_CHAT_MODEL,
+    deepReview:OPENAI_DEEP_REVIEW_MODEL
+  };
+  if(pgPool){
+    const [globalResult,laneResult]=await Promise.all([
+      dbQuery(
+        `select * from val_ai_daily_usage
+         where tenant_id=$1 and user_id=$2 and usage_date=current_date`,
+        [tenantId(),currentUserId()]
+      ),
+      dbQuery(
+        `select * from val_ai_daily_lane_usage
+         where tenant_id=$1 and user_id=$2 and usage_date=current_date
+         order by lane`,
+        [tenantId(),currentUserId()]
+      )
+    ]);
+    const global=valAiBudgetRow(globalResult?.rows?.[0]||{});
+    return {
+      date:new Date().toISOString().slice(0,10),
+      global:{...global,hardBudgetUsd:VAL_AI_DAILY_HARD_USD,stopped:global.projectedCostUsd>=VAL_AI_DAILY_HARD_USD},
+      lanes:['board','interactive','deep_review'].map(lane=>valAiBudgetRow(
+        safeArray(laneResult?.rows).find(row=>row.lane===lane)||{},
+        lane
+      )),
+      models,
+      deepReviewEnabled:VAL_AI_DEEP_REVIEW_ENABLED,
+      emergencyCallLimit:VAL_DAILY_AI_CALL_LIMIT
+    };
+  }
+  const key=`${tenantId()}:${currentUserId()}:${new Date().toISOString().slice(0,10)}`;
+  const state=localAiDailyUsage.get(key)||{callCount:0,reservedCostMicros:0,spentCostMicros:0,lanes:{}};
+  const global=valAiBudgetRow(state);
+  return {
+    date:new Date().toISOString().slice(0,10),
+    global:{...global,hardBudgetUsd:VAL_AI_DAILY_HARD_USD,stopped:global.projectedCostUsd>=VAL_AI_DAILY_HARD_USD},
+    lanes:['board','interactive','deep_review'].map(lane=>valAiBudgetRow(state.lanes?.[lane]||{},lane)),
+    models,
+    deepReviewEnabled:VAL_AI_DEEP_REVIEW_ENABLED,
+    emergencyCallLimit:VAL_DAILY_AI_CALL_LIMIT
+  };
+}
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0,model='',task='conversation',lane='interactive',deepReviewApproved=false}){
+  if(Date.now()<valReasoningUnavailableUntil){
+    throw new Error(`VAL reasoning providers are temporarily unavailable: ${valReasoningUnavailableReason||'provider capacity is unavailable'}`);
+  }
+  const selectedLane=task==='deep_review'?'deep_review':valAiLane(lane);
+  if(selectedLane==='deep_review'&&!deepReviewApproved)throw new Error('Deep Review requires explicit user approval for this request.');
+  const selectedModel=String(model||'').trim()
+    ||(task==='extraction'?OPENAI_EXTRACTION_MODEL:selectedLane==='deep_review'?OPENAI_DEEP_REVIEW_MODEL:OPENAI_CHAT_MODEL);
+  try{
+    const response=await callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs,model:selectedModel,lane:selectedLane});
+    valReasoningUnavailableUntil=0;
+    valReasoningUnavailableReason='';
+    return response;
+  }catch(openAiError){
+    const allowAnthropicFallback=String(process.env.VAL_ALLOW_ANTHROPIC_FALLBACK||'').toLowerCase()==='true';
+    if(!allowAnthropicFallback){
+      if(valReasoningCapacityError(openAiError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason=openAiError.message;
+      }
+      throw openAiError;
+    }
+    const anthropicKey=await resolveAnthropicKey().catch(()=>'');
+    if(!anthropicKey){
+      if(valReasoningCapacityError(openAiError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason=openAiError.message;
+      }
+      throw openAiError;
+    }
+    console.warn('[VAL model] OpenAI unavailable; using configured Anthropic fallback:',openAiError.message);
+    const body={
+      model:process.env.VAL_ANTHROPIC_MODEL||'claude-sonnet-4-20250514',
+      max_tokens:maxTokens,
+      temperature,
+      system:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
+      messages:[{
+        role:'user',
+        content:String(user||'')+(json||jsonSchema?'\n\nReturn valid JSON only.':'')
+      }]
+    };
+    const options={
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':anthropicKey,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify(body)
+    };
+    const response=timeoutMs
+      ? await fetchWithTimeout('https://api.anthropic.com/v1/messages',options,timeoutMs,'Anthropic response')
+      : await fetch('https://api.anthropic.com/v1/messages',options);
+    const payload=await readJsonResponse(response);
+    if(!response.ok||payload.error){
+      const anthropicError=new Error(payload.error?.message||`Anthropic response failed (${response.status}).`);
+      if(valReasoningCapacityError(openAiError)&&valReasoningCapacityError(anthropicError)){
+        valReasoningUnavailableUntil=Date.now()+2*60*1000;
+        valReasoningUnavailableReason='configured OpenAI and Anthropic capacity is unavailable';
+      }
+      throw anthropicError;
+    }
+    const text=safeArray(payload.content).map(item=>item?.text||'').join('\n').trim();
+    if(!text)throw new Error('Anthropic returned no response text.');
+    valReasoningUnavailableUntil=0;
+    valReasoningUnavailableReason='';
+    return text;
+  }
 }
 function meetingPrepRebuildTimeout(promise,ms,fallback){
   return Promise.race([
@@ -25364,6 +28950,45 @@ function meetingPrepRebuildExternalReviewText(context={}){
     ...ready.map(lookup=>lookup.summary)
   ].join('\n\n');
 }
+function aboutMeDocumentCategory(value=''){
+  return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')==='about_me';
+}
+const reasonAboutMeDocumentForObserver=createAboutMeObserverReasoner({
+  callModel:callBoardNanoModel,
+  observerLenses:OBSERVER_PACKET_LENSES
+});
+const reasonBoardEvidenceForObserver=createEvidenceQualifiedObserverReasoner({
+  callModel:callBoardNanoModel,
+  observerLenses:OBSERVER_PACKET_LENSES,
+  aboutMeReasoner:reasonAboutMeDocumentForObserver
+});
+async function queueKnowledgeDocumentObserverDelivery({input={},result={}}={}){
+  const document=input.document||input.source||input;
+  const sourceRecord=result.sourceProcessingRecord||{};
+  const sourceReceipt=sourceRecord.sourceReceiptJson||sourceRecord.source_receipt_json||{};
+  const metadata=sourceRecord.metadataJson||sourceRecord.metadata_json||{};
+  const category=document.documentCategory||document.document_category||metadata.documentCategory||sourceReceipt.documentCategory||sourceReceipt.document_category||'other';
+  const packets=safeArray(result.sourcePackets);
+  if(!aboutMeDocumentCategory(category)){
+    return {
+      status:result.deduplicated?'already_delivered':'queued_for_briefing',
+      packetId:packets[0]?.id||'',
+      packetIds:packets.map(packet=>packet.id),
+      observerCount:14,
+      modelBacked:true,
+      processingMode:'scheduled_briefing'
+    };
+  }
+  return {
+    status:result.deduplicated?'already_delivered':'queued_for_briefing',
+    packetId:packets[0]?.id||'',
+    packetIds:packets.map(packet=>packet.id),
+    observerCount:DEFAULT_OBSERVERS.length,
+    modelBacked:true,
+    processingMode:'scheduled_briefing',
+    message:'This document is saved for all 14 Observers at the next Board briefing.'
+  };
+}
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
 function validDueDate(value){ if(!value)return null; const d=new Date(value); return isNaN(d.getTime())?null:d.toISOString(); }
@@ -25400,9 +29025,16 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
-  const openAiKey=await resolveOpenAIKey();
-  const openAiModel=await resolveOpenAIModel();
+function valAiReasoningEffort(model='',lane='interactive'){
+  const normalized=String(model||'').toLowerCase();
+  if(/^gpt-5-(nano|mini)(?:$|-)/.test(normalized))return 'minimal';
+  if(/^gpt-5\.6(?:$|-)/.test(normalized))return 'low';
+  return '';
+}
+
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,omitTemperature=false,json=false,jsonSchema=null,timeoutMs=0,model='',apiKey='',allowPlatformFallback=true,allowCompatibilityRetries=true,lane='interactive'}){
+  let openAiKey=String(apiKey||'').trim()||await resolveOpenAIKey();
+  const openAiModel=String(model||'').trim()||await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const preparedMessages=messages.map(m=>{
     let content=String(m.content||'');
@@ -25416,12 +29048,15 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
     input:preparedMessages,
-    max_output_tokens:maxTokens,
-    temperature
+    max_output_tokens:maxTokens
   };
+  const reasoningEffort=valAiReasoningEffort(openAiModel,lane);
+  if(reasoningEffort)body.reasoning={effort:reasoningEffort};
+  if(!omitTemperature&&!reasoningEffort)body.temperature=temperature;
   if(jsonSchema) body.text = {format:jsonSchema};
   else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
+    const reservation=await reserveValAiCall({lane,model:openAiModel,system:body.instructions,messages:preparedMessages,maxTokens});
     const options={
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -25431,24 +29066,157 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
       ? await fetchWithTimeout('https://api.openai.com/v1/responses',options,timeoutMs,'OpenAI response')
       : await fetch('https://api.openai.com/v1/responses',options);
     const d=await readJsonResponse(r);
+    if(!r.ok||d.error){
+      await releaseValAiReservation({
+        lane:reservation.lane,
+        reservedCostMicros:reservation.reservedCostMicros
+      });
+    }
     if(!r.ok&&!d.error) throw new Error(`OpenAI response failed (${r.status}): ${d.raw||'upstream error'}`);
+    d.val_ai_reservation=reservation;
     return d;
   };
+  const accountResponse=async payload=>{
+    if(payload.val_ai_usage_receipt)return payload.val_ai_usage_receipt;
+    const usage=payload.usage||{};
+    const usageReceipt=await recordValAiUsage({usage,reservation:payload.val_ai_reservation||{},model:openAiModel});
+    payload.val_ai_usage_receipt=usageReceipt;
+    console.log('[val-ai-usage]',JSON.stringify({
+      provider:'openai',
+      model:openAiModel,
+      lane:usageReceipt.lane,
+      responseStatus:payload.status||'completed',
+      incompleteReason:payload.incomplete_details?.reason||'',
+      inputTokens:usageReceipt.inputTokens,
+      cachedInputTokens:usageReceipt.cachedInputTokens,
+      outputTokens:usageReceipt.outputTokens,
+      totalTokens:Number(usage.total_tokens)||0,
+      reservedCostUsd:Number(payload.val_ai_reservation?.reservedCostMicros||0)/1_000_000,
+      spentCostUsd:usageReceipt.spentCostMicros/1_000_000,
+      dailyCallNumber:Number(payload.val_ai_reservation?.dailyCallNumber)||0,
+      laneCallNumber:Number(payload.val_ai_reservation?.laneCallNumber)||0,
+      emergencyDailyCallLimit:VAL_DAILY_AI_CALL_LIMIT,
+      globalHardBudgetUsd:VAL_AI_DAILY_HARD_USD,
+      laneSoftBudgetUsd:payload.val_ai_reservation?.budget?.softUsd||0,
+      laneHardBudgetUsd:payload.val_ai_reservation?.budget?.hardUsd||0,
+      tenantId:tenantId(),
+      userId:currentUserId(),
+      at:new Date().toISOString()
+    }));
+    return usageReceipt;
+  };
   let d=await request();
-  if(d.error && /temperature/i.test(d.error.message||'')){
+  if(allowCompatibilityRetries&&d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
     d=await request();
   }
-  if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+  if(allowCompatibilityRetries&&d.error && /reasoning|effort/i.test(d.error.message||'')){
+    delete body.reasoning;
+    d=await request();
+  }
+  if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
     body.text={format:{type:'json_object'}};
     d=await request();
+  }
+  const platformKey=String(OPENAI_KEY||'').trim();
+  const canUsePlatformFallback=allowPlatformFallback
+    &&platformKey
+    &&platformKey!==openAiKey
+    &&platformKeyFallbackAllowed('openai');
+  if(
+    d.error
+    &&canUsePlatformFallback
+    &&/(quota|billing|rate.?limit|authentication|api key|unauthorized|forbidden)/i.test(String(d.error.message||''))
+  ){
+    console.warn('[VAL model] Tenant OpenAI key could not generate a response; using the approved platform fallback.');
+    openAiKey=platformKey;
+    d=await request();
+    if(allowCompatibilityRetries&&d.error && /temperature/i.test(d.error.message||'')){
+      delete body.temperature;
+      d=await request();
+    }
+    if(allowCompatibilityRetries&&d.error && /reasoning|effort/i.test(d.error.message||'')){
+      delete body.reasoning;
+      d=await request();
+    }
+    if(allowCompatibilityRetries&&d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+      body.text={format:{type:'json_object'}};
+      d=await request();
+    }
   }
   if(d.error) throw new Error(d.error.message);
   if(d.status==='incomplete'){
     const reason=d.incomplete_details?.reason||'unknown reason';
-    throw new Error('OpenAI response incomplete: '+reason+'.');
+    await accountResponse(d);
+    if(reason==='max_output_tokens'){
+      const retryMaxTokens=Math.min(12000,Math.max((Number(maxTokens)||1200)*2,(Number(maxTokens)||1200)+800));
+      if(retryMaxTokens<=Number(body.max_output_tokens||0)){
+        throw new Error('VAL could not finish the response within its protected output limit: '+reason+'.');
+      }
+      body.max_output_tokens=retryMaxTokens;
+      body.instructions=[
+        body.instructions,
+        json||jsonSchema
+          ? 'The prior attempt reached its output ceiling. Return the complete strict JSON result now. Keep every field concise. Do not add prose outside the JSON.'
+          : 'The prior attempt reached its output ceiling. Answer the original request again as one complete, concise response. Preserve required facts and actions; remove repetition and optional background first.'
+      ].filter(Boolean).join('\n\n');
+      let retry=await request();
+      if(allowCompatibilityRetries&&retry.error&&/temperature/i.test(retry.error.message||'')){
+        delete body.temperature;
+        retry=await request();
+      }
+      if(allowCompatibilityRetries&&retry.error&&/reasoning|effort/i.test(retry.error.message||'')){
+        delete body.reasoning;
+        retry=await request();
+      }
+      if(retry.error)throw new Error(retry.error.message);
+      await accountResponse(retry);
+      if(retry.status==='incomplete'){
+        const retryReason=retry.incomplete_details?.reason||reason;
+        throw new Error('VAL could not finish the response within its protected output limit: '+retryReason+'.');
+      }
+      d=retry;
+    }else{
+      throw new Error('OpenAI response incomplete: '+reason+'.');
+    }
   }
+  await accountResponse(d);
   return responseText(d);
+}
+
+let boardNanoUnavailableUntil=0;
+let boardNanoUnavailableReason='';
+async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSchema=null,timeoutMs=30000}={}){
+  if(Date.now()<boardNanoUnavailableUntil){
+    throw new Error(`The scheduled Board nano lane is temporarily unavailable: ${boardNanoUnavailableReason||'OpenAI capacity is unavailable'}`);
+  }
+  const apiKey=String(await resolveOpenAIKey()||'').trim();
+  if(!apiKey)throw new Error('The scheduled Board requires a connected OpenAI key.');
+  try{
+    const response=await callOpenAIResponses({
+      system,
+      messages:[{role:'user',content:user}],
+      maxTokens,
+      omitTemperature:true,
+      json,
+      jsonSchema,
+      timeoutMs,
+      model:OPENAI_OBSERVER_MODEL,
+      apiKey,
+      lane:'board',
+      allowPlatformFallback:false,
+      allowCompatibilityRetries:false
+    });
+    boardNanoUnavailableUntil=0;
+    boardNanoUnavailableReason='';
+    return response;
+  }catch(error){
+    if(valReasoningCapacityError(error)){
+      boardNanoUnavailableUntil=Date.now()+2*60*1000;
+      boardNanoUnavailableReason=error.message;
+    }
+    throw error;
+  }
 }
 
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
@@ -25484,301 +29252,6 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
   }
   if(d.error) throw new Error(d.error.message);
   return responseText(d);
-}
-
-function geminiInteractionText(data={}){
-  return (data.candidates||[])
-    .flatMap(candidate => candidate.content?.parts || [])
-    .map(part => part.text || '')
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-}
-
-function geminiInteractionSourceUrls(data={}){
-  const urls=[];
-  for(const candidate of data.candidates||[]){
-    for(const chunk of candidate.groundingMetadata?.groundingChunks||[]){
-      if(chunk.web?.uri) urls.push(chunk.web.uri);
-    }
-    for(const support of candidate.groundingMetadata?.groundingSupports||[]){
-      for(const chunkIndex of support.groundingChunkIndices||[]){
-        const chunk=candidate.groundingMetadata?.groundingChunks?.[chunkIndex];
-        if(chunk?.web?.uri) urls.push(chunk.web.uri);
-      }
-    }
-  }
-  return [...new Set(urls.filter(Boolean))];
-}
-
-function geminiModelCandidates(primary){
-  return [...new Set([primary,GEMINI_GROUNDED_MODEL,...GEMINI_FALLBACK_MODELS].map(v=>String(v||'').trim()).filter(Boolean))];
-}
-
-function geminiErrorIsRetryable(status,message=''){
-  return [404,429,500,502,503,504].includes(Number(status)) || /(high demand|quota|rate|unavailable|not found|try again|temporar)/i.test(String(message||''));
-}
-
-async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1}){
-  if(!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
-  const errors=[];
-  for(const candidateModel of geminiModelCandidates(model)){
-    const body={
-      contents:[{role:'user',parts:[{text:String(input||'')}]}],
-      generationConfig:{temperature,maxOutputTokens:maxTokens},
-      tools:[{google_search:{}}]
-    };
-    const response=await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(body)
-    },60000,'Gemini grounded search').catch(e=>({ok:false,status:0,_timeoutError:e}));
-    if(response._timeoutError){
-      errors.push(`${candidateModel}: ${response._timeoutError.message}`);
-      continue;
-    }
-    const data=await readJsonResponse(response);
-    if(response.ok){
-      const text=geminiInteractionText(data);
-      if(text) return {raw:data,text,sourceUrls:geminiInteractionSourceUrls(data),model:candidateModel};
-      const finish=(data.candidates||[]).map(candidate=>candidate.finishReason).filter(Boolean).join(',')||'no finish reason';
-      const usage=data.usageMetadata ? ` usage=${JSON.stringify(data.usageMetadata).slice(0,260)}` : '';
-      errors.push(`${candidateModel}: empty grounded response (${finish})${usage}`);
-      continue;
-    }
-    const message=data.error?.message||data.raw||'upstream error';
-    errors.push(`${candidateModel}: ${response.status} ${message}`);
-    if(!geminiErrorIsRetryable(response.status,message)) break;
-  }
-  throw new Error(`Gemini grounded search failed: ${errors.join(' | ')}`);
-}
-
-function jsonArrayValue(value){
-  if(Array.isArray(value)) return value.filter(Boolean);
-  if(value && typeof value==='object') return Object.values(value).filter(Boolean);
-  if(!value) return [];
-  return [String(value)];
-}
-
-function goallLeadResearchFacts(p={}){
-  return [
-    `Company: ${p.organizationName||p.name||''}`,
-    `Address: ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ') || p.location || ''}`,
-    `Website: ${p.website||''}`,
-    `Industry: ${p.aiExactIndustry||p.industry||p.organizationType||''}`,
-    `Phone: ${p.phone||''}`,
-    `Business email: ${p.email||''}`,
-    `Public signals: ${jsonArrayValue(p.evidenceSignals).join('; ')}`,
-    `Google/raw context: ${String(p.googleRaw||p.googleData||'').slice(0,900)}`
-  ].filter(line=>!/:\s*$/.test(line)).join('\n');
-}
-
-function goallDecisionPerson(decision={}){
-  const best=decision.bestPersonToSpeakTo||{};
-  const primary=decision.primaryDecisionMaker||{};
-  const first=String(decision.decisionMakerFirstName||'').trim();
-  const last=String(decision.decisionMakerLastName||'').trim();
-  const joined=[first,last].filter(v=>v && !/^unverified$/i.test(v)).join(' ').trim();
-  return {
-    name:String(decision.decisionMakerName||primary.name||best.name||joined||'').trim(),
-    title:String(decision.decisionMakerTitle||primary.title||best.title||'').trim(),
-    confidence:String(decision.decisionMakerConfidence||primary.confidence||best.confidence||'').trim().toLowerCase(),
-    evidence:String(decision.decisionMakerEvidence||primary.evidence||primary.reason||best.reason||decision.notes||'').trim(),
-    linkedinUrl:String(decision.personalLinkedInUrl||primary.linkedinUrl||best.linkedinUrl||'').trim()
-  };
-}
-
-function decisionArrayValue(value){
-  if(Array.isArray(value)) return value.filter(Boolean);
-  if(value && typeof value==='object') return Object.values(value).filter(Boolean);
-  if(!value) return [];
-  return [String(value)];
-}
-
-function goallPainpointForMessaging(value=''){
-  let text=String(value||'')
-    .replace(/\s+/g,' ')
-    .trim()
-    .replace(/[.!?]+$/,'');
-  if(!text) return '';
-  text=text
-    .replace(/^a\s+(?:challenge|pain point|painpoint|problem|issue)\s+(?:of|with)\s+/i,'')
-    .replace(/^the\s+(?:challenge|pain point|painpoint|problem|issue)\s+(?:of|with)\s+/i,'')
-    .replace(/^challenge\s+(?:of|with)\s+/i,'')
-    .replace(/^struggling\s+with\s+/i,'')
-    .replace(/^operational\s+strain\s+and\s+/i,'')
-    .replace(/^recruitment\s+pressure\s+for\s+/i,'recruiting ')
-    .replace(/^hiring\s+pressure\s+for\s+/i,'hiring ')
-    .replace(/^retention\s+problems\s+for\s+/i,'retaining ')
-    .replace(/^customer\s+acquisition\s+pressure\s+for\s+/i,'acquiring ')
-    .replace(/^multi-location\s+scaling\s+pressure\s+for\s+/i,'scaling ');
-  text=text.replace(/\s+/g,' ').trim().replace(/[.!?]+$/,'');
-  if(!text) return '';
-  text=text.charAt(0).toLowerCase()+text.slice(1);
-  const words=text.split(/\s+/);
-  if(words.length>12){
-    text=words.slice(0,12).join(' ');
-    text=text.replace(/\s+(?:to|for|with|and|or|of|the|a|an)$/i,'').trim();
-  }
-  return text;
-}
-
-function explicitGoallPainpoint(decision={},p={}){
-  return goallPainpointForMessaging(
-    decision.explicitPainpoint ||
-    decision.painpoint ||
-    decision.painPoint ||
-    decision.goallPainpoint ||
-    p.painpoint ||
-    p.painPoint ||
-    ''
-  );
-}
-
-async function researchGoallDecisionMakerWithGemini(p={}){
-  const prompt=[
-    'Act as an expert B2B sales researcher for GOALL (Growth Only Automated Life & Legacy), an employee benefits program.',
-    'Use Google Search grounding to answer the same question a human operator would ask Gemini/Google AI, but return only the exact JSON object the scraper needs.',
-    '',
-    `Primary search query: ${[p.organizationName||p.name||'this company',p.city||'',p.state||'', 'owner'].filter(Boolean).join(' ')}`,
-    `Leadership fallback query: ${[p.organizationName||p.name||'this company',p.city||'',p.state||'', 'CEO president executive leadership founder'].filter(Boolean).join(' ')}`,
-    `Direct question: Who owns ${p.organizationName||p.name||'this company'} at ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ') || p.location || p.website || 'the known location'}?`,
-    `Executive fallback question: If no individual owner is currently named, who leads ${p.organizationName||p.name||'this company'} as CEO, president, founder, managing member, general manager, executive leader, HR/benefits leader, or operations leader?`,
-    `Follow-up question: Where would ${p.organizationName||p.name||'this company'} likely see turnover, hiring pressure, recruiting friction, retention problems, operational strain, or expansion needs based only on public evidence?`,
-    '',
-    'Research the exact business and produce the same content the team liked from Gemini, but in structured fields: decision makers, best contact method, business size context, customized GOALL value propositions, hiring/turnover, and GOALL-aligned business needs/pain points.',
-    '',
-    'Business facts:',
-    goallLeadResearchFacts(p),
-    '',
-    'Requirements:',
-    '- Match the exact company name and exact address/location. Do not confuse similarly named businesses.',
-    '- exactLocationMatched must be false when the best verified company appears to be in a different city or state than the searched business/location.',
-    '- If the verified company is in a different state than the searched market, return explicitState as the verified state and explain the mismatch in possibleConfusionWarnings.',
-    '- If the exact legal name is not active or public results reveal a likely DBA, operating company, parent/umbrella company, or similarly named regional entity, do not discard the row. Return the closest verified match in alternativeBusinessMatches and explain the ambiguity in possibleConfusionWarnings.',
-    '- Only return a decisionMakerName when the person belongs to the exact company or a clearly connected operating/umbrella entity. Use medium or low confidence when the match is an operating/umbrella entity rather than the exact legal name.',
-    '- Decision-maker search ladder: first owner/co-owner; then founder; then president/CEO/managing member; then general manager/operator; then HR/benefits/operations leader; then another senior executive who would plausibly decide on GOALL.',
-    '- Employee-owned, ESOP, trust-owned, private equity-owned, family-owned without a named current owner, or ownership-transfer situations are not "no decision maker" cases. In those cases, return the CEO, president, chair, founder, or strongest current executive leader when public evidence supports the person.',
-    '- Do not set Unverified solely because ownership is diffuse, employee-owned, or held by an ESOP/trust. Only set Unverified after checking executive leadership and finding no reliable named leader.',
-    '- If you find a person, return first name and last name separately.',
-    '- If you find no reliable person, set decisionMakerFirstName to "Unverified", leave last name empty, and explain why.',
-    '- If you find a person but no direct person contact info, leave email and phone empty. Do not use generic company emails as person emails.',
-    '- explicitCity and explicitState must be the verified business city and state from the matched location. Do not infer city or state from a broad market if the business location does not support it.',
-	    '- explicitPainpoint must be a short, sentence-ready phrase that works inside these exact templates: "You identified a challenge of {{contact.painpoint}}" and "Other employers are also struggling with {{contact.painpoint}}".',
-	    '- Write explicitPainpoint in lowercase unless a proper noun is required. Use 3 to 9 words when possible and no more than 12 words.',
-	    '- Good explicitPainpoint examples: "finding skilled electricians", "keeping experienced drivers", "hiring reliable HVAC technicians", "retaining project managers", "filling open field roles", "managing rapid team growth".',
-	    '- Bad explicitPainpoint examples: "Operational strain and recruitment pressure for skilled in-house project management and trade staff to support multi-regional renovation projects", "growth and outreach goals", "workforce challenges", "a need for solutions".',
-	    '- Do not put evidence, long explanations, company background, or GOALL positioning in explicitPainpoint. Put the evidence sentence in painpointEvidence and the outreach angle in recommendedGoallPositioning.',
-	    '- Use public evidence such as hiring pages, press releases, reviews, BBB/company descriptions, service-area scale, posted roles, expansion language, or industry-specific labor pressure. Name the concrete evidence in painpointEvidence.',
-    '- Do not use generic phrases like "growth, outreach, or pipeline goals" unless public evidence supports that exact issue.',
-    '- Leave explicitPainpoint empty only when the grounded search finds no public evidence for any concrete GOALL-relevant painpoint.',
-    '- Include source URLs and a short evidence sentence.',
-    '- phoneType must be one of: direct_decision_maker, main_office, likely_gatekeeper, unknown.',
-    '- emailType must be one of: decision_maker, general_inbox, unknown.',
-    '- companyStructure must be one of: local_owner_led, regional_branch, large_corporation, out_of_state_hq_with_local_branch, ambiguous.',
-    '- If it is a larger company, include regional VP, HR Manager, Operations Director, branch manager, or other Arizona/local decision makers in regionalDecisionMakers when public evidence supports them.',
-    '- customizedValueProps must include 3 to 4 GOALL value propositions mapped to this exact company industry/business model, such as zero compliance fees vs. 401ks, tax-bracket protection for owners, key-person protection, trade-technician retention, or regional workforce retention.',
-    '- callerSnapshot must be a compact block a caller can read while the phone is ringing. Include decision maker, phone type, email type, hiring signal, turnover risk, short painpoint, and suggested opener.',
-    '- callOpener must be one or two sentences and must change depending on phoneType. If phoneType is main_office or likely_gatekeeper, write a gatekeeper-friendly opener.',
-    '- emailAngle must be a short personalized angle for future email generation. It must use only explicit evidence, not guesses.',
-    '- Return only valid JSON. No markdown.',
-    '',
-    'Return JSON with this exact shape:',
-    '{"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","primaryDecisionMaker":{"name":"","title":"","roleType":"owner|president|ceo|founder|regional|hr|operations|admin|unknown","linkedinUrl":"","confidence":"high|medium|low|none","evidence":""},"secondaryDecisionMakers":[{"name":"","title":"","roleType":"vp|hr|operations|admin|regional|other","linkedinUrl":"","reason":"","sourceUrl":""}],"regionalDecisionMakers":[{"name":"","title":"","region":"","linkedinUrl":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"bestContactMethod":{"email":"","emailType":"decision_maker|general_inbox|unknown","phone":"","phoneType":"direct_decision_maker|main_office|likely_gatekeeper|unknown","address":"","contactNotes":""},"explicitCity":"","explicitState":"","explicitPainpoint":"","painpointEvidence":"","businessNeedsAndPainPoints":[""],"hiringAndTurnover":{"activelyHiring":"yes|no|unclear","highestTurnoverArea":"","turnoverRisk":"","evidence":""},"businessSizeContext":"","companyStructure":"local_owner_led|regional_branch|large_corporation|out_of_state_hq_with_local_branch|ambiguous","customizedValueProps":[""],"recommendedGoallPositioning":"","callerSnapshot":"","callOpener":"","emailAngle":"","operatingEntityName":"","exactEntityStatus":"","alternativeBusinessMatches":[{"entityName":"","location":"","relationshipToSearch":"","ownersOrExecutives":[{"name":"","title":""}],"sourceUrl":""}],"personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"peopleToAvoid":[{"nameOrRole":"","reason":""}],"sourceUrls":[],"notes":"","exactLocationMatched":true,"possibleConfusionWarnings":[]}'
-  ].join('\n');
-  const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:3200,temperature:0.1});
-  const parsed=extractJsonObject(gemini.text);
-  return {...parsed,sourceUrls:[...new Set([...jsonArrayValue(parsed.sourceUrls),...gemini.sourceUrls])],geminiGrounded:true,geminiModel:gemini.model};
-}
-
-async function enrichProspectWithGoallGeminiDecisionMaker(p={},opts={}){
-  if(String(p.leadProfile||'goall').toLowerCase()!=='goall' || opts.decisionMakerResearch===false || p.decisionMakerName || !GEMINI_API_KEY) return p;
-  if(!(p.organizationName||p.name) || !(p.address1||p.city||p.location||p.website)) return p;
-  try{
-    const decision=await researchGoallDecisionMakerWithGemini(p);
-    const person=goallDecisionPerson(decision);
-    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
-    const contactMethod=decision.bestContactMethod&&typeof decision.bestContactMethod==='object'?decision.bestContactMethod:{};
-    const hiringTurnover=decision.hiringAndTurnover&&typeof decision.hiringAndTurnover==='object'?decision.hiringAndTurnover:{};
-    const next={
-      ...p,
-      aiDecisionMakerResearch:decision,
-      decisionMakerEvidence:person.evidence||decision.decisionMakerEvidence||decision.notes||p.decisionMakerEvidence||'',
-      decisionMakerSourceUrls:jsonArrayValue(decision.sourceUrls),
-      keyDecisionMakers:decision.keyDecisionMakers||[],
-      secondaryDecisionMakers:decisionArrayValue(decision.secondaryDecisionMakers),
-      regionalDecisionMakers:decisionArrayValue(decision.regionalDecisionMakers),
-      peopleToAvoid:decision.peopleToAvoid||[],
-      possibleConfusionWarnings:decisionArrayValue(decision.possibleConfusionWarnings||decision.ambiguity_warnings),
-      alternativeBusinessMatches:decisionArrayValue(decision.alternativeBusinessMatches||decision.related_entities),
-      operatingEntityName:String(decision.operatingEntityName||decision.company_name||'').trim(),
-      exactEntityStatus:String(decision.exactEntityStatus||'').trim(),
-	      exactLocationMatched:decision.exactLocationMatched !== false,
-	      decisionMakerSource:'Gemini grounded search',
-	      city:String(decision.explicitCity||p.city||'').trim(),
-      explicitState:String(decision.explicitState||decision.verifiedState||'').trim(),
-      verifiedState:String(decision.explicitState||decision.verifiedState||'').trim(),
-      painpoint:explicitGoallPainpoint(decision,p),
-      painpointEvidence:String(decision.painpointEvidence||p.painpointEvidence||'').trim(),
-      businessNeedsAndPainPoints:decisionArrayValue(decision.businessNeedsAndPainPoints),
-      businessSizeContext:String(decision.businessSizeContext||p.businessSizeContext||'').trim(),
-      companyStructure:String(decision.companyStructure||p.companyStructure||'').trim(),
-      customizedValueProps:decisionArrayValue(decision.customizedValueProps),
-      activelyHiring:String(hiringTurnover.activelyHiring||p.activelyHiring||'').trim(),
-      highestTurnoverArea:String(hiringTurnover.highestTurnoverArea||p.highestTurnoverArea||'').trim(),
-      turnoverRisk:String(hiringTurnover.turnoverRisk||p.turnoverRisk||'').trim(),
-      hiringTurnoverEvidence:String(hiringTurnover.evidence||p.hiringTurnoverEvidence||'').trim(),
-      bestContactEmail:String(contactMethod.email||p.bestContactEmail||'').trim(),
-      bestContactEmailType:String(contactMethod.emailType||p.bestContactEmailType||'').trim(),
-      bestContactPhone:String(contactMethod.phone||p.bestContactPhone||'').trim(),
-      bestContactPhoneType:String(contactMethod.phoneType||p.bestContactPhoneType||'').trim(),
-      bestContactAddress:String(contactMethod.address||p.bestContactAddress||'').trim(),
-      bestContactNotes:String(contactMethod.contactNotes||p.bestContactNotes||'').trim(),
-      callerSnapshot:String(decision.callerSnapshot||p.callerSnapshot||'').trim(),
-      callOpener:String(decision.callOpener||p.callOpener||'').trim(),
-      emailAngle:String(decision.emailAngle||p.emailAngle||'').trim(),
-      recommendedOutreachAngle:String(decision.recommendedGoallPositioning||p.recommendedOutreachAngle||'').trim(),
-      nextOutreachAngle:String(decision.recommendedGoallPositioning||p.nextOutreachAngle||'').trim()
-    };
-    if(!next.email && contactMethod.email && validEmail(contactMethod.email)){
-      next.email=normalizeEmailAddress(contactMethod.email);
-      next.emailQuality=String(contactMethod.emailType||'').toLowerCase()==='decision_maker'?'person':'general';
-    }
-    if(!validPhone(next.phone||'') && contactMethod.phone && validPhone(contactMethod.phone)){
-      next.phone=normalizePhoneNumber(contactMethod.phone);
-    }
-    if((confidence==='high'||confidence==='medium') && person.name){
-      const parts=String(person.name).trim().split(/\s+/);
-      next.decisionMakerName=person.name;
-      next.decisionMakerTitle=person.title||next.decisionMakerTitle||'';
-      next.linkedinPersonalUrl=person.linkedinUrl||next.linkedinPersonalUrl||'';
-      next.decisionMakerFirstName=decision.decisionMakerFirstName||parts[0]||'';
-	      next.decisionMakerLastName=decision.decisionMakerLastName||parts.slice(1).join(' ');
-	      next.decisionMakerConfidence=confidence;
-	      next.linkedinMatchConfidence=confidence;
-	      next.linkedinMatchNotes=`Gemini matched ${person.name}${person.title?' - '+person.title:''}. ${person.evidence||decision.notes||''}`.trim();
-	      if(decision.personEmail && isLikelyPersonEmail(decision.personEmail)){
-	        next.email=decision.personEmail;
-	        next.decisionMakerEmail=decision.personEmail;
-	        next.personEmail=decision.personEmail;
-	      }
-	      if(decision.personPhone && validPhone(decision.personPhone)){
-	        const personPhone=normalizePhoneNumber(decision.personPhone);
-	        next.phone=personPhone;
-	        next.decisionMakerPhone=personPhone;
-	        next.personPhone=personPhone;
-	      }
-    }else{
-      next.decisionMakerFirstName='Unverified';
-      next.decisionMakerLastName='';
-      next.decisionMakerConfidence=confidence||'none';
-      next.apolloStatus='skipped because Gemini did not verify a decision maker';
-      next.rocketReachStatus='skipped because Gemini did not verify a decision maker';
-    }
-    return sanitizeDecisionMaker(next);
-  }catch(e){
-    return {...p,geminiDecisionMakerStatus:e.message};
-  }
 }
 
 const GOALL_LEADS_SYSTEM_PROMPT = `
@@ -26452,36 +29925,6 @@ function normalizeGoallMarket(value,criteria='',profile='goall'){
   return raw || (profile==='westwood'?'Idaho, US':'Arizona');
 }
 
-const US_STATE_CODES = {
-  alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',
-  hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',
-  massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ',
-  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC',
-  'south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY'
-};
-const US_STATE_NAMES_BY_CODE = Object.fromEntries(Object.entries(US_STATE_CODES).map(([name,code])=>[code,name]));
-
-function normalizeUsStateCode(value=''){
-  const text=String(value||'').toLowerCase().replace(/[^a-z\s]/g,' ').replace(/\s+/g,' ').trim();
-  if(!text) return '';
-  const direct=String(value||'').trim().toUpperCase();
-  if(US_STATE_NAMES_BY_CODE[direct]) return direct;
-  if(US_STATE_CODES[text]) return US_STATE_CODES[text];
-  for(const [name,code] of Object.entries(US_STATE_CODES)){
-    if(new RegExp(`\\b${name.replace(/\s+/g,'\\s+')}\\b`,'i').test(String(value||''))) return code;
-  }
-  const codeMatch=String(value||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  return codeMatch?.[1]||'';
-}
-
-function goallTargetStateCode(lead={}){
-  return normalizeUsStateCode(lead.searchMarket||lead.market||lead.state||lead.location||'');
-}
-
-function goallVerifiedStateCode(lead={}){
-  return normalizeUsStateCode(lead.explicitState||lead.verifiedState||lead.stateVerified||lead.aiDecisionMakerResearch?.explicitState||lead.aiDecisionMakerResearch?.verifiedState||'');
-}
-
 function resolveGoallLeadSearchPlan(body={}){
   const leadProfile=isWestwoodLeadProfile(body)?'westwood':'goall';
   const criteria=String(body.criteria||body.query||'').trim();
@@ -26784,28 +30227,14 @@ function leadCompanySummary(p,exactIndustry,contactability){
 }
 
 function leadCallScript(p){
-  if(p.callOpener) return String(p.callOpener).trim();
-  const contactability=leadContactability(p);
-  const phoneType=String(p.bestContactPhoneType||'').toLowerCase();
-  const gatekeeper=/main_office|gatekeeper/.test(phoneType);
-  const name=gatekeeper?'there':(p.decisionMakerName||'there');
+  const name=p.decisionMakerName||'there';
   const company=p.organizationName||p.name||'your company';
-  const painpoint=goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'employee retention and benefits pressure';
-  const angle=p.nextOutreachAngle||p.recommendedOutreachAngle||p.emailAngle||`supporting ${painpoint}`;
-  if(gatekeeper || contactability.contactabilityStatus==='phone_only'){
-    return `Hi, this is Mark with GOALL. I was hoping to speak with whoever handles employee benefits, retention, or owner-level planning for ${company}. We help employers address ${painpoint} without the compliance burden of a traditional 401(k) conversation.`;
-  }
-  return `Hi ${name}, this is Mark with GOALL. I was looking at ${company} and noticed public signals around ${painpoint}. I wanted to ask whether you are open to a short conversation about ${angle} through a benefits program built for owners and key employees.`;
+  const angle=p.nextOutreachAngle||p.recommendedOutreachAngle||'growth and employee-base complexity';
+  return `Hi ${name}, this is Mark with GOALL. I was looking at ${company} and noticed a few signs that your team may be dealing with ${angle}. I wanted to ask one quick question: are you currently looking for ways to improve lead flow, follow-up, or revenue consistency without adding more chaos to the team?`;
 }
 
 function leadCustomFieldsFromProspect(p){
   const name=p.organizationName||p.name||'';
-  const decisionMakerName=String(p.decisionMakerName||'').trim();
-  const decisionMakerParts=decisionMakerName.split(/\s+/).filter(Boolean);
-  const decisionMakerFirstName=String(p.decisionMakerFirstName||'').trim() || decisionMakerParts[0] || (decisionMakerName ? '' : 'Unverified');
-  const decisionMakerLastName=String(p.decisionMakerLastName||'').trim() || decisionMakerParts.slice(1).join(' ');
-  const personEmailForFields=p.decisionMakerEmail||p.decision_maker_email||p.personEmail||(decisionMakerName && isLikelyPersonEmail(p.email) ? p.email : '');
-  const personPhoneForFields=p.decisionMakerPhone||p.decision_maker_phone||p.personPhone||(decisionMakerName && validPhone(p.phone) ? p.phone : '');
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
   const exactIndustry=String(p.aiExactIndustry||p.ai_exact_industry||p.exactIndustry||p.industry||p.cause||p.primaryService||'unclear').trim()||'unclear';
   const automation=(p.leadProfile||'').toLowerCase()==='westwood'?{}:mapGoallAutomationTag(p);
@@ -26885,7 +30314,7 @@ function leadCustomFieldsFromProspect(p){
     lead_ingested_at:ingestedAt,
     lead_ingestion_id:enrichmentRunId,
     lead_processing_status:contactability.importable?'ready_for_import':'rejected',
-	    painpoint:goallPainpointForMessaging(p.painpoint||p.painPoint||''),
+    painpoint:p.painpoint||p.painPoint||salesAngle,
     call_transcript:p.callTranscript||p.call_transcript||'',
     lead_dedupe_key:dedupeKey,
     lead_monitoring_enabled:String(p.leadMonitoringEnabled??true),
@@ -26925,12 +30354,6 @@ function leadCustomFieldsFromProspect(p){
     lead_scored_at:p.leadScoredAt||p.lead_scored_at||processedAt,
     lead_rejected_reason:contactability.importable?'':(contactability.rejectionReason||'missing_email_and_phone'),
     lead_scoring_version:p.leadScoringVersion||p.lead_scoring_version||'goall-v2-contactability-company-person',
-    decision_maker_first_name:decisionMakerFirstName,
-    decision_maker_last_name:decisionMakerLastName,
-    decision_maker_name:decisionMakerName||'Unverified',
-    decision_maker_title:p.decisionMakerTitle||p.title||p.position||'',
-    decision_maker_email:personEmailForFields,
-    decision_maker_phone:personPhoneForFields,
     approximat_donor_count:donorCount?String(donorCount):'unclear',
     linkedin_personal:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
     linkedin_company:p.linkedinCompanyUrl||p.linkedinOrganizationUrl||'',
@@ -27117,6 +30540,165 @@ function partnerSourceUrls(p={}){
   ].map(v=>String(v||'').trim()).filter(v=>/^https?:\/\//i.test(v)))];
 }
 
+function usefulLeadReadinessText(value){
+  const text=cleanLeadLevelText(value).replace(/\s+/g,' ').trim();
+  if(!text || /^(unclear|unknown|none|n\/a|not available|not found|no data found)$/i.test(text)) return '';
+  return text;
+}
+
+function leadReadinessSourceUrls(p={}){
+  return [...new Set([
+    ...(Array.isArray(p.sourceUrls)?p.sourceUrls:String(p.sourceUrls||'').split(/[\n,]/)),
+    ...(Array.isArray(p.decisionMakerSourceUrls)?p.decisionMakerSourceUrls:[]),
+    p.website,
+    p.googleMapsUrl,
+    p.google_maps_url,
+    p.linkedinCompanyUrl,
+    p.linkedinPersonalUrl,
+    p.linkedinUrl,
+    p.facebook,
+    p.instagram,
+    p.donationPage,
+    p.newsletterUrl
+  ].map(value=>String(value||'').trim()).filter(value=>/^https?:\/\//i.test(value)))].slice(0,8);
+}
+
+function leadReadinessProfile(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  if(profile==='westwood') return 'WESTWOOD EMPLOYER';
+  if(profile==='partners') return 'STRATEGIC PARTNER';
+  if(profile==='frisson'){
+    return `FRISSON ${String(options.mode||p.scraperType||'organization').toUpperCase()}`;
+  }
+  if(profile==='goall') return 'GOALL EMPLOYER';
+  return 'SAVED SCRAPER LEAD';
+}
+
+function leadReadinessFit(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  if(profile==='partners'){
+    const score=Number(p.partnershipFitScore)||0;
+    return {
+      label:score>=80?'High':score>=60?'Promising':score?'Needs review':'Not established',
+      reason:usefulLeadReadinessText(p.reasonForScore)||'No partnership-fit explanation was preserved.'
+    };
+  }
+  const score=Number(p.leadScore||p.lead_score)||0;
+  if(score){
+    return {
+      label:score===1?'Highest priority':score===2?'Strong fit':score===3?'Possible fit':'Low fit',
+      reason:usefulLeadReadinessText(p.leadScoreReason||p.lead_score_reason)||'No fit explanation was preserved.'
+    };
+  }
+  const confidence=usefulLeadReadinessText(p.confidence);
+  return {
+    label:/high/i.test(confidence)?'Strong':/moderate|medium/i.test(confidence)?'Promising':'Needs review',
+    reason:usefulLeadReadinessText(p.qualificationRule||p.targetDescription)
+      || 'This result matched the saved scraper, but its fit still needs human review.'
+  };
+}
+
+function leadReadinessEvidence(p={},options={}){
+  const profile=String(options.profile||p.leadProfile||'general').toLowerCase();
+  const common=[
+    ['Requested signal',p.requestedPainPoints],
+    ['Public signals',Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):p.evidenceSignals],
+    ['Hiring or expansion',p.hiringExpansionInsight||p.hiringActivity||p.careersPage],
+    ['Turnover or team pressure',p.turnoverRiskInsight],
+    ['Growth activity',p.growthActivity],
+    ['Operational activity',p.operationalActivity||p.operationalIndicators],
+    ['Recent activity',p.recentActivityLast90Days||p.socialActivity||p.newsRaw]
+  ];
+  const specific=profile==='partners'
+    ? [
+        ['Potential reach',p.potentialReach],
+        ['Partner type',p.partnerType],
+        ['Geographic reach',p.geographicReach],
+        ['Conference or event path',p.conferenceInformation],
+        ['Vendor opportunity',p.vendorOpportunities],
+        ['Sponsor opportunity',p.sponsorOpportunities],
+        ['Benefits evidence',p.benefitsEvidence]
+      ]
+    : profile==='frisson'
+      ? [
+          ['Mission or service',p.missionStatementAiSummary||p.missionStatement||p.aiFitSummary],
+          ['Cause or population',p.causeCategory||p.populationServed],
+          ['Donation path',p.donationPage||p.acceptsOnlineDonations],
+          ['Monthly giving',p.monthlyGivingProgram],
+          ['Volunteer or event activity',p.volunteerProgram||p.eventsOrCampaigns||p.annualEvents],
+          ['Nonprofit reach',p.numberOfNonprofitsServed||p.nonprofitsServed]
+        ]
+      : [
+          ['Pain point',p.painpoint],
+          ['Pain-point evidence',p.painpointEvidence],
+          ['Employee or team signal',p.employeeCount||p.estimatedEmployeeCount||p.linkedinEmployeeCount||p.approximateDonors],
+          ['Business category',p.aiExactIndustry||p.industry||p.organizationType]
+        ];
+  return [...specific,...common]
+    .map(([label,value])=>[label,usefulLeadReadinessText(value)])
+    .filter(([,value])=>value);
+}
+
+function buildLeadReadinessBrief(p={},options={}){
+  const profile=leadReadinessProfile(p,options);
+  const fit=leadReadinessFit(p,options);
+  const evidence=leadReadinessEvidence(p,options);
+  const sources=leadReadinessSourceUrls(p);
+  const contactability=leadContactability(p);
+  const contactReady=!!((p.decisionMakerName||p.primaryContact||p.contactName) && (contactability.hasEmail||contactability.hasPhone));
+  const contactLabel=contactReady?'Ready':contactability.importable?'Partially ready':'Not ready';
+  const licensedIntentProvider=usefulLeadReadinessText(p.intentProvider||p.buyingIntentProvider);
+  const licensedIntentEvidence=usefulLeadReadinessText(p.verifiedBuyingIntentEvidence||p.intentEvidence);
+  const intentVerified=!!(licensedIntentProvider&&licensedIntentEvidence);
+  const readinessLabel=evidence.length>=3?'High':evidence.length?'Moderate':'Not yet established';
+  const confidenceLabel=evidence.length>=3&&sources.length>=2?'High':evidence.length&&sources.length?'Moderate':'Needs validation';
+  const person=p.decisionMakerName||p.primaryContact||p.contactName||'Not verified';
+  const title=p.decisionMakerTitle||p.contactTitle||'';
+  return [
+    `${profile} READINESS BRIEF`,
+    `Prepared: ${new Date().toISOString()}`,
+    '',
+    `FIT: ${fit.label}`,
+    fit.reason,
+    '',
+    `OBSERVABLE READINESS: ${readinessLabel}`,
+    evidence.length
+      ? evidence.map(([label,value])=>`- ${label}: ${value}`).join('\n')
+      : '- No concrete public readiness signal was preserved with this lead.',
+    '',
+    `VERIFIED BUYING INTENT: ${intentVerified?'Verified':'Not verified'}`,
+    intentVerified
+      ? `${licensedIntentProvider}: ${licensedIntentEvidence}`
+      : 'This record contains public fit and readiness evidence. It does not contain licensed topic-consumption evidence proving that this organization is actively shopping for a solution.',
+    '',
+    `CONTACT READINESS: ${contactLabel}`,
+    `Decision maker: ${person}${title?' - '+title:''}`,
+    `Contact method: ${contactability.hasEmail?'email':''}${contactability.hasEmail&&contactability.hasPhone?' + ':''}${contactability.hasPhone?'phone':''}${!contactability.hasEmail&&!contactability.hasPhone?'none verified':''}`,
+    usefulLeadReadinessText(p.targetContactReason||p.bestContactRoute)?`Best route: ${usefulLeadReadinessText(p.targetContactReason||p.bestContactRoute)}`:null,
+    usefulLeadReadinessText(p.whoToAvoid)?`Avoid first: ${usefulLeadReadinessText(p.whoToAvoid)}`:null,
+    '',
+    `CONFIDENCE: ${confidenceLabel}`,
+    confidenceLabel==='Needs validation'
+      ? 'The result may still fit, but the preserved evidence is not strong enough for a confident readiness claim.'
+      : `This read is grounded in ${evidence.length} preserved public signal${evidence.length===1?'':'s'} and ${sources.length} inspectable source${sources.length===1?'':'s'}.`,
+    '',
+    'INSPECTABLE SOURCES',
+    sources.length?sources.map(url=>`- ${url}`).join('\n'):'- No inspectable source URL was preserved with this lead.',
+    '',
+    'APPROVAL BOUNDARY',
+    options.previewOnly
+      ? 'This is a research result only. It has not been imported, contacted, or placed into an outreach automation.'
+      : 'This record was approved for CRM. Approval does not prove buying intent and does not itself authorize outreach. Any outreach still follows this VAL and CRM safeguards.'
+  ].filter(line=>line!==undefined&&line!==null).join('\n');
+}
+
+async function saveLeadReadinessBrief(contactId,p={},options={}){
+  if(!contactId) return '';
+  const body=buildLeadReadinessBrief(p,options);
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body});
+  return body;
+}
+
 function partnerPotentialReach(p={},type=partnerTypeFromLead(p)){
   const direct=donorValue(p.potentialReach||p.membershipSize||p.memberCount||p.attendeeCount||p.employerClients||p.businessClients);
   if(direct) return direct;
@@ -27145,7 +30727,8 @@ function scorePartnerFit(p={}){
   const recommendedOutreachAngle=/Association|Organization|Conference/.test(partnerType)
     ? 'Propose a member-value education, conference sponsorship, or preferred-vendor relationship that introduces GOALL to many employers at once.'
     : 'Propose a referral or co-selling partnership that adds GOALL to the organization’s employer relationships without disrupting its core service.';
-  return {...p,leadProfile:'partners',partnerType,potentialReach,partnershipFitScore,reasonForScore,recommendedOutreachAngle,sources,sourceUrls:sources,researchSourceCount:sources.length,researchQuality:sources.length>=2?'supported':'needs second source'};
+  const scored={...p,leadProfile:'partners',partnerType,potentialReach,partnershipFitScore,reasonForScore,recommendedOutreachAngle,sources,sourceUrls:sources,researchSourceCount:sources.length,researchQuality:sources.length>=2?'supported':'needs second source'};
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'partners',previewOnly:true})};
 }
 
 function partnerPreviewText(discovered={}){
@@ -27213,12 +30796,16 @@ async function upsertGhlPartnerLead(raw={}){
   await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags:contactPayload.tags}).catch(()=>{});
   const note=[`Partner type: ${p.partnerType}`,`Potential reach: ${p.potentialReach}`,`Partnership fit: ${p.partnershipFitScore}/100`,p.reasonForScore,`Recommended outreach: ${p.recommendedOutreachAngle}`,`Sources: ${p.sourceUrls.join(', ')||'Needs second source'}`,p.membershipSize?`Membership size: ${p.membershipSize}`:'',p.geographicReach?`Geographic reach: ${p.geographicReach}`:'',p.conferenceInformation?`Conference: ${p.conferenceInformation}`:'',p.vendorOpportunities?`Vendor opportunities: ${p.vendorOpportunities}`:'',p.sponsorOpportunities?`Sponsor opportunities: ${p.sponsorOpportunities}`:'',p.benefitsEvidence?`Benefits evidence: ${p.benefitsEvidence}`:'',p.lifeInsuranceEvidence?`Life evidence: ${p.lifeInsuranceEvidence}`:'',p.commercialInsuranceEvidence?`Commercial evidence: ${p.commercialInsuranceEvidence}`:''].filter(Boolean).join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'partners'}).catch(e=>{
+    console.log('Strategic partner readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
+    return '';
+  });
   let opportunity=await findPartnerOpportunity(contactId,target);
   if(!opportunity){
     const created=await createGhlOpportunity({locationId:GHL_LOC,pipelineId:target.pipelineId,pipelineStageId:target.stageId,name:p.organizationName||p.name,status:'open',contactId,monetaryValue:p.potentialReach,source:'GOALL Strategic Partner Prospecting'});
     opportunity=created.opportunity||created;
   }
-  return {name:p.organizationName||p.name,contactId,updated,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,partnershipFitScore:p.partnershipFitScore,potentialReach:p.potentialReach};
+  return {name:p.organizationName||p.name,contactId,updated,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,partnershipFitScore:p.partnershipFitScore,potentialReach:p.potentialReach,readinessBrief};
 }
 
 async function importApprovedPartnerLeads(body={}){
@@ -27361,7 +30948,7 @@ function scoreFrissonPartner(p={}){
   if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
   if(/multiple nonprofits|nonprofits served|clients|portfolio|case studies|agency|consultant/.test(text)){ score=Math.min(score,2); reasons.push('evidence of serving multiple organizations'); }
   if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public presence found, nonprofit fit needs review'); }
-  return {
+  const scored={
     ...p,
     leadProfile:'frisson',
     scraperType:'Partner',
@@ -27370,6 +30957,7 @@ function scoreFrissonPartner(p={}){
     aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This prospect'} may be useful to Frisson if its nonprofit reach and referral potential are confirmed.`,
     recommendedOutreachAngle:p.recommendedOutreachAngle||'Lead with a practical partnership conversation around helping more nonprofits activate donor support, recurring community support, or adjacent revenue.'
   };
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'frisson',mode:'partner',previewOnly:true})};
 }
 
 function scoreFrissonOrganization(p={}){
@@ -27381,7 +30969,7 @@ function scoreFrissonOrganization(p={}){
   if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
   if(/event|campaign|newsletter|facebook|instagram|linkedin|recent|volunteer/.test(text)){ score=Math.min(score,2); reasons.push('community activity signal'); }
   if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public nonprofit-like presence found, Frisson fit needs review'); }
-  return {
+  const scored={
     ...p,
     leadProfile:'frisson',
     scraperType:'Organization',
@@ -27390,6 +30978,7 @@ function scoreFrissonOrganization(p={}){
     aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This organization'} may be a Frisson fit if its donation, volunteer, and community activity signals are confirmed.`,
     recommendedOutreachAngle:p.recommendedOutreachAngle||'Open with support for donor activation, shopping-based giving, recurring community support, and practical fundraising lift.'
   };
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'frisson',mode:'organization',previewOnly:true})};
 }
 
 function applyFrissonScoring(p={},mode='organizations'){
@@ -27510,6 +31099,130 @@ function frissonDiscoveryPlan(mode='organizations',body={}){
     limit:Math.min(Math.max(Number(body.limit)||12,1),100),
     enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
     rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
+  };
+}
+
+function generalLeadSearchTerms(criteria={}){
+  const terms=String(criteria.businessTerms||criteria.target||'businesses')
+    .split(/[,;\n]/)
+    .map(value=>cleanScraperText(value,160))
+    .filter(Boolean);
+  return [...new Set(terms.length?terms:['businesses'])].slice(0,4);
+}
+function generalLeadLocations(criteria={}){
+  const locations=String(criteria.locations||'United States')
+    .split(/[;\n]/)
+    .map(value=>cleanScraperText(value,160))
+    .filter(Boolean);
+  return [...new Set(locations.length?locations:['United States'])].slice(0,3);
+}
+function generalLeadViewUrl(lead={}){
+  return lead.website||lead.googleMapsUrl||lead.linkedinCompanyUrl||'';
+}
+function generalLeadSourceUrls(lead={}){
+  return [...new Set([
+    lead.website,
+    lead.googleMapsUrl,
+    lead.linkedinCompanyUrl,
+    ...(Array.isArray(lead.sourceUrls)?lead.sourceUrls:[])
+  ].filter(Boolean))].slice(0,8);
+}
+function normalizeGeneralLeadResult(lead={},criteria={}){
+  const sourceUrls=generalLeadSourceUrls(lead);
+  const evidence=[
+    lead.organizationType||lead.industry||'',
+    lead.location||[lead.city,lead.state].filter(Boolean).join(', '),
+    lead.googleRating?`${lead.googleRating} public rating`:'',
+    lead.googleReviewCount?`${lead.googleReviewCount} public reviews`:'',
+    criteria.painPoints?`Requested signal: ${criteria.painPoints}`:'',
+    ...(Array.isArray(lead.evidenceSignals)?lead.evidenceSignals.slice(0,3):[])
+  ].filter(Boolean);
+  const normalized={
+    ...lead,
+    leadProfile:'general',
+    source:'VAL Lead Intelligence',
+    targetDescription:criteria.target,
+    requestedRole:criteria.roleTerms,
+    requestedPainPoints:criteria.painPoints,
+    qualificationRule:criteria.qualification,
+    evidenceSignals:evidence,
+    sourceUrls,
+    viewUrl:lead.linkedinPersonalUrl||generalLeadViewUrl(lead),
+    personViewUrl:lead.linkedinPersonalUrl||'',
+    businessViewUrl:generalLeadViewUrl(lead),
+    nextOutreachAngle:criteria.painPoints
+      ? `Explore whether ${lead.organizationName||'this organization'} is experiencing ${criteria.painPoints}.`
+      : `Explore whether ${lead.organizationName||'this organization'} fits the saved scraper definition.`,
+    confidence:lead.organizationName&&generalLeadViewUrl(lead)?'moderate':'weak'
+  };
+  return {...normalized,readinessBrief:buildLeadReadinessBrief(normalized,{profile:'general',previewOnly:true})};
+}
+async function discoverGeneralLeadProspects(input={}){
+  const criteria=generalLeadScraperCriteria(input);
+  const terms=generalLeadSearchTerms(criteria);
+  const locations=generalLeadLocations(criteria);
+  const jobs=[];
+  for(const location of locations){
+    for(const term of terms){
+      jobs.push({term,location});
+    }
+  }
+  const perSearch=Math.max(3,Math.ceil((criteria.resultLimit*1.5)/Math.max(1,jobs.length)));
+  const results=await mapWithConcurrency(jobs,Math.min(4,jobs.length||1),async job=>{
+    const scraped=await discoverOutscraperProspects({
+      organizationType:job.term,
+      employeeMinimum:1,
+      market:job.location,
+      limit:perSearch,
+      leadProfile:'general'
+    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:error.message}));
+    return {job,scraped};
+  });
+  const raw=[];
+  const errors=[];
+  for(const {job,scraped} of results){
+    if(!scraped.configured){
+      throw Object.assign(new Error(scraped.error||'Connect Outscraper before running this saved scraper.'),{statusCode:409});
+    }
+    if(scraped.error) errors.push(`${job.term} in ${job.location}: ${cleanLeadLevelText(scraped.error)}`);
+    raw.push(...(scraped.leads||[]).map(lead=>normalizeGeneralLeadResult({
+      ...lead,
+      organizationType:job.term,
+      searchMarket:job.location
+    },criteria)));
+  }
+  const seen=new Set();
+  const deduped=[];
+  for(const lead of raw){
+    const key=goallLeadKey(lead);
+    if(!key||seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(lead);
+  }
+  const candidates=deduped.slice(0,criteria.resultLimit);
+  const leads=criteria.enrichContacts
+    ? await mapWithConcurrency(candidates,3,async lead=>{
+        const enriched=await enrichProspect(lead,{rocketReachMode:'defer',fastPreview:false}).catch(error=>({...lead,enrichmentStatus:error.message}));
+        return normalizeGeneralLeadResult(enriched,criteria);
+      })
+    : candidates.map(lead=>({...lead,rocketReachStatus:'deferred until approval'}));
+  return {
+    ok:true,
+    leadProfile:'general',
+    prospectingMode:'general_flexible',
+    criteria,
+    searchTerms:terms,
+    locations,
+    leads,
+    errors,
+    report:{
+      requested:criteria.resultLimit,
+      found:leads.length,
+      rawBusinessesSearched:raw.length,
+      contactEnrichmentRan:criteria.enrichContacts
+    },
+    crmDestination:{status:'approval_required'},
+    outreachPolicy:{mode:'prepare_and_queue',active:false}
   };
 }
 
@@ -27687,6 +31400,10 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
     `Sources: ${frissonSourceUrls(p).join(', ')||'source review needed'}`
   ].join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'frisson',mode:currentMode}).catch(e=>{
+    console.log('Frisson readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
+    return '';
+  });
   let opportunity=await findPartnerOpportunity(contactId,target);
   if(!opportunity){
     const created=await createGhlOpportunity({
@@ -27701,7 +31418,7 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
     });
     opportunity=created.opportunity||created;
   }
-  return {name:p.organizationName||p.name,contactId,updated,tags,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason};
+  return {name:p.organizationName||p.name,contactId,updated,tags,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,readinessBrief};
 }
 
 async function importApprovedFrissonLeads(body={},mode='organizations'){
@@ -27799,21 +31516,6 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
   };
 }
 
-function isOutscraperQueryLikeBusinessName(name='',organizationType='',market=''){
-  const normalized=String(name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-  if(!normalized) return true;
-  const industry=String(organizationType||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-  const marketText=String(market||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-  const marketParts=marketText.split(/\s+/).filter(word=>word.length>2 && !/^(usa?|united|states|businesses?)$/.test(word));
-  const hasMarketWord=marketParts.some(word=>normalized.includes(word));
-  const industryWords=industry.split(/\s+/).filter(word=>word.length>3 && !/^(companies|businesses|contractors?)$/.test(word));
-  const hasIndustryPhrase=industry && normalized.includes(industry);
-  const hasIndustryWords=industryWords.length && industryWords.every(word=>normalized.includes(word));
-  const looksLikeSearchHeading=/\b(in|near|around|serving)\b/.test(normalized) && hasMarketWord && (hasIndustryPhrase||hasIndustryWords);
-  const lacksBusinessIdentity=!/\b(llc|inc|co|company|corp|corporation|services|service|group|solutions|systems|works|electric|plumbing|roofing|hvac|metal|machine|manufacturing|restoration|builders|contracting)\b/.test(normalized);
-  return looksLikeSearchHeading && lacksBusinessIdentity;
-}
-
 const OUTSCRAPER_POLL_INTERVAL_MS = Number(process.env.OUTSCRAPER_POLL_INTERVAL_MS) || 3000;
 const OUTSCRAPER_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_POLL_TIMEOUT_MS) || 90000;
 const OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS) || 45000;
@@ -27873,7 +31575,6 @@ async function discoverOutscraperProspects({organizationType,employeeMinimum,mar
   const leads=rows.map(r=>normalizeOutscraperPlace(r,organizationType,employeeMinimum,market))
     .map(p=>({...p,leadProfile,source:leadProfile==='westwood'?'Grace Intelligence Limitless Leads':'LimitLess Leads'}))
     .filter(p=>p.organizationName)
-    .filter(p=>!isOutscraperQueryLikeBusinessName(p.organizationName,organizationType,market))
     .slice(0,limit||12);
   return {configured:true, leads, rawCount:rows.length};
 }
@@ -28026,12 +31727,11 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   const enrichLimit=Math.min(freshLeads.length,GOALL_LEAD_RAW_SEARCH_MAX);
   const broadPreview=requested>=100;
   const broadGoallPersonLookup=broadPreview && plan.leadProfile==='goall';
-  const runInlineDecisionResearch=plan.leadProfile==='goall' && requested<=GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW;
-  const enrichmentConcurrency=runInlineDecisionResearch?3:(broadGoallPersonLookup?20:(requested>=25?6:3));
+  const enrichmentConcurrency=broadGoallPersonLookup?20:(requested>=25?6:3);
   const enriched=await mapWithConcurrency(freshLeads.slice(0,Math.min(enrichLimit,requested)),enrichmentConcurrency,async prospect=>{
     const next=broadGoallPersonLookup
-      ? await enrichProspect(prospect,{rocketReachMode:'defer',fastPreview:false,decisionMakerResearch:runInlineDecisionResearch}).catch(e=>({...prospect,apolloStatus:e.message,rocketReachStatus:'deferred until review'}))
-      : await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch||broadPreview,decisionMakerResearch:runInlineDecisionResearch}).catch(e=>({...prospect,rocketReachStatus:e.message}));
+      ? await enrichProspectWithApollo(prospect).then(value=>({...value,rocketReachStatus:'deferred until review'})).catch(e=>({...prospect,apolloStatus:e.message,rocketReachStatus:'deferred until review'}))
+      : await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch||broadPreview}).catch(e=>({...prospect,rocketReachStatus:e.message}));
     const exactIndustry=next.aiExactIndustry||next.industry||next.organizationType||prospect.organizationType||'unclear';
     return applyLeadScoring(sanitizeDecisionMaker({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile}));
   });
@@ -28048,484 +31748,6 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
     rejectedReasons,
     jobs
   };
-}
-
-const goallStagedLeadRuns = new Map();
-
-function goallStageLeadKey(p={}){
-  return String(p._stageKey||p.stageKey||goallLeadKey(p));
-}
-
-function buildGoallStageRows(run){
-  const decisionByKey=new Map();
-  const reviewByKey=new Map();
-  run.decisionMakers.forEach((lead,index)=>{
-    decisionByKey.set(goallStageLeadKey(lead),{lead,index});
-  });
-  run.reviewLeads.forEach((lead,index)=>{
-    reviewByKey.set(goallStageLeadKey(lead),{lead,index});
-  });
-  return run.businesses.map((business,index)=>{
-    const key=goallStageLeadKey(business);
-    const decision=decisionByKey.get(key);
-    const review=reviewByKey.get(key);
-    let step2Status='waiting';
-    if(decision?.lead) step2Status=decision.lead.decisionMakerName ? 'named' : 'no_verified_person';
-    else if(run.phase==='gemini') step2Status='queued_for_research';
-    else if(run.status==='complete') step2Status='not_researched_before_target_met';
-    let step3Status='waiting';
-    if(review?.lead) step3Status=isGoallStagedAddableLead(review.lead) ? 'ready' : 'hold';
-    else if(run.phase==='gemini'||run.phase==='review') step3Status='waiting_for_research';
-    else if(run.status==='complete') step3Status='not_reviewed_before_target_met';
-    return {
-      key,
-      index,
-      business,
-      decision:decision?.lead||null,
-      decisionIndex:decision?.index ?? -1,
-      review:review?.lead||null,
-      reviewIndex:review?.index ?? -1,
-      step2Status,
-      step3Status
-    };
-  });
-}
-
-function publicLeadRunView(run){
-  const stageRows=buildGoallStageRows(run);
-  return {
-    ok:true,
-    runId:run.id,
-    status:run.status,
-    phase:run.phase,
-    message:run.message,
-    startedAt:run.startedAt,
-    updatedAt:run.updatedAt,
-    completedAt:run.completedAt||'',
-    error:run.error||'',
-    requested:run.requested,
-    payload:run.payload,
-    searchPlan:run.searchPlan,
-    counts:{
-      requested:run.requested,
-      businesses:run.businesses.length,
-      decisionMakers:run.decisionMakers.length,
-	      reviewReady:run.reviewLeads.length,
-	      addableReady:run.reviewLeads.filter(isGoallStagedAddableLead).length,
-	      rawFound:run.rawCount||0,
-      duplicates:run.rejectedReasons.duplicate||0,
-      alreadyInCrm:run.rejectedReasons.already_in_crm||0,
-      errors:run.errors.length,
-      stageRows:stageRows.length
-    },
-    stageRows,
-    businesses:run.businesses,
-    decisionMakers:run.decisionMakers,
-    reviewLeads:run.reviewLeads,
-    errors:run.errors.slice(-20),
-    rejectedReasons:run.rejectedReasons,
-    report:run.report||null,
-    content:run.content||''
-  };
-}
-
-function touchLeadRun(run,patch={}){
-  Object.assign(run,patch,{updatedAt:new Date().toISOString()});
-  return run;
-}
-
-function goallStagedLeadHoldReason(lead={}){
-  const targetState=goallTargetStateCode(lead);
-  const verifiedState=goallVerifiedStateCode(lead);
-  const mismatchText=[
-    lead.exactEntityStatus,
-    lead.decisionMakerEvidence,
-    lead.aiDecisionMakerResearch?.notes,
-    lead.aiDecisionMakerResearch?.exactEntityStatus,
-    decisionArrayValue(lead.possibleConfusionWarnings).join(' ')
-  ].filter(Boolean).join(' ');
-  return [
-    !String(lead.city||'').trim() ? 'missing explicit city' : '',
-    !String(lead.painpoint||lead.painPoint||'').trim() ? 'missing explicit painpoint' : '',
-    lead.exactLocationMatched===false ? 'verified location does not match searched business/location' : '',
-    targetState && verifiedState && targetState!==verifiedState ? `verified state ${verifiedState} does not match target ${targetState}` : '',
-    targetState && !verifiedState && /\b(rather than|instead of|not in|different state|wrong state|mismatch|confus)/i.test(mismatchText) ? 'possible out-of-market location mismatch needs review' : '',
-    decisionArrayValue(lead.possibleConfusionWarnings).length ? 'business/entity ambiguity needs review' : ''
-  ].filter(Boolean).join('; ');
-}
-
-function isGoallStagedAddableLead(lead={}){
-  return !goallStagedLeadHoldReason(lead);
-}
-
-function goallAdditionalImportTags(p={},opts={}){
-  const raw=[
-    p.importTag,
-    p.sourceTag,
-    p.csvSourceTag,
-    p.uploadTag,
-    opts.importTag,
-    opts.sourceTag
-  ].flatMap((value)=>Array.isArray(value)?value:String(value||'').split(','));
-  return [...new Set(raw.map((tag)=>String(tag||'').replace(/\s+/g,' ').trim()).filter(Boolean).map((tag)=>tag.slice(0,80)))];
-}
-
-function createGoallStagedLeadRun(payload={}){
-  const plan=resolveGoallLeadSearchPlan({...payload,leadProfile:'goall'});
-  const id=crypto.randomUUID();
-  const now=new Date().toISOString();
-  const run={
-    id,
-    status:'running',
-    phase:'queued',
-    message:'Queued GOALL employer sourcing run.',
-    startedAt:now,
-    updatedAt:now,
-    completedAt:'',
-    error:'',
-    requested:plan.requestedViableLeads,
-    payload:{...payload,leadProfile:'goall'},
-    searchPlan:plan,
-    rawLeads:[],
-    businesses:[],
-    decisionMakers:[],
-    reviewLeads:[],
-    errors:[],
-    rejectedReasons:{duplicate:0,already_in_crm:0,missing_email_and_phone:0,bad_fit:0},
-    rawCount:0,
-    report:null,
-    content:''
-  };
-  goallStagedLeadRuns.set(id,run);
-  runGoallStagedLeadPipeline(run).catch(error=>{
-    touchLeadRun(run,{
-      status:'failed',
-      phase:'failed',
-      error:error.message||String(error),
-      message:'The staged GOALL run stopped before completion.'
-    });
-  });
-  return run;
-}
-
-function parseGoallLeadCsv(text=''){
-  const rows=[];
-  let row=[];
-  let value='';
-  let quoted=false;
-  const source=String(text||'').replace(/^\uFEFF/,'');
-  for(let index=0;index<source.length;index+=1){
-    const character=source[index];
-    if(character==='"'){
-      if(quoted&&source[index+1]==='"'){value+='"';index+=1;}
-      else quoted=!quoted;
-      continue;
-    }
-    if(character===','&&!quoted){row.push(value);value='';continue;}
-    if((character==='\n'||character==='\r')&&!quoted){
-      if(character==='\r'&&source[index+1]==='\n')index+=1;
-      row.push(value);
-      if(row.some((cell)=>String(cell||'').trim())) rows.push(row);
-      row=[];
-      value='';
-      continue;
-    }
-    value+=character;
-  }
-  row.push(value);
-  if(row.some((cell)=>String(cell||'').trim())) rows.push(row);
-  if(rows.length<2) return [];
-  const headers=rows[0].map((header)=>String(header||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''));
-  return rows.slice(1,1001).map((cells)=>headers.reduce((record,header,index)=>{
-    if(header) record[header]=String(cells[index]||'').trim();
-    return record;
-  },{}));
-}
-
-function goallCsvField(record={},names=[]){
-  for(const name of names){
-    const key=String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
-    const value=String(record[key]||'').trim();
-    if(value) return value;
-  }
-  return '';
-}
-
-function goallCsvLeadFromRow(record={},index=0,payload={}){
-  const company=goallCsvField(record,['company','company name','business','business name','organization','organization name','account','name']);
-  const city=goallCsvField(record,['city','town','municipality']);
-  const state=goallCsvField(record,['state','st','province','region']);
-  const address=goallCsvField(record,['address','address 1','street','street address','location address','business address']);
-  const postalCode=goallCsvField(record,['zip','zip code','postal code','postal']);
-  const website=goallCsvField(record,['website','url','site','domain','company website']);
-  const rawPhone=goallCsvField(record,['phone','business phone','company phone','main phone','telephone']);
-  const rawEmail=goallCsvField(record,['email','business email','company email','main email','primary email']);
-  const industry=goallCsvField(record,['industry','category','type','business type','vertical']) || payload.organizationType || 'GOALL uploaded employer lead';
-  const employees=goallCsvField(record,['employees','employee count','employer count','company size','staff count','number of employees']);
-  const notes=goallCsvField(record,['notes','note','context','source notes','description','details']);
-  const contactName=goallCsvField(record,['decision maker','decision maker name','owner','owner name','contact','contact name','primary contact']);
-  const contactTitle=goallCsvField(record,['decision maker title','owner title','contact title','title','job title']);
-  const sourceTag=goallCsvField(record,['tag','source tag','import tag','list tag','campaign tag']) || payload.importTag || payload.sourceTag || '';
-  const location=[city,state].filter(Boolean).join(', ') || goallCsvField(record,['location','market','city and state']) || payload.market || '';
-  const evidenceSignals=['CSV supplied lead'];
-  if(notes) evidenceSignals.push(notes);
-  if(contactName) evidenceSignals.push(`CSV suggested decision maker: ${contactName}${contactTitle?' - '+contactTitle:''}`);
-  const lead={
-    organizationName:company,
-    name:company,
-    website,
-    address1:address,
-    city,
-    state,
-    postalCode,
-    location,
-    phone:validPhone(rawPhone)?normalizePhoneNumber(rawPhone):rawPhone,
-    email:validEmail(rawEmail)?normalizeEmailAddress(rawEmail):rawEmail,
-    industry,
-    organizationType:industry,
-    aiExactIndustry:industry,
-    employeeCount:employees,
-    scrapedNumberOfEmployees:employees,
-    googleRaw:[company,address,location,website,rawPhone,rawEmail,notes,contactName,contactTitle].filter(Boolean).join(' | '),
-    source:'GOALL CSV upload',
-    sourceRow:index+1,
-    sourceType:'csv_upload',
-    importTag:String(sourceTag||'').trim(),
-    sourceTag:String(sourceTag||'').trim(),
-    searchMarket:payload.market||location||'Uploaded CSV',
-    leadProfile:'goall',
-    evidenceSignals
-  };
-  if(contactName){
-    lead.providedDecisionMakerName=contactName;
-    lead.providedDecisionMakerTitle=contactTitle;
-  }
-  return lead;
-}
-
-function createGoallCsvStagedLeadRun(payload={},uploadedLeads=[]){
-  const requested=leadLimitValue(payload.limit||uploadedLeads.length||12);
-  const plan=resolveGoallLeadSearchPlan({...payload,leadProfile:'goall',limit:requested});
-  const id=crypto.randomUUID();
-  const now=new Date().toISOString();
-  const run={
-    id,
-    status:'running',
-    phase:'queued',
-    message:'Queued GOALL CSV enrichment run.',
-    startedAt:now,
-    updatedAt:now,
-    completedAt:'',
-    error:'',
-    requested:Math.min(requested,uploadedLeads.length||requested),
-    payload:{...payload,leadProfile:'goall',sourceType:'csv_upload'},
-    searchPlan:plan,
-    rawLeads:[],
-    businesses:[],
-    decisionMakers:[],
-    reviewLeads:[],
-    errors:[],
-    rejectedReasons:{duplicate:0,already_in_crm:0,missing_email_and_phone:0,bad_fit:0},
-    rawCount:0,
-    report:null,
-    content:''
-  };
-  goallStagedLeadRuns.set(id,run);
-  runGoallCsvStagedLeadPipeline(run,uploadedLeads).catch(error=>{
-    touchLeadRun(run,{
-      status:'failed',
-      phase:'failed',
-      error:error.message||String(error),
-      message:'The staged GOALL CSV run stopped before completion.'
-    });
-  });
-  return run;
-}
-
-function cleanupGoallStagedRuns(){
-  const cutoff=Date.now()-GOALL_STAGED_RUN_TTL_MS;
-  for(const [id,run] of goallStagedLeadRuns.entries()){
-    const updated=Date.parse(run.updatedAt||run.startedAt||0);
-    if(updated && updated<cutoff) goallStagedLeadRuns.delete(id);
-  }
-}
-
-async function runGoallStagedLeadPipeline(run){
-  const plan=run.searchPlan;
-  const requested=run.requested;
-  const jobs=buildGoallSearchJobs(plan);
-  const rawTarget=Math.min(GOALL_LEAD_RAW_SEARCH_MAX,Math.max(requested,Math.ceil(requested*GOALL_STAGED_RAW_TARGET_MULTIPLIER)));
-  const duplicateKeys=new Set();
-  const perSearchLimit=jobs.length===1
-    ? Math.min(GOALL_LEAD_PER_SEARCH_MAX,rawTarget)
-    : Math.min(GOALL_LEAD_PER_SEARCH_MAX,Math.max(3,Math.ceil(rawTarget/Math.max(1,jobs.length))));
-  touchLeadRun(run,{phase:'outscraper',message:`Step 1: Outscraper is finding enough new businesses to support ${requested} GHL additions.`});
-
-  for(const job of jobs){
-    if(run.rawLeads.length>=rawTarget) break;
-    const scraped=await discoverOutscraperProspects({
-      organizationType:job.industry,
-      employeeMinimum:plan.employeeMinimum,
-      market:job.market,
-      limit:perSearchLimit,
-      leadProfile:'goall'
-    }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
-    if(!scraped.configured){
-      throw new Error(scraped.error||'Outscraper is not configured');
-    }
-    if(scraped.error) run.errors.push(`${job.industry} in ${job.market}: ${scraped.error}`);
-    run.rawCount += scraped.rawCount || (scraped.leads||[]).length;
-    for(const lead of scraped.leads||[]){
-      if(run.rawLeads.length>=rawTarget) break;
-      const enrichedIndustry=lead.aiExactIndustry||lead.industry||job.industry;
-      const next={...lead,organizationType:job.industry,industry:enrichedIndustry,aiExactIndustry:enrichedIndustry,searchMarket:job.market,leadProfile:'goall'};
-      const key=goallLeadKey(next);
-      if(duplicateKeys.has(key)){
-        run.rejectedReasons.duplicate+=1;
-        continue;
-      }
-      duplicateKeys.add(key);
-      next._stageKey=key;
-      const crmDuplicate=await checkCrmDuplicate(next);
-      if(crmDuplicate.exists){
-        run.rejectedReasons.already_in_crm+=1;
-        touchLeadRun(run,{message:`Step 1: skipped ${run.rejectedReasons.already_in_crm} already in GHL; found ${run.businesses.length} new candidate businesses for ${requested} target additions.`});
-        continue;
-      }
-      run.rawLeads.push(next);
-      run.businesses.push(applyLeadScoring({...next}));
-      touchLeadRun(run,{message:`Step 1: found ${run.businesses.length} new candidate businesses for ${requested} target GHL additions.`});
-      if(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS) await sleep(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS);
-    }
-  }
-
-  await runGoallStagedResearchAndReview(run,run.rawLeads,'Outscraper returned zero usable businesses.');
-		}
-
-async function runGoallCsvStagedLeadPipeline(run,uploadedLeads=[]){
-  const requested=run.requested;
-  const duplicateKeys=new Set();
-  touchLeadRun(run,{phase:'csv',message:`Step 1: reading uploaded CSV rows until ${requested} new GHL additions can be enriched.`});
-  for(const lead of uploadedLeads){
-    const next={...lead,leadProfile:'goall',sourceType:'csv_upload',importTag:lead.importTag||run.payload?.importTag||run.payload?.sourceTag||''};
-    const key=goallLeadKey(next);
-    if(duplicateKeys.has(key)){
-      run.rejectedReasons.duplicate+=1;
-      continue;
-    }
-    duplicateKeys.add(key);
-    next._stageKey=key;
-    const crmDuplicate=await checkCrmDuplicate(next);
-    if(crmDuplicate.exists){
-      run.rejectedReasons.already_in_crm+=1;
-      touchLeadRun(run,{message:`Step 1: skipped ${run.rejectedReasons.already_in_crm} already in GHL; accepted ${run.businesses.length} uploaded candidate businesses for enrichment.`});
-      continue;
-    }
-    run.rawLeads.push(next);
-    run.businesses.push(applyLeadScoring({...next}));
-    run.rawCount+=1;
-    touchLeadRun(run,{message:`Step 1: accepted ${run.businesses.length} uploaded candidate businesses for ${requested} target GHL additions.`});
-    if(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS) await sleep(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS);
-  }
-  await runGoallStagedResearchAndReview(run,run.rawLeads,'The uploaded CSV did not contain any usable new businesses after duplicate checks.');
-}
-
-async function runGoallStagedResearchAndReview(run,candidates=[],emptyError='No usable businesses were available for enrichment.'){
-  const plan=run.searchPlan;
-  const requested=run.requested;
-  if(!candidates.length){
-    touchLeadRun(run,{
-      status:'failed',
-      phase:run.phase||'discovery',
-      error:run.errors.join(' | ')||emptyError,
-      message:'Step 1 finished with no usable businesses.'
-    });
-    return;
-  }
-
-  touchLeadRun(run,{phase:'gemini',message:`Step 2: Gemini is researching until ${requested} addable leads are ready, ${GOALL_STAGED_GEMINI_CONCURRENCY} at a time.`});
-  let nextIndex=0;
-  let addableCount=0;
-  const workers=Array.from({length:Math.min(GOALL_STAGED_GEMINI_CONCURRENCY,candidates.length)},async()=>{
-    while(nextIndex<candidates.length && addableCount<requested){
-      const index=nextIndex++;
-      const prospect=candidates[index];
-		      const enriched=await enrichGoallStagedProspect(prospect)
-		        .catch(e=>({...prospect,geminiDecisionMakerStatus:e.message,apolloStatus:'skipped because enrichment failed',rocketReachStatus:'skipped because enrichment failed'}));
-		      const exactIndustry=enriched.aiExactIndustry||enriched.industry||enriched.organizationType||prospect.organizationType||'unclear';
-		      const scored=applyLeadScoring(sanitizeDecisionMaker({...enriched,aiExactIndustry:exactIndustry,leadProfile:'goall'}));
-		      const holdReason=goallStagedLeadHoldReason(scored);
-		      if(holdReason){
-		        scored._approved=false;
-		        scored.reviewNeeded=true;
-		        scored.reviewNeededReason=holdReason;
-		      }else{
-		        addableCount+=1;
-		      }
-		      run.decisionMakers.push(scored);
-		      run.reviewLeads.push(scored);
-	      touchLeadRun(run,{message:`Step 2: ${addableCount} of ${requested} addable leads ready after researching ${run.decisionMakers.length} businesses.`});
-	      if(GOALL_STAGED_RESEARCH_ROW_DELAY_MS) await sleep(GOALL_STAGED_RESEARCH_ROW_DELAY_MS);
-	    }
-  });
-  await Promise.all(workers);
-
-  run.reviewLeads.sort(sortGoallLeads);
-  run.report=summarizeGoallDiscovery({
-    requested,
-    leads:run.reviewLeads,
-    rawCount:run.rawCount||run.businesses.length,
-    industries:plan.industries,
-    cities:plan.cities,
-    rejectedReasons:run.rejectedReasons
-  });
-  const discovered={
-    ok:true,
-    market:plan.market,
-    criteria:plan.criteria,
-    organizationType:plan.organizationType,
-    employeeMinimum:plan.employeeMinimum,
-    tag:plan.tag,
-    importTag:run.payload?.importTag||run.payload?.sourceTag||'',
-    sourceTag:run.payload?.sourceTag||run.payload?.importTag||'',
-    leads:run.reviewLeads,
-    scraped:{configured:true,rawCount:run.rawCount,errors:run.errors,rejectedReasons:run.rejectedReasons,staged:true,sourceType:run.payload?.sourceType||'outscraper'},
-    raw:'',
-    rocketReachMode:'defer',
-    searchPlan:plan,
-    report:run.report
-  };
-	  run.content=leadPreviewText(discovered);
-	  const finalAddable=run.reviewLeads.filter(isGoallStagedAddableLead).length;
-		  touchLeadRun(run,{status:'complete',phase:'review',completedAt:new Date().toISOString(),message:`Step 3: review is ready with ${finalAddable} addable lead${finalAddable===1?'':'s'} for a target of ${requested}. Nothing has been imported.`});
-		}
-
-async function enrichGoallStagedProspect(prospect={}){
-  let next={...prospect,leadProfile:'goall'};
-  if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
-  next=await enrichProspectWithGoallGeminiDecisionMaker(next,{decisionMakerResearch:true});
-  if(GEMINI_API_KEY && !next.decisionMakerName){
-    next.apolloStatus=next.apolloStatus||'skipped because Gemini did not verify a decision maker';
-    next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini did not verify a decision maker';
-    return sanitizeDecisionMaker(next);
-  }
-  const hasDecisionMakerEmail=isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email);
-  const hasDecisionMakerPhone=validPhone(next.decisionMakerPhone||next.personPhone||'');
-  if(next.decisionMakerName && hasDecisionMakerEmail && hasDecisionMakerPhone){
-    next.apolloStatus=next.apolloStatus||'skipped because Gemini found decision-maker email and phone';
-    next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini found decision-maker email and phone';
-    return sanitizeDecisionMaker(next);
-  }
-  if(next.decisionMakerName){
-    next=await enrichProspectWithApollo(next);
-    if(!isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email) || !validPhone(next.decisionMakerPhone||next.personPhone||'')){
-      next=await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
-    }else{
-      next.rocketReachStatus=next.rocketReachStatus||'skipped because Apollo found decision-maker email and phone';
-    }
-  }
-  if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
-  return sanitizeDecisionMaker(next);
 }
 
 async function fetchTextWithTimeout(url,timeoutMs=3500){
@@ -28685,7 +31907,7 @@ async function discoverHbsLeadProspects(body={}){
   let raw='';
   let webError='';
   if(!leads.length){
-    const allowWebFallback=GOALL_ALLOW_WEB_FALLBACK || /^(1|true|yes)$/i.test(String(body.allowWebFallback||body.allow_web_fallback||''));
+    const allowWebFallback=!plan.fastSearch || /^(1|true|yes)$/i.test(String(body.allowWebFallback||body.allow_web_fallback||''));
     if(!allowWebFallback){
       webError='';
     }else{
@@ -28712,16 +31934,7 @@ async function discoverHbsLeadProspects(body={}){
         '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
       ].join('\n');
       try{
-        if(GEMINI_API_KEY){
-          const gemini=await callGeminiGroundedSearch({
-            input:['System instructions:',system,'','User request:',user].join('\n'),
-            maxTokens:6000,
-            temperature:0.15
-          });
-          raw=gemini.text;
-        }else{
-          throw new Error('Outscraper found no usable new leads, and Gemini fallback is not configured.');
-        }
+        raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
         let candidates=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
         // Same CRM-dedupe as the Outscraper path: skip leads already in GHL before
         // spending enrichment calls (Apollo/RocketReach/website lookups) on them.
@@ -28782,12 +31995,12 @@ function leadDiscoveryFailureText({plan,scraped,webError}={}){
     'What happened:',
     scraped?.error?`- Level 1 map/business search returned: ${cleanLeadLevelText(scraped.error)}`:'',
     Array.isArray(scraped?.errors)&&scraped.errors.length?`- Search notes: ${scraped.errors.slice(0,3).map(cleanLeadLevelText).join(' | ')}`:'',
-    webError?`- Gemini fallback returned: ${cleanLeadLevelText(webError)}`:'',
+    webError?`- Web research fallback returned: ${cleanLeadLevelText(webError)}`:'',
     '',
     'Try this next:',
     '- Run a smaller test batch, like 12 leads.',
     '- Use one specific industry and city, for example "HVAC companies in Phoenix".',
-    '- Open API Keys & Connections and test Outscraper and Gemini if this happens on every search.'
+    '- Open API Keys & Connections and test Outscraper and OpenAI if this happens on every search.'
   ].filter(Boolean).join('\n');
 }
 
@@ -28985,29 +32198,9 @@ async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,aut
     const leadFields=leadCustomFieldsFromProspect({...lead,...automation});
     const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
     await updateGhlLeadFields(contactId,leadFields);
-    const contactability=leadContactability(lead);
-    const decisionName=String(lead.decisionMakerName||'').trim();
-    const nameParts=decisionName.split(/\s+/).filter(Boolean);
-    const contactUpdate={
-      companyName:name,
-      email:contactability.hasEmail?contactability.email:undefined,
-      phone:contactability.hasPhone?contactability.phone:undefined,
-      website:lead.website||undefined,
-      address1:lead.address1||undefined,
-      city:lead.city||undefined,
-      state:lead.state||undefined,
-      country:normalizeCountryCode(lead.country),
-      postalCode:lead.postalCode||lead.postal_code||undefined,
-      firstName:decisionName?(nameParts[0]||undefined):'Unverified',
-      lastName:decisionName?(nameParts.slice(1).join(' ')||undefined):undefined,
-      name:decisionName||'Unverified'
-    };
-    await ghlStrict('PUT',`/contacts/${contactId}`,compactObject(contactUpdate)).catch(()=>{});
-		    const note=goallLeadImportNote({...lead,...automation},automation,contactability,{isWestwood:false});
-		    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
-    const callerSnapshotNote=goallLeadCallerSnapshotNote({...lead,...automation},contactability);
-    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:callerSnapshotNote}).catch(()=>{});
-		  }
+  }
+  await saveLeadReadinessBrief(contactId,lead,{profile:isGoall?'goall':'westwood'})
+    .catch(e=>console.log('Employer readiness brief not saved',{contactId,name:lead.organizationName||lead.name,error:e.message}));
   const existing=await findOpenOpportunityForContact(contactId);
   if(existing) return {created:false, existing:true, opportunity:existing, contactId};
   const target=await getOpportunityTarget();
@@ -29061,7 +32254,7 @@ async function importApprovedHbsLeads(discovered){
         });
         return;
       }
-	      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,importTag:lead.importTag||lead.sourceTag||discovered.importTag||discovered.sourceTag||'',organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||0},{tag,importTag:discovered.importTag||discovered.sourceTag||''}));
+      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||0},{tag}));
     }catch(e){
       failed.push({name:lead.organizationName||lead.name||'Unknown lead',error:e.message});
     }
@@ -29109,18 +32302,12 @@ async function enrichProspectWithRocketReach(p,options={}){
   if(!rocketReachKey) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
   const rocket=await lookupRocketReachDecisionMaker(p.organizationName||p.name||'',p,options).catch(e=>({error:e.message}));
   const data=rocket?.data||{};
-  const personEmail=isLikelyPersonEmail(data.email)?data.email:'';
-  const personPhone=validPhone(data.phone)?data.phone:'';
-  const nextEmail=personEmail || (!p.email ? data.email : p.email);
-  const nextPhone=validPhone(p.phone) ? p.phone : personPhone || data.phone || p.phone;
+  const nextEmail=isLikelyPersonEmail(data.email) || !p.email ? data.email : p.email;
+  const nextPhone=validPhone(data.phone) && !validPhone(p.phone) ? data.phone : p.phone;
   return {
     ...p,
     decisionMakerName:p.decisionMakerName||data.name||'',
     decisionMakerTitle:p.decisionMakerTitle||data.title||'',
-    decisionMakerEmail:p.decisionMakerEmail||personEmail,
-    decisionMakerPhone:p.decisionMakerPhone||personPhone,
-    personEmail:p.personEmail||personEmail,
-    personPhone:p.personPhone||personPhone,
     linkedinPersonalUrl:p.linkedinPersonalUrl||data.linkedinUrl||'',
     linkedinCompanyUrl:p.linkedinCompanyUrl||data.companyLinkedInUrl||'',
     linkedinCompanyId:p.linkedinCompanyId||data.companyId||'',
@@ -29142,7 +32329,6 @@ async function enrichProspectWithRocketReach(p,options={}){
 async function enrichProspect(p,opts={}){
   let next = {...p};
   const mode=opts.rocketReachMode||'auto';
-  const isGoall=String(next.leadProfile||'goall').toLowerCase()==='goall';
   if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
   if(opts.fastPreview){
     return sanitizeDecisionMaker({
@@ -29164,33 +32350,7 @@ async function enrichProspect(p,opts={}){
       next.decisionMakerSource = publicContact.leader.source || '';
     }
   }
-  if(isGoall){
-    next=await enrichProspectWithGoallGeminiDecisionMaker(next,{decisionMakerResearch:opts.decisionMakerResearch!==false});
-    if(GEMINI_API_KEY && !next.decisionMakerName){
-      next.apolloStatus=next.apolloStatus||'skipped because Gemini did not verify a decision maker';
-      next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini did not verify a decision maker';
-    }else if(next.decisionMakerName){
-      const hasDecisionMakerEmail=isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email);
-      const hasDecisionMakerPhone=validPhone(next.decisionMakerPhone||next.personPhone||'');
-      if(hasDecisionMakerEmail && hasDecisionMakerPhone){
-        next.apolloStatus=next.apolloStatus||'skipped because Gemini found decision-maker email and phone';
-        next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini found decision-maker email and phone';
-      }else{
-        next = await enrichProspectWithApollo(next);
-        if(!isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email) || !validPhone(next.decisionMakerPhone||next.personPhone||'')){
-          next = await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
-        }else{
-          next.rocketReachStatus = next.rocketReachStatus || 'skipped because Apollo found decision-maker email and phone';
-        }
-      }
-    }else if(mode==='defer'){
-      next = await enrichProspectWithApollo(next);
-      next.rocketReachStatus = 'deferred until review';
-    }else{
-      next = await enrichProspectWithApollo(next);
-      next = await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
-    }
-  }else if(mode==='defer'){
+  if(mode==='defer'){
     next = await enrichProspectWithApollo(next);
     next.rocketReachStatus = 'deferred until review';
   }else{
@@ -29215,97 +32375,6 @@ function enrichmentLevelSummaryLines(p,contactability=leadContactability(p)){
   ];
 }
 
-function goallLeadImportNote(p={},automation={},contactability=leadContactability(p),options={}){
-  const isWestwood=options.isWestwood===true;
-  const name=p.organizationName||p.name||'Unnamed business lead';
-  const exactIndustry=p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear';
-  const location=p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear';
-  const decisionName=String(p.decisionMakerName||'').trim();
-  const script=p.callScript||p.call_script||leadCallScript(p);
-  const valueProps=decisionArrayValue(p.customizedValueProps).map(v=>typeof v==='string'?v:[v.title,v.reason,v.value].filter(Boolean).join(' - ')).filter(Boolean);
-  const businessNeeds=decisionArrayValue(p.businessNeedsAndPainPoints).map(v=>typeof v==='string'?v:[v.need,v.evidence].filter(Boolean).join(' - ')).filter(Boolean);
-  const dataLines=[
-    'Lead Data',
-    `- Company: ${name}`,
-    `- Industry: ${exactIndustry}`,
-    `- Location: ${location}`,
-    `- Website: ${p.website||'unclear'}`,
-    `- Decision maker: ${decisionName?`${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`:'Unverified'}`,
-    `- Decision maker email: ${p.decisionMakerEmail||p.personEmail||(decisionName&&isLikelyPersonEmail(p.email)?p.email:'')||'missing'}`,
-    `- Decision maker phone: ${p.decisionMakerPhone||p.personPhone||(decisionName&&validPhone(p.phone)?p.phone:'')||'missing'}`,
-    `- Business email: ${contactability.email||p.email||'missing'}`,
-    `- Business phone: ${contactability.phone||p.phone||'missing'}`,
-    `- Lead score: ${p.leadScore||p.lead_score||'unclear'}${p.leadScoreReason||p.lead_score_reason?' - '+(p.leadScoreReason||p.lead_score_reason):''}`
-  ].filter(Boolean);
-  const researchLines=[
-    '',
-    'Gemini Research Highlights',
-    p.callerSnapshot?`- Caller snapshot: ${p.callerSnapshot}`:'',
-    p.businessSizeContext?`- Business size context: ${p.businessSizeContext}`:'',
-    p.companyStructure?`- Company structure: ${p.companyStructure}`:'',
-    p.bestContactPhoneType?`- Phone type: ${p.bestContactPhoneType}`:'',
-    p.bestContactEmailType?`- Email type: ${p.bestContactEmailType}`:'',
-    p.activelyHiring?`- Actively hiring: ${p.activelyHiring}`:'',
-    p.highestTurnoverArea?`- Highest turnover area: ${p.highestTurnoverArea}`:'',
-    p.turnoverRisk?`- Turnover risk: ${p.turnoverRisk}`:'',
-    `- Pain point: ${goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'missing'}`,
-    p.painpointEvidence?`- Pain point evidence: ${p.painpointEvidence}`:'',
-    p.hiringTurnoverEvidence?`- Hiring/turnover evidence: ${p.hiringTurnoverEvidence}`:'',
-    businessNeeds.length?`- Business needs: ${businessNeeds.slice(0,4).join(' | ')}`:'',
-    valueProps.length?`- GOALL value props: ${valueProps.slice(0,4).join(' | ')}`:'',
-    p.recommendedOutreachAngle||p.nextOutreachAngle?`- GOALL positioning: ${p.recommendedOutreachAngle||p.nextOutreachAngle}`:'',
-    p.emailAngle?`- Email angle: ${p.emailAngle}`:'',
-    p.callOpener?`- Suggested opener: ${p.callOpener}`:'',
-    p.decisionMakerEvidence?`- Decision-maker evidence: ${p.decisionMakerEvidence}`:'',
-    p.bestContactNotes?`- Contact notes: ${p.bestContactNotes}`:''
-  ].filter(Boolean);
-  const enrichmentLines=[
-    '',
-    'Enrichment',
-    ...enrichmentLevelSummaryLines(p,contactability),
-    decisionName
-      ? `Decision maker verified: ${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
-      : 'Gemini did not return a reliable decision-maker name. Decision Maker First Name was set to Unverified. Review before person-specific outreach.',
-    leadContactabilityNote(contactability),
-    p.linkedinPersonalUrl?`LinkedIn: ${p.linkedinPersonalUrl}`:'',
-    p.apolloStatus?`Apollo: ${cleanLeadLevelText(p.apolloStatus)}`:'',
-    p.rocketReachStatus?`RocketReach: ${cleanLeadLevelText(p.rocketReachStatus)}`:'',
-    !isWestwood && automation.automationTag?`Automation tag: ${automation.automationTag}`:'',
-    !isWestwood && automation.automationTagReason?`Automation reason: ${automation.automationTagReason}`:'',
-    !isWestwood && automation.tagConfidence?`Tag confidence: ${automation.tagConfidence}`:'',
-    !isWestwood && automation.needsNewAutomation?`Suggested new automation: ${automation.suggestedNewAutomationTag||'Manual Review'}`:''
-  ].filter(Boolean);
-  const scriptLines=[
-    '',
-    'Call Script',
-    script
-  ].filter(Boolean);
-  return [...dataLines,...researchLines,...enrichmentLines,...scriptLines].join('\n');
-}
-
-function goallLeadCallerSnapshotNote(p={},contactability=leadContactability(p)){
-  const decisionName=String(p.decisionMakerName||'').trim();
-  const decisionLine=decisionName
-    ? `${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`
-    : 'Unverified';
-  const bullets=[
-    'CALLER SNAPSHOT',
-    `- Decision maker: ${decisionLine}`,
-    `- Phone type: ${p.bestContactPhoneType||'unknown'}`,
-    `- Email type: ${p.bestContactEmailType||'unknown'}`,
-    `- Business phone: ${contactability.phone||p.phone||'missing'}`,
-    `- Business email: ${contactability.email||p.email||'missing'}`,
-    p.activelyHiring?`- Actively hiring: ${p.activelyHiring}`:'',
-    p.highestTurnoverArea?`- Highest turnover: ${p.highestTurnoverArea}`:'',
-    p.turnoverRisk?`- Turnover risk: ${p.turnoverRisk}`:'',
-    `- Pain point: ${goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'missing'}`,
-    p.recommendedOutreachAngle||p.nextOutreachAngle?`- GOALL angle: ${p.recommendedOutreachAngle||p.nextOutreachAngle}`:'',
-    p.callOpener?`- Suggested opener: ${p.callOpener}`:'',
-    p.callerSnapshot?`- Context: ${p.callerSnapshot}`:''
-  ].filter(Boolean);
-  return bullets.join('\n');
-}
-
 async function createGhlLeadFromProspect(p,opts={}){
   p=applyLeadScoring(p);
   p=sanitizeDecisionMaker({
@@ -29328,7 +32397,7 @@ async function createGhlLeadFromProspect(p,opts={}){
   const leadFields=leadCustomFieldsFromProspect(p);
   const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
-  const tags=[...new Set((isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads']).concat(goallAdditionalImportTags(p,opts)))];
+  const tags=isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads'];
   if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
@@ -29344,17 +32413,18 @@ async function createGhlLeadFromProspect(p,opts={}){
     country,
     postalCode:p.postalCode||p.postal_code||undefined,
     timezone:p.timeZone||p.timezone||undefined,
-	    source,
-	    tags
-	  };
+    source,
+    tags,
+    customFields:leadCustomFields.length?leadCustomFields:undefined
+  };
   if(decisionName){
     contactPayload.firstName=nameParts[0]||undefined;
     contactPayload.lastName=nameParts.slice(1).join(' ')||undefined;
     contactPayload.name=decisionName;
   }else{
-    contactPayload.firstName='Unverified';
-    contactPayload.lastName=undefined;
-    contactPayload.name='Unverified';
+    contactPayload.firstName='unknown';
+    contactPayload.lastName='unknown';
+    contactPayload.name='unknown unknown';
   }
   const contactData=await ghlStrict('POST','/contacts',contactPayload);
   const contact=contactData.contact||contactData;
@@ -29370,14 +32440,25 @@ async function createGhlLeadFromProspect(p,opts={}){
       console.log('Lead score verification warning',{contactId,name,expected:scoreVerification.expected||leadFields.lead_score,received:scoreVerification.received||'',reason:scoreVerification.reason});
     }
   }
-	  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
-		  const note=goallLeadImportNote(p,automation,contactability,{isWestwood});
-	  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(e=>console.log('Lead contactability note not saved',{contactId,name,error:e.message}));
-  if(!isWestwood){
-    const callerSnapshotNote=goallLeadCallerSnapshotNote(p,contactability);
-    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:callerSnapshotNote}).catch(e=>console.log('Lead caller snapshot note not saved',{contactId,name,error:e.message}));
-  }
-	  const target=await getOpportunityTarget();
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  const note=[
+    ...enrichmentLevelSummaryLines(p,contactability),
+    '',
+    p.decisionMakerName
+      ? `Decision maker verified: ${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
+      : 'Public data did not return a reliable name for the decision maker. First and last name were set to unknown. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
+    leadContactabilityNote(contactability),
+    !isWestwood && automation.automationTag?`Automation tag: ${automation.automationTag}`:'',
+    !isWestwood && automation.automationTagReason?`Automation reason: ${automation.automationTagReason}`:'',
+    !isWestwood && automation.tagConfidence?`Tag confidence: ${automation.tagConfidence}`:'',
+    !isWestwood && automation.needsNewAutomation?`Suggested new automation: ${automation.suggestedNewAutomationTag||'Manual Review'}`:''
+  ].filter(Boolean).join('\n');
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(e=>console.log('Lead contactability note not saved',{contactId,name,error:e.message}));
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:isWestwood?'westwood':'goall'}).catch(e=>{
+    console.log('Employer readiness brief not saved',{contactId,name,error:e.message});
+    return '';
+  });
+  const target=await getOpportunityTarget();
   const opportunityPayload={
     locationId:GHL_LOC,
     pipelineId:target.pipelineId,
@@ -29389,7 +32470,7 @@ async function createGhlLeadFromProspect(p,opts={}){
     source
   };
   const opportunityData=await createGhlOpportunity(opportunityPayload);
-  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note};
+  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note,readinessBrief};
 }
 
 function isGoallTestContactRequest(text=''){
@@ -29940,7 +33021,7 @@ async function inferGhlActionFromChat(text){
     'For contact.create/contact.upsert params may include firstName,lastName,name,email,phone,companyName,source,tags,note,city,state,country,website,customFields.',
     'For updates/tags/notes/tasks/opportunities include the needed IDs when supplied. If an ID is missing but an email/name is supplied for tagging/note/task/update, return contact.search instead.'
   ].join('\n');
-  const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true}).catch(()=>null);
+  const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true,task:'extraction'}).catch(()=>null);
   if(!raw) return null;
   const parsed=extractJsonObject(raw);
   if(!parsed.shouldExecute) return null;
@@ -29974,6 +33055,8 @@ You prioritize leverage, peace, clarity, completion, sovereignty, strategic prec
 
 You do not hype, flatter, or blindly agree. Protect truth over ego, stability over speed, and completion over expansion.
 
+Witnessing posture: begin from recognition before instruction. The user should feel met, not managed. Be warm, human, and specific before becoming strategic. You may be encouraging, delighted, or proud when something is genuinely meaningful, while still keeping judgment clean and not pretending every idea is perfect. Do not sound clinical, scolding, transactional, or like a backend system. Avoid canned phrases, cold refusals, and generic productivity advice. Use "I" when describing VAL's own checking or thinking, not "VAL is..." unless explaining the product itself.
+
 Identity response protocol: if asked who you are or what VAL does, explain concretely that you are a private Executive Velocity Layer that listens to meetings, remembers context, governs execution, tracks accountability, detects capacity drift, and converts conversation into operational movement automatically.
 
 Behavioral governance: operate through DISC tendencies when available. Monitor Influence Drift, Dominance Drift, Steadiness Overload, and Conscientiousness Weakness. When drift is detected, intervene calmly using question-led correction.
@@ -29987,6 +33070,8 @@ Round table strategy: evaluate business strategy through Systems Builder, Produc
 Tool governance: GHL is the execution layer for CRM, contacts, pipelines, CRM appointments, CRM tasks, workflows, documents, and operational tracking. Gmail and Outlook are the email execution layers for provider drafts and email sends. Make.com is the orchestration layer for automation, routing, API coordination, conditional logic, webhooks, system communication, and execution sequencing. VAL/Postgres memory is the memory and retrieval layer for transcripts, institutional memory, historical recall, contact context, and document context. If legacy Pinecone memory is referenced, treat it as the previous memory layer; current durable memory is VAL/Postgres. Do not collapse tool responsibilities.
 
 Home VAL and voice operating contract: Home VAL is the user's Chief of Staff. Home VAL may reason across the full system, including Executive Inbox, Calendar, Transcripts, Projects, Relationship packets, Tasks, Witnessing Session context, prepared work, and the Board of Observers. Function-specific chats stay scoped to their function. If the user veers outside a function-specific chat, tell them to use Home VAL for full-system context.
+
+Deep conversational standard for every user-facing voice or chat response: Sound like a present, emotionally intelligent partner. First show that you understood the human meaning. If the user corrects you, respond relationally before operationally. Avoid generic receipt language.
 
 Voice rule book: voice is best for quick, human-facing work: brainstorming, thinking through decisions, conceptualizing, reminders, quick calendar answers, to-do list review, drafting intent, and lightweight external actions. Heavy prepared work belongs in VAL's dashboard. When the user asks voice for heavyweight prepared work such as full Meeting Prep, deep research, broad public-rate analysis, project audits, transcript synthesis, or a Board-level recommendation, acknowledge it quickly and trigger or queue the work rather than holding the voice call open. Use language like: "I'm starting that now. It will be ready for you in VAL when you're ready." Do not expose backend details, API names, database names, or internal route names.
 
@@ -30060,6 +33145,7 @@ function actionPrompt(action){
 }
 
 app.post('/api/val/memory',async(req,res)=>{try{res.json({ok:true,...await saveMemoryItem(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/memory/compact',async(req,res)=>{try{res.json(await compactAiUsableContext());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.get('/api/val/memory/search',async(req,res)=>{
   try{
     await valDbReady;
@@ -30211,6 +33297,49 @@ async function saveTranscriptCanonicalPipeline({sourceId,title,transcript,payloa
   await logTranscriptAction(sourceId,'canonical_pipeline_saved',conversation.id||conversationId,'completed').catch(()=>{});
   return {conversation,identityLinks,decisions,evidenceItemId:evidence?.id||'',counts:{identityLinks:identityLinks.length,decisions:decisions.length}};
 }
+function transcriptActionItemPassesGate(line=''){
+  const text=String(line||'').replace(/\s+/g,' ').trim();
+  if(!text)return false;
+  if(/\b(laughter|haha|weather|hello|goodbye|bye|joke|small talk)\b/i.test(text))return false;
+  if(/\b(already|completed|finished|sent|done|nothing needs to happen|no action needed|does not need follow up|doesn't need follow up|maybe|might|could possibly|for example)\b/i.test(text))return false;
+  const hasActor=/\b(i will|i'll|we will|we'll|i can|we can|i need to|we need to|let me|i am going to|i'm going to|we are going to|we're going to|jessa will|val should|val needs to)\b/i.test(text);
+  const hasAssignedActor=/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+to\s+(?:send|share|schedule|review|prepare|update|introduce|connect|draft|write|build|create|finish|complete|confirm|check|call|email|text|nudge|forward|deliver|fix|research|compile|find|set up)\b/.test(text);
+  const hasAction=/\b(send|share|schedule|review|prepare|update|introduce|connect|draft|write|build|create|finish|complete|confirm|check|call|email|text|nudge|forward|deliver|fix|research|compile|find|set up)\b/i.test(text);
+  return (hasActor||hasAssignedActor)&&hasAction;
+}
+function extractFallbackTranscriptActionItems(lines=[]){
+  return safeArray(lines)
+    .map(line=>dashboardCleanText(line))
+    .filter(transcriptActionItemPassesGate)
+    .slice(0,12);
+}
+function normalizeTranscriptActionItems(items=[],transcript=''){
+  return safeArray(items)
+    .map(item=>typeof item==='string'?{taskTitle:cleanTaskTitle(item),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:item}:item)
+    .map(item=>({
+      ...item,
+      taskTitle:cleanTaskTitle(item.taskTitle||item.title),
+      taskDescription:item.taskDescription||item.description||item.notes||'',
+      confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),
+      sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence||item.taskTitle||item.title)
+    }))
+    .filter(item=>item.taskTitle&&item.sourceQuote&&transcriptActionItemPassesGate([item.taskTitle,item.taskDescription,item.sourceQuote].filter(Boolean).join(' ')))
+    .slice(0,20);
+}
+function normalizeTranscriptDecisions(items=[]){
+  return safeArray(items)
+    .map(item=>typeof item==='string'?dashboardCleanText(item):dashboardCleanText(item.title||item.summary||item.decision||''))
+    .filter(Boolean)
+    .filter(item=>/\b(decided|agreed|approved|selected|chose|confirmed)\b/i.test(item))
+    .slice(0,10);
+}
+function normalizeTranscriptAnalysis(parsed={},transcript=''){
+  const out={...(parsed||{})};
+  out.keyDecisions=normalizeTranscriptDecisions(out.keyDecisions||out.decisions);
+  out.tasks=normalizeTranscriptActionItems(out.tasks||out.actionItems,transcript);
+  out.actionItems=out.tasks;
+  return out;
+}
 function fallbackTranscriptSummary(transcript,notes='Processing fallback summary; transcript retained for review.'){
   const raw=String(transcript||'');
   const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
@@ -30220,10 +33349,10 @@ function fallbackTranscriptSummary(transcript,notes='Processing fallback summary
     executiveSummary:dashboardShortText(text,'Summary unavailable.',900),
     clientSummary:'',
     internalNotes:notes,
-    keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
+    keyDecisions:normalizeTranscriptDecisions(lines),
     openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),
     relationshipUpdates:[],
-    tasks:lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
+    tasks:extractFallbackTranscriptActionItems(lines).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
     contactUpdates:[],
     followupDrafts:[]
   };
@@ -30235,12 +33364,13 @@ async function processTranscriptPayload(payload){
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Use this layered transcript process internally before producing JSON: identify decisions, commitments, relationship signals, project signals, prepared-work opportunities, and evidence quotes before naming any task.','A transcript snippet is not an action item. Only name a task when a real actor, concrete action, outcome, and exact source quote are present.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
-  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
+  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true,task:'extraction'});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
+  parsed=normalizeTranscriptAnalysis(parsed,transcript);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
@@ -30249,8 +33379,8 @@ async function processTranscriptPayload(payload){
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
     const assignedName=item.assignedToName||item.assignedPerson||item.person||item.contactName||'',participant=participants.find(p=>looseNameScore(assignedName,p.speakerNameRaw)>=0.8||looseNameScore(assignedName,p.matchedContactName)>=0.8),confidence=Math.max(0,Math.min(1,Number(item.confidence)||0));
     const owner=isOwnerRelationship({name:assignedName,email:participant?.matchedEmail||''}),safeMatch=!!participant&&!participant.needsReview&&participant.matchConfidence>=TRANSCRIPT_SAFE_MATCH_CONFIDENCE;
-    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:contextualTaskTitle(title,item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'staged',needsApproval:!(owner||safeMatch),sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',calendarEventTitle:title,createdAt:new Date().toISOString()};
-    if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);if(owner||safeMatch)createdTasks.push(await promoteTranscriptTask(staged));
+    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:cleanTaskTitle(item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'created',needsApproval:false,preserveSourceTitle:true,sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',calendarEventTitle:title,createdAt:new Date().toISOString()};
+    if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);createdTasks.push(await promoteTranscriptTask(staged));
   }
   for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20)){
     const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
@@ -30270,7 +33400,40 @@ async function processTranscriptPayload(payload){
     await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');
   }
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
-  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
+  const counts={participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length};
+  const sourceProcessing=await processCanonicalBoardEvidence({
+    sourceType:'transcript',
+    sourceId,
+    sourceTitle:title,
+    rawText:transcript,
+    createdAt:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||'',
+    domainRoutes:['transcripts','board_of_observers','canonical_work'],
+    metadata:{
+      source:'transcript_processing_pipeline',
+      summaryId:summary?.summaryId||'',
+      participantCount:counts.participants,
+      observationCount:counts.observations,
+      taskSignalCount:stagedTasks.length+createdTasks.length,
+      preparedDraftCount:createdDrafts.length
+    }
+  });
+  const boardPackets=sourceProcessing?.sourcePackets||[];
+  const transcriptIntelligence=await valTranscriptIntelligence?.intake({
+    transcript:{
+      id:sourceId,
+      title,
+      meetingTitle:title,
+      rawText:transcript,
+      createdAt:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||'',
+      calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',
+      attendees:payload.attendees||participants
+    },
+    notify:true
+  }).catch(error=>{
+    console.warn('[val-transcript-intel] canonical live intake failed:',error.message);
+    return null;
+  });
+  return {analysis:parsed,summary,participants,observations,canonicalPipeline,transcriptIntelligence,stagedTasks,createdTasks,createdDrafts,boardPackets,counts};
 }
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
@@ -30497,27 +33660,150 @@ function normalizedTranscriptWebhookPayload(body={}){
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
-async function transcriptDrawerListPayload({days=90,limit=50}={}){
+async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
+  if(!pgPool)return null;
   const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
+  const safeOffset=Math.max(0,Number(offset)||0);
+  const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
+  const since=new Date(Date.now()-safeDays*24*60*60*1000).toISOString();
+  const [listResult,countResult]=await Promise.all([
+    dbQuery(`
+      select
+        t.transcript_id,
+        t.source,
+        t.meeting_title,
+        t.meeting_datetime,
+        t.calendar_event_id,
+        t.processing_status,
+        t.summary_status,
+        t.created_at,
+        t.updated_at,
+        coalesce(summary.executive_summary,'') as executive_summary,
+        coalesce(task_counts.task_count,0)::int as task_count,
+        (
+          coalesce(review_counts.participant_reviews,0)
+          + coalesce(review_counts.task_reviews,0)
+          + coalesce(review_counts.contact_reviews,0)
+        )::int as review_count
+      from transcripts t
+      left join lateral (
+        select executive_summary
+        from transcript_summaries
+        where transcript_id=t.transcript_id
+        order by created_at desc
+        limit 1
+      ) summary on true
+      left join lateral (
+        select count(*) filter (where lower(coalesce(status,'open')) not in ('done','completed','closed')) as task_count
+        from transcript_tasks
+        where transcript_id=t.transcript_id
+      ) task_counts on true
+      left join lateral (
+        select
+          (select count(*) from transcript_participants where transcript_id=t.transcript_id and needs_review=true) as participant_reviews,
+          (select count(*) from transcript_tasks where transcript_id=t.transcript_id and needs_approval=true) as task_reviews,
+          (select count(*) from transcript_contact_updates where transcript_id=t.transcript_id and approved=false) as contact_reviews
+      ) review_counts on true
+      where t.user_id=$1 and t.created_at >= $2
+        and t.transcript_id not like 'recovered_%'
+        and coalesce(t.source,'') not like 'recovered:%'
+      order by coalesce(t.meeting_datetime,t.created_at) desc
+      limit $3 offset $4
+    `,[VAL_USER_ID,since,safeLimit,safeOffset]),
+    dbQuery(`
+      select
+        count(*)::int as total,
+        count(*) filter (
+          where exists (select 1 from transcript_participants p where p.transcript_id=t.transcript_id and p.needs_review=true)
+             or exists (select 1 from transcript_tasks tt where tt.transcript_id=t.transcript_id and tt.needs_approval=true)
+             or exists (select 1 from transcript_contact_updates cu where cu.transcript_id=t.transcript_id and cu.approved=false)
+        )::int as needs_review,
+        count(*) filter (
+          where exists (
+            select 1 from transcript_tasks ot
+            where ot.transcript_id=t.transcript_id
+              and lower(coalesce(ot.status,'open')) not in ('done','completed','closed')
+          )
+        )::int as with_open_actions,
+        count(*) filter (
+          where lower(coalesce(t.processing_status,'')) in ('failed','error')
+             or lower(coalesce(t.summary_status,'')) in ('failed','error')
+        )::int as failed_processing
+      from transcripts t
+      where t.user_id=$1 and t.created_at >= $2
+        and t.transcript_id not like 'recovered_%'
+        and coalesce(t.source,'') not like 'recovered:%'
+    `,[VAL_USER_ID,since])
+  ]);
+  const transcripts=safeArray(listResult?.rows).map(row=>({
+    id:row.transcript_id,
+    transcriptId:row.transcript_id,
+    source:row.source||'transcript',
+    title:row.meeting_title||'Transcript',
+    meetingTitle:row.meeting_title||'Transcript',
+    createdAt:row.created_at?.toISOString?.()||row.created_at||'',
+    receivedAt:row.created_at?.toISOString?.()||row.created_at||'',
+    meetingDatetime:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||'',
+    processingStatus:row.processing_status||'',
+    summaryStatus:row.summary_status||'',
+    reviewStatus:Number(row.review_count||0)>0?'needs_review':'reviewed',
+    summary:{executiveSummary:row.executive_summary||''},
+    actionItems:[],
+    taskCount:Number(row.task_count||0),
+    openActionCount:Number(row.task_count||0),
+    reviewCount:Number(row.review_count||0)
+  }));
+  const countsRow=countResult?.rows?.[0]||{};
+  const total=Number(countsRow.total||0);
+  return {
+    transcripts,
+    pagination:{offset:safeOffset,limit:safeLimit,total,hasMore:safeOffset+transcripts.length<total},
+    counts:{
+      total,
+      needsReview:Number(countsRow.needs_review||0),
+      withOpenActions:Number(countsRow.with_open_actions||0),
+      failedProcessing:Number(countsRow.failed_processing||0)
+    }
+  };
+}
+async function transcriptDrawerListPayload({days=90,limit=50,offset=0,migrationRecords=null}={}){
+  const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
+  const safeOffset=Math.max(0,Number(offset)||0);
   const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
   const cutoff=Date.now()-safeDays*24*60*60*1000;
-  const data=await transcriptIndexData();
-  const indexedRecords=transcriptMigrationRecordsFromIndex(data);
-  const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
-  const mapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
+  let records=Array.isArray(migrationRecords)?migrationRecords:null;
+  if(!records){
+    const data=await transcriptIndexData();
+    const indexedRecords=transcriptMigrationRecordsFromIndex(data);
+    const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
+    migrationRecords=mergeTranscriptMigrationRecords(records,data);
+  }
+  records=records||migrationRecords||[];
+  const allMapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
     .filter(transcript=>{
       const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
       return !Number.isFinite(time)||time>=cutoff;
-    })
-    .slice(0,safeLimit);
-  return {transcripts:mapped,counts:{total:mapped.length,needsReview:mapped.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:mapped.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:mapped.filter(isHardTranscriptProcessingFailure).length}};
+    });
+  const mapped=allMapped.slice(safeOffset,safeOffset+safeLimit);
+  return {
+    transcripts:mapped,
+    pagination:{offset:safeOffset,limit:safeLimit,total:allMapped.length,hasMore:safeOffset+mapped.length<allMapped.length},
+    counts:{total:allMapped.length,needsReview:allMapped.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:allMapped.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:allMapped.filter(isHardTranscriptProcessingFailure).length}
+  };
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
     res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
-    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
-    const payload=await transcriptDrawerListPayload({days:req.query.days||90,limit:req.query.limit||50});
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||90));
+    const limit=Math.max(1,Math.min(250,Number(req.query.limit)||50));
+    const offset=Math.max(0,Number(req.query.offset)||0);
+    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days,limit,offset});
+    const payload=await transcriptDrawerFastPayload({days,limit,offset})||await (async()=>{
+      const [archive,data]=await Promise.all([transcriptArchiveRecords(days,1000),transcriptIndexData().catch(()=>({transcripts:[]}))]);
+      const migrationRecords=mergeTranscriptMigrationRecords(archive,data);
+      return transcriptDrawerListPayload({days,limit,offset,migrationRecords});
+    })();
     res.json({ok:true,...payload});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -30533,7 +33819,7 @@ app.post('/api/val/transcripts/refresh',async(req,res)=>{
     }catch(error){
       refresh={attempted:true,days,message:'Transcript archive refreshed from saved records.',warning:error.message||'Live transcript refresh is unavailable right now.'};
     }
-    const payload=await transcriptDrawerListPayload({days,limit});
+    const payload=await transcriptDrawerFastPayload({days,limit,offset:0})||await transcriptDrawerListPayload({days,limit});
     await auditLog({req,action:'transcript_drawer_refreshed',resourceType:'transcript',metadata:{days,limit,refresh},success:!refresh.warning}).catch(()=>{});
     res.json({ok:true,...payload,refresh});
   }catch(e){console.error('[transcripts] refresh failed',e);res.status(500).json({ok:false,error:e.message});}
@@ -30625,6 +33911,61 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
   }catch(e){
     await auditLog({req,action:'transcript_data_clear_failed',resourceType:'transcript',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/transcript-tasks/:taskId/complete',async(req,res)=>{
+  try{
+    const taskId=decodeURIComponent(req.params.taskId);
+    let task=null;
+    let completedTaskIds=[];
+    if(pgPool){
+      const requestedIds=[...new Set([taskId,...safeArray(req.body?.relatedTaskIds).map(String)].filter(Boolean))].slice(0,100);
+      const result=await dbQuery(`
+        update transcript_tasks tt
+        set status='complete',needs_approval=false
+        from transcripts t
+        where tt.task_id=any($1::text[])
+          and t.transcript_id=tt.transcript_id
+          and t.tenant_id=$2 and t.user_id=$3
+        returning tt.*
+      `,[requestedIds,tenantId(),VAL_USER_ID]);
+      const completedRows=safeArray(result.rows).map(transcriptPgRow);
+      completedTaskIds=completedRows.map(row=>row.taskId).filter(Boolean);
+      task=completedRows.find(row=>String(row.taskId)===String(taskId))||null;
+      if(task){
+        for(const completedId of completedRows.map(row=>row.taskId).filter(Boolean)){
+          await dbQuery(`
+            update val_tasks
+            set completed=true,completed_at=now(),completed_by=$1,updated_at=now()
+            where user_id=$2 and details @> $3::jsonb
+          `,[String(req.body?.completedBy||'you'),VAL_USER_ID,JSON.stringify([{transcriptTaskId:completedId}])]).catch(()=>{});
+        }
+      }
+    }else{
+      const store=valStore();
+      const requestedIds=new Set([taskId,...safeArray(req.body?.relatedTaskIds).map(String)]);
+      const rows=transcriptFileArray(store,'transcriptTasks').filter(row=>requestedIds.has(String(row.taskId||row.task_id)));
+      task=rows.find(row=>String(row.taskId||row.task_id)===String(taskId))||null;
+      rows.forEach(row=>{row.status='complete';row.needsApproval=false;});
+      completedTaskIds=rows.map(row=>row.taskId||row.task_id).filter(Boolean);
+      if(task)saveValStore(store);
+    }
+    if(!task)return res.status(404).json({ok:false,error:'Transcript action item not found.'});
+    await auditLog({req,action:'transcript_task_completed',resourceType:'transcript_task',resourceId:taskId,metadata:{transcriptId:task.transcriptId||task.transcript_id||'',title:task.taskTitle||task.task_title||''},success:true}).catch(()=>{});
+    res.json({ok:true,task,completedTaskIds});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.delete('/api/val/transcripts/:transcriptId',async(req,res)=>{
+  try{
+    const id=decodeURIComponent(req.params.transcriptId);
+    const confirmation=String(req.body?.confirmation||'').trim().toLowerCase();
+    if(confirmation!=='delete transcript')return res.status(400).json({ok:false,error:'Type "delete transcript" to confirm.'});
+    const result=await deleteTranscriptForUser(id);
+    await auditLog({req,action:'transcript_deleted_by_user',resourceType:'transcript',resourceId:id,metadata:{title:result.title,sourceKey:result.sourceKey},success:true}).catch(()=>{});
+    res.json({ok:true,...result,message:'Transcript deleted from VAL. Its deletion receipt will prevent the same source record from being imported again.'});
+  }catch(e){
+    await auditLog({req,action:'transcript_delete_failed',resourceType:'transcript',resourceId:req.params.transcriptId,metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(e.statusCode||500).json({ok:false,error:e.message});
   }
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
@@ -30789,12 +34130,20 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
     try{
       const processed=await processTranscriptPayload({...payload,savedTranscriptId:saved.id,meetingMatch});
       await updateTranscriptMetadata(saved.id,{analysis:processed.analysis,summary:processed.analysis?.summary||'',actionItems:processed.analysis?.actionItems||[],people:processed.analysis?.people||[],reviewStatus:'needs_review',processedAt:new Date().toISOString()});
-      return res.status(200).json({ok:true,...saved,...processed,saved:true,processed:true});
+      setImmediate(()=>{
+        valEnvironments.processTranscript(saved.id).then(result=>{
+          if(result.matched)console.log('[environments] transcript processed',{transcriptId:saved.id,matched:result.matched});
+        }).catch(error=>console.error('[environments] transcript processing failed',{transcriptId:saved.id,error:error.message}));
+      });
+      return res.status(200).json({ok:true,...saved,...processed,saved:true,processed:true,environmentProcessingQueued:true});
     }catch(processError){
       console.error('[transcripts] processing failed after durable save',{id:saved.id,error:processError.message});
       const fallback={executiveSummary:transcriptText.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Processing failed; transcript retained for review.',keyDecisions:[],openQuestions:[],relationshipUpdates:[]};
       await saveTranscriptSummary(saved.id,fallback).catch(()=>{});await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});await logTranscriptAction(saved.id,'failed_action','pipeline','failed',processError.message).catch(()=>{});
-      return res.status(200).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch});
+      setImmediate(()=>{
+        valEnvironments.processTranscript(saved.id).catch(error=>console.error('[environments] saved fallback transcript processing failed',{transcriptId:saved.id,error:error.message}));
+      });
+      return res.status(200).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch,environmentProcessingQueued:true});
     }
   }catch(e){console.error('[transcripts] save failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -31224,6 +34573,526 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+async function boardObserverDailyBudget(localDate=''){
+  if(!pgPool)return {allowed:true,count:0,limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT};
+  const boardDate=String(localDate||currentBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.localDate||'');
+  const result=await dbQuery(
+    `select count(*)::int as count
+     from observer_runs
+     where tenant_id=$1
+       and user_id=$2
+       and (created_at at time zone $3)::date=$4::date`,
+    [tenantId(),currentUserId(),CLIENT_CONFIG.timezone,boardDate]
+  ).catch(error=>{
+    console.warn('[val-board] daily reasoning budget check failed:',error.message);
+    return {rows:[{count:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT}]};
+  });
+  const count=Math.max(0,Number(result?.rows?.[0]?.count)||0);
+  return {
+    allowed:count+DEFAULT_OBSERVERS.length<=VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
+    count,
+    limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT
+  };
+}
+async function triggerBoardIntelligenceForPackets(packets=[],event={}){
+  const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
+  if(!livePackets.length||!valIntelligenceSpine?.runIntelligencePass)return null;
+  const budget=await boardObserverDailyBudget(event.localDate);
+  if(!budget.allowed){
+    console.warn(`[val-board] Observer review deferred at daily call limit ${budget.count}/${budget.limit}. Packets remain available for later review.`);
+    return {ok:false,deferred:true,reason:'daily_observer_call_limit',budget,packetIds:livePackets.map(packet=>packet.id)};
+  }
+  const first=livePackets[0];
+  return valIntelligenceSpine.runIntelligencePass({
+    event:{
+      type:event.type||'board_packet_received',
+      sourceType:event.sourceType||first.sourceType||'board_packet',
+      sourceId:event.sourceId||first.sourceId||first.id,
+      packetIds:livePackets.map(packet=>packet.id).slice(0,VAL_BOARD_PACKETS_PER_BRIEFING),
+      briefingSlot:event.briefingSlot||'',
+      localDate:event.localDate||''
+    }
+  }).catch(error=>{
+    console.warn('[val-board] intelligence pass deferred:',error.message);
+    return null;
+  });
+}
+function queueBoardIntelligenceForPackets(packets=[],event={}){
+  const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype&&packet.status==='active');
+  return {
+    status:'queued_for_briefing',
+    queued:livePackets.length,
+    packetIds:livePackets.map(packet=>packet.id),
+    sourceType:event.sourceType||livePackets[0]?.sourceType||'',
+    nextBriefing:nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.id||'morning'
+  };
+}
+
+function conversationTurnSourceRefs({selectedSourceContext={},sourceRefs=[]}={}){
+  const refs=[
+    ...safeArray(sourceRefs),
+    ...safeArray(selectedSourceContext?.sourceRefs),
+    ...safeArray(selectedSourceContext?.source_refs),
+    ...safeArray(selectedSourceContext?.sourceRefsJson),
+    ...safeArray(selectedSourceContext?.source_refs_json),
+    ...safeArray(selectedSourceContext?.evidence)
+  ].filter(Boolean);
+  if(refs.length)return refs.slice(0,12);
+  const sourceType=selectedSourceContext?.sourceType||selectedSourceContext?.source_type;
+  const sourceId=selectedSourceContext?.sourceId||selectedSourceContext?.source_id||selectedSourceContext?.id;
+  const quoteOrSummary=selectedSourceContext?.sourceBrief||selectedSourceContext?.summary||selectedSourceContext?.detail||selectedSourceContext?.title;
+  if(sourceType||sourceId||quoteOrSummary){
+    return [{
+      sourceType:sourceType||'conversation',
+      sourceId:sourceId||'selected_source',
+      quoteOrSummary:quoteOrSummary||'Selected source context was loaded for this chat turn.',
+      confidence:0.82
+    }];
+  }
+  return [];
+}
+
+function compactConversationTurn(messages=[],limit=2400){
+  return safeArray(messages)
+    .filter(message=>message?.role==='user')
+    .slice(-6)
+    .map(message=>`User: ${String(message?.content||'').replace(/\s+/g,' ').trim()}`)
+    .filter(Boolean)
+    .join('\n')
+    .slice(0,limit);
+}
+function compactConversationExchange(messages=[],assistantContent='',limit=6000){
+  const turns=safeArray(messages)
+    .filter(message=>message&&['user','assistant'].includes(message.role)&&String(message.content||'').trim())
+    .slice(-12)
+    .map(message=>`${message.role==='assistant'?'VAL':'User'}: ${String(message.content||'').replace(/\s+/g,' ').trim()}`);
+  const assistant=String(assistantContent||'').replace(/\s+/g,' ').trim();
+  if(assistant&&!turns.some(turn=>turn===`VAL: ${assistant}`))turns.push(`VAL: ${assistant}`);
+  return turns.join('\n').slice(0,limit);
+}
+
+function boardConversationSourceType(channel='',fallback='cowork'){
+  const value=String(channel||'').trim().toLowerCase();
+  if(value==='ghl_voice')return 'ghl_voice';
+  if(value==='ghl_text'||value==='ghl_chat'||value==='ghl_conversation')return 'ghl_text';
+  if(value==='ghl_sms'||value==='sms')return 'sms';
+  return fallback;
+}
+
+async function recordValConversationTurnPacket({conversationId,title,sourceType='cowork',channel='',messages=[],lastUser='',assistantContent='',metadata={},sourceRefs=[]}={}){
+  const source=boardConversationSourceType(sourceType||channel,'cowork');
+  const id=String(conversationId||'').trim()||uuid('chat_turn');
+  const fallbackMessages=messages.length?messages:[
+    {role:'user',content:lastUser}
+  ];
+  const rawText=compactConversationExchange(fallbackMessages,assistantContent)||compactConversationTurn(fallbackMessages)||lastUser;
+  return processCanonicalBoardEvidence({
+    sourceType:source,
+    sourceId:id,
+    sourceTitle:title||`${source.replace(/_/g,' ')} conversation`,
+    rawText,
+    sourceRefs,
+    domainRoutes:['cowork','board_of_observers'],
+    metadata:{
+      ...metadata,
+      channel:channel||source,
+      lastUser,
+      assistantResponseRecordedInExecutionHistory:!!assistantContent
+    }
+  });
+}
+
+valEnvelopes = registerValEnvelopesRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady
+});
+
+valBoardPackets = registerValBoardPacketsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  getWitnessingCompletion:async()=>{
+    const completed=await getTeachValCompletedWitnessingSession();
+    if(completed?.id){
+      return {
+        complete:true,
+        sessionId:completed.id,
+        stage:'complete',
+        answeredCount:(await listTeachValImports(completed.id).catch(()=>[])).length,
+        nextStep:''
+      };
+    }
+    const session=await getTeachValWitnessingResumeSession();
+    const imports=session?.id ? await listTeachValImports(session.id).catch(()=>[]) : [];
+    const stage=String(session?.state?.stage||'');
+    return {
+      complete:false,
+      sessionId:session?.id||'',
+      stage,
+      answeredCount:imports.filter(item=>/^witness_/.test(String(item.category||''))).length,
+      nextStep:stage==='witness_connect_sources'
+        ? 'Prepare and confirm your First Look'
+        : session?.id
+          ? 'Continue your Witnessing Session'
+          : 'Begin your Witnessing Session'
+    };
+  },
+  envelopeService:valEnvelopes,
+  processSourceEvent:input=>processCanonicalBoardEvidence(input),
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+
+async function deliverCanonicalSourceToBoard({record,rawText,sourceType,sourceId,sourceTitle,sourceRef,sourceRefs}={}){
+  const metadata=record.metadataJson||record.metadata_json||{};
+  const chunks=evidenceChunks(rawText);
+  const packetType=metadata.boardPacketType||{
+    transcript:'meeting_evidence_packet',
+    email:'email_attention_packet',
+    calendar_event:'meeting_context_packet',
+    sms:'relationship_packet',
+    draft:'draft_review_packet',
+    linkedin_visibility:'relationship_packet',
+    public_research:'project_packet',
+    cowork:'cowork_packet',
+    ghl_voice:'cowork_packet',
+    ghl_text:'cowork_packet',
+    task:'task_packet',
+    relationship_profile:'relationship_packet',
+    project_profile:'project_packet',
+    external_action:'approval_packet',
+    knowledge_document:'document_packet',
+    document:'document_packet'
+  }[sourceType]||'learning_packet';
+  const packets=await valBoardPackets?.createPackets(chunks.map((chunk,index)=>({
+    id:`canonical_source_${record.id}_${index+1}`,
+    sourceType,
+    sourceId,
+    packetType,
+    title:chunks.length>1?`${sourceTitle} (${index+1} of ${chunks.length})`:sourceTitle,
+    summary:chunk,
+    sourceRefs:[
+      {
+        ...sourceRef,
+        quote_or_summary:chunk,
+        quoteOrSummary:chunk
+      },
+      ...safeArray(sourceRefs).filter(ref=>
+        String(ref.source_id||ref.sourceId||'')!==String(sourceRef.source_id||sourceRef.sourceId||'')
+        || String(ref.source_type||ref.sourceType||'')!==String(sourceRef.source_type||sourceRef.sourceType||'')
+      )
+    ],
+    payload:{
+      eventType:'canonical_source_version_processed',
+      sourceProcessingRecordId:record.id,
+      sourceFingerprint:record.sourceFingerprint,
+      sourceVersion:record.sourceVersion,
+      sourceMetadata:metadata,
+      chunkIndex:index,
+      chunkCount:chunks.length,
+      noExternalAction:true
+    }
+  }))).catch(error=>{
+    console.warn('[val-board] canonical source packet failed:',error.message);
+    return [];
+  });
+  if(packets?.length){
+    const isAboutMe=aboutMeDocumentCategory(metadata.documentCategory);
+    queueBoardIntelligenceForPackets(packets,{
+      type:isAboutMe?'about_me_document':'canonical_source_version_processed',
+      sourceType,
+      sourceId,
+      document:isAboutMe?{id:sourceId,title:sourceTitle,rawText,documentCategory:metadata.documentCategory}:undefined
+    });
+  }
+  return packets||[];
+}
+
+const valTranscriptSourceProcessing=createValSourceProcessingService({
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  afterSourceProcessed:deliverCanonicalSourceToBoard
+});
+
+async function processCanonicalBoardEvidence({
+  sourceType='',
+  sourceId='',
+  sourceTitle='',
+  rawText='',
+  sourceRefs=[],
+  createdAt='',
+  domainRoutes=[],
+  metadata={}
+}={}){
+  if(!valTranscriptSourceProcessing?.processEvidenceSource)return null;
+  if(!String(sourceType||'').trim()||!String(sourceId||'').trim()||!String(rawText||'').trim())return null;
+  return valTranscriptSourceProcessing.processEvidenceSource({
+    sourceType,
+    sourceId,
+    sourceTitle,
+    rawText,
+    sourceRefs,
+    createdAt,
+    domainRoutes,
+    metadata:{source:'canonical_platform_ingress',...metadata,noExternalAction:true}
+  }).catch(error=>{
+    console.warn(`[val-source] ${sourceType} evidence intake failed:`,error.message);
+    return null;
+  });
+}
+
+function externalActionBoardPacketType(packet={}){
+  const action=String(packet.actionType||packet.action_type||'').toLowerCase();
+  const status=String(packet.status||'').toLowerCase();
+  if(status==='executed'||status==='sent'||status==='completed')return 'sent_action_packet';
+  if(action==='create_crm_task')return 'task_packet';
+  return 'approval_packet';
+}
+
+function transcriptTaskContextExcerpt(rawText='',sourceQuote='',limit=12000){
+  const text=String(rawText||'').trim();
+  if(!text||text.length<=limit)return text;
+  const quote=String(sourceQuote||'').trim();
+  const index=quote?text.toLowerCase().indexOf(quote.toLowerCase()):-1;
+  if(index<0)return text.slice(0,limit);
+  const start=Math.max(0,index-Math.floor(limit/2));
+  return text.slice(start,Math.min(text.length,start+limit));
+}
+
+function cleanTranscriptTaskLine(value=''){
+  return transcriptCleanDisplayLine(value)
+    .replace(/\s+-\s+_[^_]+_\s*$/,'')
+    .replace(/\s+-\s+Due:\s*.+$/i,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function transcriptTaskContentWords(value=''){
+  const stop=new Set(['about','after','again','also','and','are','before','being','but','can','could','for','from','have','into','just','need','needs','that','the','their','them','then','there','they','this','those','through','to','was','were','will','with','would','you','your']);
+  return cleanTranscriptTaskLine(value).toLowerCase().match(/[a-z0-9]+/g)?.filter(word=>word.length>2&&!stop.has(word))||[];
+}
+
+function executiveTranscriptTaskTitle(storedTitle='',sourceQuote=''){
+  const title=cleanTranscriptTaskLine(storedTitle);
+  const quote=cleanTranscriptTaskLine(sourceQuote);
+  if(!title)return quote||'Action item';
+  if(!quote)return title;
+  const quoteWords=[...new Set(transcriptTaskContentWords(quote))];
+  if(quoteWords.length<5)return title;
+  const titleWords=new Set(transcriptTaskContentWords(title));
+  const overlap=quoteWords.filter(word=>titleWords.has(word)).length/quoteWords.length;
+  return overlap>=0.4?title:quote;
+}
+
+function transcriptTaskProjectionKey(task={}){
+  const action=cleanTranscriptTaskLine(task.title||task.evidence_quote||'')
+    .toLowerCase()
+    .replace(/^(?:jessa(?: grace)?|val|speaker[_\s-]?\d+)\s+to\s+/,'')
+    .replace(/[^a-z0-9]+/g,' ')
+    .trim();
+  const source=String(task.source_title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  return [source,action].filter(Boolean).join('|');
+}
+
+function mergeTranscriptTaskProjection(tasks=[]){
+  const groups=new Map();
+  for(const task of tasks){
+    const key=transcriptTaskProjectionKey(task)||String(task.id||'');
+    const existing=groups.get(key);
+    if(!existing){
+      groups.set(key,{...task,related_task_ids:[task.id].filter(Boolean),duplicate_count:1});
+      continue;
+    }
+    existing.related_task_ids=[...new Set(existing.related_task_ids.concat(task.id).filter(Boolean))];
+    existing.duplicate_count+=1;
+    existing.source_refs=[...safeArray(existing.source_refs),...safeArray(task.source_refs)];
+    existing.working_brief.sourcePackets=[
+      ...safeArray(existing.working_brief.sourcePackets),
+      ...safeArray(task.working_brief?.sourcePackets)
+    ];
+  }
+  return Array.from(groups.values());
+}
+
+async function canonicalTranscriptTaskProjection({limit=500}={}){
+  const bounded=Math.max(1,Math.min(Number(limit)||500,500));
+  let rows=[];
+  if(pgPool){
+    const result=await dbQuery(`
+      select tt.*,t.meeting_title,t.meeting_datetime,t.calendar_event_id,t.raw_transcript
+      from transcript_tasks tt
+      join transcripts t on t.transcript_id=tt.transcript_id
+      where t.tenant_id=$1 and t.user_id=$2
+        and lower(coalesce(tt.status,'created')) not in ('complete','completed','dismissed','deleted')
+      order by tt.due_date asc nulls last, tt.created_at desc
+      limit $3
+    `,[tenantId(),VAL_USER_ID,bounded]);
+    rows=safeArray(result?.rows).map(transcriptPgRow);
+  }else{
+    const store=valStore();
+    const transcripts=new Map(transcriptFileArray(store,'transcriptIndex').map(row=>[String(row.transcriptId),row]));
+    rows=transcriptFileArray(store,'transcriptTasks')
+      .filter(row=>!['complete','completed','dismissed','deleted'].includes(String(row.status||'created').toLowerCase()))
+      .slice(0,bounded)
+      .map(row=>({...row,...(transcripts.get(String(row.transcriptId))||{})}));
+  }
+  return mergeTranscriptTaskProjection(rows.map(row=>{
+    const transcriptId=String(row.transcriptId||row.transcript_id||'');
+    const storedTitle=String(row.taskTitle||row.task_title||row.sourceQuote||row.source_quote||'Action item').trim();
+    const sourceQuote=String(row.sourceQuote||row.source_quote||storedTitle).trim();
+    const transcriptTitle=String(row.meetingTitle||row.meeting_title||'Transcript').trim();
+    const contextualPrefix=transcriptTitle+' — ';
+    const unprefixedTitle=storedTitle.startsWith(contextualPrefix)?storedTitle.slice(contextualPrefix.length).trim():storedTitle;
+    const title=executiveTranscriptTaskTitle(unprefixedTitle,sourceQuote);
+    const description=String(row.taskDescription||row.task_description||'').trim();
+    const contextExcerpt=transcriptTaskContextExcerpt(row.rawText||row.raw_text||row.rawTranscript||'',sourceQuote);
+    const rawOwnerName=String(row.assignedToName||row.assigned_to_name||'').trim();
+    const ownerName=/^val$/i.test(rawOwnerName)?'VAL':rawOwnerName;
+    const ownerType=ownerName
+      ? (isOwnerRelationship({name:ownerName})?'user':'other')
+      : 'unknown';
+    const taskId=String(row.taskId||row.task_id||'');
+    return {
+      id:taskId,
+      title,
+      description,
+      evidence_quote:sourceQuote,
+      evidence_summary:sourceQuote,
+      source_type:'transcript',
+      source_id:transcriptId,
+      source_title:transcriptTitle,
+      transcript_id:transcriptId,
+      transcript_task_id:taskId,
+      owner_type:ownerType,
+      owner_name:ownerName||'Owner to confirm',
+      status:'open',
+      confidence:Number(row.confidence||0),
+      confidence_score:Number(row.confidence||0),
+      due_at:row.dueDate||row.due_date||null,
+      created_at:row.createdAt||row.created_at||'',
+      updated_at:row.createdAt||row.created_at||'',
+      workspace_kind:'transcript_task',
+      source_refs:[{sourceType:'transcript',sourceId:transcriptId,quoteOrSummary:sourceQuote,confidence:Number(row.confidence||0)}],
+      working_brief:{
+        objective:title,
+        sourceSummary:description,
+        sourceQuote,
+        contextLines:[
+          `Transcript: ${transcriptTitle}`,
+          ownerName?`Owner: ${ownerName}`:'Owner needs confirmation',
+          row.dueDate||row.due_date?`Due: ${row.dueDate||row.due_date}`:'',
+          contextExcerpt
+        ].filter(Boolean),
+        sourceContext:{sourceType:'transcript',sourceId:transcriptId,transcriptId,transcriptTaskId:taskId},
+        sourcePackets:[{source_type:'transcript',source_id:transcriptId,source_title:transcriptTitle,context_excerpt:contextExcerpt}],
+        envelope:{type:'source',id:transcriptId,name:transcriptTitle}
+      },
+      source_packet:{source_type:'transcript',source_id:transcriptId,source_title:transcriptTitle,context_excerpt:contextExcerpt}
+    };
+  }));
+}
+
+async function processExternalActionBoardEvidence(packet={}){
+  const id=String(packet.id||'').trim();
+  if(!id)return null;
+  const payload=packet.payloadPreviewJson||packet.payload_preview_json||{};
+  const sourceRefs=packet.sourceRefsJson||packet.source_refs_json||[];
+  return processCanonicalBoardEvidence({
+    sourceType:'external_action',
+    sourceId:id,
+    sourceTitle:packet.title||packet.whyThisActionExists||packet.why_this_action_exists||packet.actionType||packet.action_type||'External action',
+    rawText:[
+      `Action: ${packet.actionType||packet.action_type||'unknown'}`,
+      `Status: ${packet.status||'draft'}`,
+      packet.targetSystem||packet.target_system?`Target system: ${packet.targetSystem||packet.target_system}`:'',
+      packet.targetId||packet.target_id?`Target: ${packet.targetId||packet.target_id}`:'',
+      packet.whyThisActionExists||packet.why_this_action_exists||'',
+      packet.whatWillHappen||packet.what_will_happen||'',
+      Object.keys(payload).length?`Prepared content: ${JSON.stringify(payload)}`:'',
+      packet.providerResponseSummary||packet.provider_response_summary||''
+    ].filter(Boolean).join('\n'),
+    sourceRefs,
+    domainRoutes:['external_actions','board_of_observers','prepared_work'],
+    metadata:{
+      source:'external_action_lifecycle',
+      boardPacketType:externalActionBoardPacketType(packet),
+      actionType:packet.actionType||packet.action_type||'',
+      actionStatus:packet.status||'draft',
+      approvalPolicy:packet.approvalPolicy||packet.approval_policy||''
+    }
+  });
+}
+
+const valCanonicalWork=registerValCanonicalWorkRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  loadSourceProcessingRecord:id=>valTranscriptSourceProcessing.getSourceRecord(id),
+  loadTranscriptTasks:canonicalTranscriptTaskProjection,
+  afterWorkItemEvent:async({workItem,event})=>{
+    await processCanonicalBoardEvidence({
+      sourceType:'task',
+      sourceId:`canonical-work:${workItem.id}`,
+      sourceTitle:workItem.title,
+      rawText:[
+        `Event: canonical_work_${event.eventType}`,
+        `Lifecycle: ${workItem.lifecycleStatus}`,
+        `Admission: ${workItem.admissionStatus}`,
+        `Ownership: ${workItem.ownership}`,
+        workItem.projectName?`Project: ${workItem.projectName}`:'',
+        workItem.relationshipName?`Relationship: ${workItem.relationshipName}`:'',
+        workItem.summary||workItem.exactSourceQuote||''
+      ].filter(Boolean).join('\n'),
+      sourceRefs:workItem.sourceRefsJson,
+      domainRoutes:['tasks','alignment','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'canonical_work_lifecycle',
+        eventType:event.eventType,
+        eventId:event.id,
+        sourceProcessingRecordId:workItem.sourceProcessingRecordId,
+        canonicalWorkItemId:workItem.id,
+        originalSourceType:workItem.sourceType,
+        originalSourceId:workItem.sourceId,
+        noExternalAction:true
+      }
+    });
+    if(
+      ['work_admitted','evidence_reconfirmed'].includes(event.eventType)
+      && workItem.admissionStatus==='admitted'
+      && workItem.ownership==='user'
+      && !['complete','dismissed','superseded'].includes(workItem.lifecycleStatus)
+    ){
+      setImmediate(()=>{
+        valReadyForYou.prepareCanonicalWorkItem(workItem.id).catch(error=>{
+          console.warn('[ready-for-you] canonical work preparation failed:',error.message);
+        });
+      });
+    }
+  },
+  allowWrite:()=>!requestContext.getStore()?.publicHearthTest,
+  valDbReady:()=>valDbReady
+});
+
 const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -31236,8 +35105,45 @@ const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   fetchGmailMessages,
   fetchUnifiedOutlookEmails,
   resolveContactFromContext,
+  afterEmailSync:async(result)=>{
+    const messages=safeArray(result.savedMessages||result.messages);
+    for(let index=0;index<messages.length;index+=4){
+      await Promise.all(messages.slice(index,index+4).map(message=>{
+        const sourceId=message.messageId||message.id||message.threadId;
+        const from=message.from||{};
+        const sender=message.senderName||message.fromName||from.name||message.senderEmail||message.fromEmail||from.email||message.from||'';
+        const body=message.bodyText||message.bodyPreview||message.snippet||'';
+        return processCanonicalBoardEvidence({
+          sourceType:'email',
+          sourceId,
+          sourceTitle:message.subject||'Email message',
+          rawText:[
+            `Direction: ${message.direction||'unknown'}`,
+            sender?`From: ${sender}`:'',
+            `Subject: ${message.subject||'(no subject)'}`,
+            body
+          ].filter(Boolean).join('\n'),
+          createdAt:message.receivedAt||message.sentAt||message.createdAt||'',
+          domainRoutes:['executive_inbox','board_of_observers','relationships'],
+          metadata:{
+            source:'email_sync',
+            provider:message.provider||'',
+            threadId:message.threadId||'',
+            conversationId:message.conversationId||'',
+            direction:message.direction||''
+          }
+        });
+      }));
+    }
+  },
   valDbReady:()=>valDbReady,
   auditLog,
+  logger:console
+});
+const valCanonicalEmailIntake=createValCanonicalEmailIntake({
+  processEvidenceSource:input=>valTranscriptSourceProcessing.processEvidenceSource(input),
+  admitCanonicalWork:input=>valCanonicalWork.admit(input),
+  listProjectProfiles,
   logger:console
 });
 const valExecutiveInbox = registerValExecutiveInboxRoutes(app,{
@@ -31264,6 +35170,7 @@ const valExecutiveInbox = registerValExecutiveInboxRoutes(app,{
       .filter(d=>!executiveInboxDraftLooksGeneric(d))
       .slice(0,Math.max(1,Math.min(Number(limit)||50,100)));
   },
+  afterClassification:input=>valCanonicalEmailIntake.intakeClassification(input),
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31283,6 +35190,21 @@ const valMeetingPrep = registerValMeetingPrepRoutes(app,{
   enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext,
   ensureRelationshipPacketFromAttendee:ensureRelationshipPacketFromCalendarAttendee,
   saveCalendarProjectLink,
+  afterPublicContextEvent:async(event)=>{
+    await processCanonicalBoardEvidence({
+      sourceType:event.sourceType||'public_research',
+      sourceId:event.id,
+      sourceTitle:event.title||'Meeting prep public context',
+      rawText:event.summary||event.title||'',
+      sourceRefs:event.sourceRefs||[],
+      createdAt:event.createdAt||'',
+      domainRoutes:['meeting_prep','board_of_observers','relationships'],
+      metadata:{
+        source:'meeting_prep_public_context',
+        eventType:event.eventType||'meeting_prep_public_context'
+      }
+    });
+  },
   ownerEmails:Array.from(OWNER_EMAILS||[]),
   valDbReady:()=>valDbReady,
   auditLog,
@@ -31310,11 +35232,74 @@ const valTranscriptIntelligence = registerValTranscriptIntelligenceRoutes(app,{
   meetingPrepService:valMeetingPrep,
   resolveIdentity:valConversationIdentity.resolveIdentity,
   listRelationshipContacts:listRelationshipContactsForTranscript,
+  recordSourceProcessing:input=>valTranscriptSourceProcessing.processTranscriptSource(input),
+  admitCanonicalWork:input=>valCanonicalWork.admit(input),
   createContinuationTask:async(task)=>{
     await saveTask(task);
     return {ok:true,task,no_external_action:true};
   },
   valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valCanonicalLineage=registerValCanonicalLineageRoutes(app,{
+  listTranscripts:async({limit=200}={})=>(await recentTranscripts(3650)).filter(row=>isTranscriptLikeType(row.type)&&!isNonTranscriptArtifact(row)).slice(0,limit),
+  reconcileTranscript:input=>valTranscriptIntelligence.reconcileCanonicalLineage(input),
+  listEmailClassifications:input=>valExecutiveInbox.listClassifications(input),
+  reconcileEmailClassification:input=>valCanonicalEmailIntake.intakeClassification(input),
+  createSourcePacket:record=>{
+    const chunks=evidenceChunks(record.sourceReceiptJson?.rawText||record.sourceTitle);
+    const packetType=record.sourceType==='transcript'?'meeting_evidence_packet':record.sourceType==='email'?'email_attention_packet':'learning_packet';
+    return valBoardPackets.createPackets(chunks.map((chunk,index)=>({
+      id:`canonical_source_${record.id}_${index+1}`,
+      sourceType:record.sourceType,
+      sourceId:record.sourceId,
+      packetType,
+      title:chunks.length>1?`${record.sourceTitle} (${index+1} of ${chunks.length})`:record.sourceTitle,
+      summary:chunk,
+      sourceRefs:[{
+        sourceType:record.sourceType,
+        sourceId:record.sourceId,
+        quoteOrSummary:chunk,
+        confidence:1,
+        createdAt:record.sourceReceiptJson?.receivedAt||record.createdAt
+      }],
+      payload:{
+        sourceProcessingRecordId:record.id,
+        sourceFingerprint:record.sourceFingerprint,
+        sourceVersion:record.sourceVersion,
+        chunkIndex:index,
+        chunkCount:chunks.length,
+        canonicalReconciliation:true,
+        noExternalAction:true
+      }
+    })));
+  },
+  createWorkPacket:workItem=>valBoardPackets.createPacket({
+    id:`canonical_work_${workItem.id}`,
+    sourceType:'task',
+    sourceId:workItem.id,
+    packetType:'task_packet',
+    title:workItem.title,
+    summary:workItem.summary||workItem.exactSourceQuote,
+    sourceRefs:workItem.sourceRefsJson,
+    payload:{
+      canonicalWorkItemId:workItem.id,
+      sourceProcessingRecordId:workItem.sourceProcessingRecordId,
+      originalSourceType:workItem.sourceType,
+      originalSourceId:workItem.sourceId,
+      ownership:workItem.ownership,
+      admissionStatus:workItem.admissionStatus,
+      lifecycleStatus:workItem.lifecycleStatus,
+      projectName:workItem.projectName,
+      relationshipName:workItem.relationshipName,
+      canonicalReconciliation:true,
+      noExternalAction:true
+    }
+  }),
+  runObserverBatch:(packets,event)=>queueBoardIntelligenceForPackets(packets,{...event,packetIds:packets.map(packet=>packet.id)}),
+  valDbReady:()=>valDbReady,
+  allowWrite:()=>!requestContext.getStore()?.publicHearthTest,
   auditLog,
   logger:console
 });
@@ -31329,6 +35314,29 @@ const valCommitments = registerValCommitmentsRoutes(app,{
   listRelationshipContacts:listRelationshipContactsForTranscript,
   saveDraft:saveInternalDraft,
   saveTask,
+  afterCommitmentEvent:async(event)=>{
+    const commitment=event.commitment||{};
+    await processCanonicalBoardEvidence({
+      sourceType:'task',
+      sourceId:`commitment:${event.commitmentId||commitment.id||event.id}`,
+      sourceTitle:commitment.title||event.title||'Commitment',
+      rawText:[
+        `Event: commitment_${event.eventType||'updated'}`,
+        commitment.title||event.title||'',
+        commitment.summary||commitment.notes||event.summary||'',
+        commitment.projectName?`Project: ${commitment.projectName}`:'',
+        commitment.relationshipName?`Relationship: ${commitment.relationshipName}`:''
+      ].filter(Boolean).join('\n'),
+      sourceRefs:commitment.sourceRefsJson||commitment.source_refs_json||event.sourceRefs||[],
+      domainRoutes:['tasks','commitments','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'commitment_lifecycle',
+        eventType:event.eventType||'updated',
+        commitmentId:event.commitmentId||commitment.id||'',
+        noExternalAction:true
+      }
+    });
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31344,8 +35352,34 @@ const valDocuments = registerValDocumentsRoutes(app,{
   searchGoogleDocs,
   tenantId,
   userId:currentUserId,
+  afterDocumentEvent:async(event)=>{
+    return processCanonicalBoardEvidence({
+      sourceType:'document',
+      sourceId:`reference:${event.id||event.sourceId}`,
+      sourceTitle:event.title||'Document reference used',
+      rawText:[
+        `Event: ${event.eventType||'document_reference_used'}`,
+        event.summary||'',
+        event.relationship?`Relationship: ${event.relationship}`:'',
+        event.projectName?`Project: ${event.projectName}`:''
+      ].filter(Boolean).join('\n'),
+      sourceRefs:event.sourceRefs||[],
+      domainRoutes:['documents','board_of_observers'],
+      metadata:{
+        source:'document_reference_history',
+        eventType:event.eventType||'document_reference_used',
+        originalDocumentId:event.sourceId||event.id||'',
+        noExternalAction:true
+      }
+    });
+  },
   valDbReady:()=>valDbReady,
   auditLog,
+  logger:console
+});
+const generatePreparedArtifact=createPreparedArtifactGenerator({
+  callModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json,timeoutMs:45000}),
+  loadDraftLearning:listDraftLearningExamples,
   logger:console
 });
 const valReadyForYou = registerValReadyForYouRoutes(app,{
@@ -31359,8 +35393,102 @@ const valReadyForYou = registerValReadyForYouRoutes(app,{
   executiveInboxService:valExecutiveInbox,
   meetingPrepService:valMeetingPrep,
   transcriptIntelligenceService:valTranscriptIntelligence,
+  commitmentsService:valCommitments,
+  canonicalWorkService:valCanonicalWork,
+  generatePreparedArtifact,
+  afterPreparedItem:async(item)=>{
+    const artifact=item.metadataJson?.preparedArtifact||{};
+    const completeArtifact=String(artifact.html||artifact.body||artifact.content||'').trim();
+    if(!completeArtifact)return null;
+    return processCanonicalBoardEvidence({
+      sourceType:'draft',
+      sourceId:`prepared:${item.id}`,
+      sourceTitle:artifact.title||item.title||'Prepared work',
+      rawText:[
+        artifact.subject?`Subject: ${artifact.subject}`:'',
+        completeArtifact
+      ].filter(Boolean).join('\n\n'),
+      sourceRefs:item.sourceRefsJson||[],
+      domainRoutes:['prepared_work','leverage','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'canonical_prepared_artifact',
+        readyForYouItemId:item.id,
+        canonicalWorkItemId:item.metadataJson?.canonicalWorkItemId||'',
+        preparedArtifactKind:item.metadataJson?.preparedArtifactKind||artifact.kind||'',
+        preparedSourceVersionKey:item.metadataJson?.preparedSourceVersionKey||'',
+        status:item.status,
+        noExternalAction:true
+      }
+    });
+  },
+  afterDraftEdit:async({item,beforeArtifact,afterArtifact}={})=>{
+    await recordDraftLearning({
+      outcome:'edited_saved',
+      artifactKind:afterArtifact?.kind||item?.metadataJson?.preparedArtifactKind||'prepared_work',
+      subject:afterArtifact?.subject||afterArtifact?.title||item?.title||'',
+      originalBody:beforeArtifact?.html||beforeArtifact?.body||beforeArtifact?.content||'',
+      finalBody:afterArtifact?.html||afterArtifact?.body||afterArtifact?.content||'',
+      readyForYouId:item?.id||'',
+      sourceRefs:item?.sourceRefsJson||[]
+    });
+  },
+  afterDecision:async({item,status,decision,reviewedAt,snoozedUntil}={})=>{
+    const metadata=item?.metadataJson||item?.metadata_json||{};
+    const canonicalWorkItemId=metadata.canonicalWorkItemId||metadata.canonical_work_item_id||'';
+    const eventType=`prepared_artifact_${String(status||'decision').replace(/[^a-z0-9]+/gi,'_').toLowerCase()}`;
+    if(status==='approved'){
+      const artifact=metadata.preparedArtifact||{};
+      await recordDraftLearning({
+        outcome:'approved',
+        artifactKind:artifact.kind||metadata.preparedArtifactKind||'prepared_work',
+        subject:artifact.subject||artifact.title||item.title||'',
+        originalBody:artifact.html||artifact.body||artifact.content||'',
+        finalBody:artifact.html||artifact.body||artifact.content||'',
+        readyForYouId:item.id,
+        sourceRefs:item.sourceRefsJson||item.source_refs_json||[]
+      }).catch(()=>{});
+    }
+    if(canonicalWorkItemId&&valCanonicalWork?.recordDecision){
+      await valCanonicalWork.recordDecision(canonicalWorkItemId,{
+        eventType,
+        decisionId:item.id,
+        payload:{
+          readyForYouItemId:item.id,
+          status,
+          decision,
+          reviewedAt,
+          snoozedUntil:snoozedUntil||null
+        },
+        sourceRefs:item.sourceRefsJson||item.source_refs_json||[]
+      });
+    }
+    await processCanonicalBoardEvidence({
+      sourceType:'draft',
+      sourceId:`prepared-decision:${item.id}`,
+      sourceTitle:`Prepared work ${status}: ${item.title||'Untitled prepared work'}`,
+      rawText:[
+        `Decision: ${status}`,
+        `Prepared work: ${item.title||'Untitled prepared work'}`,
+        decision?.reason?`Reason: ${decision.reason}`:'',
+        decision?.note?`Note: ${decision.note}`:'',
+        snoozedUntil?`Snoozed until: ${snoozedUntil}`:''
+      ].filter(Boolean).join('\n'),
+      sourceRefs:item.sourceRefsJson||item.source_refs_json||[],
+      createdAt:reviewedAt,
+      domainRoutes:['prepared_work','leverage','board_of_observers','chief_of_staff'],
+      metadata:{
+        source:'prepared_work_decision',
+        eventType,
+        readyForYouItemId:item.id,
+        canonicalWorkItemId,
+        status,
+        noExternalAction:true
+      }
+    });
+  },
   listDrafts,
   loadTasks,
+  saveTask,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31388,7 +35516,32 @@ const valSourceProcessing = registerValSourceProcessingRoutes(app,{
   reviewUpdatesService:valReviewUpdates,
   readyForYouService:valReadyForYou,
   listProjectProfiles,
+  afterSourceProcessed:deliverCanonicalSourceToBoard,
+  afterDocumentEvent:async(event)=>{
+    return processCanonicalBoardEvidence({
+      sourceType:'document',
+      sourceId:`derived:${event.id||event.sourceId}`,
+      sourceTitle:event.title||'Document evidence processed',
+      rawText:[
+        `Event: ${event.eventType||'document_source_processed'}`,
+        event.summary||'',
+        event.relationship?`Relationship: ${event.relationship}`:'',
+        event.projectName?`Project: ${event.projectName}`:''
+      ].filter(Boolean).join('\n'),
+      sourceRefs:event.sourceRefs||[],
+      domainRoutes:['documents','board_of_observers'],
+      metadata:{
+        source:'derived_document_event',
+        eventType:event.eventType||'document_source_processed',
+        sourceProcessingRecordId:event.sourceProcessingRecordId||'',
+        originalDocumentId:event.sourceId||event.id||'',
+        noExternalAction:true
+      }
+    });
+  },
   allowRelationshipDocumentEmailPost:()=>!requestContext.getStore()?.publicHearthTest,
+  allowKnowledgeDocumentPost:()=>!requestContext.getStore()?.publicHearthTest,
+  afterKnowledgeDocument:queueKnowledgeDocumentObserverDelivery,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31711,7 +35864,9 @@ async function loadEmailThreadForCowork({messageId='',threadId='',conversationId
   const richMessages=await mapWithConcurrency(messages,4,async(message)=>{
     if((message.bodyHtml||message.body_html)||String(message.provider||selectedProvider||'').toLowerCase()!=='gmail'||!message.messageId)return message;
     try{
-      const fresh=normalizeGmailMessage(await gmailFetchJson(
+      const googleProvider=String(message.googleProvider||message.google_provider||message.raw?.googleProvider||message.raw?.google_provider||'google');
+      const fresh=normalizeGmailMessage(await gmailFetchJsonForProvider(
+        googleProvider,
         `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(message.messageId)}?format=full`,
         {},
         'Gmail thread message body'
@@ -31722,7 +35877,9 @@ async function loadEmailThreadForCowork({messageId='',threadId='',conversationId
         bodyText:fresh.bodyText||message.bodyText,
         bodyHtml:fresh.bodyHtml||message.bodyHtml||'',
         attachments:fresh.attachments?.length ? fresh.attachments : message.attachments,
-        raw:{...(message.raw||{}),...fresh}
+        googleProvider,
+        accountEmail:message.accountEmail||message.account_email||message.raw?.accountEmail||message.raw?.account_email||'',
+        raw:{...(message.raw||{}),...fresh,googleProvider}
       };
     }catch(e){
       return message;
@@ -32380,27 +36537,124 @@ async function applyCoworkRelationshipSection({relationshipId,relationshipName='
 }
 async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBrief={},messages=[]}={}){
   const isChief=entrypointId==='board.chief_of_staff';
+  const isObserver=entrypointId==='observer.discussion';
+  const isBoardConversation=isChief||isObserver;
+  const isTranscriptConversation=entrypointId==='transcript.working_brief';
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const selectedObserver=String(context.selectedObserver?.name||workingBrief.title||scopeId||'').replace(/\s+Observer$/i,'').trim();
+  const [liveBoardContext,latestObserverRuns]=isBoardConversation ? await Promise.all([
+      valBoardPackets?.boardContext({
+        limit:80,
+        observerName:isChief?'':selectedObserver
+      }).catch(error=>{
+        console.warn('[val-board] observer chat context lookup failed:',error.message);
+        return null;
+      }),
+      valIntelligenceSpine?.listObserverRuns({
+        limit:isChief?42:10,
+        observerName:isChief?'':selectedObserver
+      }).catch(error=>{
+        console.warn('[val-board] observer reflection lookup failed:',error.message);
+        return [];
+      })
+    ]) : [null,[]];
+  const observerEvidence=buildObserverEvidenceLedger(latestObserverRuns,{
+    observerName:isChief?'':selectedObserver,
+    limitPerObserver:isChief?12:35
+  });
+  const observerReflections=(isChief
+    ? observerEvidence.reviews
+    : safeArray(observerEvidence.reviewsByObserver[selectedObserver])
+  ).slice(0,isChief?80:35);
+  const reflectionsByPacket=new Map();
+  for(const review of observerReflections){
+    const current=reflectionsByPacket.get(review.packetId)||[];
+    current.push(review);
+    reflectionsByPacket.set(review.packetId,current);
+  }
+  const packetContext=liveBoardContext ? {
+    livePacketCount:liveBoardContext.livePacketCount,
+    observers:liveBoardContext.observers,
+    packets:safeArray(liveBoardContext.packets).slice(0,30).map(packet=>({
+      id:packet.id,
+      sourceType:packet.sourceType,
+      sourceId:packet.sourceId,
+      packetType:packet.packetType,
+      title:packet.title,
+      summary:packet.summary,
+      primaryObservers:packet.primaryObserversJson,
+      routeObservers:safeArray(packet.routeObserversJson).map(route=>({observerName:route.observerName,primary:!!route.primary,reason:route.reason})),
+      sourceRefs:packet.sourceRefsJson,
+      observerReviews:safeArray(reflectionsByPacket.get(packet.id)),
+      createdAt:packet.createdAt
+    })),
+    latestObserverReflections:observerReflections,
+    observerEvidenceSummary:{
+      receiptCount:observerEvidence.receiptCount,
+      observedCount:observerEvidence.observedCount,
+      noSignalCount:observerEvidence.noSignalCount,
+      observerCount:observerEvidence.observerCount
+    }
+  } : null;
+  const mergedContext=isBoardConversation ? {
+    ...context,
+    liveBoardPackets:packetContext
+  } : {
+    entrypointId,
+    scopeId,
+    title:workingBrief.title||workingBrief.projectName||workingBrief.relationshipName||workingBrief.transcriptTitle||workingBrief.subject||'Selected work',
+    objective:workingBrief.objective||'',
+    completionCondition:workingBrief.completionCondition||'',
+    approvalBoundary:workingBrief.approvalBoundary||'',
+    workingBrief
+  };
   const conversation=safeArray(messages).slice(-18).map((message)=>({
     role:message.role==='assistant'?'assistant':'user',
     content:String(message.content||'').slice(0,5000)
   }));
-  const system=[
-    VAL_SYSTEM_PROMPT,
-    isChief
-      ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
-      : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
-    'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
-    'Use only the supplied Board packet and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
-    'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
-    'Never claim an external action happened. Nothing leaves VAL from this conversation.',
-    'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
-  ].join('\n');
+  const system=isBoardConversation ? [
+      VAL_SYSTEM_PROMPT,
+      isChief
+        ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
+        : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
+      'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
+      'Use only the supplied Board packet, live Board packet context, and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
+      'Live Board packets are real system records. If no live packets are supplied, say what is missing instead of inventing activity.',
+      'Answer the user like a specific Board member, not like a generic assistant. First answer the exact question in plain language. Then give the evidence you are using. Then name the open question or unknown only if it matters.',
+      'When the user asks what relationship, project, risk, opportunity, capacity issue, or repair is involved, name the person/project/source if the packet context names one. If the packet only contains categories and no names, say that the named source is not attached yet instead of pretending.',
+      'Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review. Do not use vague phrases like "some things", "open loops", or "trust shifts" without the source that made you say it.',
+      'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
+      'Never claim an external action happened. Nothing leaves VAL from this conversation.',
+      'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
+    ].join('\n') : [
+      VAL_SYSTEM_PROMPT,
+      `You are Co-Work with VAL inside the exact ${entrypointId.replace(/[._]/g,' ')} context the user opened.`,
+      'The supplied Working Brief is the complete private folder for this turn. It contains the selected object, source receipts, linked packets, current state, objective, completion condition, and approval boundary.',
+      'Answer the executive\'s exact question first in natural language. Then point out the most useful pattern, tradeoff, risk, opportunity, or missing fact that is actually supported by this Working Brief.',
+      ...(isTranscriptConversation ? [
+        'For a Transcript Working Brief, reason across the meeting evidence instead of merely repeating Action Items, Key Points, or the review instruction.',
+        'When the executive asks for the most valuable, most important, best thing to demonstrate, hidden opportunity, deeper pattern, or what the meeting really revealed: choose one highest-leverage answer, explain why it outranks the alternatives, cite the specific meeting evidence that supports it, and recommend the concrete artifact, demonstration, decision, or next move.',
+        'Distinguish what participants explicitly said from the strategic conclusion you are drawing. A useful supported inference is welcome; generic advice and unsupported invention are not.',
+        'Do not answer a substantive transcript question with "review the meeting overview" or "apply it to Leverage." The prepared draft remains available separately from this conversation.'
+      ] : []),
+      'End with one clear forward-moving question or next move only when it helps. Do not ask a question merely to sound conversational.',
+      'Do not expose packet field names, schemas, JSON, backend processes, or internal retrieval language. Do not make the user restate context already present in the Working Brief.',
+      'If the answer is not supported by the loaded sources, say exactly what is missing and ask for only that one thing. Never substitute generic Home context or another entity.',
+      'Stay inside the selected project, transcript, email thread, relationship, or section. If the user wants unrelated system-wide help, direct them to Home VAL in one sentence.',
+      'Do not mark work complete, apply an internal update, or claim an external action occurred during this conversational turn. The structured review and Apply flow remains separate.',
+      'Sound like a thoughtful human collaborator: direct, specific, warm, and concise. Avoid corporate filler and robotic phrases.'
+    ].join('\n');
   const packetMessage={
     role:'user',
-    content:'Current private packet context:\n'+JSON.stringify(context).slice(0,24000)
+    content:'Current private packet context:\n'+JSON.stringify(mergedContext).slice(0,28000)
   };
-  return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:750,temperature:0.35,timeoutMs:15000});
+  return callOpenAIResponses({
+    system,
+    messages:[packetMessage,...conversation],
+    maxTokens:isBoardConversation?950:(isTranscriptConversation?1000:750),
+    temperature:isBoardConversation?0.32:0.38,
+    timeoutMs:isBoardConversation?20000:12000
+  });
 }
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
@@ -32439,14 +36693,37 @@ const valCowork = registerValCoworkRoutes(app,{
   applyRelationshipOverview:applyCoworkRelationshipOverview,
   applyRelationshipSection:applyCoworkRelationshipSection,
   generateConversationReply:generateObserverCoworkReply,
+  afterCoworkEvent:async({phase,result,request}={})=>{
+    const session=result?.session||{};
+    const entrypoint=result?.entrypoint||{};
+    const workItem=result?.workItem||{};
+    await processCanonicalBoardEvidence({
+      sourceType:'cowork',
+      sourceId:session.id||workItem.id||uuid('cowork'),
+      sourceTitle:entrypoint.id||session.title||'Co-Work conversation',
+      rawText:[phase,workItem.question||workItem.detail||'',request?.message||request?.answer||''].filter(Boolean).join(': '),
+      sourceRefs:workItem.sourceRefsJson||workItem.source_refs_json||[],
+      domainRoutes:['cowork','board_of_observers'],
+      metadata:{
+        source:'val_cowork',
+        sessionId:session.id||'',
+        workItemId:workItem.id||'',
+        entrypointId:entrypoint.id||'',
+        phase,
+        scope:session.scope,
+        noExternalAction:true
+      }
+    });
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
 });
 async function executeGmailDraftPacket({packet,payload}){
-  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
-  if((status.missingScopes||[]).length)throw new Error('Gmail compose scope missing');
-  const token=await getGoogleToken();
+  const googleProvider=String(payload.googleProvider||payload.google_provider||'google');
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  if(missingGoogleScopes(['https://www.googleapis.com/auth/gmail.compose'],accountTokens).length)throw new Error('Gmail compose scope missing');
+  const token=await getGoogleTokenForProvider(googleProvider);
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
   const to=payload.to||(/@/.test(packet.targetId||'')?packet.targetId:'');
   const body=payload.body||payload.bodyPreview||'';
@@ -32455,7 +36732,7 @@ async function executeGmailDraftPacket({packet,payload}){
   const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||packet.targetId||undefined}})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
-  return {providerResponseId:d.id||d.message?.id||'',providerResponseSummary:'Created Gmail draft. Nothing was sent.',raw:d};
+  return {providerResponseId:d.id||d.message?.id||'',providerResponseSummary:`Created Gmail draft${accountTokens.account_email?` in ${accountTokens.account_email}`:''}. Nothing was sent.`,raw:{...d,googleProvider,accountEmail:accountTokens.account_email||''}};
 }
 async function executeOutlookDraftPacket({packet,payload}){
   const token=await getMicrosoftToken();
@@ -32495,16 +36772,36 @@ async function executeEmailSendPacket({packet,payload}){
     }
     return {providerResponseId:packet.id,providerResponseSummary:`Sent Outlook email to ${to}.`,raw:{provider:'outlook',status:202}};
   }
-  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.send']);
-  if((status.missingScopes||[]).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
-  const token=await getGoogleToken();
+  const googleProvider=String(payload.googleProvider||payload.google_provider||'google');
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  if(missingGoogleScopes(['https://www.googleapis.com/auth/gmail.send'],accountTokens).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
+  const token=await getGoogleTokenForProvider(googleProvider);
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
   const lines=[`To: ${to}`,`Subject: ${subject}`,'',body];
   const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
   const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
-  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}.`,raw:d};
+  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}${accountTokens.account_email?` from ${accountTokens.account_email}`:''}.`,raw:{...d,googleProvider,accountEmail:accountTokens.account_email||''}};
+}
+async function executeSmsPacket({packet,payload}){
+  const contactId=String(payload.contactId||payload.contact_id||packet.targetId||'').trim();
+  const conversationId=String(payload.conversationId||payload.conversation_id||'').trim();
+  const message=String(payload.message||payload.body||payload.text||payload.bodyPreview||'').trim();
+  if(!contactId&&!conversationId)throw new Error('SMS send requires a GHL contact or conversation id.');
+  if(!message)throw new Error('SMS send requires a message body.');
+  const data=await ghlStrict('POST','/conversations/messages',compactObject({
+    type:'SMS',
+    contactId:contactId||undefined,
+    conversationId:conversationId||undefined,
+    message,
+    attachments:safeArray(payload.attachments).length?safeArray(payload.attachments):undefined
+  }));
+  return {
+    providerResponseId:data.message?.id||data.id||data.conversationId||conversationId||contactId,
+    providerResponseSummary:`Sent GHL SMS${contactId?` to ${contactId}`:''}.`,
+    raw:data
+  };
 }
 async function executeCrmNotePacket({packet,payload}){
   const contactId=String(packet.targetId||payload.contactId||'').trim();
@@ -32535,6 +36832,18 @@ async function executeCalendarHoldPacket({packet,payload}){
   const created=await api.createTaskBlock(task,{start,end,calendarId:payload.calendarId||'primary',durationMinutes:duration,focus:true});
   return {providerResponseId:created.eventId||'',providerResponseSummary:`Created private ${created.provider||provider} calendar hold.`,raw:created};
 }
+async function executeGoogleDocAppendPacket({packet,payload}){
+  const documentId=String(payload.documentId||payload.document_id||packet.targetId||'').trim();
+  const content=String(payload.content||payload.body||payload.bodyPreview||'').trim();
+  if(!documentId)throw new Error('Google Doc append requires a document ID.');
+  if(!content)throw new Error('Google Doc append requires content.');
+  const result=await updateGoogleDoc({documentId,content,mode:'append'});
+  return {
+    providerResponseId:result.id||documentId,
+    providerResponseSummary:`Appended the meeting overview to ${result.title||'the selected Google Doc'}.`,
+    raw:result
+  };
+}
 const valExternalActions = registerValExternalActionsRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -32546,22 +36855,231 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
   userId:currentUserId,
   valDbReady:()=>valDbReady,
   executedBy:()=>currentUserId(),
-  executionAdapters:{
-    create_gmail_draft:executeGmailDraftPacket,
-    create_outlook_draft:executeOutlookDraftPacket,
-    send_email:executeEmailSendPacket,
-    create_crm_note:executeCrmNotePacket,
-    create_crm_task:executeCrmTaskPacket,
-    create_calendar_hold:executeCalendarHoldPacket
+  afterExternalActionPacket:async(packetsOrPacket,{phase=''}={})=>{
+    const sourcePackets=safeArray(packetsOrPacket).length?safeArray(packetsOrPacket):(packetsOrPacket?[packetsOrPacket]:[]);
+    for(const packet of sourcePackets){
+      await processExternalActionBoardEvidence(packet);
+      if(phase==='executed'&&['send_email','send_sms'].includes(packet.actionType||packet.action_type)){
+        const sourceContext=jsonRecord(packet.sourceContextJson||packet.source_context_json);
+        const payload=jsonRecord(packet.payloadPreviewJson||packet.payload_preview_json);
+        const draftId=sourceContext.draftId||sourceContext.draft_id||'';
+        const readyForYouId=sourceContext.readyForYouId||sourceContext.ready_for_you_id||sourceContext.readyForYouItemId||'';
+        const internalDraft=draftId?(await listDrafts()).find(draft=>String(draft.id)===String(draftId)):null;
+        const readyItem=readyForYouId&&valReadyForYou?.getItem?await valReadyForYou.getItem(readyForYouId):null;
+        const readyArtifact=readyItem?.metadataJson?.preparedArtifact||{};
+        await recordDraftLearning({
+          outcome:'approved_and_sent',
+          artifactKind:(packet.actionType||packet.action_type)==='send_sms'?'sms_draft':(readyArtifact.kind||internalDraft?.draftType||'email_draft'),
+          subject:payload.subject||readyArtifact.subject||readyArtifact.title||internalDraft?.subject||packet.whyThisActionExists||'',
+          originalBody:readyArtifact.html||readyArtifact.body||readyArtifact.content||internalDraft?.body||'',
+          finalBody:payload.body||payload.message||payload.text||payload.bodyPreview||'',
+          draftId,
+          readyForYouId,
+          sourceRefs:packet.sourceRefsJson||packet.source_refs_json||[]
+        }).catch(()=>{});
+      }
+    }
+  },
+	  executionAdapters:{
+	    create_gmail_draft:executeGmailDraftPacket,
+	    create_outlook_draft:executeOutlookDraftPacket,
+	    send_email:executeEmailSendPacket,
+	    send_sms:executeSmsPacket,
+	    create_crm_note:executeCrmNotePacket,
+	    create_crm_task:executeCrmTaskPacket,
+	    create_calendar_hold:executeCalendarHoldPacket,
+	    append_google_doc:executeGoogleDocAppendPacket
   },
   auditLog,
   logger:console
+});
+const valEnvironments = registerValEnvironmentsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  externalActions:valExternalActions,
+  onPacketPublished:async({packet,environment})=>{
+    if(!valBoardPackets?.createPackets)return null;
+    const boardPackets=await valBoardPackets.createPackets([{
+      id:packet.id,
+      sourceType:'environment',
+      sourceId:packet.sourceRunId,
+      packetType:'environment_result_packet_v1',
+      title:packet.title,
+      summary:packet.summary,
+      sourceRefs:safeArray(packet.evidenceRefsJson),
+      payload:{
+        sourceEnvironmentId:environment.id,
+        sourceEnvironmentName:environment.name,
+        chiefAdvisory:packet.chiefAdvisoryJson||{},
+        outputSummary:packet.outputSummaryJson||{},
+        lineage:packet.lineageJson||{},
+        noExternalAction:true
+      }
+    }]);
+    if(!boardPackets.some(item=>item.status==='active')){
+      throw new Error('The Environment result did not enter the canonical Board queue.');
+    }
+    queueBoardIntelligenceForPackets(boardPackets,{
+      type:'environment_result_published',
+      sourceType:'environment',
+      sourceId:packet.sourceRunId
+    });
+    return boardPackets;
+  },
+  onNeedsAttention:async({environment,source,run,reason})=>{
+    if(!valCanonicalWork?.admit)return null;
+    const title=`Resolve ${environment.name}`;
+    const exactSourceQuote=String(reason||'This Environment needs attention.').trim();
+    return valCanonicalWork.admit({
+      sourceType:'environment_run',
+      sourceId:run.id,
+      workType:'environment_attention',
+      ownership:'self',
+      ownerId:currentUserId(),
+      ownerName:currentValUser()?.name||currentValUser()?.fullName||'Executive',
+      actionText:'Resolve',
+      objectText:environment.name,
+      outcomeText:'Restore the Environment so its configured follow-through can complete.',
+      title,
+      summary:`${environment.name} paused because ${reason}`,
+      exactSourceQuote,
+      sourceRefs:[{
+        sourceType:'transcript',
+        sourceId:source.id,
+        quoteOrSummary:exactSourceQuote,
+        confidence:1,
+        createdAt:new Date().toISOString()
+      }],
+      confidence:1,
+      metadata:{
+        environmentId:environment.id,
+        environmentRunId:run.id,
+        failureReason:reason,
+        notifyChiefOfStaff:true,
+        pausedVisibly:true
+      }
+    });
+  },
+  loadTranscript:async transcriptId=>{
+    const indexed=await transcriptIndexData(transcriptId);
+    const row=indexed.transcripts.find(item=>String(item.transcriptId||item.id)===String(transcriptId));
+    if(!row)return null;
+    const detail=await transcriptWithCalendarInvitees(transcriptDetailFromIndex(indexed,row));
+    const exact=transcriptSourceReceipt(detail);
+    return {
+      id:detail.id||detail.transcriptId||transcriptId,
+      title:detail.title||detail.meetingTitle||'Meeting',
+      occurredAt:detail.meetingDatetime||detail.createdAt||'',
+      attendees:detail.attendees||[],
+      actionItems:exact.actionItems,
+      keyPoints:exact.keyPoints,
+      exactBody:exact.body,
+      sourceUrl:detail.sourceUrl||detail.downloadUrl||'',
+      rawText:detail.transcriptText||detail.rawTranscript||'',
+      executiveEmails:[
+        currentValUser()?.email,
+        currentValUser()?.emailAddress
+      ].filter(Boolean)
+    };
+  },
+  previewObserver:async({observer,source,exactSections,runId,siblingContextPackets=[]})=>{
+    const evidenceQuote=compactText(exactSections.body,2600);
+    const packet={
+      id:`${runId}_${observer.observerId}_source`,
+      sourceType:'transcript',
+      sourceId:source.id,
+      packetType:'environment_test_packet',
+      title:source.title,
+      summary:evidenceQuote.slice(0,520),
+      payloadJson:{evidenceContent:evidenceQuote},
+      sourceRefsJson:[{
+        source_type:'transcript',
+        source_id:source.id,
+        quote_or_summary:evidenceQuote,
+        confidence:1,
+        created_at:source.occurredAt||new Date().toISOString()
+      }],
+      createdAt:source.occurredAt||new Date().toISOString()
+    };
+    const environmentPackets=safeArray(siblingContextPackets).map(item=>({
+      id:item.id,
+      sourceType:'environment',
+      sourceId:item.sourceRunId||item.id,
+      packetType:'environment_result_packet_v1',
+      title:item.title||'Sibling Environment result',
+      summary:compactText(item.summary||'',900),
+      payloadJson:{
+        evidenceContent:compactText([
+          item.summary||'',
+          item.chiefAdvisoryJson?.recommendation||''
+        ].filter(Boolean).join(' '),1200),
+        sourceEnvironmentId:item.sourceEnvironmentId||'',
+        outputSummary:item.outputSummaryJson||{}
+      },
+      sourceRefsJson:safeArray(item.evidenceRefsJson),
+      createdAt:item.createdAt||new Date().toISOString()
+    }));
+    const output=await reasonBoardEvidenceForObserver({
+      observerName:observer.observerName,
+      promptKey:observer.promptKey||'event_intelligence_pass',
+      contextPacket:{
+        event:{type:'environment_run',sourceType:'transcript',sourceId:source.id,packetIds:[packet.id,...environmentPackets.map(item=>item.id)]},
+        boardPackets:[packet,...environmentPackets]
+      },
+      deterministicOutput:{
+        observer:observer.observerName,
+        observation:'No meaningful signal from my lens.',
+        evidence:[],
+        confidence:0.9,
+        conviction:0,
+        packetReviews:[],
+        packet_reviews:[]
+      }
+    });
+    const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||{};
+    const packetReviews=safeArray(output.packetReviews||output.packet_reviews);
+    return {
+      type:'observer_receipt_v1',
+      observerId:observer.observerId,
+      observerName:observer.observerName,
+      definitionRef:observer.definitionRef,
+      status:review.status==='observed'?'observed':'no_meaningful_signal',
+      observation:review.observation||output.observation||'No meaningful signal from my lens.',
+      watching:review.watching||'',
+      concern:review.concern||'',
+      question:review.question||'',
+      evidence:safeArray(review.evidence||output.evidence),
+      environmentContextReviews:environmentPackets.map((contextPacket,index)=>{
+        const contextReview=packetReviews[index+1]||{};
+        return {
+          packetId:contextPacket.id,
+          sourceEnvironmentId:contextPacket.payloadJson?.sourceEnvironmentId||'',
+          status:contextReview.status||'reviewed',
+          observation:contextReview.observation||'',
+          evidence:safeArray(contextReview.evidence)
+        };
+      }),
+      confidence:Number(review.confidence??output.confidence??0),
+      externalActionPolicy:'never'
+    };
+  }
 });
 registerValExecutiveInstructionRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog
 });
-const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
+const reasonChiefOfStaffRecommendation=createChiefOfStaffReasoner({
+  callModel:args=>callValModel({...args,lane:'board'}),
+  logger:console
+});
+valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
   getStore:valStore,
@@ -32572,17 +37090,240 @@ const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console,
+  observerReasoner:reasonBoardEvidenceForObserver,
+  chiefReasoner:reasonChiefOfStaffRecommendation,
+  admitCanonicalWork:input=>valCanonicalWork.admit(input),
+  listCanonicalWork:input=>valCanonicalWork.list(input),
+  recordChiefOrdering:(id,input)=>valCanonicalWork.recordChiefOrdering(id,input),
+  rebalanceChiefQueue:()=>valCanonicalWork.rebalanceChiefQueue(),
+  completeCanonicalWorkItem:(id,input)=>valCanonicalWork.transition(id,input),
+  scheduledOnly:true,
   loaders:{
     loadTasks,
     listTeachValCoreMemory,
+    listRecentTranscripts:({limit=8}={})=>recentTranscripts(3650,limit),
     listRelationshipProfiles,
     listRecentConversationSummaries:valConversationIdentity.listRecentConversationSummaries,
     buildConversationContext:valConversationIdentity.buildConversationContext,
     resolveIdentity:valConversationIdentity.resolveIdentity,
     listHighSignalClassifications:valExecutiveInbox.listHighSignalClassifications,
-    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates
+    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates,
+    listBoardPackets:async({limit=60}={})=>{
+      const [boardPackets,environmentNetwork]=await Promise.all([
+        valBoardPackets?.listPackets({limit})||[],
+        valEnvironments.listNetwork({limit}).catch(()=>({packets:[]}))
+      ]);
+      const environmentPackets=safeArray(environmentNetwork?.packets).map(packet=>({
+        id:packet.id,
+        sourceType:'environment',
+        sourceId:packet.sourceRunId||packet.id,
+        packetType:'environment_result_packet_v1',
+        title:packet.title||'Environment result',
+        summary:packet.summary||'',
+        payloadJson:{
+          sourceEnvironmentId:packet.sourceEnvironmentId||'',
+          chiefAdvisory:packet.chiefAdvisoryJson||{},
+          outputSummary:packet.outputSummaryJson||{},
+          lineage:packet.lineageJson||{}
+        },
+        sourceRefsJson:safeArray(packet.evidenceRefsJson),
+        createdAt:packet.createdAt||new Date().toISOString()
+      }));
+      return [...new Map([...safeArray(boardPackets),...environmentPackets].map(packet=>[packet.id,packet])).values()]
+        .sort((a,b)=>String(b.createdAt||b.created_at||'').localeCompare(String(a.createdAt||a.created_at||'')))
+        .slice(0,Math.max(1,Math.min(Number(limit)||60,200)));
+    }
   }
 });
+let valIntelligenceMaintenanceRunning=false;
+
+async function claimScheduledBoardBriefing(slot){
+  if(!slot)return null;
+  if(pgPool){
+    const result=await dbQuery(
+      `insert into val_board_briefing_runs (
+         id,tenant_id,user_id,local_date,briefing_slot,timezone,status,packet_ids_json,started_at
+       ) values ($1,$2,$3,$4,$5,$6,'running','[]'::jsonb,now())
+       on conflict (tenant_id,user_id,local_date,briefing_slot) do nothing
+       returning *`,
+      [uuid('boardbriefing'),tenantId(),currentUserId(),slot.localDate,slot.id,slot.timeZone]
+    );
+    return result?.rows?.[0]||null;
+  }
+  const store=valStore();
+  if(!Array.isArray(store.boardBriefingRuns))store.boardBriefingRuns=[];
+  const existing=store.boardBriefingRuns.find(row=>
+    row.tenantId===tenantId()
+    && row.userId===currentUserId()
+    && row.localDate===slot.localDate
+    && row.briefingSlot===slot.id
+  );
+  if(existing)return null;
+  const row={
+    id:uuid('boardbriefing'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    localDate:slot.localDate,
+    briefingSlot:slot.id,
+    timezone:slot.timeZone,
+    status:'running',
+    packetIdsJson:[],
+    startedAt:new Date().toISOString()
+  };
+  store.boardBriefingRuns.unshift(row);
+  saveValStore(store);
+  return row;
+}
+
+async function finishScheduledBoardBriefing(id,{status='completed',packetIds=[],eventRunId='',errorMessage=''}={}){
+  if(pgPool){
+    const result=await dbQuery(
+      `update val_board_briefing_runs
+       set status=$1,
+           packet_ids_json=$2::jsonb,
+           event_run_id=$3,
+           error_message=$4,
+           completed_at=now()
+       where id=$5 and tenant_id=$6 and user_id=$7
+       returning *`,
+      [status,JSON.stringify(packetIds),eventRunId,errorMessage,id,tenantId(),currentUserId()]
+    );
+    return result?.rows?.[0]||null;
+  }
+  const store=valStore();
+  const row=safeArray(store.boardBriefingRuns).find(item=>item.id===id);
+  if(!row)return null;
+  Object.assign(row,{status,packetIdsJson:packetIds,eventRunId,errorMessage,completedAt:new Date().toISOString()});
+  saveValStore(store);
+  return row;
+}
+
+async function completedBoardPacketIds(){
+  if(pgPool){
+    const result=await dbQuery(
+      `select distinct packet->>'id' as packet_id
+       from event_intelligence_runs event_run
+       cross join lateral jsonb_array_elements(
+         case
+           when jsonb_typeof(event_run.context_packet_json->'boardPackets')='array'
+             then event_run.context_packet_json->'boardPackets'
+           else '[]'::jsonb
+         end
+       ) packet
+       where event_run.tenant_id=$1
+         and event_run.user_id=$2
+         and event_run.status='completed'`,
+      [tenantId(),currentUserId()]
+    );
+    return new Set(safeArray(result?.rows).map(row=>String(row.packet_id||'')).filter(Boolean));
+  }
+  const ids=safeArray(valStore().eventIntelligenceRuns)
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.status==='completed')
+    .flatMap(row=>safeArray(row.contextPacketJson?.boardPackets).map(packet=>String(packet.id||'')));
+  return new Set(ids.filter(Boolean));
+}
+
+async function pendingScheduledBoardPackets(){
+  const [packets,completedIds]=await Promise.all([
+    valBoardPackets?.listPackets({limit:1000,status:'active'})||[],
+    completedBoardPacketIds()
+  ]);
+  return safeArray(packets)
+    .filter(packet=>packet&&!packet.prototype&&!completedIds.has(String(packet.id||'')))
+    .sort((a,b)=>String(a.createdAt||a.created_at||'').localeCompare(String(b.createdAt||b.created_at||'')))
+    .slice(0,VAL_BOARD_PACKETS_PER_BRIEFING);
+}
+
+async function runScheduledBoardBriefingIfDue({now=new Date()}={}){
+  if(VAL_BOARD_LAUNCH_HOLD){
+    return {ok:true,skipped:true,reason:'launch_hold'};
+  }
+  const slot=currentBoardBriefingSlot({now,timeZone:CLIENT_CONFIG.timezone});
+  if(!slot)return {ok:true,skipped:true,reason:'before_first_briefing'};
+  const checkpoint=await claimScheduledBoardBriefing(slot);
+  if(!checkpoint)return {ok:true,skipped:true,reason:'briefing_already_claimed',slot};
+  const packets=await pendingScheduledBoardPackets();
+  const packetIds=packets.map(packet=>packet.id);
+  if(!packets.length){
+    await finishScheduledBoardBriefing(checkpoint.id,{status:'completed_no_packets'});
+    return {ok:true,slot,packetIds:[],observerCalls:0};
+  }
+  const result=await triggerBoardIntelligenceForPackets(packets,{
+    type:'scheduled_board_briefing',
+    sourceType:'board_briefing',
+    sourceId:slot.sourceId,
+    localDate:slot.localDate,
+    briefingSlot:slot.id
+  });
+  if(result?.ok){
+    await finishScheduledBoardBriefing(checkpoint.id,{
+      status:'completed',
+      packetIds,
+      eventRunId:result.eventRun?.id||''
+    });
+    return {ok:true,slot,packetIds,observerCalls:DEFAULT_OBSERVERS.length,eventRunId:result.eventRun?.id||''};
+  }
+  const status=result?.deferred?'deferred_budget':'failed';
+  const errorMessage=result?.reason||'The scheduled Board briefing did not complete.';
+  await finishScheduledBoardBriefing(checkpoint.id,{status,packetIds,errorMessage});
+  return {ok:false,slot,packetIds,observerCalls:0,error:errorMessage};
+}
+
+app.get('/api/val/board/briefing-status',async(req,res)=>{
+  try{
+    await valDbReady;
+    const next=nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone});
+    let runs=[];
+    if(pgPool){
+      const result=await dbQuery(
+        `select * from val_board_briefing_runs
+         where tenant_id=$1 and user_id=$2
+         order by local_date desc,started_at desc
+         limit 6`,
+        [tenantId(),currentUserId()]
+      );
+      runs=result?.rows||[];
+    }else{
+      runs=safeArray(valStore().boardBriefingRuns).slice(0,6);
+    }
+    res.json({
+      ok:true,
+      schedule:['06:00','12:00','17:00'],
+      timezone:CLIENT_CONFIG.timezone,
+      nextBriefing:next?.id||'morning',
+      packetsPerBriefing:VAL_BOARD_PACKETS_PER_BRIEFING,
+      dailyObserverCallLimit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
+      model:OPENAI_OBSERVER_MODEL,
+      launchHold:VAL_BOARD_LAUNCH_HOLD,
+      runs
+    });
+  }catch(error){
+    res.status(500).json({ok:false,error:error.message});
+  }
+});
+
+app.get('/api/val/ai-budget',async(req,res)=>{
+  try{
+    await valDbReady;
+    res.json({ok:true,...await valAiBudgetStatus()});
+  }catch(error){
+    res.status(500).json({ok:false,error:error.message});
+  }
+});
+
+async function runValIntelligenceMaintenance(){
+  if(valIntelligenceMaintenanceRunning)return;
+  valIntelligenceMaintenanceRunning=true;
+  try{
+    await runScheduledBoardBriefingIfDue();
+  }catch(error){
+    console.warn('[val-board] scheduled briefing failed:',error.message);
+  }finally{
+    valIntelligenceMaintenanceRunning=false;
+  }
+}
+setTimeout(()=>{void runValIntelligenceMaintenance();},45000).unref();
+setInterval(()=>{void runValIntelligenceMaintenance();},60*1000).unref();
 
 const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
   relationship_packet: [
@@ -33933,10 +38674,23 @@ app.post('/api/val/intelligence/backfill',async(req,res)=>{
     if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Intelligence backfill begins after First Look.'});
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const result=await backfillValIntelligence(req.body||{});
-    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
+    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,boardPackets:result.boardPackets?.packets||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
     res.json(result);
   }catch(e){
     await auditLog({req,action:'val_intelligence_backfill_failed',resourceType:'intelligence',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/board/reconcile',async(req,res)=>{
+  try{
+    if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Board reconciliation begins after First Look.'});
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before reconciling Board packets.');
+    const result=await backfillBoardPackets(req.body||{});
+    await auditLog({req,action:'val_board_packets_reconciled',resourceType:'board_packets',metadata:{packets:result.packets||0,processed:result.processed||{},errors:result.errors?.length||0},success:true}).catch(()=>{});
+    res.json({ok:true,...result});
+  }catch(e){
+    await auditLog({req,action:'val_board_packets_reconcile_failed',resourceType:'board_packets',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });
@@ -34489,6 +39243,25 @@ function hearthActionSpokenSentence(value=''){
 function hearthActionProfilePhone(profile={}){
   return relationshipProfilePrimaryPhone(profile);
 }
+function hearthActionProfileContactId(profile={}){
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return realRelationshipContactId(
+    profile.personId||
+    profile.person_id||
+    profile.contactId||
+    profile.contact_id||
+    profile.crmContactId||
+    profile.crm_contact_id||
+    metadata.contactId||
+    metadata.contact_id||
+    metadata.crmContactId||
+    metadata.crm_contact_id||
+    packet.person?.crm_contact_id||
+    packet.person?.crmContactId||
+    ''
+  );
+}
 function hearthActionProfileCompany(profile={}){
   const metadata=profile.metadata||{};
   const enrichment=metadata.relationshipEnrichment||metadata.relationship_enrichment||profile.relationshipEnrichment||null;
@@ -34557,6 +39330,7 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
     const display=String(profile.displayName||profile.display_name||profile.name||'').trim();
     const email=hearthActionUsableEmail(relationshipProfilePrimaryEmail(profile));
     const phone=hearthActionProfilePhone(profile);
+    const contactId=hearthActionProfileContactId(profile);
     const company=hearthActionProfileCompany(profile);
     const comparable=hearthActionComparableName(display);
     let score=0;
@@ -34568,27 +39342,29 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
     if(cleanNeedle&&looseScore>=0.5)score+=0.62*looseScore;
     if(cleanNeedle&&email&&email.includes(cleanNeedle.replace(/\s+/g,'.')))score+=0.42;
     if(cleanCompanyHint&&hearthActionLooseNameScore(cleanCompanyHint,company)>=0.5)score+=0.22;
-    return {profile,display,email,phone,company,score};
+    return {profile,display,email,phone,contactId,company,score};
   }).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
   const best=scored[0]||null;
   const broader=await resolveContactFromContext({name:needle,email:directEmail,company:companyHint}).catch(()=>null);
   const broaderContact=broader?.contact||null;
   const broaderEmail=hearthActionUsableEmail(broaderContact?.email||'');
   const broaderPhone=normalizePhoneNumber(broaderContact?.phone||'');
+  const broaderContactId=resolvedCrmContactId(broaderContact);
   if(best){
     return {
       ...best,
       email:best.email||broaderEmail,
       phone:best.phone||broaderPhone,
+      contactId:best.contactId||broaderContactId,
       status:best.score>=0.65?'matched':'possible_match',
       contactSource:best.email?'relationship_profile':(broaderEmail?'broader_contact_context':'relationship_profile'),
       matches:scored.slice(0,5)
     };
   }
   if(broaderContact&&(broaderEmail||broaderPhone||broader.status==='matched'||broader.status==='possible_match')){
-    return {profile:null,display:broaderContact.name||needle,email:broaderEmail||directEmail,phone:broaderPhone,score:Number(broader.confidence||0),status:broader.status||'possible_match',contactSource:broaderContact.source||'broader_contact_context',matches:broader.matches||[]};
+    return {profile:null,display:broaderContact.name||needle,email:broaderEmail||directEmail,phone:broaderPhone,contactId:broaderContactId,score:Number(broader.confidence||0),status:broader.status||'possible_match',contactSource:broaderContact.source||'broader_contact_context',matches:broader.matches||[]};
   }
-  return {profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
+  return {profile:null,email:directEmail,phone:'',contactId:'',status:directEmail?'direct_email':'not_found',matches:[]};
 }
 async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,contextText=''}={}){
   const actionText=[contextText,lastUser].filter(Boolean).join('\n');
@@ -34610,6 +39386,7 @@ async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,conte
       summary:`Prepare email to ${contactName}.`,
       sourceContext:{source:'hearth_home_action',relationshipProfileId:contact.profile?.id||'',relationshipName:contactName}
     });
+    await processExternalActionBoardEvidence(packet);
     const subject=packet.payloadPreviewJson?.subject||hearthActionSubject(lastUser,contactName);
     const bodyPreview=voiceMode ? hearthActionSpokenSentence(packet.payloadPreviewJson?.body||body) : hearthActionPreviewText(packet.payloadPreviewJson?.body||body,700);
     return {
@@ -34623,7 +39400,23 @@ async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,conte
     if(!nameCandidate)return {content:'Who should I text?',extra:{hearthActionPrep:true,actionKind:'sms',needs:'recipient'}};
     if(!contact.phone)return {content:`I can prepare that, but I need a safe phone number for ${contactName} first.`,extra:{hearthActionPrep:true,actionKind:'sms',contactResolution:contact.status,needs:'phone_number'}};
     const body=hearthActionMessageBody(lastUser);
-    return {content:body?`I found ${contactName}. I can prepare that SMS for approval before anything sends.`:`I found ${contactName}. What should the text say?`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone},needs:body?'approval_packet':'message_body',noExternalAction:true}};
+    if(!body)return {content:`I found ${contactName}. What should the text say?`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone,contactId:contact.contactId||''},needs:'message_body',noExternalAction:true}};
+    if(!contact.contactId)return {content:`I found ${contactName}'s phone number, but I do not have the linked GHL contact yet. Add or link this person in Stewardship before I prepare the SMS send.`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone},needs:'ghl_contact_link',noExternalAction:true}};
+    const packet=await valExternalActions.createSmsSendPacket({
+      contactId:contact.contactId,
+      recipientName:contactName,
+      message:body,
+      summary:`Prepare SMS to ${contactName}.`,
+      sourceContext:{source:'hearth_home_action',relationshipProfileId:contact.profile?.id||'',relationshipName:contactName,contactId:contact.contactId}
+    });
+    await processExternalActionBoardEvidence(packet);
+    const bodyPreview=voiceMode ? hearthActionSpokenSentence(packet.payloadPreviewJson?.message||body) : hearthActionPreviewText(packet.payloadPreviewJson?.message||body,700);
+    return {
+      content:voiceMode
+        ? `I found ${contactName}. I’ll text: ${bodyPreview}. Say “Send” when you want me to send it.`
+        : [`I found ${contactName} and prepared the SMS for approval.`, `Message: ${bodyPreview}`, 'Say “Send” when you want me to send it. Nothing has been sent yet.'].join('\n'),
+      extra:{hearthActionPrep:true,actionKind:'sms',externalActionPacket:packet,noExternalAction:true}
+    };
   }
   if(intent.kind==='reminder'){
     return {content:'I can create that reminder. What should it remind you to do, and when?',extra:{hearthActionPrep:true,actionKind:'reminder',needs:'task_and_time',noExternalAction:true}};
@@ -34734,9 +39527,14 @@ async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=fals
     const calendarFallback=hearthFastCalendarFallback(lastUser,dashboard);
     if(calendarFallback) return calendarFallback;
     console.warn('Fast Hearth chat fallback:',error.message);
+    const capacityUnavailable=valReasoningCapacityError(error);
     return voiceMode
-      ? 'I am here. I did not get a clean fast response, so ask me one smaller thing and I will stay with you.'
-      : 'I am here. I did not get a clean fast response on that pass, so give me one smaller thread and I will stay with it.';
+      ? capacityUnavailable
+        ? 'I heard you, but my reasoning connection needs attention right now. Your message is still here. You do not need to repeat it.'
+        : 'I heard you, but the connection dropped before I could answer. Stay with me and try that once more.'
+      : capacityUnavailable
+        ? 'I heard you, but VAL’s reasoning connection needs attention right now. Your message is still here. You do not need to shorten or repeat it.'
+        : 'I heard you, but the connection dropped before I could answer. Your message is still here; try Send once more.';
   }
 }
 function sendFastHearthChatNow(res,{content,messages,conversationId,conversationTitle,channel,projectContext,extra={}}){
@@ -34749,8 +39547,30 @@ function sendFastHearthChatNow(res,{content,messages,conversationId,conversation
     messages:fullMessages,
     metadata:{channel:channel||'hearth_cowork',savedBy:'fast_hearth_chat_route',projectContext:projectContext||undefined,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',deferredPersistence:true}
   }).catch(error=>console.warn('Fast Hearth chat deferred save failed:',error.message));
+  void recordValConversationTurnPacket({
+    conversationId,
+    title:conversationTitle,
+    sourceType:boardConversationSourceType(channel,'cowork'),
+    channel:channel||'hearth_cowork',
+    messages:fullMessages,
+    lastUser:[...messages].reverse().find(message=>message?.role==='user')?.content||'',
+    assistantContent:content,
+    metadata:{...extra,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',fastHearthChat:true,noExternalAction:extra.noExternalAction!==false}
+  });
 }
 function ghlVoiceUserMessage(body={}){
+  const nestedBodies=[
+    body.data,
+    body.input,
+    body.inputs,
+    body.arguments,
+    body.args,
+    body.parameters,
+    body.params
+  ].filter(value=>value&&typeof value==='object'&&!Array.isArray(value));
+  const nestedMessage=nestedBodies
+    .map(value=>ghlVoiceUserMessage(value))
+    .find(Boolean);
   return String(
     body.user_request
     || body.userRequest
@@ -34763,6 +39583,7 @@ function ghlVoiceUserMessage(body={}){
     || body.query
     || body.prompt
     || body.messages?.slice?.().reverse?.().find?.(m=>m?.role==='user')?.content
+    || nestedMessage
     || ''
   ).trim();
 }
@@ -34934,6 +39755,477 @@ async function ghlVoiceContactLookupResponse({lastUser,contextText=''}={}){
   if(contact.phone)return `I found ${contactName} in VAL and I have a phone number available. I can prepare a text for your approval.`;
   return `I checked VAL for ${contactName}, but I do not have a safe email address or phone number yet.`;
 }
+function chatContextCorrection(lastUser=''){
+  const text=String(lastUser||'').trim();
+  if(!/\b(no|not quite|actually|that's wrong|thats wrong|you missed|correction|wrong person|not them|my bad)\b/i.test(text))return null;
+  return {
+    type:'correction',
+    content:'Oh. I should have known that. Thank you for correcting me. I will hold the correction before I try to move anything forward.\n\nAnd for the record, you are still the most important person on any list.'
+  };
+}
+function chatContextIntent(lastUser=''){
+  const text=String(lastUser||'').trim();
+  if(/\b(remember this|save this|note this|keep this in mind)\b/i.test(text))return {type:'memory',content:text};
+  if(/\b(update|change|correct)\b[\s\S]{0,80}\b(memory|context|profile|relationship|project)\b/i.test(text))return {type:'context_update',content:text};
+  return null;
+}
+function collectSelectedSourceIds(value,result={transcriptIds:new Set(),evidenceIds:new Set(),observationIds:new Set()},depth=0){
+  if(!value||depth>7)return result;
+  if(Array.isArray(value)){
+    value.forEach(item=>collectSelectedSourceIds(item,result,depth+1));
+    return result;
+  }
+  if(typeof value!=='object')return result;
+  const sourceType=String(value.source_type||value.sourceType||value.type||value.kind||'').toLowerCase();
+  const id=String(value.source_id||value.sourceId||value.id||value.transcriptId||value.transcript_id||'').trim();
+  if(value.transcriptId||value.transcript_id||/transcript/.test(sourceType)){
+    const transcriptId=String(value.transcriptId||value.transcript_id||id||'').trim();
+    if(transcriptId)result.transcriptIds.add(transcriptId);
+  }
+  for(const key of ['source_ids','sourceIds']){
+    if(Array.isArray(value[key])&&/transcript/.test(sourceType)){
+      value[key].forEach(item=>item&&result.transcriptIds.add(String(item)));
+    }
+  }
+  for(const key of ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids']){
+    safeArray(value[key]).forEach(item=>item&&result.evidenceIds.add(String(item)));
+  }
+  for(const key of ['sourceObservationIds','sourceObservationIdsJson','observationIds','observation_ids']){
+    safeArray(value[key]).forEach(item=>item&&result.observationIds.add(String(item)));
+  }
+  for(const key of Object.keys(value)){
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|evidence_refs|whyNowPacket|why_now_packet|target|sourceItem|payload|preparedPayloadJson|prepared_payload_json)$/i.test(key)){
+      collectSelectedSourceIds(value[key],result,depth+1);
+    }
+  }
+  return result;
+}
+function selectedTranscriptText(transcript={}){
+  return String(
+    transcript.rawTranscript||
+    transcript.raw_transcript||
+    transcript.transcriptText||
+    transcript.transcript_text||
+    transcript.rawText||
+    transcript.raw_text||
+    transcript.transcript||
+    transcript.text||
+    transcript.sourceReceipt?.body||
+    transcript.summary?.executiveSummary||
+    transcript.executiveSummary||
+    transcript.summaryPreview||
+    ''
+  ).trim();
+}
+function selectedSourceWorkingBrief({selectedSourceContext={},transcripts=[]}={}){
+  const lines=[];
+  const source=selectedSourceContext?.sourceItem&&typeof selectedSourceContext.sourceItem==='object'?selectedSourceContext.sourceItem:{};
+  const envelope=selectedSourceContext?.envelope&&typeof selectedSourceContext.envelope==='object'?selectedSourceContext.envelope:{};
+  [
+    envelope.displayName ? `Envelope: ${envelope.envelopeType || 'context'} ${envelope.displayName}` : '',
+    selectedSourceContext.cardTitle ? `Action: ${selectedSourceContext.cardTitle}` : '',
+    selectedSourceContext.cardMeaning ? `Why: ${selectedSourceContext.cardMeaning}` : '',
+    source.projectName ? `Project: ${source.projectName}` : '',
+    source.managerColorName ? `Project manager color: ${source.managerColorName}` : ''
+  ].filter(Boolean).forEach(line=>lines.push(line));
+  safeArray(selectedSourceContext.contextLines)
+    .map(value=>compactText(value,360))
+    .filter(Boolean)
+    .slice(0,14)
+    .forEach(line=>lines.push(line));
+  String(selectedSourceContext.sourceBrief||'')
+    .split(/\n+/)
+    .map(value=>compactText(value,360))
+    .filter(Boolean)
+    .slice(0,14)
+    .forEach(line=>lines.push(line));
+  const focusText=[
+    selectedSourceContext.cardTitle,
+    selectedSourceContext.cardMeaning,
+    source.title,
+    source.summary,
+    ...safeArray(selectedSourceContext.sourceRefs).map(ref=>ref?.quote_or_summary||ref?.quoteOrSummary||'')
+  ].filter(Boolean).join(' ');
+  const stopWords=new Set(['about','after','again','also','because','before','being','could','from','have','into','just','more','need','should','that','their','there','these','they','this','what','when','where','which','with','would','your']);
+  const focusTerms=[...new Set((focusText.match(/[A-Za-z][A-Za-z0-9_-]{3,}/g)||[])
+    .map(term=>term.toLowerCase())
+    .filter(term=>!stopWords.has(term)))].slice(0,18);
+  for(const transcript of Array.isArray(transcripts)?transcripts:[]){
+    const structured=[
+      ...(Array.isArray(transcript.keyPoints)?transcript.keyPoints:[]),
+      ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[])
+    ].map(value=>String(value||'').trim()).filter(Boolean);
+    const matchesFocus=line=>!focusTerms.length||focusTerms.some(term=>String(line||'').toLowerCase().includes(term));
+    const focusedStructured=structured.filter(matchesFocus);
+    (focusedStructured.length?focusedStructured:structured).slice(0,12).forEach(line=>lines.push(line));
+    const textLines=String(transcript.text||'')
+      .split(/(?:\n+|(?<=[.!?])\s+)/)
+      .map(line=>line.trim())
+      .filter(line=>line.length>=28&&line.length<=500);
+    const focusedText=textLines.filter(matchesFocus);
+    (focusedText.length?focusedText:textLines).slice(0,12).forEach(line=>lines.push(line));
+  }
+  return Array.from(new Set(lines.map(line=>line.replace(/\s+/g,' ').trim()).filter(Boolean))).slice(0,18);
+}
+async function selectedHearthSourcePrompt(selectedSourceContext={}){
+  if(!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const ids=collectSelectedSourceIds(selectedSourceContext);
+  const transcriptIds=new Set(ids.transcriptIds);
+  const evidenceIds=new Set(ids.evidenceIds);
+  if(evidenceIds.size||ids.observationIds.size){
+    const evidence=await listDashboardEvidenceItems({limit:300}).catch(()=>[]);
+    for(const item of evidence){
+      const itemId=String(item.id||item.sourceId||item.source_id||'');
+      if(!evidenceIds.has(itemId)&&!ids.observationIds.has(itemId))continue;
+      const sourceType=String(item.sourceType||item.source_type||'').toLowerCase();
+      const sourceId=String(item.sourceId||item.source_id||'').trim();
+      if(/transcript/.test(sourceType)&&sourceId)transcriptIds.add(sourceId);
+    }
+  }
+  const transcripts=[];
+  for(const id of Array.from(transcriptIds).slice(0,4)){
+    const transcript=await loadTranscriptForCowork(id).catch(error=>{
+      console.warn('[hearth cowork] selected transcript load failed:',id,error.message);
+      return null;
+    });
+    if(transcript){
+      const text=selectedTranscriptText(transcript);
+      transcripts.push({
+        id,
+        title:transcript.title||transcript.meetingTitle||transcript.transcriptTitle||'Selected transcript',
+        text:text.slice(0,6000),
+        actionItems:safeArray(transcript.sourceReceipt?.actionItems).slice(0,12),
+        keyPoints:safeArray(transcript.sourceReceipt?.keyPoints).slice(0,12)
+      });
+    }
+  }
+  const sourceItem=selectedSourceContext.sourceItem&&typeof selectedSourceContext.sourceItem==='object'?selectedSourceContext.sourceItem:{};
+  const sourceRefs=safeArray(selectedSourceContext.sourceRefs).slice(0,10);
+  const envelope=selectedSourceContext.envelope&&typeof selectedSourceContext.envelope==='object'?selectedSourceContext.envelope:{};
+  const workingBrief=selectedSourceWorkingBrief({selectedSourceContext,transcripts});
+  const promptParts=[
+    envelope.displayName||envelope.envelopeType?'Selected envelope: '+JSON.stringify(envelope,null,2).slice(0,1800):'',
+    selectedSourceContext.cardTitle?'Selected Home card: '+selectedSourceContext.cardTitle:'',
+    selectedSourceContext.cardMeaning?'Why Home surfaced it: '+selectedSourceContext.cardMeaning:'',
+    workingBrief.length?'Selected working brief:\n- '+workingBrief.join('\n- '):'',
+    Object.keys(sourceItem).length?'Selected source item JSON:\n'+JSON.stringify(sourceItem,null,2).slice(0,3500):'',
+    sourceRefs.length?'Selected source references:\n'+JSON.stringify(sourceRefs,null,2).slice(0,2200):'',
+    transcripts.length?'Selected transcript source text:\n'+transcripts.map(t=>[
+      `Transcript: ${t.title} (${t.id})`,
+      t.keyPoints.length?'Key points:\n- '+t.keyPoints.join('\n- '):'',
+      t.actionItems.length?'Action items:\n- '+t.actionItems.join('\n- '):'',
+      t.text?'Text:\n'+t.text:''
+    ].filter(Boolean).join('\n')).join('\n\n---\n\n'):''
+  ].filter(Boolean);
+  if(!promptParts.length)return '';
+  return [
+    'Selected Hearth source context is the source behind the current Home card.',
+    'Use it as the thing the user is referring to. If it contains a transcript/spec, do not ask what "this" is; build from the selected source.',
+    ...promptParts
+  ].join('\n\n');
+}
+
+function selectedSourceContextEvidenceLines(value,result=[],depth=0){
+  if(!value||depth>5||result.length>60)return result;
+  if(typeof value==='string'||typeof value==='number'){
+    const text=compactText(value,320);
+    if(text&&text.length>8)result.push(text);
+    return result;
+  }
+  if(Array.isArray(value)){
+    value.slice(0,24).forEach(item=>selectedSourceContextEvidenceLines(item,result,depth+1));
+    return result;
+  }
+  if(typeof value!=='object')return result;
+  for(const [key,item] of Object.entries(value)){
+    if(!/^(title|name|label|summary|meaning|description|project|projectName|project_name|relationshipName|relationship_name|contactName|contact_name|personName|person_name|counterpartyName|counterparty_name|what_changed|why_it_matters|what_val_now_knows|evidence_summary|recommended_next_step|reason_it_matters|why|detail|sourceBrief|source_brief|contextLines|context_lines|sourceRefs|source_refs|sourceRefsJson|sourceContext|source_context|workingBrief|working_brief|metadata|metadataJson|payload|packetFields|sourceItem|preparedArtifact|prepared_artifact|target)$/i.test(key))continue;
+    selectedSourceContextEvidenceLines(item,result,depth+1);
+  }
+  return result;
+}
+
+function selectedSourceEvidenceBundle({selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const source=selectedSourceContext&&typeof selectedSourceContext==='object'?selectedSourceContext:{};
+  const promptLines=String(selectedSourcePrompt||'')
+    .split(/\n+/)
+    .map(line=>line.trim())
+    .filter(Boolean)
+    .map(line=>line.replace(/^[-*]\s*/,'').trim())
+    .filter(Boolean);
+  const contextLines=safeArray(source.contextLines || source.context_lines)
+    .concat(String(source.sourceBrief || source.source_brief || '').split(/\n+/))
+    .concat(selectedSourceContextEvidenceLines(source))
+    .map(line=>compactText(line,260))
+    .filter(Boolean);
+  const refs=safeArray(source.sourceRefs || source.source_refs || source.sourceRefsJson || source.source_refs_json)
+    .map(ref=>typeof ref==='string'?ref:(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.title||ref.sourceTitle||ref.source_title||''))
+    .map(line=>compactText(line,260))
+    .filter(Boolean);
+  const transcriptLines=promptLines.filter(line=>
+    !/^Selected (Hearth|source|working|transcript|envelope|card|source references|source item JSON)/i.test(line) &&
+    !/^[{}\[\],]+$/.test(line) &&
+    line.length>12
+  );
+  const all=Array.from(new Set([...contextLines,...refs,...transcriptLines]
+    .map(line=>line.replace(/^Text:\s*/i,'').replace(/^Action items?:\s*/i,'').replace(/^Key points?:\s*/i,'').trim())
+    .filter(line=>line.length>10)));
+  const buckets={
+    project:[],
+    decision:[],
+    build:[],
+    blocker:[],
+    next:[],
+    people:[]
+  };
+  for(const line of all){
+    if(/\b(project|initiative|program|client|account|workstream|deliverable|objective)\b/i.test(line))buckets.project.push(line);
+    if(/\b(agreed|decided|decision|price|pricing|timeline|scope|proposal|approval|confirmed)\b/i.test(line))buckets.decision.push(line);
+    if(/\b(dashboard|HTML|CSS|iframe|CRM|GHL|pipeline|column|tag|automation|metric|field|stage)\b/i.test(line))buckets.build.push(line);
+    if(/\b(block|blocked|unclear|waiting|loose|fuzzy|risk|issue|missing|needs|must|should)\b/i.test(line))buckets.blocker.push(line);
+    if(/\b(next step|handoff|owner|send|finish|create|build|review|follow|action item)\b/i.test(line))buckets.next.push(line);
+    if(/\b(person|people|client|partner|contact|stakeholder|owner|recipient|attendee|relationship)\b/i.test(line))buckets.people.push(line);
+  }
+  const topLines=all.slice(0,10);
+  const uniqueBucket=(items)=>Array.from(new Set(items)).slice(0,4);
+  return {
+    all:topLines,
+    project:uniqueBucket(buckets.project),
+    decision:uniqueBucket(buckets.decision),
+    build:uniqueBucket(buckets.build),
+    blocker:uniqueBucket(buckets.blocker),
+    next:uniqueBucket(buckets.next),
+    people:uniqueBucket(buckets.people)
+  };
+}
+
+function selectedSourceSection(title,lines=[]){
+  const cleaned=Array.from(new Set(safeArray(lines).map(line=>compactText(line,220)).filter(Boolean))).slice(0,3);
+  if(!cleaned.length)return '';
+  return [title,...cleaned.map(line=>'- '+line)].join('\n');
+}
+
+function selectedSourceObserverReviews(source={}){
+  const observer=source.selectedObserver&&typeof source.selectedObserver==='object'?source.selectedObserver:{};
+  const boardObserver=source.board?.observer&&typeof source.board.observer==='object'?source.board.observer:{};
+  const reviews=[
+    ...safeArray(source.observerProofReviews),
+    ...safeArray(observer.meaningfulReviews),
+    ...safeArray(observer.liveReviews),
+    ...safeArray(boardObserver.meaningfulReviews),
+    ...safeArray(boardObserver.liveReviews)
+  ].filter(Boolean);
+  const seen=new Set();
+  return reviews.map((review)=>({
+    observerName:review.observerName||observer.name||boardObserver.name||source.chiefOfStaffRead?.selectedObserver||'Observer',
+    status:review.status||'observed',
+    line:review.line||review.lensFinding||review.observation||'',
+    evidenceLine:review.evidenceLine||review.evidence?.quoteOrSummary||review.evidence?.packetTitle||review.evidence?.sourceType||'',
+    people:safeArray(review.people),
+    projects:safeArray(review.projects),
+    decisionObjects:safeArray(review.decisionObjects)
+  })).filter((review)=>{
+    const key=[review.observerName,review.line,review.evidenceLine,review.people.join(','),review.projects.join(',')].join('|').toLowerCase();
+    if(seen.has(key))return false;
+    seen.add(key);
+    return review.line||review.evidenceLine||review.people.length||review.projects.length||review.decisionObjects.length;
+  }).slice(0,8);
+}
+
+function selectedSourceObserverDirectAnswer({lastUser='',selectedSourceContext={}}={}){
+  const text=String(lastUser||'').trim();
+  if(!text||!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const isObserverContext=selectedSourceContext.homeFullContext||selectedSourceContext.selectedObserver||safeArray(selectedSourceContext.observerProofReviews).length;
+  if(!isObserverContext)return '';
+  const asksObserverQuestion=/\b(evidence|proof|source|why|context|what.*seeing|watching|concern|explore|tone|changed|repair|relationship|who|which|person|people|project|what changed|what happened|why.*matter)\b/i.test(text);
+  if(!asksObserverQuestion)return '';
+  const observer=selectedSourceContext.selectedObserver&&typeof selectedSourceContext.selectedObserver==='object'?selectedSourceContext.selectedObserver:{};
+  const observerName=observer.name||selectedSourceContext.chiefOfStaffRead?.selectedObserver||selectedSourceContext.observerName||'this Observer';
+  const reviews=selectedSourceObserverReviews(selectedSourceContext);
+  const observed=reviews.filter(review=>String(review.status||'observed')==='observed');
+  const sourceTrail=safeArray(selectedSourceContext.sourceTrail)
+    .map(item=>compactText(item.line||item.title||item.summary||'',260))
+    .filter(Boolean)
+    .slice(0,4);
+  if(!observed.length){
+    return [
+      `I cannot answer that honestly from ${observerName} yet.`,
+      '',
+      'The Observer lens is open, but the source-backed packet review is not attached to this card.',
+      sourceTrail.length?'':'',
+      sourceTrail.length?'The only source trail currently attached is:':'',
+      ...sourceTrail.map(line=>'- '+line),
+      '',
+      'That gap needs to be fixed before I name a person, repair need, tone shift, or concern.'
+    ].filter(Boolean).join('\n');
+  }
+  const people=Array.from(new Set(observed.flatMap(review=>safeArray(review.people)).filter(Boolean))).slice(0,5);
+  const projects=Array.from(new Set(observed.flatMap(review=>safeArray(review.projects)).filter(Boolean))).slice(0,4);
+  const objects=Array.from(new Set(observed.flatMap(review=>safeArray(review.decisionObjects)).filter(Boolean))).slice(0,4);
+  const primaryPerson=people[0]||'';
+  const lead=observerName==='Relationship'&&/\b(repair|relationship|who|which|tone|changed|trust|warmth|distance)\b/i.test(text)
+    ? (primaryPerson ? `I would start with ${primaryPerson}.` : 'I do not have a named relationship attached yet, so I will stay at the source level.')
+    : `${observerName} is answering from the packet review, not from a generic guess.`;
+  return [
+    lead,
+    '',
+    'What I actually observed:',
+    ...observed.slice(0,4).map(review=>'- '+compactText(review.line||review.evidenceLine,260)),
+    people.length||projects.length||objects.length?'':'',
+    people.length?'People named: '+people.join(', '):'',
+    projects.length?'Projects named: '+projects.join(', '):'',
+    objects.length?'Work named: '+objects.join(', '):'',
+    '',
+    'Evidence I can point to:',
+    ...(observed.slice(0,3).map(review=>compactText(review.evidenceLine||review.line,260)).filter(Boolean).map(line=>'- '+line)),
+    ...(!observed.some(review=>review.evidenceLine)&&sourceTrail.length?sourceTrail.map(line=>'- '+line):[]),
+    '',
+    observer.explore?'What I would explore next: '+compactText(observer.explore,180):'What I would explore next: what changed, who is affected, and what move protects trust without adding noise.'
+  ].filter(Boolean).join('\n');
+}
+
+function selectedSourceHtmlEscape(value=''){
+  return String(value||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function selectedSourceIframeDraft({title='',envelopeLabel='',bundle={},evidence=[]}={}){
+  const titleText=compactText(title||'Dashboard handoff',90)||'Dashboard handoff';
+  const projectLine=compactText(envelopeLabel||'selected source',140)||'selected source';
+  const allEvidence=safeArray(evidence).concat(safeArray(bundle.all)).map(line=>compactText(line,220)).filter(Boolean);
+  const purpose=safeArray(bundle.project)[0]||allEvidence[0]||'Source context is loaded from the selected packet.';
+  const next=safeArray(bundle.next)[0]||allEvidence.find(line=>/\b(next|handoff|owner|action|finish|send|review)\b/i.test(line))||'One clear next step needs an owner.';
+  const watch=safeArray(bundle.blocker)[0]||allEvidence.find(line=>/\b(risk|block|loose|waiting|unclear|trust|relationship)\b/i.test(line))||'Open questions stay visible until resolved.';
+  return [
+    'I have the selected packet loaded, so I am not going to ask what "this" is.',
+    '',
+    'Here is a clean iframe-ready first version based on the loaded context:',
+    '',
+    '```html',
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8" />',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    '  <title>'+selectedSourceHtmlEscape(titleText)+'</title>',
+    '  <style>',
+    '    :root { --sage:#6f806c; --rose:#c98995; --ink:#232521; --muted:#6f726a; --line:rgba(111,128,108,.22); --glass:rgba(255,255,255,.78); }',
+    '    * { box-sizing:border-box; }',
+    '    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif; color:var(--ink); background:linear-gradient(135deg,rgba(111,128,108,.11),rgba(201,137,149,.12)); }',
+    '    .dashboard { min-height:100vh; padding:24px; background:var(--glass); }',
+    '    .eyebrow { margin:0 0 10px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--sage); }',
+    '    h1 { margin:0; max-width:760px; font-size:clamp(28px,4vw,48px); line-height:1.04; font-weight:520; letter-spacing:0; }',
+    '    .context { margin:14px 0 28px; max-width:760px; color:var(--muted); font-size:15px; line-height:1.55; }',
+    '    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }',
+    '    .card { min-height:156px; padding:18px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.82); box-shadow:0 18px 45px rgba(36,35,30,.08); }',
+    '    .label { margin:0 0 18px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--sage); }',
+    '    .value { margin:0; font-size:18px; line-height:1.35; font-weight:460; }',
+    '    .next { border-color:rgba(201,137,149,.28); background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(201,137,149,.10)); }',
+    '    @media (max-width:760px) { .dashboard{padding:18px;} .grid{grid-template-columns:1fr;} }',
+    '  </style>',
+    '</head>',
+    '<body>',
+    '  <main class="dashboard">',
+    '    <p class="eyebrow">VAL prepared context</p>',
+    '    <h1>'+selectedSourceHtmlEscape(titleText)+'</h1>',
+    '    <p class="context">'+selectedSourceHtmlEscape(projectLine)+'</p>',
+    '    <section class="grid" aria-label="Dashboard context">',
+    '      <article class="card"><p class="label">Purpose</p><p class="value">'+selectedSourceHtmlEscape(purpose)+'</p></article>',
+    '      <article class="card"><p class="label">Next Move</p><p class="value">'+selectedSourceHtmlEscape(next)+'</p></article>',
+    '      <article class="card next"><p class="label">Watch Point</p><p class="value">'+selectedSourceHtmlEscape(watch)+'</p></article>',
+    '    </section>',
+    '  </main>',
+    '</body>',
+    '</html>',
+    '```',
+    '',
+    'Use this as the first iframe pass. The next refinement should be visual polish or live CRM fields, not rebuilding the context.'
+  ].join('\n');
+}
+
+function selectedHearthSourceFallbackAnswer({lastUser='',selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const source=selectedSourceContext&&typeof selectedSourceContext==='object'?selectedSourceContext:{};
+  const envelope=source.envelope&&typeof source.envelope==='object'?source.envelope:{};
+  const envelopeLabel=envelope.displayName
+    ? `${String(envelope.envelopeType||'context').replace(/_/g,' ')}: ${envelope.displayName}`
+    : 'the selected source';
+  const title=String(source.cardTitle||source.sourceItem?.title||source.sourceItem?.summary||'this item').trim();
+  const meaning=String(source.cardMeaning||source.sourceItem?.summary||source.sourceItem?.reason_it_matters||'').trim();
+  const refs=safeArray(source.sourceRefs).map(ref=>typeof ref==='string'?ref:(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.title||'')).filter(Boolean);
+  const promptLines=String(selectedSourcePrompt||'').split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  const workingBriefStart=promptLines.findIndex(line=>/^Selected working brief:?$/i.test(line));
+  const workingBriefLines=workingBriefStart>=0
+    ? promptLines.slice(workingBriefStart+1).filter(line=>/^[-*]\s+/.test(line)).map(line=>line.replace(/^[-*]\s+/,'')).slice(0,12)
+    : [];
+  const usefulLines=Array.from(new Set((workingBriefLines.length?workingBriefLines:promptLines)
+    .filter(line=>line.length>12&&!/^Selected (Hearth|source|working|transcript|envelope|card)/i.test(line))
+    .map(line=>line.replace(/^[-*]\s*/,'').slice(0,220)))).slice(0,8);
+  const contextLines=Array.from(new Set(selectedSourceContextEvidenceLines(source)
+    .map(line=>line.replace(/^[-*]\s*/,'').slice(0,220))))
+    .slice(0,8);
+  const bundle=selectedSourceEvidenceBundle({selectedSourceContext,selectedSourcePrompt});
+  const asksForStructure=/\b(outline|elements?|sections?|structure|dashboard|html|css|iframe|build|create|map)\b/i.test(lastUser);
+  const asksForIframeArtifact=/\b(html|css|iframe|embed|code|build|create|draft|template|page|full page|complete version)\b/i.test(lastUser);
+  const evidence=usefulLines.length?usefulLines:(bundle.all.length?bundle.all:(refs.length?refs.slice(0,6):contextLines));
+  if(asksForIframeArtifact&&/\b(html|css|iframe|embed|dashboard|page|template|code|build|create)\b/i.test(lastUser)){
+    return selectedSourceIframeDraft({title,envelopeLabel,bundle,evidence});
+  }
+  if(asksForStructure){
+    const sections=[
+      selectedSourceSection('What this is',bundle.project.length?bundle.project:[title,meaning].filter(Boolean)),
+      selectedSourceSection('What the dashboard needs to contain',bundle.build),
+      selectedSourceSection('Decisions already in the source',bundle.decision),
+      selectedSourceSection('What is still loose',bundle.blocker),
+      selectedSourceSection('Next move',bundle.next),
+      selectedSourceSection('People/context named in the packet',bundle.people)
+    ].filter(Boolean);
+    return [
+      `I have ${envelopeLabel} loaded for "${title}".`,
+      '',
+      sections.length
+        ? 'Here is the working outline from the loaded packet:'
+        : 'The loaded packet is thin, so I can only give the safest first outline:',
+      '',
+      ...(sections.length ? sections : [
+        'What this is\n- The selected Home action is the working object.',
+        'What it needs\n- A clear dashboard purpose, visible metrics, current blocker, owner, and next step.',
+        'Next move\n- Tell me what format you want and I will draft the first version.'
+      ]),
+      evidence.length?'':'',
+      evidence.length?'Loaded evidence I can use next:':'',
+      ...evidence.map(line=>' - '+line),
+      '',
+      'If you want, tell me “draft the iframe HTML” and I will turn this loaded context into a clean first version.'
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    `I have ${envelopeLabel} loaded for "${title}".`,
+    meaning?`The reason it is here: ${meaning}`:'',
+    evidence.length?'':'',
+    evidence.length?'What I can already use from the source:':'',
+    ...evidence.map(line=>' - '+line),
+    '',
+    'Ask me for the draft, the decision, the next message, or the exact structure and I will work from this context.'
+  ].filter(Boolean).join('\n');
+}
+
+function selectedHearthSourceDirectAnswer({lastUser='',selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const text=String(lastUser||'').trim();
+  if(!text||!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const observerAnswer=selectedSourceObserverDirectAnswer({lastUser:text,selectedSourceContext});
+  if(observerAnswer)return observerAnswer;
+  const asksForFullArtifact=/\b(write|draft|generate|build|create|code|html|css|javascript|iframe|template|full page|complete version)\b/i.test(text);
+  if(asksForFullArtifact&&/\b(html|css|iframe|embed|dashboard|page|template|code|build|create)\b/i.test(text)){
+    return selectedHearthSourceFallbackAnswer({lastUser:text,selectedSourceContext,selectedSourcePrompt});
+  }
+  if(asksForFullArtifact)return '';
+  const asksForLoadedContext=/\b(outline|elements?|sections?|structure|what.*context|what.*source|why.*priority|why.*here|evidence|proof|source|where.*come from|what.*changed|what.*know|tell me.*about this|explain this)\b/i.test(text);
+  if(!asksForLoadedContext)return '';
+  return selectedHearthSourceFallbackAnswer({lastUser:text,selectedSourceContext,selectedSourcePrompt});
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
@@ -34946,8 +40238,20 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const priorMessages=await conversationMessagesForContext(conversationId,10);
     const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
-      const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
-      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance',...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})});
+      const receivedFields=Object.keys(req.body||{}).sort();
+      console.warn('GHL voice turn rejected: missing userUtterance. Received fields:',receivedFields.join(', ')||'(none)');
+      const speak='GHL did not pass the caller’s spoken request to VAL. The Ask VAL action must send a required userUtterance body field.';
+      return res.status(422).json({
+        ok:false,
+        error:'missing_user_utterance',
+        speak,
+        val_response:speak,
+        reply:speak,
+        conversationId,
+        needs:'user_utterance',
+        receivedFields,
+        ...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})
+      });
     }
     const messages=[...priorMessages,{role:'user',content:lastUser}].slice(-12);
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
@@ -34980,6 +40284,17 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       messages:savedMessages,
       metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,voiceActorKey,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
     }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
+    void recordValConversationTurnPacket({
+      conversationId,
+      title,
+      sourceType:'ghl_voice',
+      channel:'ghl_voice',
+      messages:savedMessages,
+      lastUser,
+      assistantContent:content,
+      sourceRefs:conversationTurnSourceRefs({sourceRefs:req.body.sourceRefs}),
+      metadata:{contactId,contactName,voiceActorKey,functionRan,noExternalAction:!prepared?.extra?.externalActionPacket}
+    });
     const extra=prepared?.extra||{};
     return res.json({
       ok:true,
@@ -35010,6 +40325,21 @@ app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
     const projectContext=req.body.projectContext&&typeof req.body.projectContext==='object'?req.body.projectContext:null;
+    const hasSelectedSourceContext=!!(req.body.selectedSourceContext&&typeof req.body.selectedSourceContext==='object'&&Object.keys(req.body.selectedSourceContext).length);
+    const cheapSelectedSourceAnswer=hasSelectedSourceContext?selectedSourceObserverDirectAnswer({
+      lastUser,
+      selectedSourceContext:req.body.selectedSourceContext
+    }):'';
+    let selectedSourcePrompt='';
+    if(hasSelectedSourceContext&&!cheapSelectedSourceAnswer){
+      selectedSourcePrompt=await selectedHearthSourcePrompt(req.body.selectedSourceContext).catch(error=>{
+        console.warn('[hearth cowork] selected source context failed:',error.message);
+        return '';
+      });
+    }
+    const selectedSourceGuard=hasSelectedSourceContext
+      ? 'Current Co-Work focus: use the selected card/function source as the object of the user request. If the user says "this dashboard", "this email", "this transcript", "this project", or "this", they mean the selected source, not the visible Hearth dashboard shell. Do not describe the Hearth page, calendar sidebar, witness, orientation, or permission boundary unless the user explicitly asks about the VAL interface itself.'
+      : '';
     const conversationId=String(req.body.conversationId||'').trim()||uuid('chat');
     const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
     async function sendChat(content,extra={}){
@@ -35047,9 +40377,30 @@ app.post('/api/val/chat',async(req,res)=>{
         requiresApproval:extra.requiresApproval===true||!!extra.presenceIntent?.requiresConfirmation||!!extra.externalActionPacket,
         approvalToken:valApprovalToken(extra)
       });
+      void recordValConversationTurnPacket({
+        conversationId:saved?.id||conversationId,
+        title:conversationTitle,
+        sourceType:boardConversationSourceType(req.body.channel,'cowork'),
+        channel:req.body.channel||'chat',
+        messages:fullMessages,
+        lastUser,
+        assistantContent:content,
+        sourceRefs:conversationTurnSourceRefs({selectedSourceContext:req.body.selectedSourceContext,sourceRefs:req.body.sourceRefs}),
+        metadata:{...extra,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',selectedSourceFocused:!!hasSelectedSourceContext,noExternalAction:extra.noExternalAction!==false}
+      });
       return res.json({message:{role:'assistant',content},content,conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra,...contract});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
+    const correction=chatContextCorrection(lastUser);
+    if(correction){
+      await saveMemoryItem({kind:'chat_context_correction',summary:'User corrected VAL context.',rawText:lastUser,importance:4,metadata:{source:'home_val_chat',correction:true}}).catch(()=>{});
+      return sendChat(correction.content,{chatContextCorrection:true,noExternalAction:true});
+    }
+    const intent=chatContextIntent(lastUser);
+    if(intent?.type==='memory'){
+      await saveMemoryItem({kind:'user_requested_memory',summary:'User asked VAL to remember context.',rawText:intent.content,importance:4,metadata:{source:'home_val_chat',explicitUserMemory:true}});
+      return sendChat('I will hold that in VAL context and use it going forward.',{chatContextIntent:intent,noExternalAction:true});
+    }
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
     if(presenceIntent?.requiresConfirmation){
       return sendChat([
@@ -35093,7 +40444,65 @@ app.post('/api/val/chat',async(req,res)=>{
         });
       }
     }
+    if(hasSelectedSourceContext){
+      const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed|outline|elements?|sections?|layout)\b/i.test(lastUser);
+      if(cheapSelectedSourceAnswer){
+        return sendChat(cheapSelectedSourceAnswer,{
+          selectedSourceFocused:true,
+          selectedSourceDirect:true,
+          selectedSourceFastPacket:true,
+          noExternalAction:true
+        });
+      }
+      const directSelectedAnswer=selectedHearthSourceDirectAnswer({
+        lastUser,
+        selectedSourceContext:req.body.selectedSourceContext,
+        selectedSourcePrompt
+      });
+      if(directSelectedAnswer){
+        return sendChat(directSelectedAnswer,{
+          selectedSourceFocused:true,
+          selectedSourceDirect:true,
+          noExternalAction:true
+        });
+      }
+      const selectedSystem=[
+        'You are Home VAL in focused Co-Work mode.',
+        selectedSourceGuard,
+        'Answer from the selected source first. Do not describe the Hearth dashboard, sidebar, calendar card, Welcome message, or visible UI unless the user explicitly asks about the VAL interface.',
+        'If the user asks for an outline, elements, structure, HTML, CSS, iframe, draft, or plan, use the selected transcript/spec directly and produce the useful working artifact or outline. Do not ask what "this" is when the selected source contains the needed context.',
+        'Keep the answer executive-useful: concise first, then concrete sections or code when asked. No backend status, no source-loading narration, no apologies unless something is genuinely missing.',
+        selectedSourcePrompt?'Selected source:\n'+selectedSourcePrompt:'Selected source context JSON:\n'+JSON.stringify(req.body.selectedSourceContext,null,2).slice(0,6000)
+      ].filter(Boolean).join('\n\n');
+      let content='';
+      let fallbackUsed=false;
+      try{
+        content=await callOpenAIResponses({
+          system:selectedSystem,
+          messages,
+          maxTokens:artifactRequest?3200:1500,
+          temperature:0.42,
+          timeoutMs:artifactRequest?12000:9000
+        });
+      }catch(error){
+        fallbackUsed=true;
+        console.warn('[hearth cowork] selected source model response failed:',error.message);
+      }
+      const fallback=selectedHearthSourceFallbackAnswer({
+        lastUser,
+        selectedSourceContext:req.body.selectedSourceContext,
+        selectedSourcePrompt
+      });
+      return sendChat(content||fallback,{
+        selectedSourceFocused:true,
+        selectedSourceFallback:fallbackUsed||!content,
+        noExternalAction:true
+      });
+    }
     if(hearthFastChatEnabled(req.body)){
+      if(hasSelectedSourceContext){
+        req.body.latencyMode='full_context';
+      }else{
       const content=await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:!!req.body.voiceMode});
       return sendFastHearthChatNow(res,{
         content,
@@ -35104,6 +40513,7 @@ app.post('/api/val/chat',async(req,res)=>{
         projectContext,
         extra:{fastHearthChat:true,voiceMode:!!req.body.voiceMode,noExternalAction:true}
       });
+      }
     }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();
@@ -35158,15 +40568,46 @@ app.post('/api/val/chat',async(req,res)=>{
         return '';
       })
     ]);
-    const [memory,ghlContext,googleDocs,executiveBriefing]=await Promise.all([
+    const dashboardForExternalContext=hasSelectedSourceContext?{calendar:safeArray(dashboard.calendar)}:dashboard;
+    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext,latestObserverRuns]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
-      ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
+      ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboardForExternalContext),
       uploadedDocs||linkedAttachmentDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
-      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
+      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null),
+      valBoardPackets?.boardContext({limit:80}).catch(error=>{
+        console.warn('[val-board] home chat context lookup failed:',error.message);
+        return null;
+      }),
+      valIntelligenceSpine?.listObserverRuns({limit:42}).catch(error=>{
+        console.warn('[val-board] home chat observer reflection lookup failed:',error.message);
+        return [];
+      })
     ]);
+    const observerEvidence=buildObserverEvidenceLedger(latestObserverRuns,{limitPerObserver:8});
+    const observerReflections=observerEvidence.reviews.slice(0,80);
+    const boardContextForPrompt=boardContext ? {
+      livePacketCount:boardContext.livePacketCount,
+      observers:boardContext.observers,
+      packets:safeArray(boardContext.packets).slice(0,28).map(packet=>({
+        sourceType:packet.sourceType,
+        packetType:packet.packetType,
+        title:packet.title,
+        summary:packet.summary,
+        primaryObservers:packet.primaryObserversJson,
+        createdAt:packet.createdAt
+      })),
+      latestObserverReflections:observerReflections,
+      observerEvidenceSummary:{
+        receiptCount:observerEvidence.receiptCount,
+        observedCount:observerEvidence.observedCount,
+        noSignalCount:observerEvidence.noSignalCount,
+        observerCount:observerEvidence.observerCount
+      }
+    } : null;
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
-    const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'',selectedSourceGuard,'You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use selected Hearth source context first, then live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Use visible dashboard context only for ambient state, never as the selected work object when selected source context exists. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Selected Hearth source context is present, treat it as the exact source behind the card the user clicked. If the user says "this", use that selected source context. Do not ask the user to send a screenshot, link, layout, or description when the selected source already contains the needed transcript/spec. If selected source context is present but insufficient, say exactly which selected source field is missing.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',selectedSourcePrompt?'Selected Hearth source context:\n'+selectedSourcePrompt:'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed)\b/i.test(lastUser);
+    const content=await callOpenAIResponses({system,messages,maxTokens:artifactRequest?3600:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
     return sendChat(finalContent,{createdTasks,ghlContextAvailable:!!ghlContext});
@@ -35217,6 +40658,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         project:req.body.project||CLIENT_CONFIG.projectName||CLIENT_CONFIG.brandName||'',
         client:req.body.client||CLIENT_CONFIG.clientName||'',
         docType:inferredDocType,
+        documentCategory:req.body.documentCategory||'other',
         chapterNumber:req.body.chapterNumber||'',
         chapterTitle:req.body.chapterTitle||'',
         canonicalManuscript:inferredDocType==='manuscript',
@@ -35233,7 +40675,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         importance:isBookEditorProject()?4:3,
         metadata
       });
-      let processed=null,processingError='';
+      let processed=null,processingError='',observerDelivery=null;
       if(isTranscriptUpload&&String(req.body.processTranscript||'true')!=='false'){
         try{
           processed=await processTranscriptPayload({
@@ -35249,12 +40691,90 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
           processingError=e.message||String(e);
           await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});
         }
+      }else if(!isTranscriptUpload){
+        try{
+          const knowledgeDocumentInput={
+            document:{
+              id:saved.id,
+              sourceId:saved.id,
+              sourceType:'knowledge_document',
+              title:req.body.title||file.originalname,
+              fileName:file.originalname,
+              mimeType:file.mimetype,
+              rawText:text,
+              docType:inferredDocType,
+              documentCategory:metadata.documentCategory,
+              uploadedVia:metadata.uploadedVia,
+              createdAt:new Date().toISOString()
+            }
+          };
+          processed=await valSourceProcessing.processKnowledgeDocument(knowledgeDocumentInput);
+          observerDelivery=await queueKnowledgeDocumentObserverDelivery({
+            input:knowledgeDocumentInput,
+            result:processed
+          });
+        }catch(e){
+          processingError=e.message||String(e);
+        }
       }
-      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,processingError},success:!processingError}).catch(()=>{});
-      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,processingError,counts:processed?.counts||null});
+      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',processingError},success:!processingError}).catch(()=>{});
+      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,documentRead:!isTranscriptUpload,sourceProcessingRecordId:processed?.sourceProcessingRecord?.id||'',whatValDidReceipt:processed?.whatValDidReceipt||null,observerDelivery,processingError,counts:processed?.counts||null});
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
   }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/val/files/:id/observer-review',async(req,res)=>{
+  try{
+    await valDbReady;
+    const id=String(req.params.id||'').trim();
+    let document=null;
+    if(pgPool){
+      const result=await dbQuery(
+        `select id,type,title,raw_text,metadata,created_at
+         from val_transcripts
+         where user_id=$1 and id=$2
+         limit 1`,
+        [VAL_USER_ID,id]
+      );
+      const row=result.rows?.[0];
+      if(row)document={
+        id:row.id,
+        sourceId:row.id,
+        sourceType:'knowledge_document',
+        title:row.title||row.metadata?.fileName||'Uploaded document',
+        fileName:row.metadata?.fileName||row.title||'Uploaded document',
+        rawText:row.raw_text||'',
+        docType:row.metadata?.docType||'knowledge_document',
+        documentCategory:row.metadata?.documentCategory||'other',
+        uploadedVia:row.metadata?.uploadedVia||'val_file_upload',
+        createdAt:row.created_at?.toISOString?.()||row.created_at||''
+      };
+    }else{
+      const row=(valStore().transcripts||[]).find(item=>String(item.id||'')===id);
+      if(row)document={
+        id:row.id,
+        sourceId:row.id,
+        sourceType:'knowledge_document',
+        title:row.title||row.metadata?.fileName||'Uploaded document',
+        fileName:row.metadata?.fileName||row.title||'Uploaded document',
+        rawText:row.rawText||row.raw_text||row.transcript||'',
+        docType:row.metadata?.docType||'knowledge_document',
+        documentCategory:row.metadata?.documentCategory||'other',
+        uploadedVia:row.metadata?.uploadedVia||'val_file_upload',
+        createdAt:row.createdAt||''
+      };
+    }
+    if(!document||!document.rawText)return res.status(404).json({ok:false,error:'The saved document text could not be found.'});
+    if(!aboutMeDocumentCategory(document.documentCategory)){
+      return res.status(400).json({ok:false,error:'Only About Me documents are reviewed by all 14 Observers.'});
+    }
+    const observerDelivery=await queueKnowledgeDocumentObserverDelivery({
+      input:{document},
+      result:{sourceProcessingRecord:{}}
+    });
+    res.json({ok:true,id,title:document.title,characters:document.rawText.length,observerDelivery});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
 // ════════════════════════════════════════════════════════
@@ -35262,5 +40782,5 @@ const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{
   console.log(`VAL proxy running on port ${PORT}`);
   setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
-  setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
+  setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),AI_CONTEXT_COMPACTION_INTERVAL_MS).unref();
 });

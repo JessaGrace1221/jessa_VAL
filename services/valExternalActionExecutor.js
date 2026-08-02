@@ -25,16 +25,17 @@ function blockingSafety(packet={},opts={}){
   const text=[packet.actionType,packet.whyThisActionExists,JSON.stringify(payload(packet)),JSON.stringify(ctx)].join(' ');
   const blocks=safeArray(auth.blocking_safety_rules).concat(safeArray(ctx.blockingSafetyRules),safeArray(payload(packet).blockingSafetyRules));
   if(/\b(bulk|all contacts|all clients|everyone|entire list)\b/i.test(text))blocks.push('bulk_external_action');
-  if(['send_invoice','send_sms','send_proposal','publish_content','move_crm_stage','add_or_remove_tag'].includes(packet.actionType)&&packet.approvalPolicy!=='voice_authorized')blocks.push('unsupported_or_requires_future_confirmation');
+  if(packet.actionType==='send_sms'&&packet.approvalPolicy!=='voice_authorized'&&!opts.finalConfirmation&&!opts.final_confirmation)blocks.push('final_send_confirmation_required');
+  if(['send_invoice','send_proposal','publish_content','move_crm_stage','add_or_remove_tag'].includes(packet.actionType)&&packet.approvalPolicy!=='voice_authorized')blocks.push('unsupported_or_requires_future_confirmation');
   if(packet.actionType==='send_email'&&packet.approvalPolicy!=='voice_authorized'&&!opts.finalConfirmation&&!opts.final_confirmation)blocks.push('final_send_confirmation_required');
   if(['charge_money','delete_record','merge_contacts'].includes(packet.actionType))blocks.push('never_auto_action');
   return [...new Set(blocks.filter(Boolean))];
 }
 function supportedActions(){
-  return ['create_gmail_draft','create_outlook_draft','send_email','create_crm_note','create_crm_task','create_calendar_hold'];
+  return ['create_gmail_draft','create_outlook_draft','send_email','send_sms','create_crm_note','create_crm_task','create_calendar_hold','append_google_doc'];
 }
 function blockedActions(){
-  return ['send_sms','send_proposal','send_invoice','charge_money','publish_content','move_crm_stage','merge_contacts','delete_record','add_or_remove_tag','send_calendar_invite'];
+  return ['send_proposal','send_invoice','charge_money','publish_content','move_crm_stage','merge_contacts','delete_record','add_or_remove_tag','send_calendar_invite'];
 }
 function validatePayload(packet={}){
   const p=payload(packet);
@@ -50,6 +51,10 @@ function validatePayload(packet={}){
     if(!p.subject)missing.push('payload.subject');
     if(!p.body&&!p.bodyPreview)missing.push('payload.body');
   }
+  if(packet.actionType==='send_sms'){
+    if(!packet.targetId&&!p.contactId&&!p.conversationId)missing.push('target_id_or_contact_id');
+    if(!p.message&&!p.body&&!p.text)missing.push('payload.message');
+  }
   if(packet.actionType==='create_crm_note'){
     if(!packet.targetId)missing.push('target_id');
     if(!p.note&&!p.body&&!packet.whyThisActionExists)missing.push('payload.note');
@@ -62,6 +67,10 @@ function validatePayload(packet={}){
     if(!p.start&&!p.scheduledStart)missing.push('payload.start');
     if(!p.end&&!p.scheduledEnd&&!p.durationMinutes)missing.push('payload.end_or_duration');
   }
+  if(packet.actionType==='append_google_doc'){
+    if(!packet.targetId&&!p.documentId)missing.push('target_id_or_document_id');
+    if(!p.content&&!p.body&&!p.bodyPreview)missing.push('payload.content');
+  }
   return missing;
 }
 function freshRiskCheck(packet={},opts={}){
@@ -73,7 +82,7 @@ function freshRiskCheck(packet={},opts={}){
   const expired=isExpired(packet);
   const supported=supportedActions().includes(packet.actionType);
   const blocked=blockedActions().includes(packet.actionType)||packet.approvalPolicy==='never_auto'||blocking.includes('never_auto_action');
-  const approved=packet.status==='approved_local_only'||packet.approvalPolicy==='voice_authorized';
+  const approved=packet.status==='approved_local_only'||packet.approvalPolicy==='voice_authorized'||packet.approvalPolicy==='preauthorized';
   const executed=packet.status==='executed'||!!packet.executedAt||!!packet.executed_at;
   const highRisk=risk.riskLevel==='high'||packet.riskLevel==='high'||packet.financialOrLegalRisk==='high'||packet.representationRisk==='high';
   const finalConfirmationRequired=highRisk&&packet.approvalPolicy!=='voice_authorized';
@@ -128,6 +137,28 @@ function createValExternalActionExecutor({packetService,receiptService=null,adap
   async function execute(id,opts={}){
     const before=await packetService.get(id);
     if(!before)return null;
+    const dependencyId=sourceContext(before).dependsOnPacketId||sourceContext(before).depends_on_packet_id||'';
+    if(dependencyId){
+      const dependency=await packetService.get(dependencyId);
+      if(!dependency||dependency.status!=='executed'){
+        const attemptedAt=nowIso();
+        const failed=await packetService.updatePacket(id,{
+          status:'execution_blocked',
+          attemptedAt,
+          failureReason:'prior_action_not_completed',
+          retryCount:Number(before.retryCount||0),
+          idempotencyKey:idempotencyKey(before),
+          executedBy:opts.executedBy||opts.executed_by||executedBy()
+        });
+        await packetService.audit(id,'execution_blocked',before,failed,'prior_action_not_completed');
+        return {
+          ok:false,
+          packet:failed,
+          risk_check:{ok:false,errors:['prior_action_not_completed'],dependencyPacketId:dependencyId},
+          executed:false
+        };
+      }
+    }
     const check=freshRiskCheck(before,opts);
     const attemptedAt=nowIso(),key=check.idempotency_key,actor=opts.executedBy||opts.executed_by||executedBy();
     if(!check.ok){

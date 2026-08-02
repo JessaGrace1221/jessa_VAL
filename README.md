@@ -31,6 +31,7 @@ Postgres database, OAuth credentials, API keys, branding, and login.
 - `GOOGLE_REDIRECT_URI` or `REDIRECT_URI`
 - `ROCKETREACH_API_KEY`
 - `OUTSCRAPER_API_KEY`
+- `ANTHROPIC_KEY` (optional; users can also save it securely from VAL Connections)
 - `VAL_CLIENT_LOGO_URL`
 - `VAL_SUPPORT_EMAIL`
 - `VAL_DEFAULT_TIMEZONE`

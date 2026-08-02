@@ -462,6 +462,7 @@ function createValExecutiveInboxService({
   listReviewDrafts,
   listSuppressedExecutiveContacts,
   saveSuppressedExecutiveContact,
+  afterClassification,
   logger=console
 }={}){
   function store(){
@@ -549,8 +550,14 @@ function createValExecutiveInboxService({
     classification.identity_resolution=identity;
     classification.teach_val_signals=safeArray(teachVal).slice(0,6);
     classification.id=await saveClassification(context,classification);
+    const canonicalIntake=typeof afterClassification==='function'
+      ? await afterClassification({context,classification}).catch(error=>{
+          logger.warn?.('[val-executive-inbox] canonical intake failed:',error.message);
+          return {ok:false,error:error.message};
+        })
+      : null;
     logger.log?.(`[val-executive-inbox] classified ${context.conversationId||context.threadId||classification.id} ${classification.priority_level}`);
-    return {ok:true,context,classification};
+    return {ok:true,context,classification,canonical_intake:canonicalIntake};
   }
   async function classifyBatch({limit=25,conversationIds=[]}={}){
     let ids=safeArray(conversationIds).filter(Boolean);
@@ -720,12 +727,72 @@ function createValExecutiveInboxService({
     return {ok:true,drafts:rows};
   }
   async function listHighSignalClassifications({limit=12}={}){
-    const lim=Math.max(1,Math.min(Number(limit)||12,50));
+    const lim=Math.max(1,Math.min(Number(limit)||12,200));
     if(hasPg()){
-      const r=await dbQuery(`select * from conversation_classifications where tenant_id=$1 and user_id=$2 and priority_level in ('critical','high','medium') order by case priority_level when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end, created_at desc limit $3`,[tenantId(),userId(),lim]);
-      return r.rows.map(row=>({id:row.id,conversationId:row.unified_conversation_id,threadId:row.email_thread_id,currentMessageId:row.current_message_id,conversationState:row.conversation_state,relationshipTemperature:row.relationship_temperature,executiveMeaning:row.executive_meaning,priorityLevel:row.priority_level,whyNow:row.why_now,ifIgnored:row.if_ignored,ifDelayed:row.if_delayed,routing:jsonValue(row.routing_json,{}),approvalPolicy:row.approval_policy,unknowns:jsonValue(row.unknowns_json,[]),confidence:Number(row.confidence||0),sourceRefs:jsonValue(row.source_refs_json,[]),createdAt:row.created_at?.toISOString?.()||row.created_at||''}));
+      const r=await dbQuery(`
+        with ranked as (
+          select *,
+            row_number() over (
+              partition by coalesce(
+                nullif(unified_conversation_id,''),
+                nullif(email_thread_id,''),
+                nullif(current_message_id,''),
+                id
+              )
+              order by created_at desc
+            ) as conversation_rank
+          from conversation_classifications
+          where tenant_id=$1 and user_id=$2
+        )
+        select *
+        from ranked
+        where conversation_rank=1
+          and priority_level in ('critical','high','medium')
+        order by
+          case priority_level when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end,
+          created_at desc
+        limit $3
+      `,[tenantId(),userId(),lim]);
+      return r.rows.map(row=>({id:row.id,conversationId:row.unified_conversation_id,threadId:row.email_thread_id,currentMessageId:row.current_message_id,conversationState:row.conversation_state,relationshipTemperature:row.relationship_temperature,executiveMeaning:row.executive_meaning,priorityLevel:row.priority_level,whyNow:row.why_now,ifIgnored:row.if_ignored,ifDelayed:row.if_delayed,routing:jsonValue(row.routing_json,{}),approvalPolicy:row.approval_policy,unknowns:jsonValue(row.unknowns_json,[]),confidence:Number(row.confidence||0),sourceRefs:jsonValue(row.source_refs_json,[]),context:jsonValue(row.context_json,{}),createdAt:row.created_at?.toISOString?.()||row.created_at||''}));
     }
-    return store().conversationClassifications.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&priorityScore(r.priority_level||r.priorityLevel)>=3).slice(0,lim);
+    const newestByConversation=new Map();
+    store().conversationClassifications
+      .filter(r=>r.tenantId===tenantId()&&r.userId===userId())
+      .forEach(row=>{
+        const key=String(row.unified_conversation_id||row.conversationId||row.email_thread_id||row.threadId||row.current_message_id||row.currentMessageId||row.id||'').trim();
+        const current=newestByConversation.get(key);
+        if(!current||String(row.created_at||row.createdAt||'').localeCompare(String(current.created_at||current.createdAt||''))>0){
+          newestByConversation.set(key,row);
+        }
+      });
+    return [...newestByConversation.values()]
+      .filter(r=>priorityScore(r.priority_level||r.priorityLevel)>=3)
+      .sort((a,b)=>{
+        const priorityDelta=priorityScore(b.priority_level||b.priorityLevel)-priorityScore(a.priority_level||a.priorityLevel);
+        return priorityDelta||String(b.created_at||b.createdAt||'').localeCompare(String(a.created_at||a.createdAt||''));
+      })
+      .slice(0,lim);
+  }
+  async function listClassifications({limit=200}={}){
+    const lim=Math.max(1,Math.min(Number(limit)||200,1000));
+    if(hasPg()){
+      const result=await dbQuery(
+        `select * from conversation_classifications where tenant_id=$1 and user_id=$2 order by created_at asc limit $3`,
+        [tenantId(),userId(),lim]
+      );
+      return safeArray(result.rows).map(row=>({
+        ...rowObject(row),
+        context:jsonValue(row.context_json,{}),
+        commitments:jsonValue(row.commitments_json,[]),
+        sourceRefs:jsonValue(row.source_refs_json,[]),
+        identity_resolution:jsonValue(row.context_json,{})?.classification?.identity_resolution||{}
+      }));
+    }
+    return store().conversationClassifications
+      .filter(row=>row.tenantId===tenantId()&&row.userId===userId())
+      .slice()
+      .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
+      .slice(0,lim);
   }
   async function listReadyForYouDraftCandidates({limit=8}={}){
     const lim=Math.max(1,Math.min(Number(limit)||8,30));
@@ -740,7 +807,7 @@ function createValExecutiveInboxService({
       ...rows
     ].slice(0,lim);
   }
-  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listHighSignalClassifications,listReadyForYouDraftCandidates,markNotExecutiveContact};
+  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listClassifications,listHighSignalClassifications,listReadyForYouDraftCandidates,markNotExecutiveContact};
 }
 
 module.exports={createValExecutiveInboxService,classifyHeuristically,createDraftReadiness,createDraftBrief,runDraftQa,qaCheckGeneratedDraft,normalizeDraftWriterOutput,executiveInboxAdmissionDecision,executiveContactSuppressionKey};

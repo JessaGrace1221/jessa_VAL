@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {createValExecutiveInboxService, executiveInboxAdmissionDecision}=require('../services/valExecutiveInbox');
 const {VAL_CONVERSATION_IDENTITY_SQL}=require('../services/valConversationIdentitySchema');
+const {VAL_EXECUTIVE_INBOX_QUEUE_SQL}=require('../services/valExecutiveInboxQueueSchema');
 
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
@@ -23,6 +24,16 @@ test('conversation classification schema stores executive inbox fields and draft
     assert.match(VAL_CONVERSATION_IDENTITY_SQL,new RegExp(field));
   }
   assert.match(VAL_CONVERSATION_IDENTITY_SQL,/create table if not exists email_draft_evaluations/);
+});
+
+test('Executive Inbox merges verified conversations into one durable queue per tenant and user',()=>{
+  assert.match(VAL_EXECUTIVE_INBOX_QUEUE_SQL,/create table if not exists val_executive_inbox_queue/);
+  assert.match(VAL_EXECUTIVE_INBOX_QUEUE_SQL,/unique\(tenant_id,user_id,conversation_id\)/);
+  assert.match(server,/async function listDurableExecutiveInboxQueue/);
+  assert.match(server,/async function mergeDurableExecutiveInboxQueue/);
+  assert.match(server,/await mergeDurableExecutiveInboxQueue\(items\)/);
+  assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/archive'/);
+  assert.match(server,/durable_plus_classification_index/);
 });
 
 test('executive inbox routes are backend-only and mounted',()=>{
@@ -169,7 +180,33 @@ test('intelligence spine reads high-signal classifications and draft candidates'
   assert.match(spine,/listHighSignalClassifications/);
   assert.match(spine,/readyForYouDraftCandidates/);
   assert.match(spine,/conversation_classification/);
-  assert.match(spine,/email_draft_readiness/);
+  assert.match(spine,/ready_for_you_draft_candidates/);
+  assert.doesNotMatch(spine,/email_draft_readiness/);
+});
+
+test('opening Executive Inbox reads the saved index instead of rerunning classification',()=>{
+  const queueStart=server.indexOf('async function localExecutiveInboxQueue');
+  const queueEnd=server.indexOf('\n}',queueStart);
+  const queueSource=server.slice(queueStart,queueEnd);
+  assert.match(queueSource,/listHighSignalClassifications/);
+  assert.doesNotMatch(queueSource,/classifyBatch/);
+  assert.match(queueSource,/Promise\.race/);
+  assert.match(server,/executiveInboxNewestByConversation/);
+  assert.match(server,/decideExecutiveInboxAdmission/);
+  assert.match(server,/valExecutiveInbox\.reviewDrafts\(\{limit:100\}\)/);
+  assert.match(server,/draftsByConversation\.get\(email\.conversationId\)/);
+  assert.match(server,/durableItems\.forEach/);
+  assert.match(server,/indexedRows\.forEach/);
+  assert.match(server,/sourceRowsByConversation/);
+  assert.match(server,/mergeDurableExecutiveInboxQueue\(historicalItems\)/);
+});
+
+test('Executive Inbox opens the complete admitted queue instead of only requires-reply items',()=>{
+  const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+  const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+  assert.match(hearthJs,/let currentCorrespondenceFilter = 'all';/);
+  assert.match(hearthHtml,/class="active" data-correspondence-filter="all"/);
+  assert.doesNotMatch(hearthHtml,/class="active" data-correspondence-filter="requires_reply"/);
 });
 
 function fakeConversationService(){

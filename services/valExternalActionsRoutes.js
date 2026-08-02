@@ -13,6 +13,7 @@ function registerValExternalActionsRoutes(app,deps={}){
   const executor=deps.executor||createValExternalActionExecutor({packetService:service,receiptService,adapters:deps.executionAdapters||{},executedBy:deps.executedBy});
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
+  const afterExternalActionPacket=typeof deps.afterExternalActionPacket==='function'?deps.afterExternalActionPacket:async()=>{};
 
   app.get('/api/val/external-actions',async(req,res)=>{
     try{
@@ -68,6 +69,7 @@ function registerValExternalActionsRoutes(app,deps={}){
     try{
       await waitForDb();
       const result=await service.build({limit:parseLimit(req.body?.limit,100)});
+      await afterExternalActionPacket(result.packets||[],{req,phase:'build'}).catch(error=>{result.boardPacketWarning=error.message;});
       await auditLog({req,action:'external_action_packets_built',resourceType:'val_external_action_packets',metadata:{count:result.count,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
       res.json(result);
     }catch(e){
@@ -81,6 +83,7 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       const packet=await service.approve(req.params.id,{note:req.body?.note||''});
       if(!packet)return res.status(404).json({ok:false,error:'External action packet not found'});
+      await afterExternalActionPacket(packet,{req,phase:'approved'}).catch(error=>{packet.boardPacketWarning=error.message;});
       await auditLog({req,action:'external_action_packet_approved_local_only',resourceType:'val_external_action_packet',resourceId:req.params.id,metadata:{actionType:packet.actionType,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
       res.json({ok:true,packet,no_external_action:true,execution_available:false});
     }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -111,6 +114,7 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       if(typeof service.createEmailSendPacket!=='function')throw new Error('Email send packets are not available.');
       const packet=await service.createEmailSendPacket(req.body||{});
+      await afterExternalActionPacket(packet,{req,phase:'created'}).catch(error=>{packet.boardPacketWarning=error.message;});
       await auditLog({req,action:'email_send_packet_created',resourceType:'val_external_action_packet',resourceId:packet.id,metadata:{actionType:packet.actionType,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
       res.json({ok:true,packet,no_external_action:true,execution_available:false});
     }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -123,7 +127,32 @@ function registerValExternalActionsRoutes(app,deps={}){
       const packet=await service.createEmailSendPacket(req.body||{});
       const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final send approved from VAL send gate.'});
       const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
+      await afterExternalActionPacket(result.packet||approved,{req,phase:result.executed?'executed':'execution_not_completed'}).catch(error=>{result.boardPacketWarning=error.message;});
       await auditLog({req,action:result.executed?'email_send_gate_executed':'email_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
+      res.status(result.ok?200:409).json({...result,packet:result.packet||approved,final_confirmation:true});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
+  app.post('/api/val/external-actions/sms-send-packet',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.createSmsSendPacket!=='function')throw new Error('SMS send packets are not available.');
+      const packet=await service.createSmsSendPacket(req.body||{});
+      await afterExternalActionPacket(packet,{req,phase:'created'}).catch(error=>{packet.boardPacketWarning=error.message;});
+      await auditLog({req,action:'sms_send_packet_created',resourceType:'val_external_action_packet',resourceId:packet.id,metadata:{actionType:packet.actionType,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
+      res.json({ok:true,packet,no_external_action:true,execution_available:false});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
+  app.post('/api/val/external-actions/sms-send-now',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.createSmsSendPacket!=='function')throw new Error('SMS send packets are not available.');
+      const packet=await service.createSmsSendPacket(req.body||{});
+      const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final SMS approved from VAL send gate.'});
+      const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
+      await afterExternalActionPacket(result.packet||approved,{req,phase:result.executed?'executed':'execution_not_completed'}).catch(error=>{result.boardPacketWarning=error.message;});
+      await auditLog({req,action:result.executed?'sms_send_gate_executed':'sms_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
       res.status(result.ok?200:409).json({...result,packet:result.packet||approved,final_confirmation:true});
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
@@ -143,6 +172,7 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       const result=await executor.execute(req.params.id,req.body||{});
       if(!result)return res.status(404).json({ok:false,error:'External action packet not found'});
+      await afterExternalActionPacket(result.packet,{req,phase:result.executed?'executed':'execution_not_completed'}).catch(error=>{result.boardPacketWarning=error.message;});
       await auditLog({req,action:result.executed?'external_action_executed':'external_action_execution_not_completed',resourceType:'val_external_action_packet',resourceId:req.params.id,metadata:{executed:!!result.executed,actionType:result.packet?.actionType,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
       res.status(result.ok?200:409).json(result);
     }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -171,6 +201,7 @@ function registerValExternalActionsRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  Object.defineProperty(service,'executor',{value:executor,enumerable:false,configurable:false});
   return service;
 }
 

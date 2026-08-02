@@ -51,10 +51,11 @@ const drawerCoworkIcon = document.querySelector('[data-drawer-cowork-icon]');
 if(drawerCoworkIcon && drawerCoworkIcon.parentElement !== document.body){
   document.body.appendChild(drawerCoworkIcon);
 }
-const valDrawerLink = document.querySelector('.val-drawer-link');
+const valDrawerLink = executiveCompassCore;
+const studioDrawerLink = document.querySelector('.studio-drawer-link');
 const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
-const valLiveStatus = document.querySelector('[data-val-live-status]');
+let valLiveStatus = document.querySelector('[data-val-live-status]');
 const valStatusFields = {
   onboarding: document.querySelector('[data-val-status="onboarding"]'),
   agreements: document.querySelector('[data-val-status="agreements"]'),
@@ -76,6 +77,10 @@ const valRouteCopyFields = {
   connections: document.querySelector('[data-val-route-copy="connections"]')
 };
 
+function safeArray(value){
+  return Array.isArray(value) ? value : [];
+}
+
 function initCoworkChatbarFocus(){
   document.addEventListener('click', (event) => {
     const chatbar = event.target.closest?.('.home-cowork-chatbar');
@@ -89,22 +94,15 @@ function initCoworkChatbarFocus(){
 const relationshipDrawerLink = document.querySelector('.relationship-drawer-link');
 const closeRelationshipDetail = document.querySelector('.close-relationship-detail');
 const projectDrawerLink = document.querySelector('.project-drawer-link');
+const projectDetail = document.querySelector('#project-detail');
 const closeProjectDetail = document.querySelector('.close-project-detail');
-const markPipelineCommandRoom = document.querySelector('[data-mark-pipeline-command-room]');
-const markPipelineRefresh = document.querySelector('[data-mark-pipeline-refresh]');
-const markPipelineStatus = document.querySelector('[data-mark-pipeline-status]');
-const markPipelineBands = document.querySelector('[data-mark-pipeline-bands]');
-const markOpportunityList = document.querySelector('[data-mark-opportunity-list]');
-const markPipelineActive = document.querySelector('[data-mark-pipeline-active]');
-const markPipelineValue = document.querySelector('[data-mark-pipeline-value]');
-const markPipelineStalled = document.querySelector('[data-mark-pipeline-stalled]');
-const markCallCenterDashboard = document.querySelector('[data-mark-call-center-dashboard]');
 const timelineDrawerLink = document.querySelector('.timeline-drawer-link');
 const closeTimelineDetail = document.querySelector('.close-timeline-detail');
 const correspondenceDrawerLink = document.querySelector('.correspondence-drawer-link');
 const closeCorrespondenceDetail = document.querySelector('.close-correspondence-detail');
 const correspondenceList = document.querySelector('[data-correspondence-list]');
 const correspondenceCount = document.querySelector('[data-correspondence-count]');
+const correspondenceTrustReceipt = document.querySelector('[data-correspondence-trust-receipt]');
 const correspondenceThreadBody = document.querySelector('[data-correspondence-thread-body]');
 const correspondenceDraftPreview = document.querySelector('[data-correspondence-draft-preview]');
 const correspondenceDraftBody = document.querySelector('[data-correspondence-draft-body]');
@@ -173,21 +171,26 @@ const documentStatus = document.querySelector('[data-document-status]');
 let currentTimelineReviewItems = [];
 let currentTimelineTranscriptItems = [];
 let currentTimelineTranscript = null;
+let timelineTranscriptPagination = {offset:0, limit:100, total:0, hasMore:false};
+let timelineTranscriptCounts = {total:0, needsReview:0, withOpenActions:0, failedProcessing:0};
 let timelineTranscriptOpenRequest = 0;
 let timelineTranscriptRefreshDays = 90;
 let timelineTranscriptsLoading = false;
 const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
+let currentCorrespondenceActiveItems = [];
+let currentCorrespondenceArchiveItems = [];
 let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
 let dismissedCorrespondenceRuleSuggestions = new Set();
-let currentCorrespondenceFilter = 'requires_reply';
+let currentCorrespondenceFilter = 'all';
 let currentCorrespondenceSort = 'priority';
 let correspondenceToolsOpen = false;
 let currentCorrespondenceScanDays = 14;
 let currentCorrespondenceScanStatus = '';
+let currentCorrespondenceTrustData = null;
 let correspondenceScanInFlight = false;
 let correspondenceLoading = false;
 let correspondenceThreadHydrationToken = 0;
@@ -256,39 +259,54 @@ const teachPen = document.querySelector('.teach-pen');
 const linkedinWidget = document.querySelector('.linkedin-widget');
 const linkedinReadyCount = document.querySelector('[data-linkedin-ready-count]');
 const prototypeParams = new URLSearchParams(location.search);
+const isLocalPrototypeHost = /^(?:localhost|127\.0\.0\.1)$/.test(location.hostname || '');
 const mockScrapers = prototypeParams.has('mockScrapers');
-const mockBriefing = prototypeParams.has('mockBriefing');
+const mockBriefing = isLocalPrototypeHost && prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
-const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
+let VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
 const VAL_GHL_WIDGET_LOADER_SRC = 'https://widgets.leadconnectorhq.com/loader.js';
 const VAL_GHL_WIDGET_RESOURCE_SRC = 'https://widgets.leadconnectorhq.com/chat-widget/loader.js';
 const clientFeatureLocks = {
   projectManagersComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
-  linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
-  pipelineCommandRoom: /^(mark|mark-goall|goall)$/i.test(prototypeParams.get('client') || '')
+  linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
 };
-let clientPipelineDashboardUrl = clientFeatureLocks.pipelineCommandRoom
-  ? 'https://mark-goall-val-production.up.railway.app/call-center-dashboards'
-  : '';
 let clientDisplayName = '';
+let clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
 function clientFirstName(fallback = ''){
   return String(clientDisplayName || fallback || '').trim().split(/\s+/)[0] || '';
 }
+function clientHour(date = new Date()){
+  try{
+    const hourPart = new Intl.DateTimeFormat('en-US',{
+      hour:'2-digit',
+      hourCycle:'h23',
+      timeZone:clientTimezone
+    }).formatToParts(date).find((part) => part.type === 'hour');
+    const hour = Number(hourPart?.value);
+    if(Number.isInteger(hour)) return hour;
+  }catch(_error){}
+  return date.getHours();
+}
 function valTimeGreeting(name = clientFirstName()){
-  const hour = new Date().getHours();
+  const hour = clientHour();
   const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   return 'Good ' + daypart + (name ? ', ' + name : '') + '.';
 }
 function personalizeTenantGreeting(value = ''){
   const name = clientFirstName();
   const text = String(value || '');
+  const greetingMatch = text.match(/^Good\s+(?:morning|afternoon|evening)\s*,?\s*([^.\n]+)\./i);
+  if(greetingMatch){
+    return valTimeGreeting(name || greetingMatch[1].trim()) + text.slice(greetingMatch[0].length);
+  }
   if(!name || /^Jessa$/i.test(name)) return text;
-  return text
-    .replace(/^(Good\s+(?:morning|afternoon|evening))\s*,?\s*Jessa\b/i, '$1, ' + name)
-    .replace(/^Jessa\b/i, name);
+  return text.replace(/^Jessa\b/i, name);
 }
 const scraperSessions = {};
+let activeGeneralLeadScraperId = '';
+let generalLeadScraperEntitlement = {included:1, active:0, limit:1, additionalPriceMonthly:200};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
+const homeCompletedItemsStorageKey = 'val.hearth.completedHomeItems.v1';
 let activeScraperType = '';
 let executiveBriefingState = null;
 let activeHomeWorkspace = null;
@@ -308,6 +326,7 @@ let valWitnessingConnectionState = null;
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
+let activeCoworkSelectedSourceContext = null;
 let activeMeetingPrepAutoPrompt = false;
 let valCoworkVoiceState = {
   active:false,
@@ -331,12 +350,16 @@ let currentMeetingEvents = [];
 let calendarPanelShouldScrollToCurrent = false;
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
+let currentTaskWorkspaceTasks = [];
+let currentTaskWorkspaceDrafts = [];
+let currentTaskWorkspaceReadyItems = [];
+let currentTaskWorkspacePreparedByTask = {};
 let workspaceReturnTarget = 'home';
 
 const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
 
 function hearthTimePeriodFromDate(date = new Date()){
-  const hour = date.getHours();
+  const hour = clientHour(date);
   if(hour >= 5 && hour < 11) return 'morning';
   if(hour >= 11 && hour < 17) return 'afternoon';
   if(hour >= 17 && hour < 21) return 'evening';
@@ -655,10 +678,10 @@ const hearthClickContractRegistry = [
   {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
   {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
-  {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
+  {selector:'.teach-pen,.studio-drawer-link', contract:'home.val_studio', packet:'val_os_packet', rule:'VAL Studio governance and reviewed learning prompts', actions:'Shape VAL, review learning, and manage connected context', never:'Do not save durable memory or activate workflows without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
-  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge prompt', actions:'Open source, Draft reply/Create task for email, Review evidence', never:'Do not open a different relationship/project than the card named'},
+  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Chief of Staff Alignment action rule', actions:'Co-work with VAL on the current action only', never:'Do not draft, send, create tasks, or expose Leverage prepared work from Alignment'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
   {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
@@ -668,7 +691,7 @@ const hearthClickContractRegistry = [
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
   {selector:'.source-drawer-link,[data-open-scraper],[data-preview-choice]', contract:'drawer.lead_intelligence', packet:'lead_intelligence_packet', rule:'Lead Intelligence scraper prompt suite', actions:'Run preview, approve/hold, import approved only', never:'Do not import unreviewed leads'},
-  {selector:'.val-drawer-link,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL OS / Teach VAL / connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
+  {selector:'.executive-compass-core,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL Witnessing and connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
   {selector:'[data-workflow-action]', contract:'shared.workflow_action', packet:'workflow_scoped_packet', rule:'handleWorkflowAction dispatch rule', actions:'Only workflow-specific actions', never:'Do not dispatch unknown workflow silently'},
   {selector:'[data-workspace-tool],[data-workspace-file-input],[data-workspace-prompt-copy]', contract:'shared.workspace_tools', packet:'cowork_packet', rule:'Workspace input tool rule', actions:'Voice, upload, image request, prompt copy', never:'Do not transmit externally without approval'},
   {selector:'.val-autocorrect button', contract:'shared.autocorrect', packet:'user_text_field_packet', rule:'Spelling suggestion rule', actions:'Replace misspelled word after click', never:'Do not silently rewrite'}
@@ -707,80 +730,28 @@ function observeHearthClickContracts(){
   observer.observe(document.body, {childList:true, subtree:true});
 }
 
-const linkedinVisibilityItems = [
-  {
-    contact: 'Michele',
-    postPreview: 'Shared a reflection on sustaining creative momentum without overextending.',
-    whyItMatters: 'This is a natural support moment tied to the chapter feedback relationship.',
-    draftComment: 'This is such a clear framing of momentum as something protected, not forced. I especially appreciate the part about staying close to the work without letting it consume the whole day.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Aric',
-    postPreview: 'Posted about turning early ideas into visible traction before the strategy is perfect.',
-    whyItMatters: 'A thoughtful comment reinforces the partnership lane without creating a new ask.',
-    draftComment: 'This is exactly the kind of early visible momentum that helps people believe in a direction before every detail is settled. Strong signal here.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Allen',
-    postPreview: 'Shared assessment notes about founder clarity and operational follow-through.',
-    whyItMatters: 'This connects to the assessment notes already waiting in Velocity.',
-    draftComment: 'The distinction between clarity and follow-through is so useful. The best systems make the next right action easier to see and easier to take.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Lindsey',
-    postPreview: 'Posted a client success story that fits the current relationship-support circle.',
-    whyItMatters: 'Supporting wins keeps the relationship warm without asking for anything.',
-    draftComment: 'Love seeing this result. The care in the work really comes through here, and it is so good to see that effort becoming visible.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Greg',
-    postPreview: 'Shared a short note about proposal clarity and decision timing.',
-    whyItMatters: 'A light public comment can support the relationship while the proposal stays private.',
-    draftComment: 'This is a helpful reminder that clear timing often matters as much as clear language. The decision gets easier when the next step is explicit.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Priya',
-    postPreview: 'Posted about community health partnerships and practical implementation.',
-    whyItMatters: 'This supports the HealthBridge context without opening a direct follow-up thread.',
-    draftComment: 'This is such a grounded view of partnership. The practical implementation lens is what makes the idea feel real.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'D3Day',
-    postPreview: 'Announced a programming update that could use a warm visibility lift.',
-    whyItMatters: 'This supports current project visibility while keeping publishing manual.',
-    draftComment: 'This is exciting to see coming together. The programming update makes the event feel even more concrete and useful.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  }
-];
+let linkedinVisibilityItems = [];
+let linkedinWatchedProfiles = [];
+let linkedinVisibilityReceipt = {};
+let linkedinVisibilityLoaded = false;
+let linkedinVisibilityRequest = null;
+let linkedinVisibilityRefreshAttempted = false;
 
 const meetingPrep = {
   lens: 'Meeting Prep',
-  title: 'Acme proposal review is already prepared.',
-  meaning: 'This conversation is the one moment today where preparation can protect your judgment.',
-  understanding: [
-    'VAL reviewed the Acme relationship history and current proposal context.',
-    'Outscraper signals are queued for company and web context.',
-    'Apollo research is queued for people and role context.'
-  ],
-  recommendation: 'I would scan the decision points, review the open concern, and then walk into the meeting with the proposal language already in front of you.',
-  actions: ['Open meeting prep', 'Open Acme in CRM', 'Run Apollo refresh', 'Run Outscraper refresh'],
+  title: 'Choose a live calendar event.',
+  meaning: 'Meeting Prep uses the selected event, its attendees, and attached VAL context.',
+  understanding: [],
+  recommendation: 'Open a calendar event before asking VAL to prepare it.',
+  actions: ['Open calendar'],
   event: {
-    id: 'hearth-acme-proposal-review',
-    title: 'Acme proposal review',
-    startTime: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-    source: 'hearth_prototype',
-    attendees: [
-      {name: 'Greg', email: 'greg@example.com'},
-      {name: 'Jessa', email: 'jessa@example.com'}
-    ],
-    description: 'Review proposal language, CRM context, Apollo research, and Outscraper signals before the Acme conversation.'
+    id: '',
+    title: 'Choose a calendar event',
+    startTime: '',
+    endTime: '',
+    source: '',
+    attendees: [],
+    description: ''
   }
 };
 
@@ -791,21 +762,32 @@ const observerBoardState = {
     next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
-    {name: 'Executive Inbox', truth: 'No important human should be accidentally neglected.', evidence: 'Communication attention, inbox trust risk, neglected humans.', stance: 'What communication deserves executive attention?', currentlySeeing:'A few threads may require judgment before speed.', watching:'Replies, drafts, silence, and anything that could make a person feel dropped.', evidenceItems:['8 conversations','4 waiting replies','2 prepared drafts'], concern:'A meaningful person may be waiting while lower-value noise feels louder.', explore:'Who needs judgment before another message is sent?', packetFrom:'Relationship', incomingObservation:'Trust risk is rising in two quiet threads.'},
-    {name: 'Relationship', truth: 'Trust compounds over time.', evidence: 'Relationship movement, trust, warmth, repair, presence.', stance: 'Which relationships are quietly changing?', currentlySeeing:'Trust and warmth are moving in small ways.', watching:'Changes in tone, repair opportunities, mutual value, and signs of distance.', evidenceItems:['6 conversations','3 relationship shifts','2 open loops'], concern:'A relationship may be changing before it becomes obvious.', explore:'Which relationship needs presence before strategy?', packetFrom:'Executive Inbox', incomingObservation:'One conversation has been quiet long enough to matter.'},
-    {name: 'Project', truth: 'Work that creates long-term value should continue moving.', evidence: 'Project momentum, blockers, dependencies, long-term value.', stance: 'Which projects are gaining, slowing, or blocked?', currentlySeeing:'Several workstreams are present, but only some are moving.', watching:'Dependencies, approvals, unclear ownership, and project packets that need structure.', evidenceItems:['4 project packets','3 dependencies','1 blocker'], concern:'Visible activity may be hiding stalled value.', explore:'Which project needs a cleaner next move?', packetFrom:'Momentum', incomingObservation:'Movement increased where ownership was explicit.'},
-    {name: 'Capacity', truth: 'The user’s decision quality matters more than today’s output.', evidence: 'Decision quality, energy, cognitive load, recovery constraints.', stance: 'Can the user make wise decisions right now?', currentlySeeing:'Decision load is part of the work.', watching:'Tradeoffs, recovery needs, timing, and whether judgment is being forced too early.', evidenceItems:['5 context signals','2 calendar pressures','3 open decisions'], concern:'A correct answer may still be poorly timed.', explore:'What decision should wait until capacity returns?', packetFrom:'Calendar', incomingObservation:'The schedule is narrowing the available judgment window.'},
-    {name: 'Courage', truth: 'Anxiety can disguise itself as productivity.', evidence: 'Avoidance, difficult decisions, safe productivity hiding important work.', stance: 'What important thing appears to be avoided?', currentlySeeing:'One uncomfortable move may be disguised as optional.', watching:'Avoidance, over-preparation, softened language, and work that feels safe but secondary.', evidenceItems:['3 delayed decisions','2 softened drafts','1 avoided ask'], concern:'Comfort may be protecting the wrong thing.', explore:'What needs to be said plainly?', packetFrom:'Meaning', incomingObservation:'The same avoidance pattern appeared across three projects.'},
-    {name: 'Delight', truth: 'Joy and connection are not distractions from effectiveness.', evidence: 'Joy, play, relief, family, grounding, connection.', stance: 'What could restore energy or deepen connection?', currentlySeeing:'Joy and grounding are active.', watching:'Small moments that restore energy, curiosity, and connection.', evidenceItems:['5 conversations','2 calendar events','3 recent interactions'], concern:'Joy and connection are beginning to disappear from your workday.', explore:'What could restore energy without reducing effectiveness?', packetFrom:'Meaning', incomingObservation:'This pattern has appeared across three projects.'},
-    {name: 'Opportunity', truth: 'Possibility can emerge quietly before it becomes obvious.', evidence: 'Emerging opportunity, revenue, partnership, timing windows.', stance: 'What opportunity is emerging?', currentlySeeing:'A few small openings may be becoming real.', watching:'Timing windows, partner interest, repeated signals, and dormant paths gaining energy.', evidenceItems:['4 external signals','2 partner mentions','1 timing window'], concern:'An opportunity may pass if it waits until it feels obvious.', explore:'Which opening deserves a lightweight test?', packetFrom:'Executive Inbox', incomingObservation:'Two replies point toward the same possible opening.'},
-    {name: 'Momentum', truth: 'Motion is not the same as momentum.', evidence: 'Meaningful movement versus activity.', stance: 'Where is real momentum increasing or slowing?', currentlySeeing:'Movement is uneven across the field.', watching:'Where work compounds, where it churns, and where perfect is delaying useful.', evidenceItems:['6 movement signals','3 stalled loops','2 approvals ready'], concern:'Activity may be mistaken for progress.', explore:'What would create real movement now?', packetFrom:'Project', incomingObservation:'One project moved when the next action became smaller.'},
-    {name: 'Meaning', truth: 'Memory stores. Meaning connects.', evidence: 'Themes, values, remembered lessons, emerging story.', stance: 'What does today’s situation remind us about becoming?', currentlySeeing:'A theme is repeating beneath the tasks.', watching:'Patterns, values, old lessons, and the larger story beneath operational details.', evidenceItems:['7 remembered themes','3 project echoes','2 relationship patterns'], concern:'The useful meaning may be missed if everything is treated as logistics.', explore:'What is this really about?', packetFrom:'Witnessing', incomingObservation:'The user has named this pattern before.'},
-    {name: 'Synchronicity', truth: 'Repeated arrivals deserve attention before they become certainty.', evidence: 'Repeated names, timing clusters, phrase echoes, unexpected overlaps, emotional convergence.', stance: 'What keeps arriving together?', currentlySeeing:'A pattern is appearing across separate contexts.', watching:'Repeated names, timing clusters, phrase echoes, emotional signals, and unrelated events that point toward the same theme.', evidenceItems:['3 repeated themes','2 unrelated sources','1 timing cluster'], concern:'A meaningful pattern may disappear if treated as coincidence too early.', explore:'What is repeating enough to deserve attention?', packetFrom:'Meaning', incomingObservation:'Separate signals are beginning to point toward the same relationship theme.', perspective:'Tracks convergence without overclaiming. Protects mystery, requires evidence, and never calls something fate.'},
-    {name: 'Commitment', truth: 'Tasks are software. Commitments are promises.', evidence: 'Promises, follow-ups, overdue commitments, trust obligations.', stance: 'What promises has this person made?', currentlySeeing:'Several promises are active in the system.', watching:'Follow-through, overdue loops, trust obligations, and promises hidden inside casual language.', evidenceItems:['5 commitments','3 follow-ups','2 aging loops'], concern:'A promise may be treated like an optional task.', explore:'Which promise protects trust if honored now?', packetFrom:'Executive Inbox', incomingObservation:'A waiting reply contains an implied promise.'},
-    {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?', currentlySeeing:'Time is shaping what is wise.', watching:'Preparation windows, recovery space, meeting load, and whether the day can hold the work.', evidenceItems:['4 calendar events','2 prep windows','1 capacity constraint'], concern:'The schedule may be asking for more judgment than the day can hold.', explore:'What should be moved, protected, or prepared?', packetFrom:'Capacity', incomingObservation:'Decision quality drops if this stays compressed.'},
-    {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?', currentlySeeing:'External context may affect judgment.', watching:'Location, physical conditions, travel, interruptions, and environmental friction.', evidenceItems:['3 context signals','2 location factors','1 external constraint'], concern:'The body may be absorbing context the plan has ignored.', explore:'What environmental friction should VAL account for?', packetFrom:'Capacity', incomingObservation:'Recovery context matters before the next hard call.'},
-    {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?', currentlySeeing:'The user’s own words are present as grounding context.', watching:'Stated values, operating preferences, boundaries, fears, desires, and self-knowledge.', evidenceItems:['9 witnessing notes','5 stated values','4 operating preferences'], concern:'A recommendation may drift if it forgets what the user already revealed.', explore:'What should VAL remember before advising?', packetFrom:'Meaning', incomingObservation:'A current pattern matches onboarding context.'}
-  ]
+    {name: 'Executive Inbox', truth: 'No important human should be accidentally neglected.', evidence: 'Communication attention, inbox trust risk, neglected humans.', stance: 'What communication deserves executive attention?'},
+    {name: 'Relationship', truth: 'Trust compounds over time.', evidence: 'Relationship movement, trust, warmth, repair, presence.', stance: 'Which relationships are quietly changing?'},
+    {name: 'Project', truth: 'Work that creates long-term value should continue moving.', evidence: 'Project momentum, blockers, dependencies, long-term value.', stance: 'Which projects are gaining, slowing, or blocked?'},
+    {name: 'Capacity', truth: 'The user’s decision quality matters more than today’s output.', evidence: 'Decision quality, energy, cognitive load, recovery constraints.', stance: 'Can the user make wise decisions right now?'},
+    {name: 'Courage', truth: 'Anxiety can disguise itself as productivity.', evidence: 'Avoidance, difficult decisions, safe productivity hiding important work.', stance: 'What important thing appears to be avoided?'},
+    {name: 'Delight', truth: 'Joy and connection are not distractions from effectiveness.', evidence: 'Joy, play, relief, family, grounding, connection.', stance: 'What could restore energy or deepen connection?'},
+    {name: 'Opportunity', truth: 'Possibility can emerge quietly before it becomes obvious.', evidence: 'Emerging opportunity, revenue, partnership, timing windows.', stance: 'What opportunity is emerging?'},
+    {name: 'Momentum', truth: 'Motion is not the same as momentum.', evidence: 'Meaningful movement versus activity.', stance: 'Where is real momentum increasing or slowing?'},
+    {name: 'Meaning', truth: 'Memory stores. Meaning connects.', evidence: 'Themes, values, remembered lessons, emerging story.', stance: 'What does today’s situation remind us about becoming?'},
+    {name: 'Synchronicity', truth: 'Repeated arrivals deserve attention before they become certainty.', evidence: 'Repeated names, timing clusters, phrase echoes, unexpected overlaps, emotional convergence.', stance: 'What keeps arriving together?', perspective:'Tracks convergence without overclaiming. Protects mystery, requires evidence, and never calls something fate.'},
+    {name: 'Commitment', truth: 'Tasks are software. Commitments are promises.', evidence: 'Promises, follow-ups, overdue commitments, trust obligations.', stance: 'What promises has this person made?'},
+    {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?'},
+    {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?'},
+    {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?'}
+  ],
+  definitionsByObserver: {},
+  reviewsByObserver: {},
+  livePackets: [],
+  livePacketCount: 0,
+  witnessingComplete: null,
+  witnessingSessionId: '',
+  witnessingStage: '',
+  witnessingAnsweredCount: 0,
+  witnessingNextStep: '',
+  sourceSummary: null,
+  sources: []
 };
 
 const observerBoardPacketRoutingContract = [
@@ -933,6 +915,206 @@ function observerBoardPrototypeConnections(){
   });
 }
 
+function observerBoardPacketSourceObserver(packet = {}){
+  const source = String(packet.sourceType || packet.source_type || '').toLowerCase();
+  const type = String(packet.packetType || packet.packet_type || '').toLowerCase();
+  if(source.includes('email') || source.includes('conversation')) return 'Executive Inbox';
+  if(source.includes('calendar') || type.includes('meeting_context') || type.includes('capacity_window')) return 'Calendar';
+  if(source.includes('transcript') || type.includes('meeting_evidence') || type.includes('decision_trace')) return 'Momentum';
+  if(source.includes('witness')) return 'Witnessing';
+  if(source.includes('project')) return 'Project';
+  if(source.includes('relationship') || source.includes('contact')) return 'Relationship';
+  if(source.includes('cowork')) return 'Chief of Staff';
+  if(source.includes('external_action') || type.includes('sent_action') || type.includes('approval')) return 'Delight';
+  return 'Chief of Staff';
+}
+
+function observerBoardPacketLabel(packet = {}){
+  const labels = {
+    email_attention_packet: 'Email',
+    draft_review_packet: 'Draft',
+    reply_pressure_packet: 'Reply',
+    meeting_context_packet: 'Meeting',
+    capacity_window_packet: 'Time',
+    prep_timing_packet: 'Prep',
+    meeting_evidence_packet: 'Transcript',
+    decision_trace_packet: 'Decision',
+    task_extraction_packet: 'Task',
+    identity_context_packet: 'Identity',
+    relational_context_packet: 'Trust',
+    operating_context_packet: 'Context',
+    convergence_packet: 'Pattern',
+    timing_cluster_packet: 'Timing',
+    pattern_echo_packet: 'Echo',
+    approval_packet: 'Approval',
+    task_packet: 'Task',
+    sent_action_packet: 'Sent',
+    learning_packet: 'Learning',
+    cowork_packet: 'Co-Work',
+    document_packet: 'Source',
+    relationship_packet: 'Relationship',
+    project_packet: 'Project'
+  };
+  return labels[packet.packetType || packet.packet_type] || compactSentence(packet.title || 'Packet', 'Packet', 16);
+}
+
+function observerBoardPacketSide(from = '', to = ''){
+  const sage = new Set(['Executive Inbox','Project','Capacity','Momentum','Commitment','Calendar','Environment']);
+  const rose = new Set(['Relationship','Courage','Delight','Opportunity','Meaning','Witnessing']);
+  if(from === 'Chief of Staff'){
+    if(sage.has(to)) return 'sage';
+    if(rose.has(to)) return 'rose';
+  }
+  if(sage.has(from) && sage.has(to)) return 'sage';
+  if(rose.has(from) && rose.has(to)) return 'rose';
+  return 'bridge';
+}
+
+function observerBoardBalancedConnections(candidates = [], limit = 20){
+  const grouped = new Map();
+  candidates.forEach((candidate) => {
+    const key = candidate.from + '>' + candidate.to;
+    const current = grouped.get(key) || {
+      ...candidate,
+      key,
+      packetCount:0,
+      primaryCount:0,
+      labels:new Map()
+    };
+    current.packetCount += 1;
+    if(candidate.primary) current.primaryCount += 1;
+    current.labels.set(candidate.label, (current.labels.get(candidate.label) || 0) + 1);
+    grouped.set(key, current);
+  });
+  const groups = Array.from(grouped.values()).map((group) => {
+    const label = Array.from(group.labels.entries()).sort((a,b) => b[1] - a[1])[0]?.[0] || group.label || 'Packet';
+    return {...group,label};
+  });
+  const selected = [];
+  const selectedKeys = new Set();
+  const fromCounts = new Map();
+  const toCounts = new Map();
+  const take = (group) => {
+    if(!group || selectedKeys.has(group.key) || selected.length >= limit) return false;
+    selected.push(group);
+    selectedKeys.add(group.key);
+    fromCounts.set(group.from, (fromCounts.get(group.from) || 0) + 1);
+    toCounts.set(group.to, (toCounts.get(group.to) || 0) + 1);
+    return true;
+  };
+  const rank = (a,b) => (
+    (b.primaryCount - a.primaryCount)
+    || ((fromCounts.get(a.from) || 0) - (fromCounts.get(b.from) || 0))
+    || ((toCounts.get(a.to) || 0) - (toCounts.get(b.to) || 0))
+    || (b.packetCount - a.packetCount)
+    || (a.packetIndex - b.packetIndex)
+  );
+  ['sage','rose','bridge'].forEach((side) => {
+    take(groups.filter((group) => group.side === side && !selectedKeys.has(group.key)).sort(rank)[0]);
+  });
+  observerBoardState.observers.map((observer) => observer.name).forEach((observerName) => {
+    take(groups.filter((group) => group.to === observerName && !selectedKeys.has(group.key)).sort(rank)[0]);
+  });
+  groups.sort(rank).forEach(take);
+  return selected.map((group,index) => {
+    const style = [
+      {bend:1.2,duration:'20.8s',begin:'0s'},
+      {bend:-1.5,duration:'22.4s',begin:'-4.8s'},
+      {bend:1.8,duration:'23.2s',begin:'-9.1s'},
+      {bend:-1.1,duration:'21.6s',begin:'-13.2s'},
+      {bend:1.5,duration:'24.2s',begin:'-6.5s'},
+      {bend:-1.9,duration:'22.8s',begin:'-16.4s'}
+    ][index % 6];
+    const label = group.packetCount > 1
+      ? group.packetCount + ' ' + group.label + ' packets'
+      : group.label;
+    return [group.from,group.to,label,group.side,style.bend,style.duration,style.begin,'.84',group.packetCount];
+  });
+}
+
+function observerBoardConnectionsFromPackets(packets = []){
+  const candidates = [];
+  (Array.isArray(packets) ? packets : []).slice(0, 80).forEach((packet, packetIndex) => {
+    const routes = Array.isArray(packet.routeObserversJson) ? packet.routeObserversJson : [];
+    const sourceObserver = observerBoardPacketSourceObserver(packet);
+    const from = sourceObserver;
+    routes.forEach((route, routeIndex) => {
+      const to = route.observerName;
+      if(!to || to === from) return;
+      candidates.push({
+        from,
+        to,
+        label:observerBoardPacketLabel(packet),
+        side:observerBoardPacketSide(from, to),
+        primary:Boolean(route.primary),
+        packetIndex,
+        routeIndex
+      });
+    });
+  });
+  return observerBoardBalancedConnections(candidates,20);
+}
+
+async function loadLiveObserverBoardContext(){
+  async function fetchBoardResource(url, timeoutMs){
+    const controller = window.AbortController ? new AbortController() : null;
+    const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    try{
+      const response = await fetch(url, {
+        method:'GET',
+        credentials:'same-origin',
+        headers:{'Accept':'application/json'},
+        signal:controller?.signal
+      });
+      const result = await response.json().catch(() => ({}));
+      if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
+      return result;
+    }finally{
+      if(timeoutId) window.clearTimeout(timeoutId);
+    }
+  }
+  const [boardResult,evidenceResult] = await Promise.allSettled([
+    fetchBoardResource('/api/val/board/context?limit=36&compact=true', 12000),
+    fetchBoardResource('/api/val/observers/evidence?limit=200', 12000)
+  ]);
+  const result = boardResult.status === 'fulfilled' ? boardResult.value : null;
+  const evidence = evidenceResult.status === 'fulfilled' ? evidenceResult.value : null;
+  if(result){
+    observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
+    observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
+    observerBoardState.witnessingComplete = typeof result?.witnessingComplete === 'boolean'
+      ? result.witnessingComplete
+      : observerBoardState.witnessingComplete;
+    observerBoardState.witnessingSessionId = String(result?.witnessingSessionId || observerBoardState.witnessingSessionId || '');
+    observerBoardState.witnessingStage = String(result?.witnessingStage || '');
+    observerBoardState.witnessingAnsweredCount = Math.max(0, Number(result?.witnessingAnsweredCount) || 0);
+    observerBoardState.witnessingNextStep = String(result?.witnessingNextStep || '');
+    observerBoardState.sourceSummary = result?.sourceSummary || null;
+    observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
+  }
+  if(evidence){
+    observerBoardState.definitionsByObserver = Object.fromEntries(
+      safeArray(evidence?.definitions)
+        .filter(definition => definition?.observerName)
+        .map(definition => [definition.observerName, definition])
+    );
+    observerBoardState.reviewsByObserver = evidence?.reviewsByObserver && typeof evidence.reviewsByObserver === 'object'
+      ? evidence.reviewsByObserver
+      : {};
+    observerBoardState.observerEvidenceSummary = {
+      receiptCount:Number(evidence?.receiptCount||0),
+      observedCount:Number(evidence?.observedCount||0),
+      noSignalCount:Number(evidence?.noSignalCount||0),
+      observerCount:Number(evidence?.observerCount||0)
+    };
+  }
+  const failures = [boardResult,evidenceResult]
+    .filter(item => item.status === 'rejected')
+    .map(item => item.reason?.message || 'Board context could not load yet.');
+  observerBoardState.livePacketError = failures.join(' ');
+  return result || evidence || null;
+}
+
 const coworkSession = {
   lens: 'Co-Work with VAL',
   title: 'Co-Work w/ VAL',
@@ -945,16 +1127,16 @@ const coworkSession = {
 };
 
 const teachValSession = {
-  lens: 'Teach VAL',
-  title: 'Help VAL understand your judgment.',
-  meaning: 'This is where you tune what VAL notices, protects, prepares, and leaves quiet.',
+  lens: 'VAL Studio',
+  title: 'Shape how VAL understands and works with you.',
+  meaning: 'This is where you shape what VAL notices, connect the context it can use, and review what it learns.',
   understanding: [
     "This wasn't useful.",
     'Show me more like this.',
     'I would have handled this differently.',
     'You understood correctly.'
   ],
-  recommendation: 'Choose the sentence closest to what you mean. VAL should learn your judgment, not just your preferences.',
+  recommendation: 'Teach VAL a correction now. Observer systems and connected workflows will be composed here as VAL Studio grows.',
   actions: ["This wasn't useful", 'Show me more like this', 'I would have handled this differently', 'You understood correctly']
 };
 
@@ -1449,7 +1631,7 @@ let relationshipIndexProfiles = {};
 let relationshipIndexNetworkCount = 0;
 let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
-let relationshipIndexSourceLabel = 'Local preview';
+let relationshipIndexSourceLabel = 'Checking live relationship context';
 let relationshipPersonPacketIndex = {};
 let relationshipPeopleToWatchExpanded = false;
 let stewardshipActiveView = 'suggested';
@@ -1535,63 +1717,93 @@ function saveLeadScraperCriteria(type, criteria = {}){
 }
 
 const leadScraperDefinitions = {
-  organizations: {
-    scraperId: 'goall_employers',
-    userLabel: 'GOALL Employers',
-    purpose: 'Find employer businesses that may benefit from GOALL.',
-    clientTemplate: 'goall',
-    routeBase: '/api/val/leads',
-    recommendedAction: 'Start employer scrape',
+  general: {
+    scraperId: 'general_flexible',
+    userLabel: 'My scraper',
+    purpose: 'Find the businesses and people this executive needs without forcing the search into a rigid industry template.',
+    clientTemplate: 'general',
+    routeBase: '/api/val/lead-scrapers',
+    recommendedAction: 'Run my scraper',
     crmDestination: {
       provider: 'ghl',
-      label: 'GOALL Employers / New Limitless Lead Added',
-      pipeline: 'GOALL Employers',
-      stage: 'New Limitless Lead Added',
-      tags: ['Employer', 'GOALL Lead', 'Limitless Leads']
+      label: 'Connected CRM / approved records only',
+      pipeline: '',
+      stage: '',
+      tags: ['VAL Lead Intelligence']
     },
     criteriaFields: [
-      {key:'scraper_name',label:'Scraper name',value:'GOALL Employers'},
-      {key:'lead_type',label:'Lead type',type:'select',value:'Employer businesses',options:['Employer businesses','GOALL priority industries','Custom industry search']},
-      {key:'market',label:'City and state',value:'Phoenix, Arizona'},
-	      {key:'category',label:'Industries',value:'metal fabricators, machine shops, manufacturers, HVAC companies, roofing companies, electrical contractors, plumbing companies, restoration companies'},
-	      {key:'limit',label:'Target new GHL leads',type:'number',value:'40'},
-	      {key:'employeeMinimum',label:'Employer count',type:'select',value:'50+ employers',options:['10+ employers','25+ employers','50+ employers','100+ employers','250+ employers','500+ employers']},
-	      {key:'importTag',label:'CSV import tag',value:''},
-	      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find GOALL-fit employer businesses in the selected city/state with explicit city, explicit painpoint, public evidence, decision-maker research, and approval before import.'}
+      {key:'name',label:'Scraper name',value:'My lead scraper'},
+      {key:'target',label:'Who or what should VAL find?',value:'Businesses that fit the opportunity I am pursuing'},
+      {key:'businessTerms',label:'Business or organization',value:''},
+      {key:'roleTerms',label:'Person or role',value:''},
+      {key:'painPoints',label:'Pain point or visible need',value:''},
+      {key:'locations',label:'Location',value:'United States'},
+      {key:'resultLimit',label:'Preview count',type:'number',value:'12'},
+      {key:'qualification',label:'What makes a result worth showing?',type:'textarea',value:'Show credible public evidence and explain what is known versus still unconfirmed.'}
     ],
     sourceReadiness: [
-      ['Phase 1 discovery', 'Public business search and CRM duplicate check'],
-      ['Phase 2 intelligence', 'Gemini decision-maker, painpoint, and call script first'],
-      ['Phase 3 confirmation', 'Apollo/RocketReach only when Gemini needs contact help'],
+      ['Live discovery', 'Public business search'],
+      ['Person context', 'Only when requested and available'],
+      ['Trust', 'Official website or public listing on every result'],
+      ['Import policy', 'Approved only'],
+      ['Outreach', 'Prepare and queue; never automatic by default']
+    ]
+  },
+  organizations: {
+    scraperId: 'frisson_organizations',
+    userLabel: 'Organizations',
+    purpose: 'Find nonprofit organizations that may benefit from Frisson.',
+    clientTemplate: 'frisson',
+    routeBase: '/api/frisson/organizations',
+    recommendedAction: 'Start organization scrape',
+    crmDestination: {
+      provider: 'ghl',
+      label: 'Frisson Organizations / New Organization Lead',
+      pipeline: 'Frisson Organizations',
+      stage: 'New Organization Lead',
+      tags: ['Frisson Lead', 'Organization']
+    },
+    criteriaFields: [
+      {key:'scraper_name',label:'Scraper name',value:'Organizations'},
+      {key:'lead_type',label:'Lead type',type:'select',value:'Nonprofit organizations',options:['Nonprofit organizations','Community organizations','Mission-aligned companies']},
+      {key:'market',label:'Market',value:'United States'},
+      {key:'category',label:'Category or keywords',value:'animal rescues, food banks, youth programs'},
+      {key:'limit',label:'Preview count',type:'number',value:'12'},
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations with visible donation, volunteer, community, or partnership signals and enough public evidence for review.'}
+    ],
+    sourceReadiness: [
+      ['Level 1 discovery', 'Outscraper/public business search'],
+      ['Level 2 decision maker', 'Decision-maker enrichment when available'],
+      ['Level 3 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
   },
   partners: {
-    scraperId: 'goall_partners',
-    userLabel: 'GOALL Partners',
-    purpose: 'Find associations, agencies, brokers, payroll firms, and advisor groups that can introduce GOALL to employers.',
-    clientTemplate: 'goall',
-    routeBase: '/api/val/partners',
+    scraperId: 'frisson_partners',
+    userLabel: 'Partners',
+    purpose: 'Find companies, advisors, agencies, and platforms that can become Frisson referral or strategic partners.',
+    clientTemplate: 'frisson',
+    routeBase: '/api/frisson/partners',
     recommendedAction: 'Run partner scrape',
     crmDestination: {
       provider: 'ghl',
-      label: 'GOALL Strategic Partners / New Limitless Lead Added',
-      pipeline: 'GOALL Strategic Partners',
-      stage: 'New Limitless Lead Added',
-      tags: ['Partner', 'GOALL Strategic Partner', 'Limitless Leads']
+      label: 'Frisson Partners / New Partner Lead',
+      pipeline: 'Frisson Partners',
+      stage: 'New Partner Lead',
+      tags: ['Frisson Lead', 'Partner']
     },
     criteriaFields: [
-      {key:'scraper_name',label:'Scraper name',value:'GOALL Partners'},
-      {key:'partner_type',label:'Partner type',type:'select',value:'Professional associations',options:['Professional associations','Insurance agencies','Payroll companies','HR consultants','Staffing agencies','Referral partners']},
-      {key:'market',label:'Market',value:'Arizona'},
-      {key:'category',label:'Category or keywords',value:'SHRM, trade associations, payroll companies, HR consultants, insurance brokers'},
+      {key:'scraper_name',label:'Scraper name',value:'Partners'},
+      {key:'partner_type',label:'Partner type',type:'select',value:'Nonprofit consultants',options:['Nonprofit consultants','Grant writers','CSR consultants','Fundraising advisors','Referral partners']},
+      {key:'market',label:'Market',value:'United States'},
+      {key:'category',label:'Category or keywords',value:'grant writers, nonprofit consultants, CSR consultants'},
       {key:'limit',label:'Preview count',type:'number',value:'12'},
-      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations that can distribute, recommend, introduce, or sell GOALL to employer businesses with public evidence for review.'}
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations that serve nonprofits and could refer, distribute, recommend, introduce, or partner with Frisson.'}
     ],
     sourceReadiness: [
-      ['Phase 1 discovery', 'Public organization search'],
-      ['Phase 2 partner fit', 'Leadership, reach, and contact context'],
-      ['Phase 3 confirmation', 'CRM duplicate check + optional verification'],
+      ['Level 1 discovery', 'Outscraper/public business search'],
+      ['Level 2 decision maker', 'Partner contact and reach context'],
+      ['Level 3 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
   }
@@ -1613,10 +1825,10 @@ function leadScraperCriteriaFromDefinition(type){
 
 function leadScraperPayloadFromDefinition(type, criteria = {}){
   const definition = leadScraperDefinitions[type] || {};
-  const limit = Math.min(Math.max(Number(criteria['Target new GHL leads'] || criteria['Preview count'] || criteria.limit) || 12, 1), 100);
-  const market = criteria['City and state'] || criteria.Market || criteria.market || 'United States';
+  const limit = Math.min(Math.max(Number(criteria['Preview count'] || criteria.limit) || 12, 1), 100);
+  const market = criteria.Market || criteria.market || 'United States';
   const category = criteria['Category or keywords'] || criteria.category || criteria['Partner type'] || criteria['Lead type'] || '';
-  const payload = {
+  return {
     market,
     category,
     keywords: category,
@@ -1635,24 +1847,84 @@ function leadScraperPayloadFromDefinition(type, criteria = {}){
       importPolicy: 'approved_only'
     }
   };
-  if(definition.clientTemplate === 'goall' && type === 'organizations'){
-    payload.organizationType = category || criteria['Lead type'] || 'GOALL priority industries';
-    payload.criteria = criteria['Qualification rule'] || criteria.Criteria || category || 'GOALL priority industries';
-	    payload.employeeMinimum = String(criteria['Employer count'] || criteria.employeeMinimum || '50').replace(/[^0-9]/g, '') || '50';
-	    payload.importTag = String(criteria['CSV import tag'] || criteria.importTag || '').replace(/\s+/g, ' ').trim();
-	    payload.sourceTag = payload.importTag;
-	    payload.leadProfile = 'goall';
-    payload.searchMode = /priority|employer businesses/i.test(String(criteria['Lead type'] || '')) ? 'all' : 'single';
-    payload.rocketReachMode = 'defer';
+}
+
+function applyGeneralLeadScraperToDefinition(scraper = {}){
+  if(!scraper?.criteria || !leadScraperDefinitions.general) return;
+  activeGeneralLeadScraperId = scraper.id || activeGeneralLeadScraperId;
+  const values = {...scraper.criteria, name:scraper.name || scraper.criteria.name || 'My lead scraper'};
+  leadScraperDefinitions.general.criteriaFields = leadScraperDefinitions.general.criteriaFields.map((field) => ({
+    ...field,
+    value: values[field.key] == null ? field.value : String(values[field.key])
+  }));
+  if(scraper.destination?.label) leadScraperDefinitions.general.crmDestination.label = scraper.destination.label;
+  if(scraperWorkflows.general) scraperWorkflows.general.criteria = leadScraperCriteriaFromDefinition('general');
+}
+
+async function hydrateGeneralLeadScraper(){
+  if(!canUseApi) return;
+  try{
+    const result = await getJson('/api/val/lead-scrapers', {cache:'no-store'});
+    generalLeadScraperEntitlement = result.entitlement || generalLeadScraperEntitlement;
+    const active = (result.scrapers || []).find((scraper) => scraper.status === 'active');
+    if(active) applyGeneralLeadScraperToDefinition(active);
+  }catch(error){
+    console.warn('[hearth] saved lead scraper unavailable', error.message);
   }
-  if(definition.clientTemplate === 'goall' && type === 'partners'){
-    payload.leadProfile = 'partners';
-    payload.partnerType = criteria['Partner type'] || category || 'Professional associations';
-  }
-  return payload;
+}
+
+async function persistGeneralLeadScraper(criteria = {}){
+  if(!canUseApi) return null;
+  const config = scraperApiConfig.general;
+  const payload = config.buildPayload(criteria);
+  const result = await postJson('/api/val/lead-scrapers', {
+    name: payload.name,
+    criteria: payload,
+    destination: leadScraperDefinitions.general.crmDestination,
+    automationPolicy: {mode:'prepare_and_queue'}
+  });
+  if(result.scraper) applyGeneralLeadScraperToDefinition(result.scraper);
+  return result.scraper || null;
 }
 
 const scraperWorkflows = {
+  general: {
+    lens: 'Lead Intelligence',
+    setupTitle: 'Describe the opportunity. VAL will build the search.',
+    setupMeaning: 'Use any combination of business, person, role, pain point, and location. One active saved scraper is included and can be edited or replaced at any time.',
+    setupUnderstanding: [
+      'The saved definition belongs to this VAL, not this browser.',
+      'Live public discovery happens before paid person enrichment.',
+      'Every result must show evidence and a real place to inspect it.'
+    ],
+    setupRecommendation: 'Start with the outcome you want, then give VAL only the boundaries that genuinely matter.',
+    criteria: leadScraperCriteriaFromDefinition('general'),
+    previewTitle: 'The live preview is ready for judgment.',
+    previewMeaning: 'These are real public results. Nothing has entered CRM and no outreach has begun.',
+    previewUnderstanding: [
+      'Step 1 found public businesses matching the saved definition.',
+      'Step 2 attached person or role evidence only where available.',
+      'Step 3 keeps approval, dedupe, and CRM import visible.'
+    ],
+    previewRecommendation: 'Inspect the source, approve what belongs, and hold what does not.',
+    verifiedTitle: 'The evidence is ready for approval.',
+    verifiedMeaning: 'VAL preserved what is known, what is unconfirmed, and where each result came from.',
+    verifiedUnderstanding: [
+      'A source link stays attached to every inspectable result.',
+      'No decision maker is invented.',
+      'Outreach remains in prepare-and-queue mode.'
+    ],
+    verifiedRecommendation: 'Approve only the records you would genuinely want waiting in CRM.',
+    importedTitle: 'Approved records were handed to CRM.',
+    importedMeaning: 'Only approved records moved forward.',
+    importedUnderstanding: [
+      'CRM duplicate protection ran again.',
+      'Source evidence stayed attached.',
+      'Outreach still requires its own governed Environment.'
+    ],
+    importedRecommendation: 'Review the new records and decide whether VAL should prepare initial outreach.',
+    previewLeads: []
+  },
   organizations: {
     lens: 'Lead Intelligence',
     setupTitle: 'Define the organization scraper before VAL begins.',
@@ -1664,7 +1936,7 @@ const scraperWorkflows = {
     ],
     setupRecommendation: 'Start with a focused preview. Make the definition trustworthy before VAL touches the sources.',
     criteria: leadScraperCriteriaFromDefinition('organizations'),
-    previewTitle: 'The employer preview is ready for judgment.',
+    previewTitle: 'The organization preview is ready for judgment.',
     previewMeaning: 'VAL has not imported anything. The review set is staged so the user can decide what belongs in CRM.',
     previewUnderstanding: [
       'Level 1 found viable organizations and filtered known CRM duplicates.',
@@ -1780,19 +2052,33 @@ const scraperWorkflows = {
 };
 
 const scraperApiConfig = {
+  general: {
+    previewUrl: '/api/val/lead-scrapers/discover-preview',
+    importUrl: '',
+    buildPayload(criteria){
+      return {
+        name: criteria['Scraper name'] || criteria.name || 'My lead scraper',
+        target: criteria['Who or what should VAL find?'] || criteria.target || '',
+        businessTerms: criteria['Business or organization'] || criteria.businessTerms || '',
+        roleTerms: criteria['Person or role'] || criteria.roleTerms || '',
+        painPoints: criteria['Pain point or visible need'] || criteria.painPoints || '',
+        locations: criteria.Location || criteria.locations || 'United States',
+        qualification: criteria['What makes a result worth showing?'] || criteria.qualification || '',
+        resultLimit: Math.min(Math.max(Number(criteria['Preview count'] || criteria.resultLimit) || 12, 1), 50),
+        enrichContacts: Boolean(criteria['Person or role'] || criteria.roleTerms)
+      };
+    }
+  },
   organizations: {
-    previewUrl: '/api/val/leads/discover-preview',
-    importUrl: '/api/val/leads/import-approved',
-    stagedStartUrl: '/api/val/leads/staged-runs',
-    stagedStatusBaseUrl: '/api/val/leads/staged-runs',
-    csvUploadUrl: '/api/val/leads/upload-csv-staged-runs',
+    previewUrl: '/api/frisson/organizations/discover-preview',
+    importUrl: '/api/frisson/organizations/import-approved',
     buildPayload(criteria){
       return leadScraperPayloadFromDefinition('organizations', criteria);
     }
   },
   partners: {
-    previewUrl: '/api/val/partners/discover-preview',
-    importUrl: '/api/val/partners/import-approved',
+    previewUrl: '/api/frisson/partners/discover-preview',
+    importUrl: '/api/frisson/partners/import-approved',
     buildPayload(criteria){
       return leadScraperPayloadFromDefinition('partners', criteria);
     }
@@ -2120,6 +2406,46 @@ function writeAttendedRooms(attended){
   }
 }
 
+function readCompletedHomeItems(){
+  try{
+    return JSON.parse(localStorage.getItem(homeCompletedItemsStorageKey) || '{}') || {};
+  }catch(error){
+    return {};
+  }
+}
+
+function writeCompletedHomeItems(items){
+  try{
+    localStorage.setItem(homeCompletedItemsStorageKey, JSON.stringify(items || {}));
+  }catch(error){
+    // Durable source marks are helpful, but the product should still work if storage is unavailable.
+  }
+}
+
+function homeCompletionKey(roomName = '', item = {}){
+  const metadata = itemMetadata(item);
+  const identity = sourceIdentityForItem(item);
+  const explicitId = item.chiefQueuePacketId || item.chief_queue_packet_id || metadata.chiefQueuePacketId || metadata.chief_queue_packet_id || item.chiefRecommendationId || item.chief_recommendation_id || metadata.chiefRecommendationId || metadata.chief_recommendation_id || item.sourceCommitmentId || item.commitmentId || metadata.sourceCommitmentId || metadata.commitmentId || '';
+  const sourceType = identity.type || item.sourceType || item.source_type || item.type || item.itemType || roomName || 'home';
+  const sourceId = explicitId || identity.id || item.sourceId || item.source_id || item.target?.id || item.id || itemTitle(item, '');
+  if(!sourceId)return '';
+  return [roomName || 'home', sourceType, sourceId].map((part)=>String(part || '').toLowerCase().replace(/[^a-z0-9:_-]+/g, '_')).join('|');
+}
+
+function homeItemCompleted(roomName = '', item = {}){
+  const key = homeCompletionKey(roomName, item);
+  if(!key)return false;
+  return Boolean(readCompletedHomeItems()[key]);
+}
+
+function markHomeItemCompleted(roomName = '', item = {}, mode = 'done'){
+  const key = homeCompletionKey(roomName, item);
+  if(!key)return;
+  const completed = readCompletedHomeItems();
+  completed[key] = {roomName, mode, title:itemTitle(item, ''), completedAt:new Date().toISOString()};
+  writeCompletedHomeItems(completed);
+}
+
 function roomNameFromWorkspace(workspace = {}, fallback = ''){
   const lens = String(workspace.lens || fallback || '').toLowerCase();
   if(/velocity/.test(lens)) return 'velocity';
@@ -2165,6 +2491,7 @@ function clearRoomAttendance(event){
   event?.preventDefault?.();
   event?.stopPropagation?.();
   writeAttendedRooms({});
+  writeCompletedHomeItems({});
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('room-has-been-held');
     delete room.dataset.attended;
@@ -2850,7 +3177,7 @@ async function hydrateRelationshipIndex({force=false}={}){
       }
     })
     .catch((error) => {
-      relationshipIndexSourceLabel = 'Local preview';
+      relationshipIndexSourceLabel = 'Relationship index unavailable';
       updateRelationshipIndexSourceLabel();
       console.warn('[hearth] relationship index unavailable', error.message);
     })
@@ -3003,23 +3330,7 @@ function appendRelationshipRolodexRow(item){
   const name = document.createElement('span');
   name.className = 'rolodex-name';
   name.textContent = item.name;
-  const status = document.createElement('span');
-  status.className = 'rolodex-status';
-  status.textContent = relationshipCleanSourceText(item.profile.role || item.company || 'Network', 90);
-  const why = document.createElement('span');
-  why.className = 'rolodex-why';
-  why.textContent = 'Needs: ' + stewardshipNeeds(item.profile)[0];
-  const open = document.createElement('span');
-  open.className = 'rolodex-open';
-  open.textContent = 'Offers: ' + stewardshipOffers(item.profile)[0];
-  const next = document.createElement('span');
-  next.className = 'rolodex-next';
-  const best = stewardshipBestMatches(item.profile, 1)[0];
-  next.textContent = best ? 'Best match: ' + best.item.name : 'Best match: not ready yet';
-  const evidence = document.createElement('span');
-  evidence.className = 'rolodex-evidence';
-  evidence.textContent = 'Evidence: ' + stewardshipEvidence(item.profile)[0];
-  button.append(name, status, why, open, next, evidence);
+  button.append(name);
   row.insertBefore(button, row.firstChild);
   const enrichment = item.profile.relationshipEnrichment || item.profile.relationship_enrichment || {};
   const actions = document.createElement('div');
@@ -3027,18 +3338,11 @@ function appendRelationshipRolodexRow(item){
   const enrich = document.createElement('button');
   enrich.type = 'button';
   enrich.dataset.stewardshipEnrichPerson = item.id;
-  enrich.textContent = enrichment.status === 'complete' ? 'Refresh saved context' : "Enrich this relationship's context";
+  enrich.textContent = 'Refresh context';
   enrich.setAttribute('title', enrichment.status === 'complete'
     ? 'Run Outscraper again only if you want to refresh the saved public context for ' + item.name + '.'
     : 'Use Outscraper once to save public context for ' + item.name + ' and reuse it in meeting preparation.');
   actions.appendChild(enrich);
-  if(enrichment.status === 'complete' && enrichment.completedAt){
-    const receipt = document.createElement('span');
-    receipt.className = 'relationship-enrichment-receipt';
-    const date = new Date(enrichment.completedAt);
-    receipt.textContent = 'Context saved ' + (Number.isNaN(date.getTime()) ? 'for meeting prep.' : date.toLocaleDateString());
-    actions.appendChild(receipt);
-  }
   row.appendChild(actions);
   relationshipRolodex.appendChild(row);
 }
@@ -3858,7 +4162,7 @@ function openRelationshipIndex(){
 
 function projectIndexItems(){
   const canonicalItems = Object.values(projectIndexProfiles);
-  return (projectIndexLoaded ? canonicalItems : Object.values(projectProfiles)).filter(projectIsDrawerAdmitted);
+  return (canUseApi ? canonicalItems : (projectIndexLoaded ? canonicalItems : Object.values(projectProfiles))).filter(projectIsDrawerAdmitted);
 }
 
 function updateProjectIndexSourceLabel(){
@@ -5163,25 +5467,35 @@ function renderProjectManagerProfile(project = {}){
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
   const details = normalizedProjectSourceDetails(project);
   const documents = projectListFromValue(project.documents || details.documents);
-  const prepared = packet.project_prepared_work_packets.map((item) => item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review');
+  const prepared = packet.project_prepared_work_packets
+    .map((item) => typeof item === 'string' ? item : (item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review'))
+    .filter(Boolean);
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks.map(projectGraphLinkText) : [];
   const projectSummary = needsOnboarding
     ? projectCleanText(project.desiredOutcome || project.outcome, 'Project details are blank until onboarding is complete.')
     : projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
   const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
-  const seasonLabel = needsOnboarding ? 'Blank until shaped' : (relationships.length ? 'Relationship attached' : 'Ready to shape');
   const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
-  const detailCards = [
-    projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
-    projectManagerDetailCard('prepared_work', 'Prepared work', prepared.length ? '<ul>' + projectManagerList(prepared.map((item)=>item.title || item.kindName || item.kind || item.what_val_prepared || item.summary || 'Prepared work waiting for review')) + '</ul>' : '<p>No prepared work is proposed yet. Choose the next reviewable artifact VAL should prepare.</p>'),
-    projectManagerDetailCard('documents_sources', 'Documents / sources', documents.concat(graph).length ? '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>' : '<p>No document evidence is linked yet. Link an existing receipt from Documents.</p>'),
-    projectManagerDetailCard('risk_blocker', 'Risk / blocker', projectManagerRiskCard(packet.project_risk_packet))
+  const peopleHtml = relationships.length
+    ? '<ul>' + projectManagerList(relationships) + '</ul>'
+    : '<p>No people are linked yet. VAL should not pretend a project has stakeholders until they are attached.</p>';
+  const evidenceItems = [
+    documents.length ? documents.length + ' document/source receipt' + (documents.length === 1 ? '' : 's') : '',
+    graph.length ? graph.length + ' evidence link' + (graph.length === 1 ? '' : 's') : '',
+    details.rawContext ? 'Raw project context attached' : '',
+    details.relationships ? 'Relationship context attached' : ''
   ].filter(Boolean);
+  const evidenceHtml = documents.concat(graph).length
+    ? '<ul>' + projectManagerList(documents.concat(graph), 'No source evidence linked yet.') + '</ul>'
+    : '<p>No inspectable source evidence is attached to this project yet.</p>';
+  const preparedHtml = prepared.length
+    ? '<ul>' + projectManagerList(prepared, 'No prepared work yet.') + '</ul>'
+    : '<p>No prepared work is waiting here. If VAL can draft from this packet, it should appear in Leverage.</p>';
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
-    ? 'Project manager view with ' + relationshipSubtitle + ' attached.'
-    : 'Project manager view. Add the people, outcome, and first next move VAL should coordinate.';
+    ? 'Project attached to ' + relationshipSubtitle + '.'
+    : 'Project dossier with source-backed next move, people, evidence, and prepared work.';
   projectManagerProfile.innerHTML = [
     '<section class="project-manager-hero" data-project-manager-family="' + escapeHtml(assignedProjectManager.family || 'white') + '" style="' + escapeHtml(projectManagerColorStyle(assignedProjectManager)) + '">',
       '<div class="project-mark" aria-hidden="true">' + escapeHtml(project.initials || initialsFromName(identity.canonical_name)) + '</div>',
@@ -5194,53 +5508,43 @@ function renderProjectManagerProfile(project = {}){
         '<p>' + escapeHtml(projectSummary) + '</p>',
         '<div class="project-manager-tags">',
           '<span>' + escapeHtml(statusLabel) + '</span>',
-          '<span>' + escapeHtml(seasonLabel) + '</span>',
+          '<span>' + escapeHtml(relationships.length ? relationships.length + ' people linked' : 'No people linked') + '</span>',
+          '<span>' + escapeHtml(evidenceItems.length ? evidenceItems[0] : 'Evidence needed') + '</span>',
           '<span>' + escapeHtml(sop.sop_name) + '</span>',
-          relationships.slice(0, 2).map((name) => '<span>' + escapeHtml(name) + '</span>').join(''),
         '</div>',
-        renderProjectPinControl(project),
+        '<div class="project-manager-primary-actions">',
+          '<button type="button" class="project-show-index" data-project-show-index aria-label="Return to all projects">← Projects</button>',
+          '<button type="button" data-project-cowork-field="project_overview">Chat w/ VAL about this project</button>',
+          '<button type="button" data-project-edit-open>Edit project</button>',
+          '<button type="button" data-project-pin-open>Put a pin in it</button>',
+          prepared.length ? '<button type="button" data-project-cowork-field="prepared_work">Review prepared work</button>' : '',
+          onboardingIncomplete ? '<button type="button" data-project-cowork-field="project_interview">Answer what is missing</button>' : '',
+        '</div>',
+        renderProjectEditForm(project),
+        projectPinComposerOpen ? [
+          '<form class="project-pin-form" data-project-pin-form>',
+            '<label><span>When should this return?</span><input type="datetime-local" name="pinUntil" value="' + escapeHtml(projectPinDefaultDatetime()) + '" required></label>',
+            '<label><span>What should come back?</span><input type="text" name="title" value="' + escapeHtml(projectPinPrompt(project)) + '" autocomplete="off" required></label>',
+            '<div><button type="submit">Pin it</button><button type="button" data-project-pin-cancel>Cancel</button></div>',
+          '</form>'
+        ].join('') : '',
+        projectEditStatus(project) ? '<p class="project-edit-status">' + escapeHtml(projectEditStatus(project)) + '</p>' : '',
+        projectPinStatus(project) ? '<p class="project-pin-status">' + escapeHtml(projectPinStatus(project)) + '</p>' : '',
       '</div>',
     '</section>',
-    renderProjectRoundTableFocus(overviewFocus),
-    onboardingIncomplete ? renderProjectOnboardingPanel(project, interview) : '',
-    renderProjectRoundTableOverview(packet, needsOnboarding),
-    '<section class="project-manager-operating-system" aria-label="Project operating system">',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
-        '<span>Operating System</span>',
-        '<strong>' + escapeHtml(sop.sop_name) + '</strong>',
-        '<p>' + escapeHtml(sop.fit_reason || sop.when_to_use) + '</p>',
-        sop.known_deviations?.length ? '<small>Deviations: ' + escapeHtml(sop.known_deviations.join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
-        '<span>Current Phase</span>',
-        '<strong>' + escapeHtml(sop.current_phase) + '</strong>',
-        '<p>' + escapeHtml(sop.phase_evidence || (sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
-        sop.phase_exit_condition || sop.next_phase_trigger ? '<small>' + escapeHtml([sop.phase_exit_condition ? 'Exit: ' + sop.phase_exit_condition : '', sop.next_phase_trigger ? 'Next: ' + sop.next_phase_trigger : ''].filter(Boolean).join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_interview">',
-        '<span>Project Interview</span>',
-        '<strong>' + escapeHtml(interview.missing_fields.length ? 'Needs ' + interview.missing_fields.join(', ').replace(/_/g, ' ') : 'Ready to manage') + '</strong>',
-        '<p>' + escapeHtml(interview.current_question) + '</p>',
-        projectCoworkChip(),
-      '</article>',
+    '<section class="project-manager-exec-grid" aria-label="Project executive brief">',
+      '<article><span>Next move</span><strong>' + escapeHtml(nextMove) + '</strong><p>' + escapeHtml(whyNext) + '</p></article>',
+      '<article><span>Why it matters</span><strong>' + escapeHtml(needsOnboarding ? 'Needs executive outcome' : (importance.strategic_importance || 'Strategic reason')) + '</strong><p>' + escapeHtml(needsOnboarding ? 'VAL needs the outcome before it can manage this cleanly.' : (importance.why_it_matters || judgment.why_it_matters || 'The project needs an explicit business reason before VAL raises it.')) + '</p></article>',
+      '<article><span>Risk / blocker</span>' + projectManagerRiskCard(packet.project_risk_packet) + '</article>',
     '</section>',
-    '<section class="project-manager-judgment" aria-label="Project Manager judgment">',
-      projectManagerCard('What this is', identity.canonical_name, projectSummary),
-      projectManagerCard('Why it matters', needsOnboarding ? 'Needs executive outcome' : (importance.strategic_importance || 'Needs strategic judgment'), needsOnboarding ? 'Blank until onboarding answers define the stakes.' : (importance.why_it_matters || 'Name the concrete consequence or opportunity before VAL treats this as strategic.'), [importance.why_now ? 'Why now: ' + importance.why_now : '', importance.evidence_summary ? 'Basis: ' + importance.evidence_summary : '', importance.confidence ? 'Confidence: ' + importance.confidence : ''].filter(Boolean).join(' | ')),
-      projectManagerCard('Next move', nextMove, whyNext, next.due_at ? 'Due: ' + next.due_at : ''),
+    '<section class="project-manager-exec-grid project-manager-exec-grid-wide" aria-label="Project source packets">',
+      '<article><span>People</span>' + peopleHtml + '</article>',
+      '<article><span>Evidence</span>' + evidenceHtml + '</article>',
+      '<article><span>Prepared work</span>' + preparedHtml + '</article>',
     '</section>',
-    '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
-      projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
-      projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerMilestoneList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
-      projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerMonitoringRuleList(packet.project_monitoring_packet) + '</ul>'),
-      projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerRelationshipNurtureList(packet.project_relationship_nurture_packet) + '</ul>'),
-    '</section>',
-    detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p>' + projectCoworkChip() + '</div>',
+      '<div><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p></div>',
+      '<div><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p></div>',
     '</section>'
   ].join('');
 }
@@ -5273,6 +5577,23 @@ function renderProjectManagerLoadingState(){
         '<p class="project-manager-eyebrow">Project Managers</p>',
         '<h4>Loading project managers...</h4>',
         '<p>VAL is loading the current project index before opening a project brief.</p>',
+      '</div>',
+    '</section>'
+  ].join('');
+}
+
+function renderProjectManagerUnavailableState(message = ''){
+  activeProjectProfile = null;
+  if(projectTitle) projectTitle.textContent = 'Project Managers';
+  if(projectSubtitle) projectSubtitle.textContent = 'Project Managers could not load the live project index.';
+  if(!projectManagerProfile) return;
+  projectManagerProfile.dataset.projectProfileId = '';
+  projectManagerProfile.innerHTML = [
+    '<section class="project-manager-hero project-manager-empty">',
+      '<div>',
+        '<p class="project-manager-eyebrow">Project Managers</p>',
+        '<h4>Project context is not available yet.</h4>',
+        '<p>' + escapeHtml(message || 'VAL could not load connected project packets. No project claims are being shown without source context.') + '</p>',
       '</div>',
     '</section>'
   ].join('');
@@ -5889,13 +6210,14 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? savedMessages.map((saved) => renderHomeCoworkMessage(saved.role === 'user' ? 'user' : 'val', saved.content || '')).join('')
       : renderHomeCoworkMessage('val', session.entrypointId === 'board.chief_of_staff'
         ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
-        : 'I am here with this Observer\'s context. What would you like to examine together?');
+        : 'This Observer is loaded with the evidence behind the card. What do you want to examine first?');
     response.scrollTop = response.scrollHeight;
   }
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
-  const message = options.suppressMessage ? '' : (result.question?.question || result.message || '');
+  const message = options.suppressMessage ? '' : (result.message || result.question?.question || '');
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
-  if(response && workItem.id){
+  const hidePreparedWorkInsideTranscriptChat = session.entrypointId === 'transcript.working_brief' && workItem.type === 'transcript_conversation';
+  if(response && workItem.id && !hidePreparedWorkInsideTranscriptChat){
     const item = workItem.type === 'project_documents'
       ? renderCoworkDocumentItem(workItem)
       : workItem.type === 'project_people'
@@ -5941,10 +6263,11 @@ function renderCoworkEntryResult(result = {}, options = {}){
         : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
-  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  const textarea = homeCoworkTextareaNode();
+  const submit = homeCoworkSubmitNode();
   const isComplete = !isObserverConversation && (workItem.status === 'applied' || session.status === 'completed');
-  const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
+  const chatShouldStayOpen = session.entrypointId.startsWith('transcript.') || session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff';
+  const isReadyForReview = !isComplete && !chatShouldStayOpen && (session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
   if(textarea){
     if(isObserverConversation){
       textarea.placeholder = session.entrypointId === 'board.chief_of_staff' ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...';
@@ -5999,6 +6322,13 @@ function renderCoworkEntryResult(result = {}, options = {}){
     }
   }
   if(submit) submit.disabled = isObserverConversation ? false : (isComplete || isReadyForReview);
+  const pendingMessage = projectCleanText(activeCoworkEntry?.pendingMessage || '');
+  if(session.id && pendingMessage){
+    activeCoworkEntry = {...activeCoworkEntry,pendingMessage:''};
+    window.setTimeout(() => {
+      void submitActiveCoworkEntry(pendingMessage);
+    }, 0);
+  }
 }
 
 async function openProjectWorkstreamsCowork(node = null){
@@ -6406,17 +6736,17 @@ async function openTranscriptWorkingBriefCowork(transcriptId = ''){
   activeCoworkEntry = {entrypointId:'transcript.working_brief',sessionId:'',workItemId:'',transcriptId,status:'opening'};
   openContextualCoworkSession({
     returnTarget:'timeline',
-    title:'Transcript Working Brief',
-    meaning:'Holding the exact Krisp Action Items and Key Points for ' + timelineTranscriptTitle(transcript) + '.',
+    title:'Chat about this transcript',
+    meaning:'The complete meeting context for ' + timelineTranscriptTitle(transcript) + ' is already loaded.',
     context:[
       'Transcript: ' + timelineTranscriptTitle(transcript),
       'Exact Krisp receipt is loaded on the server.',
       'No source text will be rewritten.'
     ],
-    recommendation:'VAL will prepare a reviewable internal result from this selected meeting only.',
-    placeholder:'Preparing the selected transcript Working Brief...',
-    heading:'Preparing work from ' + timelineTranscriptTitle(transcript),
-    detail:'This conversation is scoped to one transcript and its exact Krisp receipt.',
+    recommendation:'Ask what mattered, what was decided, what could be built, or what VAL notices across the complete meeting.',
+    placeholder:'Opening this transcript conversation...',
+    heading:'Thinking with ' + timelineTranscriptTitle(transcript),
+    detail:'This conversation is scoped to this transcript. Existing drafts remain in Leverage.',
     publicDetail:'Scoped to Transcripts: selected meeting receipt.',
     lockContext:true
   });
@@ -6500,23 +6830,45 @@ async function finalizeActiveCoworkResponse(entry = {}, result = {}){
 async function submitActiveCoworkEntry(messageOverride = ''){
   const entry = activeCoworkEntry;
   if(!entry) return false;
+  const observerScopedLane = entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff';
+  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!entry.sessionId){
-    if(entry.status === 'opening'){
-      const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+    if(observerScopedLane){
+      if(!projectCleanText(input)) return true;
+      appendHomeCoworkMessage('user', input);
+      const textarea = homeCoworkTextareaNode();
+      const submit = homeCoworkSubmitNode();
+      if(textarea) textarea.value = '';
       if(submit) submit.disabled = true;
-      showCoworkContextGathering('VAL is finishing the selected section packet. Your message remains here and will stay scoped to this Project Manager.');
+      const localAnswer = observerCoworkCardAnswer(input, entry.context || {});
+      appendHomeCoworkMessage('val', localAnswer || 'I have this Observer context loaded, but the saved conversation is still opening. Ask me one direct question about the card, evidence, person, project, or what changed.');
+      if(submit) submit.disabled = false;
+      return true;
+    }
+    if(entry.status === 'opening'){
+      if(projectCleanText(input)) activeCoworkEntry = {...entry,pendingMessage:input};
+      const submit = homeCoworkSubmitNode();
+      if(submit) submit.disabled = true;
+      showCoworkContextGathering('VAL is finishing the selected source packet. Your message will continue automatically inside this Working Brief.');
     }
     // Do not fall through to generic Home Co-Work while a source-specific session is opening.
     return true;
   }
   if(entry.status === 'applied') return true;
-  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!projectCleanText(input)) return true;
   appendHomeCoworkMessage('user',input);
-  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
-  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  const textarea = homeCoworkTextareaNode();
+  const submit = homeCoworkSubmitNode();
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
+  if(observerScopedLane){
+    const localAnswer = observerCoworkCardAnswer(input, entry.context || {});
+    if(localAnswer){
+      appendHomeCoworkMessage('val', localAnswer);
+      if(submit) submit.disabled = false;
+      return true;
+    }
+  }
   try{
     const label = entry.entrypointId === 'board.chief_of_staff' ? 'Chief of Staff conversation' : entry.entrypointId === 'observer.discussion' ? 'Observer conversation' : entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'relationship.overview' ? 'Relationship next move' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
@@ -7093,6 +7445,63 @@ function projectGraphLinkText(link = {}){
   return link.summary || link.sourceLabel || link.source_label || link.sourceId || link.source_id || 'Linked context';
 }
 
+function projectGraphLinkSourceType(link = {}){
+  return String(link.sourceType || link.source_type || link.type || '').trim().toLowerCase();
+}
+
+function projectGraphLinkSourceId(link = {}){
+  return String(link.sourceId || link.source_id || link.targetId || link.target_id || '').trim();
+}
+
+function projectGraphLinkCanOpen(link = {}){
+  const type = projectGraphLinkSourceType(link);
+  return Boolean(
+    link.href ||
+    link.url ||
+    link.sourceUrl ||
+    link.source_url ||
+    /relationship|person|contact|calendar|meeting|transcript|email|gmail|outlook/.test(type + ' ' + String(link.relationship || ''))
+  );
+}
+
+async function openProjectGraphLink(link = {}){
+  const href = String(link.href || link.url || link.sourceUrl || link.source_url || '').trim();
+  if(href){
+    window.open(href, '_blank', 'noopener');
+    return;
+  }
+  const type = projectGraphLinkSourceType(link);
+  const id = projectGraphLinkSourceId(link);
+  const relationship = String(link.relationship || '').toLowerCase();
+  if(/transcript/.test(type)){
+    restoreTimelineWindow();
+    await openTimelineTranscript(id);
+    return;
+  }
+  if(/relationship|person|contact/.test(type) || relationship === 'linked_to_project'){
+    restoreRelationshipWindow();
+    await hydrateRelationshipIndex();
+    const profile = relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id];
+    if(profile) renderRelationshipProfile(id, profile);
+    return;
+  }
+  if(/calendar|meeting/.test(type) || relationship === 'meeting_context_for_project'){
+    openCalendarPanel();
+    return;
+  }
+  if(/email|gmail|outlook/.test(type)){
+    restoreCorrespondenceWindow();
+    await hydrateCorrespondenceDrawer();
+    selectCorrespondenceForHomeSource({
+      id,
+      sourceId:id,
+      sourceType:type,
+      title:link.sourceLabel || link.source_label || projectGraphLinkText(link),
+      summary:link.summary || ''
+    });
+  }
+}
+
 function renderProjectGraphPanel(project = {}, links = null){
   if(!projectGraphPanel || !projectGraphCount) return;
   const items = Array.isArray(links) ? links : (Array.isArray(project.graphLinks) ? project.graphLinks : []);
@@ -7114,6 +7523,13 @@ function renderProjectGraphPanel(project = {}, links = null){
     const detail = document.createElement('small');
     detail.textContent = [link.sourceLabel || link.source_label || link.sourceId || link.source_id, link.relationship].filter(Boolean).join(' · ');
     article.append(label, body, detail);
+    if(projectGraphLinkCanOpen(link)){
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.dataset.projectGraphLink = String(items.indexOf(link));
+      action.textContent = 'Open source';
+      article.appendChild(action);
+    }
     projectGraphPanel.appendChild(article);
   });
 }
@@ -8292,7 +8708,10 @@ async function hydrateProjectIndex(){
   if(projectIndexRequest) return projectIndexRequest;
   projectIndexSourceLabel = 'Checking project index';
   updateProjectIndexSourceLabel();
-  projectIndexRequest = getJson('/api/projects/index?limit=80')
+  projectIndexRequest = getJson('/api/projects/index?limit=80', {
+    timeoutMs:9000,
+    timeoutMessage:'Project Managers took too long to open the live index.'
+  })
     .then((data) => {
       if(Array.isArray(data?.projects)){
         projectIndexProfiles = data.projects.reduce((profiles, item) => {
@@ -8307,14 +8726,14 @@ async function hydrateProjectIndex(){
         renderProjectSuggestions();
         const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
         const selectedProject = selectedProjectId && projectIndexItems().find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
-        const firstProject = selectedProject || projectIndexItems()[0];
-        if(firstProject) renderProjectProfile(firstProject.id);
-        else renderProjectManagerEmptyState();
+        if(projectDetail?.classList.contains('project-profile-open') && selectedProject) renderProjectProfile(selectedProject.id);
+        else if(!projectIndexItems().length) renderProjectManagerEmptyState();
       }
     })
     .catch((error) => {
-      projectIndexSourceLabel = 'Local project preview';
+      projectIndexSourceLabel = 'Project index unavailable';
       updateProjectIndexSourceLabel();
+      renderProjectManagerUnavailableState(error.message || 'Project index could not load.');
       console.warn('[hearth] project index unavailable', error.message);
     })
     .finally(() => {
@@ -8328,6 +8747,13 @@ function projectRolodexEmptyText(){
     return 'Canonical project index is connected. No project profiles have enough evidence to appear here yet.';
   }
   return 'No project dossiers are available in this view yet.';
+}
+
+function setProjectDetailMode(mode = 'index'){
+  if(!projectDetail) return;
+  const profileOpen = mode === 'profile';
+  projectDetail.classList.toggle('project-profile-open', profileOpen);
+  projectDetail.classList.toggle('project-index-open', !profileOpen);
 }
 
 function appendProjectRolodexRow(project){
@@ -8371,11 +8797,13 @@ function renderProjectRolodex(){
 }
 
 function renderProjectProfile(projectId = 'frisson'){
-  const project = projectIndexProfiles[projectId] || projectProfiles[projectId] || (!projectIndexLoaded ? projectProfiles.frisson : null);
+  const localFallback = canUseApi ? null : (projectProfiles[projectId] || (!projectIndexLoaded ? projectProfiles.frisson : null));
+  const project = projectIndexProfiles[projectId] || localFallback;
   if(!project){
     renderProjectManagerEmptyState();
     return;
   }
+  setProjectDetailMode('profile');
   activeProjectProfile = project;
   if(projectTitle) projectTitle.textContent = project.name || 'Projects';
   document.querySelectorAll('[data-project-field]').forEach((node) => {
@@ -8395,7 +8823,15 @@ function renderProjectProfile(projectId = 'frisson'){
 }
 
 function projectSource(project = activeProjectProfile, action = ''){
-  const item = project || activeProjectProfile || projectProfiles.frisson;
+  const item = project || activeProjectProfile || (canUseApi ? null : projectProfiles.frisson);
+  if(!item) return {
+    sourceId:'',
+    sourceType:'project_profile',
+    sourceLabel:'Project',
+    projectId:'',
+    projectName:'Project',
+    sourceItem:null
+  };
   const packet = projectManagerPacket(item);
   return {
     sourceId: item.projectId || item.id || item.profileKey || item.name || 'project',
@@ -8496,7 +8932,8 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
 }
 
 async function loadProjectDossier(projectId = 'frisson'){
-  const fallback = projectIndexProfiles[projectId] || projectProfiles[projectId] || projectProfiles.frisson;
+  const fallback = projectIndexProfiles[projectId] || (canUseApi ? null : (projectProfiles[projectId] || projectProfiles.frisson));
+  if(!fallback) return;
   renderProjectProfile(projectId);
   if(!canUseApi) return;
   const params = new URLSearchParams();
@@ -8515,7 +8952,9 @@ async function loadProjectDossier(projectId = 'frisson'){
 }
 
 async function openProjectProfileFromDrawer(projectId = '', node = null){
-  const project = projectIndexProfiles[projectId] || projectProfiles[projectId] || projectProfiles.frisson;
+  const project = projectIndexProfiles[projectId] || (canUseApi ? null : (projectProfiles[projectId] || projectProfiles.frisson));
+  if(!project) return;
+  setProjectDetailMode('profile');
   renderProjectProfile(projectId || project.id || 'frisson');
   const selectedSource = projectSource(project, 'project:open_profile');
   const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'project:open_profile', allowBlockedForInspection:true, source:selectedSource});
@@ -8566,17 +9005,21 @@ async function createProjectFromDrawer(event){
 
 function openProjectIndex(){
   if(projectDrawerLink?.disabled) return;
+  setProjectDetailMode('index');
   hydrateRelationshipIndex();
   hydrateProjectSuggestions();
   if(canUseApi && !projectIndexLoaded){
-    renderProjectManagerLoadingState();
-    hydrateProjectIndex();
+    const knownItems = Object.values(projectIndexProfiles).filter(projectIsDrawerAdmitted);
+    if(knownItems.length){
+      renderProjectRolodex();
+    }else{
+      renderProjectManagerLoadingState();
+    }
+    void hydrateProjectIndex();
     return;
   }
   renderProjectRolodex();
-  const firstProject = projectIndexItems()[0];
-  if(firstProject) renderProjectProfile(activeProjectProfile?.id || firstProject.id);
-  else renderProjectManagerEmptyState();
+  if(!projectIndexItems().length) renderProjectManagerEmptyState();
   hydrateProjectIndex();
 }
 
@@ -8724,6 +9167,8 @@ function normalizeCorrespondenceDraft(draft = {}){
     threadId: source.threadId || '',
     recipientEmail: source.to || source.recipientEmail || source.recipient || source.forwardTo || source.classification?.from?.email || source.conversationContext?.latest_inbound?.from?.email || '',
     provider: source.provider || source.classification?.provider || draft.provider || 'gmail',
+    googleProvider: source.googleProvider || source.google_provider || draft.googleProvider || draft.google_provider || 'google',
+    accountEmail: source.accountEmail || source.account_email || draft.accountEmail || draft.account_email || '',
     senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || source.classification?.from?.email || '',
     senderName: sender.name || latestInbound.fromName || latestInbound.from_name || source.classification?.from?.name || '',
     receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || draft.createdAt || '',
@@ -8768,6 +9213,8 @@ function normalizeCorrespondenceReadyItem(item = {}){
     threadId: metadata.threadId || '',
     recipientEmail: metadata.to || metadata.recipientEmail || metadata.email || draft.to || draft.recipientEmail || '',
     provider: metadata.provider || item.provider || 'gmail',
+    googleProvider: metadata.googleProvider || metadata.google_provider || item.googleProvider || item.google_provider || 'google',
+    accountEmail: metadata.accountEmail || metadata.account_email || item.accountEmail || item.account_email || '',
     senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || metadata.fromEmail || metadata.senderEmail || '',
     senderName: sender.name || latestInbound.fromName || latestInbound.from_name || metadata.fromName || metadata.senderName || metadata.contactName || '',
     receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || item.createdAt || '',
@@ -8805,13 +9252,15 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   const admission = email.executiveInboxAdmission || {};
   const staleDraft = correspondenceDraftLooksGeneric(draft.body || '');
   return {
-    id: 'gmail-scan-' + (email.messageId || email.threadId || index),
+    id: 'gmail-scan-' + (email.accountId || email.accountEmail || 'primary') + '-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
     messageId: email.messageId || '',
     conversationId: email.conversationId || email.unifiedConversationId || email.unified_conversation_id || source.conversationId || '',
     threadId: email.threadId || '',
     recipientEmail: sender.email || source.to || '',
     provider: email.provider || 'gmail',
+    googleProvider: email.googleProvider || email.google_provider || 'google',
+    accountEmail: email.accountEmail || email.account_email || '',
     senderEmail: sender.email || '',
     senderName: sender.name || sender.email || 'Gmail sender',
     receivedAt: email.date || email.receivedAt || email.internalDate || '',
@@ -8819,7 +9268,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     status: waitingForResponse ? 'waiting_for_response' : (needsContext ? 'needs_context' : 'ready_for_review'),
     summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
     whyNow: admission.reason || email.recommendedAction || email.reason || 'This thread matched the Executive Inbox rule gate.',
-    context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
+    context: [sender.name || sender.email, email.accountEmail, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
     prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.'),
     needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.'),
     draftBody: staleDraft ? '' : (draft.body || ''),
@@ -9205,7 +9654,7 @@ function scrollLeadIntelligenceActionsIntoView(){
 }
 
 async function hydrateDocumentDrawer(){
-  currentDocumentItems = documentItemsWithProjectAssignments(localDocumentItems.concat(localStoredDocuments()));
+  currentDocumentItems = documentItemsWithProjectAssignments((canUseApi ? [] : localDocumentItems).concat(localStoredDocuments()));
   activeDocumentItem = currentDocumentItems[0] || null;
   renderDocumentFilters();
   renderDocumentBrief(activeDocumentItem);
@@ -9213,11 +9662,11 @@ async function hydrateDocumentDrawer(){
   try{
     const [documents, ready, onboarding] = await Promise.all([
       getJson('/api/val/documents?limit=120').catch(() => ({documents:[]})),
-      postJson('/api/val/ready-for-you/build', {limit:5}).catch(() => ({items:[]})),
+      getJson('/api/val/ready-for-you?limit=5', {cache:'no-store'}).catch(() => ({items:[]})),
       getJson('/api/teach-val/onboarding').catch(() => ({}))
     ]);
     const byId = new Map();
-    (documents.documents || []).map(normalizeCanonicalDocumentItem).concat(documentItemsFromReady(ready)).concat(documentItemsFromOnboarding(onboarding)).concat(currentDocumentItems).forEach((item) => {
+    (documents.documents || []).map(normalizeCanonicalDocumentItem).concat(documentItemsFromReady(ready)).concat(documentItemsFromOnboarding(onboarding)).concat(localStoredDocuments()).forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentDocumentItems = documentItemsWithProjectAssignments(Array.from(byId.values()));
@@ -9226,7 +9675,11 @@ async function hydrateDocumentDrawer(){
     renderDocumentBrief(activeDocumentItem);
     renderProjectSuggestions();
   }catch(error){
-    if(documentStatus) documentStatus.textContent = 'Document services unavailable; showing local document previews only.';
+    currentDocumentItems = documentItemsWithProjectAssignments(localStoredDocuments());
+    activeDocumentItem = currentDocumentItems[0] || null;
+    renderDocumentFilters();
+    renderDocumentBrief(activeDocumentItem);
+    if(documentStatus) documentStatus.textContent = 'Document services are unavailable. No demo documents are being shown.';
   }
 }
 
@@ -9374,6 +9827,7 @@ function correspondenceItemsFromReady(result = {}){
 }
 
 function correspondenceItemMatchesFilter(item, filter = currentCorrespondenceFilter){
+  if(filter === 'archive') return true;
   if(filter === 'all') return true;
   if(filter === 'tracking') return item.status === 'needs_context';
   if(filter === 'waiting') return item.status === 'waiting_for_response';
@@ -9428,6 +9882,46 @@ function sortedCorrespondenceItems(items = []){
   return copy.sort((a, b) => correspondencePriorityRank(a) - correspondencePriorityRank(b) || correspondenceSortValue(b) - correspondenceSortValue(a));
 }
 
+function renderCorrespondenceTrustReceipt(result = currentCorrespondenceTrustData){
+  if(!correspondenceTrustReceipt) return;
+  const title = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-title]');
+  const detail = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-detail]');
+  const attention = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-attention]');
+  const excluded = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-excluded]');
+  const contacts = correspondenceTrustReceipt.querySelector('[data-correspondence-trust-contacts]');
+  const diagnostics = result?.summary?.executiveInboxDiagnostics || result?.diagnostics || {};
+  const filtered = diagnostics.filtered || {};
+  const admitted = Number(result?.summary?.total ?? result?.pagination?.total ?? diagnostics.admitted ?? currentCorrespondenceItems.length) || 0;
+  const checked = Number(diagnostics.deduplicated ?? diagnostics.indexed ?? diagnostics.uniqueThreads) || 0;
+  const excludedCount = Object.values(filtered).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const executiveContacts = Number(diagnostics.executiveContacts) || 0;
+  const reasons = [
+    [filtered.unsubscribeOrListMail, 'list mail'],
+    [filtered.calendarNotice, 'calendar notice'],
+    [filtered.noOutboxHistory, 'with no sent-mail history'],
+    [filtered.noExecutiveAction, 'without an executive action'],
+    [filtered.resolved, 'already resolved'],
+    [filtered.suppressed, 'manually excluded']
+  ].filter(([count]) => Number(count) > 0).map(([count, label]) => `${Number(count)} ${label}`);
+  if(!result){
+    if(title) title.textContent = 'Opening saved evidence...';
+    if(detail) detail.textContent = 'VAL is checking which conversations genuinely require executive attention.';
+    if(attention) attention.textContent = '—';
+    if(excluded) excluded.textContent = '—';
+    if(contacts) contacts.textContent = '—';
+    return;
+  }
+  if(title) title.textContent = checked
+    ? `VAL checked ${checked} candidate conversation${checked === 1 ? '' : 's'}.`
+    : 'VAL checked the saved Executive Inbox evidence.';
+  if(detail) detail.textContent = reasons.length
+    ? `Kept out: ${reasons.join(', ')}.`
+    : 'Only unresolved conversations from known correspondents enter this room.';
+  if(attention) attention.textContent = String(admitted);
+  if(excluded) excluded.textContent = String(excludedCount);
+  if(contacts) contacts.textContent = String(executiveContacts);
+}
+
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   updateCorrespondenceFilterTabs();
@@ -9441,6 +9935,8 @@ function renderCorrespondenceList(){
     const filter = node.dataset.correspondenceFilterCount;
     const count = filter === 'all'
       ? currentCorrespondenceItems.length
+      : filter === 'archive'
+        ? currentCorrespondenceArchiveItems.length
       : filter === 'tracking'
         ? currentCorrespondenceItems.filter((item) => item.status === 'needs_context').length
         : filter === 'waiting'
@@ -9481,7 +9977,13 @@ function renderCorrespondenceList(){
     const summary = document.createElement('p');
     summary.textContent = item.summary;
     const small = document.createElement('small');
-    small.textContent = item.context || item.source || '';
+    const dateLabel = correspondenceHumanContactTime(item.receivedAt || item.latestAt || item.lastContact || item.date || '');
+    const senderLabel = item.senderName || item.senderEmail || '';
+    small.textContent = [
+      senderLabel ? 'From ' + senderLabel : '',
+      dateLabel,
+      item.context || item.source || ''
+    ].filter(Boolean).join(' · ');
     const priority = document.createElement('em');
     priority.textContent = item.status === 'waiting_for_response' ? 'Waiting' : (item.status === 'needs_context' ? 'Review' : 'High');
     button.append(avatar, label, priority, title, summary, small);
@@ -9559,7 +10061,7 @@ function correspondenceFallbackMessage(item = activeCorrespondenceItem){
     item.threadMessages?.[0]?.body,
     item.evidence?.[0],
     item.summary
-  ].map((value) => correspondenceCompactText(value, 3600)).find(Boolean) || '';
+  ].map((value) => correspondenceReadableEmailBody(value, '')).find(Boolean) || '';
 }
 
 function correspondenceFallbackSender(item = activeCorrespondenceItem){
@@ -9577,11 +10079,30 @@ function correspondenceReadableTextFromHtml(value = ''){
   if(!value) return '';
   const template = document.createElement('template');
   template.innerHTML = String(value || '');
+  template.content.querySelectorAll('script,style,noscript,template').forEach((node) => node.remove());
+  template.content.querySelectorAll('br').forEach((node) => node.replaceWith('\n'));
+  template.content.querySelectorAll('p,div,li,tr,blockquote,h1,h2,h3,h4').forEach((node) => node.insertAdjacentText('afterend', ' '));
   return correspondenceCompactText(template.content.textContent || '', 2400);
 }
 
+function correspondenceReadableEmailBody(body = '', bodyHtml = ''){
+  const rawBody = String(body || '').trim();
+  const bodyContainsMarkup = /<\/?[a-z][\s\S]*?>/i.test(rawBody);
+  const bodyContainsEntities = /&(?:nbsp|amp|lt|gt|quot|apos|#\d+|#x[a-f0-9]+);/i.test(rawBody);
+  if(rawBody && (bodyContainsMarkup || bodyContainsEntities)){
+    let readableBody = correspondenceReadableTextFromHtml(rawBody);
+    if(/<\/?[a-z][\s\S]*?>/i.test(readableBody)){
+      readableBody = correspondenceReadableTextFromHtml(readableBody);
+    }
+    if(readableBody) return readableBody;
+  }
+  return correspondenceCompactText(rawBody, 3600)
+    || correspondenceReadableTextFromHtml(bodyHtml)
+    || '';
+}
+
 function correspondenceCalendarInviteDetails(message = {}){
-  const text = correspondenceReadableTextFromHtml(message.bodyHtml) || correspondenceCompactText(message.body || '', 2400);
+  const text = correspondenceReadableEmailBody(message.body, message.bodyHtml);
   if(!/this event has been updated|zoom link|view all guest info|changed:\s*description|guests/i.test(text)) return null;
   const normalized = text.replace(/\s+/g, ' ').trim();
   const zoom = normalized.match(/https?:\/\/[^\s<>"']+/i)?.[0] || '';
@@ -9651,7 +10172,7 @@ function correspondenceConversationSummary(item = activeCorrespondenceItem){
   const latest = messages[0] || {};
   const sender = latest.from || correspondenceFallbackSender(item);
   const title = correspondenceCompactText(item.title || item.subject || 'this conversation', 140);
-  const latestText = correspondenceMeaningfulSentences(latest.body || correspondenceReadableTextFromHtml(latest.bodyHtml) || correspondenceFallbackMessage(item), 2);
+  const latestText = correspondenceMeaningfulSentences(correspondenceReadableEmailBody(latest.body, latest.bodyHtml) || correspondenceFallbackMessage(item), 2);
   if(/^updated invitation|^invitation:/i.test(title)){
     return latestText
       ? sender + ' sent a calendar update for "' + title + '". The visible change is: ' + latestText
@@ -9800,14 +10321,9 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
     const calendarInvite = renderCorrespondenceCalendarInvite(message);
     if(calendarInvite){
       article.appendChild(calendarInvite);
-    }else if(message.bodyHtml){
-      const html = document.createElement('div');
-      html.className = 'correspondence-email-html';
-      html.innerHTML = message.bodyHtml;
-      article.appendChild(html);
     }else{
       const p = document.createElement('p');
-      p.textContent = message.body;
+      p.textContent = correspondenceReadableEmailBody(message.body, message.bodyHtml) || 'No readable email text is attached.';
       article.appendChild(p);
     }
     correspondenceThreadBody.appendChild(article);
@@ -9881,7 +10397,13 @@ async function openCorrespondenceAttachment(index = 0){
   setCorrespondenceAttachmentPanel(true);
   renderCorrespondenceAttachmentView({filename:attachment.name, mimeType:attachment.mimeType || attachment.type, size:attachment.size, message:'Loading attachment source...'}, attachment);
   try{
-    const params = new URLSearchParams({messageId, attachmentId, filename:attachment.filename || attachment.name || '', mimeType:attachment.mimeType || attachment.type || ''});
+    const params = new URLSearchParams({
+      messageId,
+      attachmentId,
+      filename:attachment.filename || attachment.name || '',
+      mimeType:attachment.mimeType || attachment.type || '',
+      googleProvider:attachment.googleProvider || activeCorrespondenceItem?.googleProvider || activeCorrespondenceItem?.raw?.googleProvider || 'google'
+    });
     const result = await getJson('/api/val/executive-inbox/attachment?' + params.toString(), {timeoutMs:22000, timeoutMessage:'Attachment source took longer than expected.'});
     renderCorrespondenceAttachmentView(result, attachment);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Opened attachment source in read-only preview.';
@@ -10109,11 +10631,27 @@ function renderCorrespondenceWritingRuleSummary(){
 function renderCorrespondenceRulesPanel(){
   if(!correspondenceRulesList) return;
   correspondenceRulesList.innerHTML = '';
-  const rules = currentCorrespondenceRules.filter((rule) => rule.isActive !== false);
+  const systemRules = [
+    ['Unsubscribe stays out', 'Messages with unsubscribe, list-mail, newsletter, digest, or preference-management signals never enter Executive Inbox.'],
+    ['Reciprocity earns attention', 'A sender must exist in your sent mail before entering Executive Inbox, unless you explicitly mark them as an Executive contact.'],
+    ['Only actionable threads enter', 'The latest thread must need your reply, decision, approval, or be waiting on someone after you sent a request.'],
+    ['Your decisions persist', 'Resolved threads and contacts marked Not an executive contact remain outside the active queue.']
+  ];
+  systemRules.forEach(([name, description]) => {
+    const article = document.createElement('article');
+    article.className = 'correspondence-system-rule';
+    const title = document.createElement('strong');
+    title.textContent = name;
+    const meta = document.createElement('p');
+    meta.textContent = description;
+    article.append(title, meta);
+    correspondenceRulesList.appendChild(article);
+  });
+  const rules = currentCorrespondenceRules.filter((rule) => rule.isActive !== false && rule.is_active !== false);
   if(!rules.length){
     const empty = document.createElement('p');
     empty.className = 'correspondence-side-empty';
-    empty.textContent = 'No saved Executive Inbox rules yet.';
+    empty.textContent = 'No additional user-created rules yet. Choose Create Rule to add one.';
     correspondenceRulesList.appendChild(empty);
     return;
   }
@@ -10286,7 +10824,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
     correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : (selected.draftFailureMessage || 'No draft has been prepared for this conversation yet.')) : 'Select a conversation to edit the draft.';
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
-  document.querySelectorAll('.correspondence-actions [data-correspondence-action], .correspondence-intelligence [data-correspondence-action]').forEach((button) => {
+  document.querySelectorAll('.correspondence-actions [data-correspondence-action], .correspondence-decision-actions [data-correspondence-action], .correspondence-intelligence [data-correspondence-action]').forEach((button) => {
     const action = button.dataset.correspondenceAction;
     const isDraftSend = action === 'send' && button.closest('.correspondence-actions');
     const allowed = correspondenceSuggestedActions(selected).includes(action) || isDraftSend;
@@ -10333,6 +10871,8 @@ function correspondenceSendPayload(item = activeCorrespondenceItem){
     subject,
     body,
     provider: item.provider || source.provider || raw.provider || 'gmail',
+    googleProvider: item.googleProvider || source.googleProvider || source.google_provider || raw.googleProvider || raw.google_provider || 'google',
+    accountEmail: item.accountEmail || source.accountEmail || source.account_email || raw.accountEmail || raw.account_email || '',
     threadId: item.threadId || source.threadId || '',
     messageId: source.messageId || '',
     sourceContext: {
@@ -10614,7 +11154,23 @@ async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
   }
   const result = await postJson('/api/val/executive-inbox/safe-contact', contact);
   if(result.ok !== false && correspondenceSafeEmail) correspondenceSafeEmail.value = '';
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
+  applyCorrespondenceSafeListResult(result);
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact. ' + (Number(result.admittedCount || 0) ? result.admittedCount + ' saved conversation' + (Number(result.admittedCount) === 1 ? ' is' : 's are') + ' now in Executive Inbox.' : 'New mail from this sender will enter Executive Inbox immediately.');
+}
+
+function applyCorrespondenceSafeListResult(result = {}){
+  const diagnostics = currentCorrespondenceTrustData?.summary?.executiveInboxDiagnostics || currentCorrespondenceTrustData?.diagnostics;
+  if(diagnostics && Number.isFinite(Number(result.executiveContactCount))){
+    diagnostics.executiveContacts = Number(result.executiveContactCount);
+    renderCorrespondenceTrustReceipt();
+  }
+  const admitted = correspondenceItemsFromEmailIntelligence({items:result.items || []});
+  if(!admitted.length) return;
+  const byId = new Map(admitted.concat(currentCorrespondenceItems).map((row) => [row.id, row]));
+  currentCorrespondenceItems = Array.from(byId.values());
+  currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
+  activeCorrespondenceItem = admitted[0];
+  renderCorrespondenceBrief(activeCorrespondenceItem);
 }
 
 function correspondenceEmailForAction(item = activeCorrespondenceItem){
@@ -10854,11 +11410,13 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
-  setCorrespondenceLoadingState(true, 'Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox.');
+  setCorrespondenceLoadingState(true, 'Opening saved Executive Inbox context. Use Scan only when you want a fresh Gmail or Outlook pass.');
+  currentCorrespondenceTrustData = null;
+  renderCorrespondenceTrustReceipt();
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
-  await Promise.all([
+  void Promise.all([
     hydrateRelationshipIndex({force:false}).catch(() => null),
     hydrateProjectIndex().catch(() => null)
   ]);
@@ -10869,26 +11427,50 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const inbox = await getJson('/api/val/executive-inbox/queue?days=90&limit=150');
+    const inbox = await getJson('/api/val/executive-inbox/queue?limit=200', {
+      timeoutMs:7000,
+      timeoutMessage:'Saved Executive Inbox context is taking too long to open.'
+    });
     const merged = correspondenceItemsFromEmailIntelligence(inbox);
     const byId = new Map();
     merged.forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentCorrespondenceItems = Array.from(byId.values());
+    currentCorrespondenceTrustData = inbox;
+    renderCorrespondenceTrustReceipt();
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
-    currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No unresolved conversations crossed the Executive Inbox judgment gate.';
+    currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No saved conversations currently cross the Executive Inbox judgment gate. Use Scan to refresh Gmail or Outlook.';
     setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
     renderCorrespondenceBrief(activeCorrespondenceItem);
     await hydrateCorrespondenceRules();
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
     currentCorrespondenceItems = [];
+    currentCorrespondenceTrustData = null;
+    renderCorrespondenceTrustReceipt();
     activeCorrespondenceItem = null;
-    setCorrespondenceLoadingState(false, 'Executive Inbox could not load live Gmail-classified conversations.');
+    setCorrespondenceLoadingState(false, 'Executive Inbox could not open saved conversations. Use Scan to refresh Gmail or Outlook.');
     renderCorrespondenceBrief(activeCorrespondenceItem);
-    if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not load live Gmail-classified conversations. No demo emails are being shown.';
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not open saved conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
+  }
+}
+
+async function hydrateCorrespondenceArchive(){
+  if(!canUseApi)return;
+  setCorrespondenceLoadingState(true,'Opening resolved Executive Inbox conversations from VAL storage.');
+  try{
+    const result=await getJson('/api/val/executive-inbox/archive?limit=200',{timeoutMs:7000,timeoutMessage:'The Executive Inbox archive is taking too long to open.'});
+    currentCorrespondenceArchiveItems=correspondenceItemsFromEmailIntelligence(result).map(item=>({...item,status:'resolved'}));
+    currentCorrespondenceItems=currentCorrespondenceArchiveItems.slice();
+    activeCorrespondenceItem=currentCorrespondenceItems[0]||null;
+    setCorrespondenceLoadingState(false,currentCorrespondenceItems.length?'Resolved conversations remain available as evidence.':'No resolved Executive Inbox conversations yet.');
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+  }catch(error){
+    setCorrespondenceLoadingState(false,'Executive Inbox archive could not open.');
+    if(correspondenceSafety)correspondenceSafety.textContent=error.message;
   }
 }
 
@@ -10906,8 +11488,11 @@ async function scanCorrespondenceWindow(days = 30){
   renderCorrespondenceList();
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   try{
-    const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:45000, timeoutMessage:'Gmail scan is taking longer than expected.'});
+    const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:75000, timeoutMessage:'VAL is still verifying conversations and preparing source-backed drafts.'});
+    currentCorrespondenceTrustData = result;
+    renderCorrespondenceTrustReceipt();
     currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length
       ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
@@ -11073,9 +11658,19 @@ async function handleCorrespondenceAction(action){
       return;
     }
     if(canUseApi){
-      await postJson('/api/val/executive-inbox/not-executive-contact', contact);
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Removing this sender from Executive Inbox...';
+      try{
+        await postJson('/api/val/executive-inbox/not-executive-contact', contact, {
+          timeoutMs:6000,
+          timeoutMessage:'VAL could not save this sender preference quickly enough.'
+        });
+      }catch(error){
+        if(correspondenceSafety) correspondenceSafety.textContent = error.message + ' The conversation is still here.';
+        return;
+      }
     }
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact.';
@@ -11088,7 +11683,8 @@ async function handleCorrespondenceAction(action){
       return;
     }
     if(canUseApi){
-      await postJson('/api/val/executive-inbox/safe-contact', contact);
+      const result = await postJson('/api/val/executive-inbox/safe-contact', contact);
+      applyCorrespondenceSafeListResult(result);
     }
     if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
     return;
@@ -11104,6 +11700,7 @@ async function handleCorrespondenceAction(action){
       });
     }
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    currentCorrespondenceActiveItems = currentCorrespondenceItems.slice();
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked resolved. VAL will keep the thread as evidence, but remove it from the active Executive Inbox.';
@@ -11189,6 +11786,19 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
+  if(correspondenceActionId === 'not_executive_contact'){
+    correspondenceAction.disabled = true;
+    correspondenceAction.setAttribute('aria-busy','true');
+    try{
+      await handleCorrespondenceAction(correspondenceActionId);
+    }finally{
+      if(correspondenceAction.isConnected){
+        correspondenceAction.disabled = false;
+        correspondenceAction.removeAttribute('aria-busy');
+      }
+    }
+    return true;
+  }
   const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules', 'save_composed_rule'].includes(correspondenceActionId);
   if(drawerUtilityAction){
     await handleCorrespondenceAction(correspondenceActionId);
@@ -11375,7 +11985,7 @@ function scrollCommitmentActionsIntoView(){
 }
 
 async function hydrateCommitmentDrawer(){
-  currentCommitmentItems = localCommitmentItems.slice();
+  currentCommitmentItems = canUseApi ? [] : localCommitmentItems.slice();
   activeCommitmentItem = currentCommitmentItems[0] || null;
   updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
   renderCommitmentBrief(activeCommitmentItem);
@@ -11387,11 +11997,13 @@ async function hydrateCommitmentDrawer(){
       activeCommitmentItem = currentCommitmentItems[0] || null;
       updateCommitmentSummary(result.summary || {});
       renderCommitmentBrief(activeCommitmentItem);
-    }else{
-      updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
-    }
+    }else updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
   }catch(error){
-    if(commitmentStatus) commitmentStatus.textContent = 'Commitments API unavailable; showing local preview only.';
+    currentCommitmentItems = [];
+    activeCommitmentItem = null;
+    updateCommitmentSummary(commitmentSummaryFromItems([]));
+    renderCommitmentBrief(null);
+    if(commitmentStatus) commitmentStatus.textContent = 'Commitments could not load. No demo commitments are being shown.';
   }
 }
 
@@ -11512,10 +12124,23 @@ function openProjectCoworkSession(node = null){
   return openProjectOverviewCowork(node);
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = ''}){
+function selectedSourceContextHasLoadedPacket(selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return false;
+  return Boolean(
+    selectedSourceContext.cardTitle ||
+    selectedSourceContext.cardMeaning ||
+    selectedSourceContext.sourceBrief ||
+    (Array.isArray(selectedSourceContext.contextLines) && selectedSourceContext.contextLines.length) ||
+    (Array.isArray(selectedSourceContext.sourceRefs) && selectedSourceContext.sourceRefs.length) ||
+    (selectedSourceContext.workingBrief && typeof selectedSourceContext.workingBrief === 'object' && Object.keys(selectedSourceContext.workingBrief).length)
+  );
+}
+
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = '', selectedSourceContext = null}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   activeCoworkContextLocked = Boolean(lockContext);
+  activeCoworkSelectedSourceContext = selectedSourceContext || null;
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: safeTitle,
@@ -11531,10 +12156,11 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     heading: heading || contextualCoworkHeading(safeTitle),
     detail: publicDetail || detail || coworkPublicDetail(returnTarget),
     placeholder: placeholder || 'What should VAL help you think through here?',
-    initialMessage
+    initialMessage,
+    selectedSourceContext
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
-  if(showGathering) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
+  if(showGathering && !selectedSourceContextHasLoadedPacket(selectedSourceContext)) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
 }
 
 function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefing || {}){
@@ -12385,35 +13011,30 @@ function relationshipContextActions(actions = [], profile = activeRelationshipPr
 }
 
 function updateWorkspaceReturnButton(){
+  returnButton.textContent = '×';
   if(workspaceReturnTarget === 'relationship'){
     const label = relationshipBackLabel();
-    returnButton.textContent = label;
     returnButton.setAttribute('aria-label', label + ' relationship brief');
     return;
   }
   if(workspaceReturnTarget === 'project'){
     const label = 'Back to ' + (activeProjectCoworkTarget?.projectName || activeProjectProfile?.name || 'project');
-    returnButton.textContent = label;
     returnButton.setAttribute('aria-label', label + ' project brief');
     return;
   }
   if(workspaceReturnTarget === 'timeline'){
-    returnButton.textContent = 'Back to Transcripts';
     returnButton.setAttribute('aria-label', 'Back to Transcripts drawer');
     return;
   }
   if(workspaceReturnTarget === 'correspondence'){
-    returnButton.textContent = 'Back to Executive Inbox';
     returnButton.setAttribute('aria-label', 'Back to Executive Inbox drawer');
     return;
   }
   if(workspaceReturnTarget === 'val'){
-    returnButton.textContent = 'Back to VAL';
     returnButton.setAttribute('aria-label', 'Back to VAL onboarding drawer');
     return;
   }
-  returnButton.textContent = 'Close card';
-  returnButton.setAttribute('aria-label', 'Close card and return to the desk');
+  returnButton.setAttribute('aria-label', 'Close this function');
 }
 
 function showRelationshipReceipt({title, meaning, understanding = [], recommendation, actions = []}){
@@ -13255,15 +13876,6 @@ function returnToExecutiveCompass(){
   updateCloseAllDrawersButton();
 }
 
-function closeExecutiveCompassFromCore(){
-  if(!retrievalSystem.classList.contains('open')){
-    closeDrawer();
-    return;
-  }
-  retrievalSystem.classList.add('compass-closing');
-  window.setTimeout(closeDrawer, 520);
-}
-
 function updateCloseAllDrawersButton(){
   if(!closeAllDrawersButton) return;
   closeAllDrawersButton.hidden = !retrievalSystem.classList.contains('open');
@@ -13426,8 +14038,7 @@ function timelineSourceReceipt(transcript = {}){
     .filter(Boolean)
     .map(String)
     .map((item) => item.replace(/^\s*#{1,6}\s*/, '').trim())
-    .filter((item) => !sourceLineLooksLikeTranscript(item))
-    .slice(0, 12);
+    .filter((item) => !sourceLineLooksLikeTranscript(item));
   const safeSections = sections.map((section) => {
     const lines = [];
     for(const line of (Array.isArray(section.lines) ? section.lines.map(String) : [])){
@@ -13655,12 +14266,14 @@ function timelineTranscriptInvitees(transcript = {}){
       if(typeof person === 'string'){
         const emailMatch = person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
         const email = emailMatch ? emailMatch[0].toLowerCase() : '';
-        return {label:person.replace(/<.*?>/g, '').trim(), name:person.replace(/<.*?>/g, '').replace(email, '').trim(), email, key:(email || person).toLowerCase(), relationshipId:'', projectId:''};
+        if(!email) return null;
+        return {label:person.replace(/<.*?>/g, '').trim(), name:person.replace(/<.*?>/g, '').replace(email, '').trim(), email, key:email, relationshipId:'', projectId:''};
       }
       const email = person?.email || person?.address || person?.emailAddress?.address || person?.mail || person?.matchedEmail || '';
+      if(!/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(String(email || ''))) return null;
       const name = person?.name || person?.displayName || person?.emailAddress?.name || person?.speakerNameRaw || person?.matchedContactName || '';
       const label = String(name || email || '').trim();
-      const key = String(email || label || '').trim().toLowerCase();
+      const key = String(email || '').trim().toLowerCase();
       const relationshipId = person?.relationshipId || person?.matchedContactId || person?.contactId || person?.crmContactId || person?.profileKey || '';
       const projectId = person?.projectId || person?.matchedProjectId || person?.projectProfileId || '';
       return label ? {label, name, email, key, relationshipId, relationshipName:person?.relationshipName || person?.matchedRelationshipName || '', projectId, matchReason:person?.matchReason || person?.relationshipStatus || ''} : null;
@@ -13827,22 +14440,15 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
   const calendarMismatchNote = calendarInviteMismatch ? '<small class="timeline-map-suggestion timeline-map-warning">VAL found a calendar invite, but it did not match this transcript closely enough to trust its attendees: ' + escapeHtml(calendarInviteMismatch.title || calendarInviteMismatch.id || 'calendar invite') + '.</small>' : '';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
-  const sourceDraft = overviewDraft || timelineMeetingOverviewDraft(transcript);
-  const actionCount = sourceDraft.actionItems.length;
-  const keyPointCount = sourceDraft.keyPoints.length;
-  const attendeeEmailDraft = timelineAttendeeEmailDraftRecord(transcript);
+  const attendeeChips = invitees.map((person) => '<span><strong>' + escapeHtml(person.name || person.label || person.email) + '</strong><small>' + escapeHtml(person.email) + '</small></span>').join('');
   return [
-    '<section class="timeline-transcript-section timeline-transcript-send-panel" data-transcript-section="send-action-items">',
-    '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Key Points and Action Items</strong></div>',
-    '<p>VAL keeps the source Key Points and Action Items exactly as shown, then prepares one group email for your review.</p>',
-    attendeeEmailDraft
-      ? renderTimelineAttendeeEmailReview(attendeeEmailDraft)
-      : '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Prepare group email</button>',
-    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee email' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(keyPointCount ? keyPointCount + ' Key Point' + (keyPointCount === 1 ? '' : 's') : 'No Key Points found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
-    '</section>',
-    '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
-    '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
-    '<p>If VAL missed a relationship or project, link it here so the Round Table packets and future prepared work have the right context.</p>',
+    '<section class="timeline-transcript-section timeline-transcript-context-panel" data-transcript-section="people-projects">',
+    '<div class="timeline-overview-receipt"><span>Verified connections</span><strong>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee' + (attendeeCount === 1 ? '' : 's') : 'No attendee emails attached') + '</strong></div>',
+    attendeeChips ? '<div class="timeline-verified-attendees">' + attendeeChips + '</div>' : '<p>VAL did not receive a verified attendee email with this transcript.</p>',
+    '<details class="timeline-transcript-map-panel">',
+    '<summary>Review or correct relationships and project</summary>',
+    '<div class="timeline-transcript-map-body">',
+    '<p>Only verified attendee emails belong here. Key Points and Action Items remain meeting evidence and can never become people.</p>',
     '<div class="timeline-project-link-row timeline-relationship-link-row">',
     '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(suggestedRelationship?.relationshipName || suggestedRelationship?.label || suggestedRelationship?.email || '') + '" data-transcript-relationship-main-search aria-label="Search relationship for this transcript">',
     '<button type="button" data-transcript-action="link_transcript_relationship" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to relationship</button>',
@@ -13867,6 +14473,8 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     calendarMismatchNote,
     '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-map-status></p>',
+    '</div>',
+    '</details>',
     '</section>'
   ].join('');
 }
@@ -13883,7 +14491,8 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
     sourceSections.unshift({kind:'action_items', heading:'Action Items', raw:['Action Items', ...actionItems].join('\n'), lines:actionItems});
   }
   const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
-  const body = receipt.body || sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n') || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
+  const structuredBody = sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n').trim();
+  const body = structuredBody || receipt.body || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
   const invitees = timelineTranscriptInvitees(transcript);
   return {
     ...receipt,
@@ -13903,11 +14512,11 @@ function renderTimelineTranscriptMetricStrip(transcript = {}, tasks = [], overvi
   const draft = overviewDraft || timelineMeetingOverviewDraft(transcript, tasks);
   const taskCount = draft.actionItems.length || tasks.length;
   const keyPointCount = draft.keyPoints.length;
-  const savedDraft = timelineMeetingOverviewRecord(transcript);
-  const emailLabel = savedDraft ? 'Open email draft' : 'Prepare email draft';
+  const savedDraft = timelineMeetingOverviewRecord(transcript) || timelineAttendeeEmailDraftRecord(transcript);
+  const emailLabel = savedDraft ? 'Open in Leverage' : 'Nothing prepared';
   const emailControl = savedDraft
-    ? '<button type="button" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>'
-    : '<button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>';
+    ? '<button type="button" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Prepared work</strong><span>' + escapeHtml(emailLabel) + '</span></button>'
+    : '<button type="button" disabled><strong>Prepared work</strong><span>' + escapeHtml(emailLabel) + '</span></button>';
   return [
     '<div class="timeline-transcript-summary-strip" aria-label="Transcript readiness">',
     '<button type="button" data-transcript-focus="action-items"><strong>' + escapeHtml(taskCount) + '</strong><span>Action Items</span></button>',
@@ -13927,12 +14536,15 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
 	      const lines = (Array.isArray(section.lines) ? section.lines : []).map((line) => String(line || '').replace(/^\s*#{1,6}\s*/, '').trim()).filter(Boolean);
       const sectionName = actionSection ? 'action-items' : 'key-points';
       return [
-        '<section class="timeline-transcript-section timeline-source-receipt" data-transcript-section="' + sectionName + '">',
+        '<section class="timeline-transcript-section timeline-source-receipt is-' + sectionName + '" data-transcript-section="' + sectionName + '">',
+        '<header class="timeline-source-section-heading">',
+        '<span>' + escapeHtml(actionSection ? 'FOLLOW-THROUGH' : 'MEETING INTELLIGENCE') + '</span>',
         '<h4>' + escapeHtml(section.heading || (actionSection ? 'Action Items' : 'Key Points')) + '</h4>',
+        '</header>',
         lines.length ? '<div class="timeline-source-lines">' + lines.map((line, index) => [
           '<div>',
+          '<span class="timeline-source-line-marker" aria-hidden="true">' + escapeHtml(actionSection ? String(index + 1) : '—') + '</span>',
           '<p>' + escapeHtml(line) + '</p>',
-          actionSection ? '<button type="button" class="timeline-task-create" data-transcript-task-create="' + escapeHtml(transcript.id || '') + '" data-transcript-task-index="' + index + '">Create task</button>' : '',
           '</div>'
         ].join('')).join('') : '<pre>' + escapeHtml(section.raw || '') + '</pre>',
         '</section>'
@@ -13984,7 +14596,7 @@ function renderTimelineTranscriptStats(data = {}){
 
 function renderTimelineTranscriptList(activeId = ''){
   if(!timelineEventList || !timelineEventCount) return;
-  const items = currentTimelineTranscriptItems.slice(0, 40);
+  const items = currentTimelineTranscriptItems;
   const totalActions = items.reduce((sum, transcript) => sum + Number(transcript.taskCount || transcript.openActionCount || 0), 0);
   timelineEventCount.textContent = items.length
     ? items.length + ' recent transcript' + (items.length === 1 ? '' : 's') + (totalActions ? ' · ' + totalActions + ' action item' + (totalActions === 1 ? '' : 's') : '')
@@ -14008,7 +14620,9 @@ function renderTimelineTranscriptList(activeId = ''){
       '<small>' + escapeHtml(tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items') + '</small>',
       '</button>'
     ].join('');
-  }).join('');
+  }).join('') + (timelineTranscriptPagination.hasMore
+    ? '<button type="button" class="timeline-transcript-load-more" data-transcript-load-more>Load more transcripts</button>'
+    : '');
 }
 
 function renderTimelineTranscriptEmpty(){
@@ -14113,15 +14727,17 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<article class="timeline-transcript-detail">',
     '<div class="timeline-transcript-titlebar">',
     '<div><span>Selected transcript</span><h4>' + escapeHtml(title) + '</h4><small>' + escapeHtml(meta || 'Source receipt available') + '</small>' + (rawTitle && rawTitle !== title ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
+    '<button type="button" class="timeline-chat-transcript timeline-chat-transcript-top" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button>',
     '</div>',
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
     renderTimelineTranscriptMappingControls(transcript, overviewDraft),
-    renderTimelineMeetingOverviewDraft(transcript, tasks, overviewDraft),
-    '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><p>VAL will use this selected meeting\'s exact Krisp receipt to prepare a reviewable internal result.</p><button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Open Transcript Working Brief</button></section>',
+    '<section class="timeline-transcript-section timeline-transcript-cowork"><div><span>Ask, explore, or build from the meeting</span><h4>Chat about this transcript</h4><p>VAL already has this meeting\'s Action Items, Key Points, and verified connections loaded. Prepared drafts remain in Leverage.</p></div><button type="button" class="timeline-chat-transcript" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button></section>',
     '<div class="timeline-transcript-source-actions">',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
     downloadUrl ? '<a class="transcript-download-link" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener">Download transcript</a>' : '',
+    '<button type="button" class="transcript-delete" data-transcript-delete="' + escapeHtml(transcript.id || '') + '">Delete transcript</button>',
+    '<span class="transcript-delete-confirm" data-transcript-delete-confirmation="' + escapeHtml(transcript.id || '') + '" hidden><span>Delete this transcript?</span><button type="button" data-transcript-delete-confirm="' + escapeHtml(transcript.id || '') + '">Confirm delete</button><button type="button" data-transcript-delete-cancel>Cancel</button></span>',
     '</div>',
     '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'The full transcript source text was not supplied with this record.') + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
@@ -14130,11 +14746,18 @@ function renderTimelineTranscriptDetail(transcript = {}){
 }
 
 function resetTimelineTranscriptDetailScroll(){
-  drawerTray?.scrollTo?.({top:0, left:0});
-  document.querySelector('#timeline-detail')?.scrollTo?.({top:0, left:0});
-  document.querySelector('.transcript-detail-panel')?.scrollTo?.({top:0, left:0});
-  timelineReviewCards?.scrollTo?.({top:0, left:0});
-  transcriptDetail?.scrollTo?.({top:0, left:0});
+  const scrollNodes = [
+    drawerTray,
+    document.querySelector('#timeline-detail'),
+    document.querySelector('.drawer-tray.timeline-open .transcript-detail-panel'),
+    timelineReviewCards,
+    transcriptDetail
+  ].filter(Boolean);
+  [...new Set(scrollNodes)].forEach((node) => {
+    node.scrollTop = 0;
+    node.scrollLeft = 0;
+    node.scrollTo?.({top:0, left:0, behavior:'auto'});
+  });
 }
 
 async function openTimelineTranscript(transcriptId){
@@ -14152,6 +14775,7 @@ async function openTimelineTranscript(transcriptId){
     renderTimelineTranscriptDetail(data.transcript);
     window.requestAnimationFrame(() => {
       resetTimelineTranscriptDetailScroll();
+      window.requestAnimationFrame(resetTimelineTranscriptDetailScroll);
     });
   }catch(error){
     if(requestId !== timelineTranscriptOpenRequest) return;
@@ -14159,33 +14783,38 @@ async function openTimelineTranscript(transcriptId){
   }
 }
 
-async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false} = {}){
+async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false, append = false} = {}){
   timelineTranscriptRefreshDays = days === 30 ? 30 : 90;
   if(transcriptRefreshWindow) transcriptRefreshWindow.value = String(timelineTranscriptRefreshDays);
   const loadingMessage = refresh
     ? 'VAL is checking transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days and rebuilding the drawer.'
     : 'VAL is reading transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days.';
   setTimelineTranscriptsLoading(true, loadingMessage);
-  renderTimelineTranscriptStats({counts:{}});
-  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><span class="val-presence-mark val-loading-mark timeline-loading-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p></article>';
-  renderTimelineTranscriptEmpty();
+  if(!append){
+    renderTimelineTranscriptStats({counts:{}});
+    if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><span class="val-presence-mark val-loading-mark timeline-loading-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p></article>';
+    renderTimelineTranscriptEmpty();
+  }
   if(!canUseApi){
     setTimelineTranscriptsLoading(false);
     return;
   }
   try{
-    await Promise.all([
-      hydrateRelationshipIndex().catch(() => null),
-      hydrateProjectIndex().catch(() => null)
-    ]);
+    const offset=append?currentTimelineTranscriptItems.length:0;
     const data = refresh
       ? await postJson('/api/val/transcripts/refresh', {days:timelineTranscriptRefreshDays, limit:50})
-      : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=50', {cache: 'no-store'});
-    currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
+      : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=100&offset=' + encodeURIComponent(offset), {cache: 'no-store'});
+    currentTimelineTranscriptItems = append
+      ? currentTimelineTranscriptItems.concat(Array.isArray(data.transcripts) ? data.transcripts : [])
+      : (Array.isArray(data.transcripts) ? data.transcripts : []);
+    timelineTranscriptPagination=data.pagination||{offset,limit:100,total:currentTimelineTranscriptItems.length,hasMore:false};
+    timelineTranscriptCounts=data.counts||{total:timelineTranscriptPagination.total||currentTimelineTranscriptItems.length,needsReview:0,withOpenActions:0,failedProcessing:0};
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
     resetTimelineTranscriptDetailScroll();
     if(openFirst && currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+    void hydrateRelationshipIndex().catch(() => null);
+    void hydrateProjectIndex().catch(() => null);
     const message = data.refresh?.message || data.refresh?.warning || '';
     if(message) setTimelineTranscriptActionStatus(message, data.refresh?.warning ? 'danger' : 'success');
   }catch(error){
@@ -14195,6 +14824,38 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
   }finally{
     setTimelineTranscriptsLoading(false);
   }
+}
+
+async function deleteTimelineTranscript(transcriptId){
+  setTimelineTranscriptActionStatus('Deleting transcript...','');
+  const response=await fetch('/api/val/transcripts/'+encodeURIComponent(transcriptId),{
+    method:'DELETE',
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({confirmation:'delete transcript'})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||result.ok===false)throw new Error(result.error||'Transcript deletion failed.');
+  const deleted=currentTimelineTranscriptItems.find(item=>String(item.id)===String(transcriptId))||{};
+  currentTimelineTranscriptItems=currentTimelineTranscriptItems.filter(item=>String(item.id)!==String(transcriptId));
+  timelineTranscriptPagination={
+    ...timelineTranscriptPagination,
+    total:Math.max(0,Number(timelineTranscriptPagination.total||timelineTranscriptCounts.total||0)-1),
+    hasMore:currentTimelineTranscriptItems.length<Math.max(0,Number(timelineTranscriptPagination.total||timelineTranscriptCounts.total||0)-1)
+  };
+  timelineTranscriptCounts={
+    ...timelineTranscriptCounts,
+    total:timelineTranscriptPagination.total,
+    needsReview:Math.max(0,Number(timelineTranscriptCounts.needsReview||0)-(Number(deleted.reviewCount||0)>0?1:0)),
+    withOpenActions:Math.max(0,Number(timelineTranscriptCounts.withOpenActions||0)-(Number(deleted.openActionCount||deleted.taskCount||0)>0?1:0)),
+    failedProcessing:Math.max(0,Number(timelineTranscriptCounts.failedProcessing||0)-(['failed','error'].includes(String(deleted.processingStatus||'').toLowerCase())?1:0))
+  };
+  currentTimelineTranscript=null;
+  renderTimelineTranscriptStats({counts:timelineTranscriptCounts});
+  renderTimelineTranscriptList('');
+  if(currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+  else renderTimelineTranscriptEmpty();
+  setTimelineTranscriptActionStatus('Transcript deleted.','success');
 }
 
 function focusTimelineTranscriptSection(section){
@@ -14817,24 +15478,41 @@ function setRoomCopy(state){
     room.querySelector('.room-copy').textContent = content.card.summary;
     const existingList = room.querySelector('.room-item-list');
     if(existingList) existingList.remove();
+    const existingDone = room.querySelector('.alignment-card-done');
+    if(existingDone) existingDone.remove();
     const queue = homeRoomQueues[name] || [];
+    const roomHasAction = name !== 'alignment' || queue.length > 0;
     if(queue.length && (name === 'velocity' || name === 'leverage')){
       const list = document.createElement('div');
       list.className = 'room-item-list';
-      list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
+      list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared by VAL');
       list.innerHTML = queue.map((item, index) => (
-        '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
+        '<button type="button" role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
-          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
+          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '"' +
+          ' aria-label="Open ' + escapeHtml(item.title || (name === 'leverage' ? 'prepared work' : 'item')) + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
-        '</div>'
+        '</button>'
       )).join('');
       room.insertBefore(list, actionButton);
     }
-    actionButton.innerHTML = content.card.action + ' <b>&rarr;</b>';
+    actionButton.hidden = !roomHasAction;
+    actionButton.disabled = !roomHasAction;
+    actionButton.style.display = roomHasAction ? '' : 'none';
+    actionButton.setAttribute('aria-hidden', roomHasAction ? 'false' : 'true');
+    actionButton.innerHTML = roomHasAction ? content.card.action + ' <b>&rarr;</b>' : '';
+    if(name === 'alignment' && roomHasAction){
+      const doneButton = document.createElement('button');
+      doneButton.className = 'alignment-card-done';
+      doneButton.type = 'button';
+      doneButton.dataset.homeCardCommand = 'alignment_done';
+      doneButton.textContent = 'Done';
+      doneButton.setAttribute('aria-label', 'Mark Alignment action done');
+      room.insertBefore(doneButton, actionButton);
+    }
     actionButton.dataset.actionType = content.card.primaryAction?.type || 'workspace';
     actionButton.setAttribute('aria-label', content.card.primaryAction?.ariaLabel || content.card.action);
     if(content.card.primaryAction?.target){
@@ -14843,7 +15521,7 @@ function setRoomCopy(state){
       delete actionButton.dataset.actionTarget;
     }
     room.setAttribute('aria-label', content.card.observation + ' ' + content.card.implication + ' ' + content.card.invitation);
-    const hasWorkspace = Boolean(content.workspace && content.workspace.title);
+    const hasWorkspace = roomHasAction && Boolean(content.workspace && content.workspace.title);
     room.classList.toggle('has-workspace', hasWorkspace);
     if(hasWorkspace){
       room.setAttribute('tabindex', '0');
@@ -14919,7 +15597,7 @@ function homePacketDisplayFields(item = {}, roomName = 'velocity'){
   const actionLabel = roomName === 'leverage'
     ? (artifactKind ? 'Open and approve ' + artifactKind.replace(/_/g, ' ') : 'Open prepared work')
     : roomName === 'alignment'
-      ? (isEmailSourceItem(item) ? 'Draft reply or create task' : 'Do this priority now')
+      ? 'Do this action'
       : sourceActionLabel(item, 'Open ' + sourceTypeLabel + ' source');
   return {
     what_changed: roomName === 'leverage'
@@ -14995,9 +15673,14 @@ function homeWorkspaceFromQueueItem(roomName, index){
           {label: fields.primary_action_label, homeAction: 'open_prepared'},
           {label: 'Approve and execute', homeAction: 'approve_prepared'}
         ]
-      : [
-          {label: fields.primary_action_label, homeAction: 'open_source'}
-        ],
+      : roomName === 'alignment'
+        ? [
+            {label: 'Done', homeAction: 'alignment_done'},
+            {label: 'Co-work with VAL', homeAction: 'cowork_card_context'}
+          ]
+        : [
+            {label: fields.primary_action_label, homeAction: 'open_source'}
+          ],
     sourceItem: item,
     cardType: roomName === 'leverage' ? 'ready_for_you' : roomName === 'alignment' ? 'highest_leverage' : 'what_changed',
     coworkContext: fields.cowork_context,
@@ -15068,6 +15751,7 @@ function executiveHomeUnderstanding(item = {}, fallbackTitle = 'Supporting sourc
 }
 
 function executiveHomeRecommendation(item = {}, roomName = ''){
+  if(roomName === 'alignment') return 'Do this, or co-work with VAL if you need help completing it.';
   if(isEmailSourceItem(item)) return 'Open the email only if you need more context, then draft the reply or create a follow-up task with a due date.';
   const title = itemTitle(item, '');
   if(/VAL learned \d+/i.test(title)) return 'Do one live spot-check now: open the source evidence, verify the memory change is useful, then teach VAL the correction if the next recommendation is wrong.';
@@ -16210,12 +16894,12 @@ function renderWorkspaceActionButtons(actions = []){
 function contextualCoworkHeading(title = ''){
   const clean = compactSentence(String(title || '').replace(/^Co-Work with VAL:?/i, ''), '');
   if(!clean) return 'What shall we accomplish together?';
-  return 'How can I help with ' + clean.replace(/\.$/, '') + '?';
+  return 'Work through this with VAL';
 }
 
 function coworkPublicDetail(returnTarget = 'home'){
   const labels = {
-    home: 'VAL is ready to work with what you choose next.',
+    home: 'VAL has the useful context loaded.',
     relationship: 'VAL is holding this relationship privately.',
     project: 'VAL is holding this project privately.',
     timeline: 'VAL is holding the timeline privately.',
@@ -16462,7 +17146,7 @@ function appendToWorkspaceInput(text){
 }
 
 function valCoworkGreeting(){
-  const hour = new Date().getHours();
+  const hour = clientHour();
   const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const name = clientFirstName();
   return 'Good ' + daypart + (name ? ' ' + name : '') + ', what would you like to discuss this ' + daypart + '?';
@@ -16497,7 +17181,7 @@ function renderValCoworkVoicePanel(){
           '<span class="val-presence-core">VAL</span>',
         '</span>',
       '</div>',
-      '<p class="val-cowork-voice-hint" aria-hidden="true">Speak with VAL</p>',
+      '<p class="val-cowork-voice-hint" aria-hidden="true">Talk to VAL</p>',
     '</section>',
       '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
   ].join(''));
@@ -16966,8 +17650,10 @@ function activeWorkspaceFileInput(tool = null){
 function handleHomeCoworkFormSubmit(event){
   if(!event.target.matches('[data-home-cowork-form]')) return false;
   event.preventDefault();
-  submitActiveCoworkEntry().then((handled) => {
-    if(!handled) runCowork('think');
+  const textarea = event.target.querySelector('[data-workspace-input="cowork"]');
+  const message = projectCleanText(textarea?.value || '');
+  submitActiveCoworkEntry(message).then((handled) => {
+    if(!handled) runCowork('think', message);
   });
   return true;
 }
@@ -16975,6 +17661,17 @@ function handleHomeCoworkFormSubmit(event){
 function handleHomeCoworkInput(event){
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return false;
   orientHomeCoworkFromInput();
+  return true;
+}
+
+function handleHomeCoworkEnterToSend(event){
+  if(event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+  const field = event.target.closest?.('[data-home-cowork-form] [data-workspace-input="cowork"]');
+  if(!field) return false;
+  event.preventDefault();
+  const form = field.closest('[data-home-cowork-form]');
+  if(form?.requestSubmit) form.requestSubmit();
+  else if(form) handleHomeCoworkFormSubmit({target:form,preventDefault(){}});
   return true;
 }
 
@@ -17031,6 +17728,8 @@ async function appendValWitnessingFiles(category, files = []){
   if(!selected.length) return;
   const card = valWitnessingCard(category);
   const mode = 'val-witnessing-' + card.category;
+  const documentCategory = workspaceInputPanel.querySelector('[data-val-witnessing-document-category="' + card.category + '"]')?.value || 'other';
+  const documentCategoryLabel = valWitnessingDocumentCategoryLabel(documentCategory);
   const statusTarget = workspaceInputPanel.querySelector('.val-conversation-helper');
   if(statusTarget) statusTarget.textContent = 'Uploading ' + selected.length + ' file' + (selected.length === 1 ? '' : 's') + ' into VAL document context...';
   const receipts = [];
@@ -17042,14 +17741,19 @@ async function appendValWitnessingFiles(category, files = []){
         form.append('files', file, file.name);
         form.append('uploadedVia', 'val_witnessing_session');
         form.append('docType', 'knowledge_document');
+        form.append('documentCategory', documentCategory);
         form.append('title', file.name);
         const response = await fetch('/api/val/files', {method:'POST', body:form});
         const data = await response.json().catch(() => ({}));
         if(!response.ok) throw new Error(data.error || data.message || 'Upload failed');
         receipt += '\nVAL file id: ' + (data.id || data.files?.[0]?.id || 'saved');
-        receipt += '\nClassification needed: Document or Template.';
-        receipt += '\nIf Document: which relationship or project does this belong to?';
-        receipt += '\nIf Template: what is this template used for?';
+        receipt += '\nVAL read the document text and attached it to this Witnessing answer.';
+        receipt += '\nCategory: ' + documentCategoryLabel + '.';
+        if(data.observerDelivery?.modelBacked){
+          receipt += '\nAll 14 Observers are reading it now. Their evidence-backed receipts will appear below.';
+          pollValObserverDocumentReceipts(data.id || data.files?.[0]?.id || '', category);
+        }
+        receipt += '\nAdd the relationship or project this belongs to when relevant.';
       }catch(error){
         receipt += '\nUpload note: VAL could not read this file yet (' + (error.message || 'upload failed') + '). Keep the file named here and add its purpose below.';
       }
@@ -17067,6 +17771,98 @@ async function appendValWitnessingFiles(category, files = []){
     appendToWorkspaceInput(receipts.join('\n\n'));
   }
   if(statusTarget) statusTarget.textContent = 'File context added. Tell VAL whether each item is a Document or Template before continuing.';
+}
+
+const valWitnessingDocumentCategories = [
+  {value:'about_me', label:'About Me'},
+  {value:'assessments', label:'Assessments'},
+  {value:'templates', label:'Templates'},
+  {value:'current_contracts', label:'Current Contracts'},
+  {value:'sops', label:'SOPs'},
+  {value:'project_documents', label:'Project Documents'},
+  {value:'relationship_documents', label:'Relationship Documents'},
+  {value:'reference_material', label:'Reference Material'},
+  {value:'other', label:'Other'}
+];
+
+function valWitnessingDocumentCategoryLabel(value=''){
+  return valWitnessingDocumentCategories.find(category=>category.value===value)?.label || 'Other';
+}
+
+function valObserverDocumentRunsForSource(runs=[],sourceId=''){
+  return (Array.isArray(runs)?runs:[]).filter(run=>{
+    const event=run.contextPacketJson?.event||run.context_packet_json?.event||{};
+    const document=event.document||{};
+    return event.type==='about_me_document'&&String(document.id||document.sourceId||'')===String(sourceId||'');
+  });
+}
+
+function renderValObserverDocumentReceipts(target,runs=[],title='About Me document'){
+  if(!target)return;
+  const runsByName=new Map();
+  runs.forEach(run=>{
+    const name=run.observerName||run.observer_name;
+    if(name&&!runsByName.has(name))runsByName.set(name,run);
+  });
+  const completedByName=new Map([...runsByName].filter(([,run])=>{
+    const output=run?.outputJson||run?.output_json||{};
+    const review=output.document_review||output.documentReview||{};
+    return run?.status==='completed'&&['observed','no_signal'].includes(review.status);
+  }));
+  const failedByName=new Map([...runsByName].filter(([,run])=>run?.status==='review_failed'));
+  const observerNames=[
+    'Executive Inbox','Relationship','Project','Capacity','Courage','Delight','Opportunity',
+    'Momentum','Meaning','Synchronicity','Commitment','Calendar','Environment','Witnessing'
+  ];
+  target.hidden=false;
+  target.innerHTML=[
+    '<div class="val-observer-document-receipts-head">',
+      '<span>Board reading receipts</span>',
+      '<strong>' + escapeHtml(title) + '</strong>',
+      '<small>' + completedByName.size + ' of 14 complete</small>',
+    '</div>',
+    '<div class="val-observer-document-receipts-list">',
+      observerNames.map(name=>{
+        const run=completedByName.get(name);
+        const failed=failedByName.get(name);
+        const output=run?.outputJson||run?.output_json||{};
+        const review=output.document_review||output.documentReview||{};
+        const evidence=(output.evidence||[])[0];
+        const complete=!!run;
+        const noSignal=review.status==='no_signal';
+        return [
+          '<article class="' + (complete?'complete':failed?'queued':'reading') + '">',
+            '<span>' + escapeHtml(name) + '</span>',
+            '<strong>' + escapeHtml(complete?(noSignal?'No meaningful signal from my lens.':output.observation||'Source-backed context found.'):failed?'Reading queued.':'Reading...') + '</strong>',
+            evidence?.quote_or_summary ? '<blockquote>' + escapeHtml(evidence.quote_or_summary) + '</blockquote>' : '',
+            complete ? '<small>' + escapeHtml(String(review.charactersRead||0)) + ' characters read</small>' : '',
+          '</article>'
+        ].join('');
+      }).join(''),
+    '</div>'
+  ].join('');
+}
+
+async function pollValObserverDocumentReceipts(sourceId,category,attempt=0){
+  if(!sourceId)return;
+  const target=workspaceInputPanel.querySelector('[data-val-observer-document-receipts="' + category + '"]');
+  if(!target)return;
+  try{
+    const payload=await getJson('/api/val/observers/runs?limit=200');
+    const runs=valObserverDocumentRunsForSource(payload.runs||[],sourceId);
+    renderValObserverDocumentReceipts(target,runs,sourceId);
+    const completeCount=runs.filter(run=>{
+      const output=run?.outputJson||run?.output_json||{};
+      const review=output.document_review||output.documentReview||{};
+      return run?.status==='completed'&&['observed','no_signal'].includes(review.status);
+    }).length;
+    if(completeCount<14&&attempt<90){
+      window.setTimeout(()=>pollValObserverDocumentReceipts(sourceId,category,attempt+1),2000);
+    }
+  }catch(error){
+    target.hidden=false;
+    target.innerHTML='<p>Observer reading receipts need attention: ' + escapeHtml(error.message||'Could not load receipts.') + '</p>';
+  }
 }
 
 async function copyValWitnessingImportPrompt(){
@@ -17128,10 +17924,11 @@ function leadSourcingEmptyBoard(){
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing board</span><small>Select one of the two scrapers above to begin.</small></div>',
-    '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>Source discovery</small></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Employers or partners</span><small>VAL will list discovered companies here.</small></article></section>',
+    '<div class="lead-sourcing-board idle has-source-column" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review and source evidence land here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Verify the source</h4><small>Public proof</small></div><article class="lead-stage-row empty"><strong>Waiting for public evidence</strong><span>Every result must be inspectable.</span><small>VAL will link to the person or business it found.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="4"><div><span>Step 4</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review happens before any record is created.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -17146,11 +17943,10 @@ function renderScraperCriteria(workflow, type){
     '<section class="criteria-card">',
       '<h3>' + criteria.title + '</h3>',
       '<div class="criteria-grid">' + criteria.fields.map(renderCriteriaField).join('') + '</div>',
-	      '<div class="lead-sourcing-actions">',
-	        '<button type="button" data-lead-drawer-action="save-trainer" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Save training</button>',
-	        '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Run this scraper</button>',
-	        type === 'organizations' ? '<button type="button" data-lead-drawer-action="upload-csv" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Upload CSV leads</button>' : '',
-	      '</div>',
+      '<div class="lead-sourcing-actions">',
+        '<button type="button" data-lead-drawer-action="save-trainer" data-lead-drawer-type="' + (type || activeScraperType || '') + '">' + ((type || activeScraperType) === 'general' ? 'Save this scraper' : 'Save training') + '</button>',
+        '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Run this scraper</button>',
+      '</div>',
     '</section>',
     '<section class="criteria-card source-readiness">',
       '<h3>Source readiness</h3>',
@@ -17164,36 +17960,17 @@ function renderScraperPreviewList(workflow, stage){
   const leads = workflow.previewLeads || [];
   if(!leads.length || stage === 'setup') return;
   const isImportedStage = stage === 'imported';
-  const session = sessionFor(activeScraperType || '');
-  const importResult = isImportedStage ? (session.importResult || {}) : null;
-  const createdCount = Array.isArray(importResult?.created) ? importResult.created.length : 0;
-  const skippedCount = Array.isArray(importResult?.skipped) ? importResult.skipped.length : 0;
-  const failedCount = Array.isArray(importResult?.failed) ? importResult.failed.length : 0;
-  const requestedCount = Number(session.payload?.limit || leads.length) || leads.length;
-  const verifiedNameCount = leads.filter((lead) => lead.decisionMakerVerified).length;
-  const countLabel = leads.length + ' of ' + requestedCount + ' found - ' + verifiedNameCount + ' named decision maker' + (verifiedNameCount === 1 ? '' : 's');
-  const stageLabel = isImportedStage ? 'Import receipt - ' + createdCount + ' created / ' + skippedCount + ' skipped / ' + failedCount + ' failed' : stage === 'verified' ? 'Verified preview - ' + countLabel : 'Live preview - ' + countLabel;
+  const stageLabel = isImportedStage ? 'Imported records' : stage === 'verified' ? 'Verified preview' : 'Live preview - not imported';
   const stageSummary = isImportedStage
-    ? (createdCount ? 'GHL accepted new contacts. Open the pipeline to inspect them.' : 'No new contacts were created. Review skipped or failed rows before running another batch.')
-    : 'Not imported until you click Import. Business emails and phones are shown as business contacts, not decision-maker names.';
-  const receiptText = isImportedStage
-    ? String(importResult?.content || '').split('\n').filter(Boolean).slice(0, 10).join(' | ')
-    : '';
-  const receiptCard = isImportedStage ? [
-    '<section class="lead-import-receipt">',
-      '<strong>' + escapeHtml(createdCount ? 'Import completed' : 'Import completed with no new contacts') + '</strong>',
-      '<span>' + escapeHtml(createdCount + ' created / ' + skippedCount + ' skipped / ' + failedCount + ' failed') + '</span>',
-      receiptText ? '<small>' + escapeHtml(receiptText.slice(0, 900)) + '</small>' : '',
-    '</section>'
-  ].join('') : '';
+    ? 'These rows have an import receipt. Review skipped or failed rows before running another batch.'
+    : 'These are live scraper preview results. Approve or hold each row before any CRM import.';
   revealLeadSourcingWorkbench();
   if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>' + stageSummary + '</small></div>',
-    receiptCard,
-    '<div class="lead-sourcing-board" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column done" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>Source discovery</small></div>' +
+    '<div class="lead-sourcing-board has-source-column" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column done" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div>' +
         leads.map((lead, index) => (
           '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
             '<strong>' + escapeHtml(lead.name) + '</strong>' +
@@ -17206,22 +17983,28 @@ function renderScraperPreviewList(workflow, stage){
       '<section class="lead-sourcing-column done" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div>' +
         leads.map((lead, index) => (
           '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
-            '<strong>' + escapeHtml(lead.decisionMakerVerified ? lead.contact : 'No verified decision-maker name') + '</strong>' +
-            '<span>' + escapeHtml(lead.decisionMakerVerified ? 'Person identified' : 'Business contact only') + '</span>' +
-            '<small>' + escapeHtml(lead.decisionMakerVerified ? lead.name : (lead.decisionMakerStatus || lead.businessContact || 'Gemini/Apollo did not verify a person yet')) + '</small>' +
+            '<strong>' + escapeHtml(lead.contact || 'Decision maker not confirmed') + '</strong>' +
+            '<span>' + (lead.contact && !/not confirmed|general inbox/i.test(lead.contact) ? 'Candidate attached' : 'Needs confirmation') + '</span>' +
+            '<small>' + escapeHtml(lead.name) + '</small>' +
           '</article>'
         )).join('') +
       '</section>',
-      '<section class="lead-sourcing-column active" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' +
+      '<section class="lead-sourcing-column done" data-level="3"><div><span>Step 3</span><h4>Verify the source</h4><small>Public proof</small></div>' +
+        leads.map((lead, index) => (
+          '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
+            '<strong>' + escapeHtml(lead.name) + '</strong>' +
+            (lead.personViewUrl ? '<a class="lead-source-link" href="' + escapeConnectionHtml(lead.personViewUrl) + '" target="_blank" rel="noopener noreferrer">View this person</a>' : '') +
+            (lead.businessViewUrl || lead.viewUrl ? '<a class="lead-source-link" href="' + escapeConnectionHtml(lead.businessViewUrl || lead.viewUrl) + '" target="_blank" rel="noopener noreferrer">View this business</a>' : '<small>Public source link unavailable</small>') +
+          '</article>'
+        )).join('') +
+      '</section>',
+      '<section class="lead-sourcing-column active" data-level="4"><div><span>Step 4</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' +
         leads.map((lead, index) => (
           '<article class="preview-lead lead-stage-row" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
-	      '<div class="lead-confirm-main">' +
-	        '<strong>' + escapeHtml(lead.name) + '</strong>' +
-	        '<span>' + escapeHtml(lead.evidence) + '</span>' +
-	        '<small>' + escapeHtml(lead.painpoint ? 'Painpoint: ' + lead.painpoint : 'Painpoint not explicitly verified') + '</small>' +
-	        (lead.confusionWarning ? '<small>' + escapeHtml('Ambiguity: ' + lead.confusionWarning) + '</small>' : '') +
-	        (lead._raw?.reviewNeededReason ? '<small>' + escapeHtml('Held: ' + lead._raw.reviewNeededReason) + '</small>' : '') +
-	      '</div>' +
+            '<div class="lead-confirm-main">' +
+              '<strong>' + escapeHtml(lead.name) + '</strong>' +
+              '<span>' + escapeHtml(lead.evidence) + '</span>' +
+            '</div>' +
             '<div class="lead-confirm-status">' +
               '<b>' + (isImportedStage ? 'Imported' : 'Preview only') + '</b>' +
               '<small>' + (isImportedStage ? 'Import receipt attached.' : 'Not in CRM yet. Duplicate check is enforced again at import.') + '</small>' +
@@ -17235,8 +18018,8 @@ function renderScraperPreviewList(workflow, stage){
       '</section>',
     '</div>',
     '<div class="lead-sourcing-actions">',
-      isImportedStage ? '<button type="button" data-lead-drawer-action="pipeline" data-lead-drawer-type="' + (activeScraperType || '') + '">Open Pipeline</button>' : '<button type="button" data-lead-drawer-action="approve-all" data-lead-drawer-type="' + (activeScraperType || '') + '">Approve All</button>',
-      isImportedStage ? '' : '<button type="button" data-lead-drawer-action="import" data-lead-drawer-type="' + (activeScraperType || '') + '">Import approved leads</button>',
+      isImportedStage ? '' : '<button type="button" data-lead-drawer-action="approve-all" data-lead-drawer-type="' + (activeScraperType || '') + '">Approve All</button>',
+      '<button type="button" data-lead-drawer-action="import" data-lead-drawer-type="' + (activeScraperType || '') + '">Import approved leads</button>',
       '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (activeScraperType || '') + '">Train this scraper</button>',
     '</div>'
   ].join('');
@@ -17252,7 +18035,7 @@ function renderLeadSourcingProgress(type){
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering CRM.</small></div>',
     '<div class="lead-sourcing-board loading" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column active thinking" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
+      '<section class="lead-sourcing-column active thinking" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
       '<section class="lead-sourcing-column active thinking" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row"><strong>Checking contacts</strong><span>VAL is looking for decision-maker evidence.</span><small>No contact is invented.</small></article></section>',
       '<section class="lead-sourcing-column active thinking" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row"><strong>Preparing review gate</strong><span>CRM duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
     '</div>'
@@ -17268,12 +18051,12 @@ function renderLeadSourcingMessage(type, title, details = [], actionLabel = 'Tra
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + escapeHtml(title) + '</span><small>Nothing has been imported into CRM.</small></div>',
     '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
+      '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Paused</strong><span>' + escapeHtml(details[1] || 'Decision-maker enrichment did not run yet.') + '</span><small>No contact was invented.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Protected</strong><span>' + escapeHtml(details[2] || 'Approval and duplicate gates remain in place.') + '</span><small>No CRM write happened.</small></article></section>',
     '</div>',
     '<div class="lead-sourcing-actions">',
-      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'organizations') + '">' + escapeHtml(actionLabel) + '</button>',
+      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'general') + '">' + escapeHtml(actionLabel) + '</button>',
     '</div>'
   ].join('');
 }
@@ -17286,10 +18069,7 @@ function updatePreviewApprovalSummary(){
   const summary = leadDrawerPreviewList.querySelector('[data-preview-summary]');
   if(summary){
     const sourceMode = mockScrapers || !canUseApi ? 'Prototype/mock preview' : 'Live scraper preview';
-    const session = sessionFor(activeScraperType || '');
-    const requested = Number(session.payload?.limit || rows.length) || rows.length;
-    const verifiedNames = Array.isArray(session.previewLeads) ? session.previewLeads.filter((lead) => lead.decisionMakerVerified).length : 0;
-    summary.textContent = sourceMode + ' - ' + rows.length + ' of ' + requested + ' found - ' + verifiedNames + ' named decision maker' + (verifiedNames === 1 ? '' : 's') + ' - ' + approved + ' approved / ' + held + ' held - not imported until you click Import.';
+    summary.textContent = sourceMode + ' - ' + approved + ' approved / ' + held + ' held - not imported until you click Import.';
   }
   const importAction = workspaceActions.querySelector('[data-workflow-action^="import:"]');
   if(importAction){
@@ -17382,45 +18162,40 @@ function leadField(lead, keys, fallback = ''){
   return fallback;
 }
 
+function safeLeadSourceHref(value = ''){
+  try{
+    const url = new URL(String(value || ''));
+    return /^https?:$/.test(url.protocol) ? url.href : '';
+  }catch(_error){
+    return '';
+  }
+}
+
 function normalizePreviewLead(lead, type){
   const sourceUrls = Array.isArray(lead.sourceUrls) ? lead.sourceUrls : Array.isArray(lead.sources) ? lead.sources : [];
-  const rawContactName = leadField(lead, ['decisionMakerName','contactName','primaryContact'], '');
-  const contactName = /^unverified$/i.test(rawContactName) ? '' : rawContactName;
+  const contactName = leadField(lead, ['decisionMakerName','contactName','primaryContact'], '');
   const contactTitle = leadField(lead, ['decisionMakerTitle','contactTitle','title'], '');
-  const personEmail = isPersonLikePreviewEmail(lead.email) ? lead.email : '';
-  const businessContact = [lead.email, lead.phone].filter(Boolean).join(' | ');
-  const decisionMakerVerified = !!(contactName || lead.linkedinPersonalUrl || personEmail);
-  const contact = contactName ? contactName + (contactTitle ? ', ' + contactTitle : '') : 'Decision maker not confirmed';
-  const decisionMakerStatus = leadField(lead, ['geminiDecisionMakerStatus','apolloStatus','rocketReachStatus','linkedinMatchNotes'], '');
+  const contact = contactName ? contactName + (contactTitle ? ', ' + contactTitle : '') : lead.email || lead.phone || 'Decision maker not confirmed';
   const score = type === 'partners'
     ? (lead.partnershipFitScore != null ? 'Fit ' + Number(lead.partnershipFitScore) + '/100' : leadField(lead, ['score','leadScore','partnerFit'], 'Fit pending'))
     : (lead.leadScore != null ? 'Score ' + lead.leadScore : leadField(lead, ['score','leadScoreReason','partnerFit','confidence'], 'Review fit'));
-  const painpoint = leadField(lead, ['painpoint','painPoint'], '');
-  const confusionWarnings = Array.isArray(lead.possibleConfusionWarnings) ? lead.possibleConfusionWarnings.filter(Boolean) : [];
-  const evidence = leadField(lead, ['reasonForScore','leadScoreReason','evidence','painpointEvidence','nextOutreachAngle','recommendedOutreachAngle','tagReason'], sourceUrls.length ? 'Sources: ' + sourceUrls.slice(0, 2).join(', ') : 'Evidence attached in scraper result.');
+  const evidence = leadField(lead, ['reasonForScore','leadScoreReason','evidence','nextOutreachAngle','recommendedOutreachAngle','tagReason'], sourceUrls.length ? 'Sources: ' + sourceUrls.slice(0, 2).join(', ') : 'Evidence attached in scraper result.');
+  const personViewUrl = safeLeadSourceHref(leadField(lead, ['personViewUrl','linkedinPersonalUrl'], ''));
+  const businessViewUrl = safeLeadSourceHref(leadField(lead, ['businessViewUrl','viewUrl','website','googleMapsUrl','linkedinCompanyUrl'], sourceUrls[0] || ''));
+  const viewUrl = personViewUrl || businessViewUrl;
   return {
     name: leadField(lead, ['organizationName','companyName','businessName','name'], 'Unnamed organization'),
     type: leadField(lead, ['partnerType','organizationType','industry','aiExactIndustry','normalizedIndustry'], type === 'partners' ? 'Strategic partner' : 'Organization'),
     location: leadField(lead, ['location','city','state','market'], 'Location pending'),
     score,
     contact,
-    businessContact,
-    decisionMakerVerified,
-    decisionMakerStatus,
-    painpoint,
-    confusionWarning: confusionWarnings[0] || '',
     evidence,
+    viewUrl,
+    personViewUrl,
+    businessViewUrl,
     _raw: lead,
     _approved: lead._approved !== false
   };
-}
-
-function isPersonLikePreviewEmail(value=''){
-  const email=String(value||'').trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return false;
-  const local=email.split('@')[0]||'';
-  if(/^(info|sales|admin|office|hello|contact|support|service|estimating|estimation|you|careers|jobs|hr)$/i.test(local)) return false;
-  return /[._-]/.test(local) || /^[a-z]+[._-][a-z]+$/.test(local);
 }
 
 function sessionFor(type){
@@ -17563,24 +18338,11 @@ async function postJson(url, payload, options = {}){
 async function postFormData(url, payload, options = {}){
   const completionCue = shouldPlayValCompletionCue(url, options);
   const requestStartedAt = Date.now();
-  const controller = options.timeoutMs && window.AbortController ? new AbortController() : null;
-  const timeoutId = controller ? window.setTimeout(() => controller.abort(), options.timeoutMs) : null;
-  let response;
-  try{
-    response = await fetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: payload,
-      signal: controller?.signal
-    });
-  }catch(error){
-    if(error.name === 'AbortError'){
-      throw new Error(options.timeoutMessage || 'Request timed out before VAL received a usable response.');
-    }
-    throw error;
-  }finally{
-    if(timeoutId) window.clearTimeout(timeoutId);
-  }
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    body: payload
+  });
   const text = await response.text();
   let data = {};
   try{ data = text ? JSON.parse(text) : {}; }
@@ -17615,8 +18377,20 @@ async function patchJson(url, payload){
   return data;
 }
 
-async function getJson(url, {cache = 'default'} = {}){
-  const response = await fetch(url, {credentials: 'same-origin', cache});
+async function getJson(url, {cache = 'default', timeoutMs = 0, timeoutMessage = ''} = {}){
+  const controller = timeoutMs && window.AbortController ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  try{
+    response = await fetch(url, {credentials: 'same-origin', cache, signal: controller?.signal});
+  }catch(error){
+    if(error.name === 'AbortError'){
+      throw new Error(timeoutMessage || 'VAL took too long to return a usable response.');
+    }
+    throw error;
+  }finally{
+    if(timeoutId) window.clearTimeout(timeoutId);
+  }
   const text = await response.text();
   let data = {};
   try{ data = text ? JSON.parse(text) : {}; }
@@ -17649,20 +18423,6 @@ function showFeatureComingSoon(label){
 }
 
 function applyClientFeatureLocks(){
-  if(clientFeatureLocks.pipelineCommandRoom){
-    document.body.classList.add('mark-pipeline-client');
-    const label = projectDrawerLink?.querySelector('span');
-    const small = projectDrawerLink?.querySelector('small');
-    if(label) label.textContent = 'Pipelines';
-    if(small) small.textContent = 'CRM movement and call-center performance';
-    const kicker = document.querySelector('#project-detail .drawer-kicker');
-    const title = document.querySelector('#project-detail [data-project-title]');
-    const subtitle = document.querySelector('#project-detail [data-project-subtitle]');
-    if(kicker) kicker.textContent = 'Pipelines';
-    if(title) title.textContent = 'GOALL Pipelines';
-    if(subtitle) subtitle.textContent = 'A clear operating view of opportunity movement, attention, and call-center performance.';
-    if(markPipelineCommandRoom) markPipelineCommandRoom.hidden = false;
-  }
   if(clientFeatureLocks.projectManagersComingSoon && projectDrawerLink){
     projectDrawerLink.classList.add('drawer-link-coming-soon');
     projectDrawerLink.disabled = true;
@@ -17690,11 +18450,12 @@ async function hydrateClientConfig(){
   try{
     const config = await getJson('/api/public-config', {cache:'no-store'}).catch(() => getJson('/api/config', {cache:'no-store'}));
     const flags = config?.featureFlags || {};
+    if(config?.voiceWidgetId) VAL_GHL_VOICE_WIDGET_ID = String(config.voiceWidgetId).trim();
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
-    clientFeatureLocks.pipelineCommandRoom = Boolean(flags.pipelineCommandRoom);
-    clientPipelineDashboardUrl = String(config?.pipelineDashboardUrl||'').trim();
     clientDisplayName = String(config?.clientName||'').trim();
+    clientTimezone = String(config?.timezone||clientTimezone).trim() || clientTimezone;
+    applyHearthTimePeriod();
     states.quiet.title = valTimeGreeting();
     states.protective.title = valTimeGreeting();
   }catch(error){
@@ -17704,91 +18465,6 @@ async function hydrateClientConfig(){
   if(executiveBriefingState) applyVelocityPerspective(executiveBriefingState);
   else if(title) title.textContent = currentState?.title || valTimeGreeting();
 }
-
-function markPipelineMoney(value){
-  return new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}).format(Number(value)||0);
-}
-
-function markPipelineLabel(value){
-  const text=String(value||'').trim();
-  if(/strategic partner/i.test(text)) return 'GOALL Strategic Partners';
-  if(/employer/i.test(text)) return 'GOALL Employers';
-  return text||'Unassigned pipeline';
-}
-
-function renderMarkPipelineCommandRoom(data={}){
-  const opportunities=Array.isArray(data.opportunities)?data.opportunities:[];
-  const active=Number(data.pipelineActive)||opportunities.length;
-  const stalled=Number(data.stalledDeals)||opportunities.filter(item=>item.stalled).length;
-  const totalValue=opportunities.reduce((sum,item)=>sum+(Number(item.value)||0),0);
-  if(markPipelineActive) markPipelineActive.textContent=String(active);
-  if(markPipelineValue) markPipelineValue.textContent=markPipelineMoney(totalValue);
-  if(markPipelineStalled) markPipelineStalled.textContent=String(stalled);
-
-  const grouped=new Map();
-  opportunities.forEach(item=>{
-    const pipeline=markPipelineLabel(item.pipelineName||item.accountLabel);
-    if(!grouped.has(pipeline)) grouped.set(pipeline,[]);
-    grouped.get(pipeline).push(item);
-  });
-  ['GOALL Employers','GOALL Strategic Partners'].forEach(name=>{
-    if(!grouped.has(name)) grouped.set(name,[]);
-  });
-  if(markPipelineBands){
-    markPipelineBands.innerHTML=Array.from(grouped.entries()).map(([name,items])=>{
-      const stages=new Map();
-      items.forEach(item=>{
-        const stage=String(item.stage||'Unknown Stage');
-        stages.set(stage,(stages.get(stage)||0)+1);
-      });
-      const value=items.reduce((sum,item)=>sum+(Number(item.value)||0),0);
-      const stageMarkup=Array.from(stages.entries())
-        .sort((a,b)=>b[1]-a[1])
-        .map(([stage,count])=>`<li><span>${escapeHtml(stage)}</span><strong>${count}</strong></li>`)
-        .join('');
-      return `<article class="mark-pipeline-band">
-        <header><div><span>Pipeline</span><h4>${escapeHtml(name)}</h4></div><div><strong>${items.length}</strong><small>${markPipelineMoney(value)}</small></div></header>
-        <ul>${stageMarkup||'<li><span>No open opportunities returned</span><strong>0</strong></li>'}</ul>
-      </article>`;
-    }).join('');
-  }
-  if(markOpportunityList){
-    const review=opportunities.slice().sort((a,b)=>{
-      if(Boolean(a.stalled)!==Boolean(b.stalled)) return a.stalled?-1:1;
-      return (Number(b.daysInStage)||0)-(Number(a.daysInStage)||0);
-    }).slice(0,30);
-    markOpportunityList.innerHTML=review.length?review.map(item=>`<article>
-      <div><span>${escapeHtml(markPipelineLabel(item.pipelineName||item.accountLabel))} · ${escapeHtml(item.stage||'Unknown stage')}</span><h5>${escapeHtml(item.name||item.contactName||'Untitled opportunity')}</h5><p>${escapeHtml(item.contactName||'No contact attached')}</p></div>
-      <div class="mark-opportunity-meta"><strong>${markPipelineMoney(item.value)}</strong><small>${Number(item.daysInStage)||0} days in stage</small>${item.stalled?'<em>Needs attention</em>':''}</div>
-    </article>`).join(''):'<p class="mark-pipeline-empty">No open opportunities were returned from the CRM.</p>';
-  }
-  if(markPipelineStatus){
-    const errorCount=Array.isArray(data?._debug?.errors)?data._debug.errors.length:0;
-    markPipelineStatus.textContent=errorCount
-      ? `VAL loaded ${opportunities.length} opportunities. ${errorCount} CRM account connection needs review.`
-      : `VAL verified ${opportunities.length} open opportunities across the connected GOALL pipelines.`;
-  }
-}
-
-async function hydrateMarkPipelineCommandRoom(){
-  if(!clientFeatureLocks.pipelineCommandRoom||!markPipelineCommandRoom) return;
-  if(markPipelineStatus) markPipelineStatus.textContent='VAL is reading the current CRM pipeline state...';
-  markPipelineRefresh?.setAttribute('aria-busy','true');
-  try{
-    const data=await getJson('/api/pipeline?status=open&limit=250',{cache:'no-store'});
-    renderMarkPipelineCommandRoom(data);
-    const dashboardUrl=clientPipelineDashboardUrl||'/call-center-dashboards';
-    const dashboardLink=document.querySelector('.mark-call-center-panel a');
-    if(dashboardLink) dashboardLink.href=dashboardUrl;
-    if(markCallCenterDashboard&&!markCallCenterDashboard.src) markCallCenterDashboard.src=dashboardUrl;
-  }catch(error){
-    if(markPipelineStatus) markPipelineStatus.textContent=`VAL could not load the live pipeline view: ${error.message}`;
-  }finally{
-    markPipelineRefresh?.removeAttribute('aria-busy');
-  }
-}
-
-markPipelineRefresh?.addEventListener('click',hydrateMarkPipelineCommandRoom);
 
 const hearthServerPacketNames = new Set([
   'relationship_packet',
@@ -18019,6 +18695,17 @@ function compactSentence(value, fallback = ''){
   return String(value || fallback || '').replace(/\s+/g, ' ').trim();
 }
 
+function alignmentCoworkQuestion(title = ''){
+  const clean = compactSentence(title, 'this action').replace(/[.!?]+$/, '');
+  const lower = clean.toLowerCase();
+  if(/\bdashboard\b/.test(lower)) return 'How can I help you finish this dashboard?';
+  if(/\bhandoff\b/.test(lower)) return 'How can I help you finish this handoff?';
+  if(/\bdraft\b|\bemail\b|\breply\b/.test(lower)) return 'How can I help you finish this message?';
+  if(/\bintro(?:duction)?\b/.test(lower)) return 'How can I help you finish this introduction?';
+  if(/\bmeeting prep\b|\bprep\b/.test(lower)) return 'How can I help you prepare for this?';
+  return 'How can I help you finish this?';
+}
+
 function firstBriefingItem(items){
   return Array.isArray(items) ? items.filter(Boolean)[0] || null : null;
 }
@@ -18057,9 +18744,65 @@ function preparedArtifactKind(item){
   ).toLowerCase();
 }
 
+function preparedArtifactForHomeItem(item = {}){
+  const metadata = itemMetadata(item);
+  return item.preparedArtifact ||
+    item.prepared_artifact ||
+    metadata.preparedArtifact ||
+    metadata.prepared_artifact ||
+    item.payload?.preparedArtifact ||
+    item.payload?.prepared_artifact ||
+    {};
+}
+
+function preparedArtifactSubject(item = {}){
+  const artifact = preparedArtifactForHomeItem(item);
+  return compactSentence(
+    artifact.subject ||
+    artifact.title ||
+    item.title ||
+    item.name ||
+    primaryPortalPhrase(item) ||
+    'Prepared work'
+  );
+}
+
+function reviewOnlyLeverageKind(kind = ''){
+  return /\b(commitment_bundle|transcript_follow_up|relationship_project_update_candidate|transcript_follow_up_bundle|task_context|email_draft_readiness)\b/i.test(String(kind || ''));
+}
+
+function concretePreparedWorkProduct(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const packet = item.preparedWorkPacket || item.prepared_work_packet || metadata.preparedWorkPacket || metadata.prepared_work_packet || {};
+  const kind = preparedArtifactKind(item);
+  const category = String(item.category || metadata.category || '').toLowerCase();
+  if(reviewOnlyLeverageKind(kind) || reviewOnlyLeverageKind(item.type) || reviewOnlyLeverageKind(item.itemType)) return '';
+  const productCandidates = [
+    artifact.body,
+    artifact.content,
+    artifact.html,
+    artifact.instruction,
+    Array.isArray(artifact.sections) ? artifact.sections.join('\n') : '',
+    Array.isArray(artifact.recipients) && artifact.recipients.length ? JSON.stringify(artifact.recipients) : '',
+    Array.isArray(artifact.attendees) && artifact.attendees.length ? JSON.stringify(artifact.attendees) : '',
+    item.draftBody,
+    item.draft_body,
+    item.preparedDraft,
+    item.prepared_draft,
+    packet.work_product,
+    packet.prepared_work,
+    item.externalActionPacket ? JSON.stringify(item.externalActionPacket) : '',
+    metadata.externalActionPacket ? JSON.stringify(metadata.externalActionPacket) : ''
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const product = productCandidates.find((value) => value.length >= 8) || '';
+  const preparedCategory = category === 'prepared_work' || Boolean(kind && preparedArtifactHomeCopy(item)) || Boolean(artifact.kind || artifact.body || artifact.html || artifact.content);
+  return preparedCategory ? product : '';
+}
+
 function preparedArtifactHomeCopy(item){
   const kind = preparedArtifactKind(item);
-  const subject = primaryPortalPhrase(item) || itemTitle(item, 'Prepared work');
+  const subject = preparedArtifactSubject(item);
   if(kind === 'linkedin_post_draft' || kind === 'social_post_draft') return {
     observation: 'Social post draft prepared',
     implication: subject + ' is ready to copy manually into LinkedIn.',
@@ -18141,16 +18884,69 @@ function preparedArtifactHomeCopy(item){
     workspaceMeaning: 'VAL prepared the email from the transcript and held it for approval.',
     recommendation: 'Read for accuracy and relationship tone before releasing it.'
   };
+  if(kind === 'meeting_overview_email_draft') return {
+    observation: 'Meeting overview prepared',
+    implication: subject + ' has action items and key points ready to review.',
+    invitation: 'Would you like to review the overview?',
+    action: 'Review meeting overview',
+    workspaceTitle: subject,
+    workspaceMeaning: 'VAL prepared the transcript action items and key points as a reviewable overview.',
+    recommendation: 'Edit the overview, choose recipients if needed, and approve any external send separately.'
+  };
   return null;
 }
 
 function updateLinkedInWidget(){
-  if(linkedinReadyCount) linkedinReadyCount.textContent = String(linkedinVisibilityItems.length);
+  if(linkedinReadyCount) linkedinReadyCount.textContent = linkedinVisibilityLoaded ? String(linkedinVisibilityItems.length) : '—';
+}
+
+async function hydrateLinkedInVisibility({force = false, refresh = false} = {}){
+  if(!canUseApi){
+    linkedinVisibilityItems = [];
+    linkedinWatchedProfiles = [];
+    linkedinVisibilityReceipt = {};
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    return linkedinVisibilityItems;
+  }
+  if(linkedinVisibilityRequest && !force) return linkedinVisibilityRequest;
+  linkedinVisibilityRequest = (async()=>{
+    if(refresh){
+      linkedinVisibilityRefreshAttempted = true;
+      await postJson('/api/val/linkedin/visibility/refresh', {limit:40}, {
+        timeoutMs:90000,
+        timeoutMessage:'VAL is still checking the support circle for current LinkedIn posts.'
+      });
+    }
+    return getJson('/api/val/linkedin/visibility', {
+      cache:'no-store',
+      timeoutMs:8000,
+      timeoutMessage:'Live LinkedIn relationship context is still loading.'
+    });
+  })().then((data) => {
+    linkedinVisibilityItems = Array.isArray(data?.items) ? data.items : [];
+    linkedinWatchedProfiles = Array.isArray(data?.watchedProfiles) ? data.watchedProfiles : [];
+    linkedinVisibilityReceipt = data?.refreshReceipt || {};
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    return linkedinVisibilityItems;
+  }).catch((error) => {
+    linkedinVisibilityItems = [];
+    linkedinWatchedProfiles = [];
+    linkedinVisibilityReceipt = {error:error.message};
+    linkedinVisibilityLoaded = true;
+    updateLinkedInWidget();
+    console.warn('[hearth] LinkedIn visibility context unavailable', error.message);
+    return linkedinVisibilityItems;
+  }).finally(() => {
+    linkedinVisibilityRequest = null;
+  });
+  return linkedinVisibilityRequest;
 }
 
 function setLinkedInVisibilityPage(page = 'posts'){
   if(!scraperPreviewList) return;
-  const activePage = page === 'instructions' ? 'instructions' : 'posts';
+  const activePage = ['profiles','instructions'].includes(page) ? page : 'posts';
   scraperPreviewList.querySelectorAll('[data-linkedin-page]').forEach((button) => {
     const isActive = button.dataset.linkedinPage === activePage;
     button.classList.toggle('active', isActive);
@@ -18161,37 +18957,80 @@ function setLinkedInVisibilityPage(page = 'posts'){
   });
 }
 
-function renderLinkedInEngagementList(){
+function linkedinRefreshReceiptCopy(){
+  if(linkedinVisibilityReceipt.error) return linkedinVisibilityReceipt.error;
+  const checked = Number(linkedinVisibilityReceipt.checked || 0);
+  const posts = Number(linkedinVisibilityReceipt.posts || 0);
+  if(!linkedinWatchedProfiles.length) return 'Add the LinkedIn profiles VAL should watch. Nothing is checked until you ask.';
+  if(!checked) return linkedinWatchedProfiles.length + ' profile' + (linkedinWatchedProfiles.length === 1 ? ' is' : 's are') + ' ready. Refresh when you want VAL to check for current posts.';
+  if(!posts) return 'Checked ' + checked + ' profile' + (checked === 1 ? '' : 's') + '. LinkedIn returned no current posts, so VAL did not invent drafts.';
+  return 'Checked ' + checked + ' profile' + (checked === 1 ? '' : 's') + ' and found ' + posts + ' current post' + (posts === 1 ? '' : 's') + '.';
+}
+
+function linkedinWatchedProfileStatus(profile = {}){
+  if(['error','draft_error'].includes(profile.lastRefreshStatus)) return profile.lastRefreshMessage || 'The last check needs attention.';
+  if(profile.lastRefreshStatus === 'posts_found') return profile.lastRefreshMessage || 'Current posts found.';
+  if(profile.lastRefreshStatus === 'no_recent_posts') return 'Checked. No current posts were returned.';
+  return 'Ready to check.';
+}
+
+function renderLinkedInEngagementList(activePage = 'posts'){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.add('linkedin-preview-list');
   scraperPreviewList.innerHTML = [
     '<div class="linkedin-engagement-shell" aria-label="LinkedIn visibility workspace">',
       '<div class="linkedin-engagement-nav" role="tablist" aria-label="LinkedIn visibility sections">',
-        '<button type="button" class="active" role="tab" aria-selected="true" data-linkedin-page="posts">Posts</button>',
+        '<button type="button" role="tab" aria-selected="false" data-linkedin-page="posts">Drafts</button>',
+        '<button type="button" role="tab" aria-selected="false" data-linkedin-page="profiles">Profiles</button>',
         '<button type="button" role="tab" aria-selected="false" data-linkedin-page="instructions">Instructions</button>',
       '</div>',
       '<section class="linkedin-page linkedin-posts-page" data-linkedin-panel="posts" aria-label="Prepared LinkedIn posts">',
         '<div class="linkedin-engagement-summary">',
           '<span>Visibility Desk</span>',
           '<strong>' + linkedinVisibilityItems.length + ' prepared drafts</strong>',
-          '<p>VAL prepared support, not publishing. Copy only what still feels true.</p>',
+          '<p>' + escapeHtml(linkedinRefreshReceiptCopy()) + '</p>',
+          '<button type="button" data-linkedin-refresh>Refresh posts</button>',
         '</div>',
         '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
-        linkedinVisibilityItems.map((item, index) => (
+        linkedinVisibilityItems.length ? linkedinVisibilityItems.map((item, index) => (
           '<article class="linkedin-engagement-item">' +
             '<div class="linkedin-engagement-head">' +
               '<span class="linkedin-logo small" aria-hidden="true">in</span>' +
               '<div><span>Support signal</span><strong>' + escapeHtml(item.contact) + '</strong><small>' + escapeHtml(item.whyItMatters) + '</small></div>' +
             '</div>' +
             '<div class="linkedin-post-preview"><span>Recent post</span><p>' + escapeHtml(item.postPreview) + '</p></div>' +
-            '<blockquote><span>Draft comment</span>' + escapeHtml(item.draftComment) + '</blockquote>' +
+            (item.draftComment
+              ? '<blockquote><span>Draft comment</span>' + escapeHtml(item.draftComment) + '</blockquote>'
+              : '<p class="linkedin-live-receipt">No comment has been prepared from this source yet.</p>') +
             '<div class="linkedin-engagement-actions">' +
-              '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' +
-              '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' +
+              (item.draftComment ? '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' : '') +
+              (item.postUrl ? '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' : '') +
             '</div>' +
           '</article>'
-        )).join(''),
+        )).join('') : '<article class="linkedin-engagement-empty"><strong>No reviewable drafts yet.</strong><p>' + escapeHtml(linkedinRefreshReceiptCopy()) + ' No demo posts are being substituted.</p><button type="button" data-linkedin-page="profiles">Review profiles VAL watches</button></article>',
         '</div>',
+      '</section>',
+      '<section class="linkedin-page linkedin-profiles-page" data-linkedin-panel="profiles" aria-label="Profiles VAL watches" hidden>',
+        '<article class="linkedin-watch-lead">',
+          '<span>Teach LinkedIn</span>',
+          '<strong>Choose whose work VAL should watch.</strong>',
+          '<p>Add a profile once. VAL keeps the URL here and checks it only when you choose Refresh posts.</p>',
+        '</article>',
+        '<form class="linkedin-watch-form" data-linkedin-watch-form>',
+          '<label><span>Name</span><input type="text" name="name" autocomplete="off" placeholder="Person or organization"></label>',
+          '<label><span>LinkedIn URL</span><input type="url" name="linkedinUrl" autocomplete="url" placeholder="https://www.linkedin.com/in/name" required></label>',
+          '<button type="submit">Add profile</button>',
+        '</form>',
+        '<p class="linkedin-watch-status" data-linkedin-watch-status>' + escapeHtml(linkedinRefreshReceiptCopy()) + '</p>',
+        '<div class="linkedin-watch-list" aria-label="Watched LinkedIn profiles">',
+          linkedinWatchedProfiles.length ? linkedinWatchedProfiles.map((profile) => (
+            '<article class="linkedin-watch-item">' +
+              '<div><span>Watching</span><strong>' + escapeHtml(profile.name || 'LinkedIn profile') + '</strong><a href="' + escapeHtml(profile.linkedinUrl) + '" target="_blank" rel="noopener">' + escapeHtml(profile.linkedinUrl) + '</a><small>' + escapeHtml(linkedinWatchedProfileStatus(profile)) + '</small></div>' +
+              '<button type="button" data-linkedin-stop-watch="' + escapeHtml(profile.id) + '">Stop watching</button>' +
+            '</article>'
+          )).join('') : '<article class="linkedin-engagement-empty"><strong>No profiles are being watched.</strong><p>Add the first LinkedIn URL above. VAL will not substitute suggested or demo profiles.</p></article>',
+        '</div>',
+        '<button type="button" class="linkedin-style-teach" data-workflow-action="valOnboarding:linkedin_strategy">Teach writing style</button>',
       '</section>',
       '<section class="linkedin-page linkedin-instructions-page" data-linkedin-panel="instructions" aria-label="LinkedIn instructions" hidden>',
         '<article class="linkedin-instruction-lead">',
@@ -18212,30 +19051,79 @@ function renderLinkedInEngagementList(){
       '</section>',
     '</div>'
   ].join('');
-  setLinkedInVisibilityPage('posts');
+  setLinkedInVisibilityPage(activePage);
 }
 
-function openLinkedInEngagementWorkspace(){
+async function openLinkedInEngagementWorkspace({page = 'posts'} = {}){
+  const loading = !linkedinVisibilityLoaded;
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
-    title: linkedinVisibilityItems.length + ' visibility drafts are ready.',
-    meaning: 'VAL prepared comments and visibility opportunities, but LinkedIn publishing remains manual to protect the account and the relationship.',
+    title: loading ? 'Checking live LinkedIn context.' : linkedinVisibilityItems.length + ' live visibility item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' ready.',
+    meaning: loading ? 'VAL is reading saved relationship post receipts and prepared LinkedIn drafts.' : 'Every item shown here comes from live relationship or draft context. Publishing remains manual.',
     understanding: [
-      linkedinVisibilityItems.length + ' support opportunities are prepared.',
-      'Each draft includes the relationship signal, post context, and a comment to copy manually.',
+      loading ? 'No placeholder posts are being shown while live context loads.' : linkedinVisibilityItems.length + ' source-backed LinkedIn item' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' available.',
+      'A draft appears only when VAL has actually prepared one from that source.',
       'VAL never auto-publishes posts, comments, reactions, or DMs.'
     ],
     recommendation: 'Review for voice, copy only what feels true, then open LinkedIn manually.',
     actions: [
       {label: 'Co-Work with VAL', workflow: 'cowork:think'},
-      {label: 'Teach LinkedIn style', workflow: 'valOnboarding:linkedin_strategy'},
+      {label: 'Teach LinkedIn', workflow: 'linkedin:profiles'},
       {label: 'Back to Home', workflow: 'cancel:meeting'}
     ],
     label: 'LinkedIn visibility workspace'
   });
   deskWorkspace.classList.add('linkedin-visibility-mode');
-  renderLinkedInEngagementList();
+  renderLinkedInEngagementList(page);
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
+  if(loading){
+    await hydrateLinkedInVisibility({force:true});
+    return openLinkedInEngagementWorkspace({page});
+  }
+}
+
+async function addLinkedInWatchedProfile(form){
+  const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+  const formData = new FormData(form);
+  const payload = {
+    name:String(formData.get('name') || '').trim(),
+    linkedinUrl:String(formData.get('linkedinUrl') || '').trim()
+  };
+  if(status) status.textContent = 'Saving this profile...';
+  try{
+    const result = await postJson('/api/val/linkedin/watched-profiles', payload, {
+      timeoutMs:15000,
+      timeoutMessage:'Saving this LinkedIn profile took longer than expected.'
+    });
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList('profiles');
+    const nextStatus = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(nextStatus) nextStatus.textContent = result.message || 'Profile saved. Refresh when you want VAL to check it.';
+  }catch(error){
+    if(status) status.textContent = error.message || 'VAL could not save that LinkedIn profile.';
+  }
+}
+
+async function stopLinkedInWatchedProfile(profileId, button){
+  if(!profileId) return;
+  button.disabled = true;
+  button.textContent = 'Removing';
+  try{
+    const result = await postJson('/api/val/linkedin/watched-profiles/' + encodeURIComponent(profileId), {}, {
+      method:'DELETE',
+      timeoutMs:15000,
+      timeoutMessage:'Updating this LinkedIn profile took longer than expected.'
+    });
+    await hydrateLinkedInVisibility({force:true});
+    renderLinkedInEngagementList('profiles');
+    const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(status) status.textContent = result.message || 'Profile removed from the watch list.';
+  }catch(error){
+    button.disabled = false;
+    button.textContent = 'Stop watching';
+    const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
+    if(status) status.textContent = error.message || 'VAL could not update that profile.';
+  }
 }
 
 function primaryPortalPhrase(item){
@@ -18542,7 +19430,7 @@ function roomCardImplication(item, fallback, lens){
 }
 
 function homePerspectiveUserName(){
-  const configuredFirstName = String(clientDisplayName || '').trim().split(/\s+/)[0] || '';
+  const configuredFirstName = clientFirstName();
   if(configuredFirstName) return configuredFirstName;
   const titleText = String(currentState?.title || title?.textContent || '');
   const directName = titleText.match(/^([A-Z][a-z]+),/);
@@ -18554,13 +19442,19 @@ function homePerspectiveUserName(){
 function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   const text = compactSentence(String(value || '')
     .replace(/\*\*/g, '')
+    .replace(/\[[ x]\]/gi, '')
     .replace(/^[-–—]\s*/, '')
     .replace(/\s+/g, ' ')
     .trim(), '');
   if(!text) return '';
+  if(/\b(Action Items?|Key Points|Meeting Overview)\b/i.test(text)) return '';
+  if(/\b(Jessa to|Assigned to|Due\s*:|Due date)\b/i.test(text)) return '';
+  if(/\bsource before letting this enter Home\b/i.test(text)) return '';
+  if(/^(finish|fix|send|create|draft|review|confirm|follow up|prepare)\b/i.test(text)) return '';
   if(/^\d{1,2}:\d{2}\s*(AM|PM)\b/i.test(text)) return '';
   if(/\b(Messages meeting|meeting July|processed and changed|Home should update|Velocity, Alignment, and Leverage)\b/i.test(text)) return '';
   if(/\b(moved forward|review the meeting overview|transcript|meeting overview|prepared work packet|can val act|no prepared work)\b/i.test(text)) return '';
+  if(/\b\d+\s+risk signals?\b/i.test(text)) return '';
   if(/\b(Meet w\/|Meeting with|Discovery|Invitation:|Updated invitation:)\b/i.test(text)) return '';
   if(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return '';
   if(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b/i.test(text)) return '';
@@ -18569,33 +19463,160 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   return shortened ? shortened + '.' : '';
 }
 
-function velocityPerspectiveFromBriefing(briefing = {}){
+function homeBigPictureWitnessLine(briefing = {}){
+  const theme = briefing.todayTheme || {};
+  const themeTitle = cleanVelocityPerspectiveLine(theme.title, 90);
+  const themeWhy = cleanVelocityPerspectiveLine(theme.why, 130);
+  if(themeTitle && themeWhy) return themeTitle + ': ' + themeWhy;
+  if(themeWhy) return themeWhy;
+  return 'The Chief of Staff is watching the larger pattern, not just the next task.';
+}
+
+function homeObserverWatchingLine(observer = null, briefing = {}){
+  const name = observer?.name || 'Meaning';
+  const watching = cleanVelocityPerspectiveLine(
+    observer?.currentlySeeing ||
+    observer?.watching ||
+    observer?.truth ||
+    firstBriefingItem(briefing?.momentum)?.title ||
+    'the larger pattern',
+    120
+  ) || 'the larger pattern';
+  return name + ' is watching ' + watching.replace(/[.!?]+$/, '') + ' for you.';
+}
+
+function homeChiefOfStaffSubject(briefing = {}){
+  const source = homeBriefingEvidenceSources(briefing || {})[0] || briefing.highestLeverageMove || firstBriefingItem(briefing?.alsoImportant) || firstBriefingItem(briefing?.watching) || {};
+  const identity = sourceIdentityForItem(source);
+  const titleText = cleanVelocityPerspectiveLine(identity.label || source.title || source.name || source.summary || '', 120);
+  if(titleText) return titleText.replace(/[.!?]+$/, '');
+  const observer = selectHomeObserverSignal(briefing || {});
+  return observer?.name ? observer.name + ' context' : 'one source-backed pattern';
+}
+
+function homeChiefOfStaffReason(briefing = {}){
+  const source = homeBriefingEvidenceSources(briefing || {})[0] || briefing.highestLeverageMove || {};
+  const raw = source.reason_it_matters || source.why || source.recommendation || source.summary || source.detail || briefing.todayTheme?.why || '';
+  return cleanVelocityPerspectiveLine(raw, 150);
+}
+
+function homeObserverSignalText(briefing = {}){
+  const daily = briefing.dailyWitness || {};
+  return [
+    daily.observer,
+    daily.observerName,
+    daily.selectedObserver,
+    daily.perspective,
+    daily.velocityPerspective,
+    daily.what_was_witnessed,
+    daily.what_it_cost_or_represented,
+    daily.permission_line,
+    briefing.todayTheme?.title,
+    briefing.todayTheme?.why,
+    briefing.highestLeverageMove?.title,
+    briefing.highestLeverageMove?.summary,
+    briefing.highestLeverageMove?.why,
+    briefing.highestLeverageMove?.reason_it_matters,
+    briefing.highestLeverageMove?.ifIgnored,
+    firstBriefingItem(briefing.readyForYou)?.title,
+    firstBriefingItem(briefing.whatChanged)?.title,
+    firstBriefingItem(briefing.momentum)?.title
+  ].filter(Boolean).join(' ');
+}
+
+function homeObserverKeywordScore(observerName = '', text = ''){
+  const lower = String(text || '').toLowerCase();
+  const name = String(observerName || '').toLowerCase();
+  let score = lower.includes(name) ? 12 : 0;
+  const keywordMap = {
+    'executive inbox': ['email','inbox','reply','draft','message','gmail','outlook','thread'],
+    relationship: ['relationship','trust','warmth','person','contact','repair','introduction','michele'],
+    project: ['project','blocker','dependency','proposal','workstream','packet','deliverable'],
+    capacity: ['capacity','schedule','calendar','decision quality','tradeoff','timing','recovery','compressed','load'],
+    courage: ['courage','avoid','plainly','uncomfortable','challenge','anxiety','over-preparation'],
+    delight: ['delight','joy','connection','energy','curiosity','boys','family','relief','aliveness'],
+    opportunity: ['opportunity','opening','pipeline','revenue','partner','timing window'],
+    momentum: ['momentum','movement','moved','progress','stalled','approval','next action'],
+    meaning: ['meaning','theme','values','story','pattern','really about','reminds'],
+    synchronicity: ['synchronicity','repeated','arriving','coincidence','echo','cluster','convergence'],
+    commitment: ['commitment','promise','follow-up','overdue','task','open loop','owe'],
+    calendar: ['calendar','meeting','appointment','prep','agenda','time'],
+    environment: ['environment','body','location','travel','weather','physical','friction'],
+    witnessing: ['witnessing','onboarding','own words','values','preference','boundary','revealed']
+  };
+  (keywordMap[name] || []).forEach((keyword) => {
+    if(lower.includes(keyword)) score += 2;
+  });
+  return score;
+}
+
+function selectHomeObserverSignal(briefing = {}){
+  const daily = briefing.dailyWitness || {};
+  if(daily.moment_type === 'chief_of_staff_quiet') return null;
+  const explicitName = daily.observerName || daily.selectedObserver || daily.observer;
+  const observers = observerBoardState?.observers || [];
+  const text = homeObserverSignalText(briefing);
+  const explicit = explicitName
+    ? observers.find((observer) => String(observer.name).toLowerCase() === String(explicitName).toLowerCase())
+    : null;
+  const selected = explicit || observers
+    .map((observer) => ({observer, score: homeObserverKeywordScore(observer.name, text)}))
+    .sort((a, b) => b.score - a.score)[0]?.observer;
+  return selected || observers.find((observer) => observer.name === 'Meaning') || null;
+}
+
+function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const daily = briefing.dailyWitness || {};
   const name = homePerspectiveUserName();
-  const headlineLines = [
-    daily.velocityPerspective,
-    daily.perspective
-  ].filter(Boolean);
-  const supportLines = [
+  const preparedLines = safeArray(daily.greeting_lines || daily.greetingLines)
+    .concat(String(daily.display_greeting || '').split(/\n+/))
+    .map((line, index) => index === 0 ? personalizeTenantGreeting(line) : line)
+    .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 160))
+    .filter(Boolean)
+    .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index)
+    .filter((line) => !/\bverified\b.*\bsource\b/i.test(line));
+  if(preparedLines.length >= 2){
+    const permissionLine = cleanVelocityPerspectiveLine(daily.permission_line, 150);
+    const firstLineIsGreeting = /^Good (?:morning|afternoon|evening),\s+/i.test(preparedLines[0]);
+    const bodyLines = firstLineIsGreeting ? preparedLines.slice(1) : preparedLines;
+    return {
+      headline: firstLineIsGreeting ? preparedLines[0] : valTimeGreeting(name),
+      witness: bodyLines[0],
+      orientation: bodyLines[1] || permissionLine || 'I will keep the desk clear until something earns your attention.',
+      permission: bodyLines[2] || permissionLine || 'Nothing sends, imports, or changes externally unless you approve it.'
+    };
+  }
+  const observer = selectHomeObserverSignal(briefing);
+  const subject = homeChiefOfStaffSubject(briefing);
+  const reason = homeChiefOfStaffReason(briefing);
+  const lines = [
+    daily.perspective,
     daily.what_was_witnessed,
     daily.what_it_cost_or_represented,
     daily.permission_line
-  ].filter(Boolean);
-  const lines = [...headlineLines, ...supportLines]
-    .map((line, index) => index === 0 ? personalizeTenantGreeting(line) : line)
-    .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
+  ].map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
     .filter(Boolean)
     .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
-  const verifiedLine = evidenceCount
-    ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before bringing this to Home.'
-    : "I'm watching the live signals and keeping anything unproven out of your way.";
+  const selectedName = observer?.name || 'Meaning';
+  const observerLine = reason || observer?.currentlySeeing || observer?.truth || 'one source-backed pattern is asking for discernment.';
+  const witnessLine = lines.find((line) => !/\b\d+\s+risk signals?\b/i.test(line));
+  const watchedPattern = cleanVelocityPerspectiveLine(observerLine, 140).replace(/[.!?]+$/, '') || subject;
+  const observerContextLine = reason
+    ? selectedName + ' can show the source trail behind this read.'
+    : selectedName + ' has the clearest Board lens if you want the full context.';
   return {
-    headline: lines[0] || name + ", I'm here watching and protecting every important relationship.",
-    witness: lines[1] || verifiedLine,
-    orientation: lines[2] || 'I will surface the next real move only when there is enough context to trust it.',
-    permission: lines[3] || 'Nothing moves without your approval.'
+    headline: valTimeGreeting(name),
+    witness: witnessLine || (reason ? subject + ': ' + reason.replace(/[.!?]+$/, '') + '.' : 'No single source-backed move has earned the room yet.'),
+    orientation: observerContextLine,
+    permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
+      ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
+      : 'If no Observer has earned the room, I will keep the desk quiet.')
   };
+}
+
+function velocityPerspectiveFromBriefing(briefing = {}){
+  return chiefOfStaffPerspectiveFromBriefing(briefing);
 }
 
 function applyVelocityPerspective(briefing = executiveBriefingState || {}){
@@ -18604,6 +19625,63 @@ function applyVelocityPerspective(briefing = executiveBriefingState || {}){
   if(witness) witness.textContent = perspective.witness;
   if(orientation) orientation.textContent = perspective.orientation;
   if(permission) permission.textContent = perspective.permission;
+}
+
+function applyWitnessingPendingPerspective(status = observerBoardState){
+  const name = homePerspectiveUserName();
+  const answered = Math.max(0, Number(status?.witnessingAnsweredCount) || 0);
+  const atFirstLook = status?.witnessingStage === 'witness_connect_sources';
+  if(title) title.textContent = valTimeGreeting(name);
+  if(witness) witness.textContent = atFirstLook
+    ? 'Your Witnessing Session is paused at First Look.'
+    : 'Your Witnessing Session is not complete yet.';
+  if(orientation) orientation.textContent = answered
+    ? 'I have ' + answered + ' confirmed answers. Finish the remaining review before I present Board conclusions as truth.'
+    : 'Finish Witnessing before I present Board conclusions as truth.';
+  if(permission) permission.textContent = 'The Board has source packets waiting, but I will not pretend they are ready before you finish confirming the context.';
+}
+
+function wireWitnessingResumeButtons(root = document){
+  root.querySelectorAll('[data-workflow-action="valWitnessingResume"]').forEach((button) => {
+    if(button.dataset.witnessingResumeBound === 'true') return;
+    button.dataset.witnessingResumeBound = 'true';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
+        if(valLiveStatus) valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
+        console.error('Witnessing resume failed', error);
+      });
+    });
+  });
+}
+
+function renderWitnessingPendingEvidence(status = observerBoardState){
+  if(!evidence) return;
+  const answered = Math.max(0, Number(status?.witnessingAnsweredCount) || 0);
+  const nextStep = status?.witnessingNextStep || 'Continue your Witnessing Session';
+  evidence.innerHTML = [
+    '<div>',
+      '<p class="evidence-label">Witnessing Session</p>',
+      '<ul>',
+        answered ? '<li>' + answered + ' answers are confirmed.</li>' : '',
+        '<li>' + escapeHtml(nextStep) + '.</li>',
+        '<li>Observer conclusions remain hidden until the Partnership Promise is committed.</li>',
+      '</ul>',
+      '<div class="hearth-evidence-actions">',
+        '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+      '</div>',
+    '</div>',
+    '<div>',
+      '<p class="evidence-label">Why VAL is waiting</p>',
+      '<ul>',
+        '<li>Source packets can wait without becoming executive guidance.</li>',
+        '<li>Completing Witnessing automatically reconciles the Board across connected sources.</li>',
+        '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
+      '</ul>',
+    '</div>'
+  ].join('');
+  wireWitnessingResumeButtons(evidence);
 }
 
 function hydrateGreetingFromBriefing(briefing){
@@ -18629,43 +19707,119 @@ function dailyWitnessEvidenceLabel(item = {}){
   return titleText;
 }
 
+function homeBriefingEvidenceSources(briefing = {}){
+  return [
+    ...(briefing?.dailyWitness?.evidence || []),
+    ...(briefing?.highestLeverageMove ? [briefing.highestLeverageMove] : []),
+    ...briefingItems(briefing?.alsoImportant).slice(0, 3),
+    ...briefingItems(briefing?.watching).slice(0, 3)
+  ].filter((item, index, list) => {
+    const text = [item.title, item.summary].filter(Boolean).join(' ');
+    if(!text || /Email may contain a risk, blocker, or relationship concern/i.test(text)) return false;
+    const identity = sourceIdentityForItem(item);
+    const key = identity.id || text.toLowerCase();
+    return list.findIndex((candidate) => {
+      const candidateIdentity = sourceIdentityForItem(candidate);
+      return (candidateIdentity.id || [candidate.title, candidate.summary].filter(Boolean).join(' ').toLowerCase()) === key;
+    }) === index;
+  }).slice(0, 5);
+}
+
+function executiveEvidenceLine(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const source = compactSentence(identity.label || item.title || item.name || item.source_type || 'Supporting source', 'Supporting source')
+    .replace(/\.+$/, '');
+  const rawSignal = compactSentence(
+    item.reason_it_matters ||
+    item.why ||
+    item.recommendation ||
+    item.summary ||
+    item.detail ||
+    ''
+  );
+  const cleanSignal = rawSignal
+    .replace(/\s*-\s*\[\s*\]\s*/g, ' ')
+    .replace(/\s+-\s+Due:\s*[\d/:-]*\s*$/i, '')
+    .replace(/\s+-\s+Jessa Grace\s*/i, ' ')
+    .replace(/^Action Items?\s*:?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(cleanSignal && cleanSignal.toLowerCase() !== source.toLowerCase()){
+    return 'Source: ' + source + '. Signal: ' + compactSentence(cleanSignal).slice(0, 160);
+  }
+  return 'Source: ' + source + '.';
+}
+
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
-  return;
   if(!evidence) return;
+  if(observerBoardState.witnessingComplete === false){
+    renderWitnessingPendingEvidence(observerBoardState);
+    return;
+  }
+  if(briefing?.dailyWitness?.moment_type === 'chief_of_staff_quiet'){
+    const generatedLine = status === 'loaded'
+      ? 'Last checked at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
+      : status === 'unavailable'
+        ? 'I cannot refresh the live read right now, so I am keeping Home clear.'
+        : 'I am still gathering the Home read.';
+    evidence.innerHTML = [
+      '<div>',
+        '<p class="evidence-label">Why Home is clear</p>',
+        '<ul>',
+          '<li>' + escapeHtml(generatedLine) + '</li>',
+          '<li>No source-backed Board deduction was strong enough to earn your attention.</li>',
+          '<li>Alignment stays clear until the Chief of Staff has one grounded move for you.</li>',
+        '</ul>',
+      '</div>',
+      '<div>',
+        '<p class="evidence-label">Evidence boundary</p>',
+        '<ul>',
+          '<li>No Observer or source is being named because no claim was admitted.</li>',
+          '<li>Prepared work remains available in Leverage without being presented as today’s priority.</li>',
+        '</ul>',
+      '</div>'
+    ].join('');
+    return;
+  }
   const velocityCount = homeAdmittedCount('velocity');
   const alignmentCount = homeAdmittedCount('alignment');
   const leverageCount = homeAdmittedCount('leverage');
-  const sourceEvidence = (briefing?.dailyWitness?.evidence || []).filter((item) => {
-    const text = [item.title, item.summary].filter(Boolean).join(' ');
-    return text && !/Email may contain a risk, blocker, or relationship concern/i.test(text);
-  }).slice(0, 3);
+  const sourceEvidence = homeBriefingEvidenceSources(briefing || {});
   const sensitiveWithheld = (briefing?.dailyWitness?.internalUnderstanding?.things_intentionally_not_mentioned || [])
     .some((item) => /sensitive/i.test(String(item.topic || item.reason || '')));
   const generatedLine = status === 'loaded'
-    ? 'Briefing refreshed at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
+    ? 'Last checked at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
     : status === 'unavailable'
-      ? 'Live briefing is unavailable, so Home is using fallback copy.'
-      : 'Waiting for the executive briefing payload.';
+      ? 'I cannot refresh the live read right now, so I am showing the last available Home read.'
+      : 'I am still gathering the Home read.';
+  const boardCount = Number(briefing?.quietlyHandled?.observations || 0) + Number(briefing?.quietlyHandled?.agencyMoves || 0);
+  const activeCount = alignmentCount + leverageCount + velocityCount;
+  const firstSourceLine = sourceEvidence.length ? executiveEvidenceLine(sourceEvidence[0]) : '';
+  const observer = selectHomeObserverSignal(briefing || {});
+  const observerWatchingLine = homeObserverWatchingLine(observer, briefing || {});
   evidence.innerHTML = [
     '<div>',
-      '<p class="evidence-label">Live briefing</p>',
+      '<p class="evidence-label">What VAL is holding</p>',
       '<ul>',
         '<li>' + escapeHtml(generatedLine) + '</li>',
-        '<li>Velocity: ' + velocityCount + ' admitted change' + (velocityCount === 1 ? '' : 's') + '.</li>',
-        '<li>Alignment: ' + (alignmentCount ? alignmentCount + ' priority packet' + (alignmentCount === 1 ? '' : 's') : 'no priority packet admitted') + '.</li>',
-        '<li>Leverage: ' + leverageCount + ' prepared item' + (leverageCount === 1 ? '' : 's') + ' admitted.</li>',
+        '<li>' + escapeHtml(observerWatchingLine) + '</li>',
+        activeCount ? '<li>Home is only showing the action or prepared work that needs a clean decision.</li>' : '<li>Nothing is asking for action right now.</li>',
+        boardCount ? '<li>The rest stays with the Board until you want the full context.</li>' : '',
       '</ul>',
+      '<div class="hearth-evidence-actions">',
+        '<button type="button" data-home-evidence-action="board">Full Context</button>',
+        alignmentCount ? '<button type="button" data-home-evidence-action="alignment">Open Action</button>' : '',
+        leverageCount ? '<button type="button" data-home-evidence-action="leverage">Open Prepared Work</button>' : '',
+      '</div>',
     '</div>',
     '<div>',
-      '<p class="evidence-label">Source evidence</p>',
+      '<p class="evidence-label">Source Trail</p>',
       '<ul>',
         sensitiveWithheld ? '<li>Sensitive details were intentionally withheld from Home.</li>' : '',
-        sourceEvidence.length
-          ? sourceEvidence.map((item) => '<li>' + escapeHtml(dailyWitnessEvidenceLabel(item)) + '</li>').join('')
-          : '<li>No specific source evidence strong enough to explain the greeting.</li>',
-        '<li>Nothing sends, imports, or changes externally without approval.</li>',
+        firstSourceLine ? '<li>' + escapeHtml(firstSourceLine) + '</li>' : '<li>The Board has the full context when you want to inspect it.</li>',
+        '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
       '</ul>',
-      '<button class="fresh-desk-button" type="button">Clear Home marks</button>',
+      '<button class="fresh-desk-button" type="button">Clear seen marks</button>',
     '</div>'
   ].join('');
   evidence.querySelector('.fresh-desk-button')?.addEventListener('click', clearRoomAttendance);
@@ -18716,38 +19870,38 @@ function clearHomeRoomForAdmission(roomName){
     },
     alignment: {
       card: {
-        observation: 'No priority needs your judgment first.',
-        implication: 'Nothing has a complete Why Now Packet right now.',
+        observation: 'No action needs you right now.',
+        implication: 'The Chief of Staff is not asking you to do anything until one move earns the room.',
         invitation: 'Keep attention unbroken',
-        title: 'No priority needs your judgment first.',
-        summary: 'Nothing has a complete Why Now Packet right now.',
-        action: 'Open Alignment'
+        title: 'Nothing to do right now.',
+        summary: 'The Chief of Staff will name one move when action is actually needed.',
+        action: 'Co-work'
       },
       workspace: {
         lens: 'Alignment',
-        title: 'No Alignment item passed the v1 admission gate.',
-        meaning: 'VAL is not promoting a priority without complete Why Now reasoning.',
-        understanding: ['Alignment needs why now, decision/action needed, cost if delayed or timing basis, evidence refs, and confidence.'],
-        recommendation: 'Keep judgment free until one priority earns the top slot.',
+        title: 'No action is being assigned.',
+        meaning: 'Alignment is the human action lane. It should tell you what to do only when there is one source-backed move worth your attention.',
+        understanding: ['The Chief of Staff has not selected an Observer signal that requires your action.'],
+        recommendation: 'Keep the desk clear until VAL can name the exact move and why it matters now.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }
     },
     leverage: {
       card: {
-        observation: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        implication: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        invitation: leverageCount ? 'Open when the queue finishes loading' : 'Nothing to approve',
-        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        summary: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        action: 'Open Leverage'
+        observation: leverageCount ? leverageCount + ' prepared by VAL.' : 'Nothing drafted yet.',
+        implication: leverageCount ? 'These are waiting for approval, sending, or editing.' : 'VAL has not created anything reviewable.',
+        invitation: leverageCount ? 'Review the list' : 'Nothing to approve',
+        title: leverageCount ? leverageCount + ' prepared by VAL.' : 'Nothing drafted yet.',
+        summary: leverageCount ? 'Waiting for approval, sending, or editing.' : 'VAL has not created anything reviewable.',
+        action: 'Review list'
       },
       workspace: {
         lens: 'Leverage',
-        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No Leverage item passed the v1 admission gate.',
-        meaning: leverageCount ? 'VAL has counted prepared work, but the review queue has not finished loading in this view yet.' : 'VAL is not showing loose opportunities as prepared work.',
-        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Open Leverage again after the review queue finishes hydrating.'] : ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
-        recommendation: leverageCount ? 'Wait for the prepared work queue to finish loading before approving anything.' : 'Prepared work will appear here only when it is real enough to review or approve.',
+        title: leverageCount ? leverageCount + ' prepared by VAL.' : 'No prepared work is waiting.',
+        meaning: leverageCount ? 'Leverage is the prepared-work lane: drafts, packets, replies, and artifacts VAL has already shaped for your review.' : 'Leverage should stay empty unless VAL has actually created something reviewable.',
+        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Every item needs approval, sending, or editing.'] : ['Loose ideas, possibilities, and evidence do not belong in Leverage.'],
+        recommendation: leverageCount ? 'Review only the prepared items. Approve, edit, send, or hold each one.' : 'Nothing needs approval from Leverage.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }
@@ -18880,9 +20034,28 @@ function whyNowPacketForHomeItem(item = {}){
 }
 
 function hasCompleteWhyNowPacket(item = {}){
-  if(homeAdmissionExplicitPass(item, 'whyNowPacketComplete')) return true;
   const packet = item.whyNowPacket || item.why_now_packet || whyNowPacketForHomeItem(item);
+  const sourceType = String(item.sourceType || item.source_type || item.metadata?.source || '').toLowerCase();
+  const isChiefItem = sourceType === 'chief_of_staff_recommendation' || Boolean(item.chiefRecommendationId || item.chief_recommendation_id);
+  const actionText = String(packet.action_needed || packet.decision_needed || '').replace(/\s+/g, ' ').trim();
+  const objectText = String(item.title || item.summary || '').replace(/\s+/g, ' ').trim();
+  const genericChiefLanguage = (value = '') => [
+    /\breview .+ before choosing an action\b/i,
+    /\binspect (?:the )?evidence\b.*\bchoose (?:the )?next move\b/i,
+    /\bdecide (?:on )?the next move\b/i,
+    /\bchoose (?:the )?next (?:move|step|action)\b/i,
+    /\breview .+\bdecide (?:on )?the next concrete step\b/i
+  ].some((pattern) => pattern.test(value));
+  const concreteAction = /\b(send|reply|follow up|close|finish|complete|confirm|decide|choose|approve|decline|hold|schedule|cancel|call|ask|tell|share|review|revise|clarify|resolve|prepare|draft|discuss|meet|handoff|hand off|assign|delegate|remove|update|deliver|create|build|submit|sign|pay|introduce|connect|nudge|pause|stop|start|continue|record|mark)\b/i.test(actionText);
+  const chiefItemReady = !isChiefItem || (
+    Number(packet.confidence) >= 0.6 &&
+    concreteAction &&
+    !genericChiefLanguage(actionText) &&
+    !genericChiefLanguage(objectText)
+  );
+  if(homeAdmissionExplicitPass(item, 'whyNowPacketComplete')) return chiefItemReady;
   return Boolean(
+    chiefItemReady &&
     packet.why_now &&
     (packet.decision_needed || packet.action_needed) &&
     (packet.cost_if_delayed || packet.deadline_or_timing_basis || packet.blocked_project_or_person) &&
@@ -18894,12 +20067,13 @@ function hasCompleteWhyNowPacket(item = {}){
 function preparedWorkPacketForHomeItem(item = {}){
   const metadata = homeAdmissionMetadata(item);
   const artifactKind = preparedArtifactKind(item);
-  const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const artifact = preparedArtifactForHomeItem(item);
   const canAct = item.canValAct || item.can_val_act || metadata.canValAct || metadata.can_val_act || item.canValActStatus || metadata.canValActStatus || '';
+  const workProduct = concretePreparedWorkProduct(item);
   return {
     prepared_work_type: artifactKind || artifact.kind || item.preparedArtifactKind || metadata.preparedArtifactKind || '',
     trigger_source_id: item.sourceId || item.source_id || item.id || item.target?.id || metadata.sourceId || metadata.source_id || '',
-    work_product: artifact.body || artifact.content || item.draftBody || item.summary || item.title || '',
+    work_product: workProduct,
     approval_needed: item.approvalNeeded ?? metadata.approvalNeeded ?? true,
     execution_path: item.executionPath || item.execution_path || metadata.executionPath || metadata.execution_path || item.target?.type || artifact.kind || '',
     can_val_act_status: String(canAct || (artifactKind || artifact.kind ? 'approval_required' : '')).toLowerCase()
@@ -18907,12 +20081,16 @@ function preparedWorkPacketForHomeItem(item = {}){
 }
 
 function hasPreparedWorkPacketAndActionStatus(item = {}){
+  const kind = preparedArtifactKind(item) || item.type || item.itemType;
+  if(reviewOnlyLeverageKind(kind)) return false;
+  const workProduct = concretePreparedWorkProduct(item);
+  if(!workProduct) return false;
   if(homeAdmissionExplicitPass(item, 'preparedWorkPacketComplete')) return true;
   const packet = item.preparedWorkPacket || item.prepared_work_packet || preparedWorkPacketForHomeItem(item);
   return Boolean(
     packet.prepared_work_type &&
     packet.trigger_source_id &&
-    packet.work_product &&
+    workProduct &&
     packet.can_val_act_status
   );
 }
@@ -18943,7 +20121,9 @@ function homeAdmissionResult(roomName, item = {}){
 }
 
 function homeAdmissionFilter(roomName, items = []){
-  return briefingItems(items).filter((item) => homeAdmissionResult(roomName, item).passed);
+  return briefingItems(items)
+    .filter((item) => !(roomName === 'alignment' && homeItemCompleted(roomName, item)))
+    .filter((item) => homeAdmissionResult(roomName, item).passed);
 }
 
 function setHomeRoomQueue(roomName, items){
@@ -18951,19 +20131,68 @@ function setHomeRoomQueue(roomName, items){
   homeRoomQueues[roomName] = admittedItems.map((item, index) => homeQueueItem(item, index, roomName));
 }
 
+function updateAlignmentRoomFromQueue(){
+  const queueItem = homeRoomQueues.alignment?.[0];
+  if(!queueItem?.sourceItem){
+    clearHomeRoomForAdmission('alignment');
+    setRoomCopy(currentState);
+    return;
+  }
+  const item = queueItem.sourceItem;
+  const titleText = itemTitle(item, 'Next aligned action');
+  const meaningText = itemMeaning(item, 'This is the one source-backed action the Chief of Staff is asking you to take.');
+  const cardTitle = roomCardObservation(item, titleText, 'alignment');
+  const cardSummary = roomCardImplication(item, meaningText, 'alignment');
+  updateRoomFromBriefing('alignment', {
+    card: {
+      observation: cardTitle,
+      implication: cardSummary,
+      invitation: 'Do it, or ask VAL to work through it with you.',
+      title: cardTitle,
+      summary: cardSummary,
+      action: 'Co-work with VAL'
+    },
+    workspace: briefingWorkspace({
+      lens: 'Alignment',
+      title: titleText,
+      meaning: meaningText,
+      understanding: workspaceUnderstanding(item, [
+        item?.ifIgnored ? 'If ignored: ' + item.ifIgnored : '',
+      ]),
+      recommendation: workspaceRecommendation(item, 'Do this, or co-work with VAL if you need help getting it done.'),
+      actions: [
+        {label: 'Done', homeAction: 'alignment_done'},
+        {label: 'Co-work with VAL', homeAction: 'cowork_card_context'}
+      ],
+      confidence: item?.confidence,
+      restraintReason: 'Alignment owns the human next action only. Drafts and prepared artifacts belong to Leverage.',
+      sourceItem: item,
+      cardType: 'highest_leverage'
+    })
+  });
+  setRoomCopy(currentState);
+}
+
 function hydrateRoomsFromBriefing(briefing){
   const velocityItems = briefingItems(briefing.whatChanged).concat(briefingItems(briefing.momentum));
   const admittedVelocityItems = homeAdmissionFilter('velocity', velocityItems);
   const changed = firstBriefingItem(admittedVelocityItems);
-  const highest = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
-  const leverageItems = briefingItems(briefing.readyForYou).concat(briefingItems(briefing.watching));
-  const admittedAlignmentItems = homeAdmissionFilter('alignment', highest ? [highest] : []);
+  const chiefAlignmentQueue = briefingItems(briefing.chiefAlignmentQueue);
+  const alignmentCandidates = chiefAlignmentQueue
+    .filter(Boolean)
+    .filter((item, index, list) => list.findIndex((candidate) => {
+      const a = sourceIdentityForItem(candidate);
+      const b = sourceIdentityForItem(item);
+      return (a.id && b.id && a.id === b.id) || itemTitle(candidate, '') === itemTitle(item, '');
+    }) === index);
+  const leverageItems = briefingItems(briefing.readyForYou);
+  const admittedAlignmentItems = homeAdmissionFilter('alignment', alignmentCandidates);
   const admittedLeverageItems = homeAdmissionFilter('leverage', leverageItems);
   const admittedHighest = firstBriefingItem(admittedAlignmentItems);
   const ready = firstBriefingItem(admittedLeverageItems) || null;
   const theme = briefing.todayTheme || {};
   setHomeRoomQueue('velocity', admittedVelocityItems);
-  setHomeRoomQueue('alignment', admittedHighest ? [admittedHighest] : []);
+  setHomeRoomQueue('alignment', admittedAlignmentItems);
   setHomeRoomQueue('leverage', admittedLeverageItems);
   if(!changed) clearHomeRoomForAdmission('velocity');
   if(!admittedHighest) clearHomeRoomForAdmission('alignment');
@@ -18999,38 +20228,7 @@ function hydrateRoomsFromBriefing(briefing){
     });
   }
 
-  if(admittedHighest){
-    const titleText = itemTitle(admittedHighest, 'Protected attention');
-    const meaningText = itemMeaning(admittedHighest, 'This is where your judgment appears most valuable.');
-    const cardTitle = roomCardObservation(admittedHighest, titleText, 'alignment');
-    const cardSummary = roomCardImplication(admittedHighest, meaningText, 'alignment');
-    const sourceLabel = sourceActionLabel(admittedHighest, 'Open the thing needing attention');
-    const actions = suggestedHomeActionsForItem(admittedHighest, 'alignment', sourceLabel);
-    updateRoomFromBriefing('alignment', {
-      card: {
-        observation: cardTitle,
-        implication: cardSummary,
-        invitation: 'Does this still feel true?',
-        title: cardTitle,
-        summary: cardSummary,
-        action: 'Review the decision'
-      },
-      workspace: briefingWorkspace({
-        lens: 'Alignment',
-        title: titleText,
-        meaning: meaningText,
-        understanding: workspaceUnderstanding(admittedHighest, [
-          admittedHighest?.ifIgnored ? 'If ignored: ' + admittedHighest.ifIgnored : theme.why,
-        ]),
-        recommendation: workspaceRecommendation(admittedHighest, 'Does this still feel true to you? If not, teach VAL what it missed.'),
-        actions,
-        confidence: admittedHighest?.confidence,
-        restraintReason: 'Alignment owns the judgment question, not every supporting detail.',
-        sourceItem: admittedHighest,
-        cardType: 'highest_leverage'
-      })
-    });
-  }
+  if(admittedHighest) updateAlignmentRoomFromQueue();
 
   if(ready){
     const artifactCopy = preparedArtifactHomeCopy(ready);
@@ -19038,15 +20236,16 @@ function hydrateRoomsFromBriefing(briefing){
     const meaningText = artifactCopy?.workspaceMeaning || itemMeaning(ready, 'VAL has prepared something for review.');
     const cardTitle = artifactCopy?.observation || roomCardObservation(ready, titleText, 'leverage');
     const cardSummary = artifactCopy?.implication || roomCardImplication(ready, meaningText, 'leverage');
+    const preparedTotal = admittedLeverageItems.length || 1;
     const sourceLabel = sourceActionLabel(ready, 'Open prepared work');
     updateRoomFromBriefing('leverage', {
       card: {
-        observation: cardTitle,
-        implication: cardSummary,
-        invitation: artifactCopy?.invitation || 'Would you like to review what is ready?',
-        title: cardTitle,
-        summary: cardSummary,
-        action: artifactCopy?.action || "Review what's ready"
+        observation: preparedTotal + ' waiting for approval.',
+        implication: cardTitle + '. Nothing has been sent.',
+        invitation: 'Review, edit, send, or hold.',
+        title: preparedTotal + ' waiting for approval.',
+        summary: cardTitle + '. Nothing has been sent.',
+        action: artifactCopy?.action || 'Open draft'
       },
       workspace: briefingWorkspace({
         lens: 'Leverage',
@@ -19097,13 +20296,28 @@ function updatePreparedCount(count){
   leveragePreparedCount.textContent = safeCount + ' prepared';
 }
 
+function mergePreparedWorkQueues(...collections){
+  const seen = new Set();
+  return collections.flatMap((items) => briefingItems(items)).filter((item) => {
+    const ids = leveragePreparedIdentifiers(item);
+    const key = String(ids.draftId || (item.target?.type === 'draft' ? item.target.id : '') || ids.readyForYouId || item.id || '').trim();
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function hydrateLeverageFromReadyForYou(result = {}){
+  const hasPreparedProjection = Array.isArray(result.preparedItems) || Array.isArray(result.prepared_items);
+  const preparedItems = Array.isArray(result.preparedItems) ? result.preparedItems : (Array.isArray(result.prepared_items) ? result.prepared_items : []);
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
-  const queueItems = (items.length ? items : allBuilt).map(normalizeReadyForYouItem).filter((item) => item?.id);
+  const queueSource = hasPreparedProjection ? preparedItems : (allBuilt.length ? allBuilt : items);
+  const briefingPrepared = briefingItems(executiveBriefingState?.readyForYou);
+  const queueItems = mergePreparedWorkQueues(queueSource.map(normalizeReadyForYouItem), briefingPrepared).filter((item) => item?.id);
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
   setHomeRoomQueue('leverage', admittedQueueItems);
-  const preparedCount = Number(result.preparedCount != null ? result.preparedCount : (allBuilt.length || items.length));
+  const preparedCount = admittedQueueItems.length;
   updatePreparedCount(preparedCount);
   const ready = firstBriefingItem(admittedQueueItems);
   if(!ready || !ready.id){
@@ -19118,14 +20332,15 @@ function hydrateLeverageFromReadyForYou(result = {}){
   const cardTitle = artifactCopy?.observation || roomCardObservation(ready, titleText, 'leverage');
   const cardSummary = artifactCopy?.implication || roomCardImplication(ready, meaningText, 'leverage');
   const sourceLabel = sourceActionLabel(ready, 'Open prepared work');
+  const preparedTotal = admittedQueueItems.length || preparedCount || 1;
   updateRoomFromBriefing('leverage', {
     card: {
-      observation: cardTitle,
-      implication: cardSummary,
-      invitation: artifactCopy?.invitation || 'Would you like to review what is ready?',
-      title: cardTitle,
-      summary: cardSummary,
-      action: artifactCopy?.action || "Review what's ready"
+      observation: preparedTotal + ' prepared by VAL.',
+      implication: cardSummary || cardTitle,
+      invitation: artifactCopy?.invitation || 'Review the list',
+      title: preparedTotal + ' prepared by VAL.',
+      summary: 'Waiting for approval, sending, or editing.',
+      action: 'Review list'
     },
     workspace: briefingWorkspace({
       lens: 'Leverage',
@@ -19153,15 +20368,10 @@ function hydrateLeverageFromReadyForYou(result = {}){
 async function hydratePreparedWorkQueue(){
   if(!canUseApi) return;
   try{
-    const result = await postJson('/api/val/ready-for-you/build', {limit:5});
+    const result = await getJson('/api/val/ready-for-you?limit=25', {cache:'no-store'});
     hydrateLeverageFromReadyForYou(result);
   }catch(error){
-    try{
-      const fallback = await getJson('/api/val/ready-for-you?limit=5');
-      hydrateLeverageFromReadyForYou(fallback);
-    }catch(inner){
-      console.warn('Prepared work queue unavailable:', inner.message || error.message);
-    }
+    console.warn('Prepared work queue unavailable:', error.message);
   }
 }
 
@@ -19207,8 +20417,29 @@ function prototypeBriefing(){
       target: {type: 'opportunity', id: 'demo-acme-opportunity', name: 'Acme proposal'},
       opportunityId: 'demo-acme-opportunity',
       opportunityName: 'Acme proposal',
+      sourceRefs: [{source_type:'opportunity',source_id:'demo-acme-opportunity',quote_or_summary:'Proposal decision is blocking the next move.',confidence:.88}],
+      homeAdmission: {whyNowPacketComplete:true},
       portalPhrases: ['Acme proposal']
     },
+    alsoImportant: [{
+      title: 'Ask Marcus who owns procurement before the 2 PM demo.',
+      summary: 'The pilot can stall if vendor approval remains unnamed.',
+      ifIgnored: 'The meeting may end with enthusiasm but no executable buying path.',
+      confidence: 0.84,
+      target: {type:'email', id:'demo-thread-1', name:'Marcus procurement thread'},
+      sourceRefs: [{source_type:'email',source_id:'demo-thread-1',quote_or_summary:'Marcus named procurement and onboarding as the main remaining questions.',confidence:.84}],
+      homeAdmission: {whyNowPacketComplete:true},
+      portalPhrases: ['Marcus','procurement']
+    }, {
+      title: 'Decide what not to start this week.',
+      summary: 'Capacity is tighter than the open loops make it look.',
+      ifIgnored: 'Too many useful threads will compete for the same judgment window.',
+      confidence: 0.81,
+      target: {type:'commitment', id:'demo-task-6', name:'Capacity commitment'},
+      sourceRefs: [{source_type:'commitment',source_id:'demo-task-6',quote_or_summary:'Five relationship loops and three revenue conversations are competing for attention.',confidence:.81}],
+      homeAdmission: {whyNowPacketComplete:true},
+      portalPhrases: ['capacity','open loops']
+    }],
     readyForYou: [{
       title: 'Frisson introduction draft',
       summary: 'The relationship IDs are attached, and nothing has been sent.',
@@ -19218,7 +20449,15 @@ function prototypeBriefing(){
       draftId: 'demo-frisson-introduction',
       metadataJson: {
         preparedArtifactKind: 'introduction_email_draft',
-        preparedArtifact: {kind: 'introduction_email_draft', id: 'demo-frisson-introduction'}
+        preparedArtifact: {
+          kind: 'introduction_email_draft',
+          id: 'demo-frisson-introduction',
+          subject: 'Introduction: Michele + Aric',
+          to: 'michele@example.com',
+          cc: 'aric@example.com',
+          body: 'Hi Michele,\n\nI wanted to introduce you to Aric. He is thinking carefully about how Frisson can become more visible without becoming louder, and your perspective on language, trust, and audience resonance feels unusually aligned.\n\nAric, Michele has a strong eye for the difference between polished messaging and messaging that actually lands in the body. I think a short conversation between the two of you could clarify the next public-facing move.\n\nNo pressure for either of you. I simply saw a useful overlap and wanted to put you in the same room.\n\nWarmly,\nJessa',
+          reviewBoundary: 'Confirm both people should be connected before sending. Nothing leaves VAL without approval.'
+        }
       },
       portalPhrases: ['Frisson introduction']
     }, {
@@ -19230,7 +20469,13 @@ function prototypeBriefing(){
       draftId: 'demo-d3day-page-copy',
       metadataJson: {
         preparedArtifactKind: 'copy_draft',
-        preparedArtifact: {kind: 'copy_draft', id: 'demo-d3day-page-copy'}
+        preparedArtifact: {
+          kind: 'copy_draft',
+          id: 'demo-d3day-page-copy',
+          title: 'D3Day page copy',
+          body: 'Headline\nA day for the decisions that keep getting postponed.\n\nOpening\nD3Day is built for leaders who are carrying too many important threads in their head. The day turns scattered context into clean decisions, sequenced next moves, and work VAL can hold for you afterward.\n\nPrimary promise\nYou leave with fewer open loops, clearer ownership, and a system that remembers what matters without making you manage another workspace.\n\nCTA\nReserve the decision day.',
+          reviewBoundary: 'Review tone, claim strength, and pricing language before publishing.'
+        }
       },
       portalPhrases: ['D3Day page copy']
     }, {
@@ -19242,7 +20487,14 @@ function prototypeBriefing(){
       draftId: 'demo-client-follow-up',
       metadataJson: {
         preparedArtifactKind: 'email_draft',
-        preparedArtifact: {kind: 'email_draft', id: 'demo-client-follow-up'}
+        preparedArtifact: {
+          kind: 'email_draft',
+          id: 'demo-client-follow-up',
+          subject: 'Next step from our conversation',
+          to: 'client@example.com',
+          body: 'Hi there,\n\nI’ve been thinking about the thread we opened around capacity, momentum, and what needs to become simpler before the next decision can be clean.\n\nThe next useful move feels small: choose the one outcome that would make the next two weeks easier to trust. Once that is named, I can help turn the rest into a sequence instead of a cloud.\n\nIf it helps, send me the one decision that feels most expensive to keep carrying.\n\nWarmly,\nJessa',
+          reviewBoundary: 'Confirm recipient, relationship tone, and timing before sending.'
+        }
       },
       portalPhrases: ['Client follow-up']
     }],
@@ -19261,6 +20513,7 @@ async function hydrateHomePresence(options = {}){
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
     updatePreparedCount(Array.isArray(briefing.readyForYou) ? briefing.readyForYou.length : 0);
+    setTaskCompanionOpenCount(6);
     renderWhyTodayPanel(briefing, 'loaded');
     return;
   }
@@ -19271,15 +20524,35 @@ async function hydrateHomePresence(options = {}){
   }
   try{
     const refreshSuffix = options.refresh ? '?refreshPerspective=1&t=' + encodeURIComponent(Date.now()) : '';
-    const briefing = await getJson('/api/executive-briefing' + refreshSuffix, {cache: options.refresh ? 'no-store' : 'default'});
+    const [briefing,boardStatus] = await Promise.all([
+      getJson('/api/executive-briefing' + refreshSuffix, {cache: options.refresh ? 'no-store' : 'default'}),
+      getJson('/api/val/board/status', {cache:'no-store'}).catch(() => null)
+    ]);
     if(!briefing || briefing.bookMode) return;
     executiveBriefingState = briefing;
     window.executiveBriefingState = briefing;
-    hydrateGreetingFromBriefing(briefing);
+    if(boardStatus){
+      observerBoardState.witnessingComplete = typeof boardStatus.witnessingComplete === 'boolean'
+        ? boardStatus.witnessingComplete
+        : observerBoardState.witnessingComplete;
+      observerBoardState.witnessingSessionId = String(boardStatus.witnessingSessionId || '');
+      observerBoardState.witnessingStage = String(boardStatus.witnessingStage || '');
+      observerBoardState.witnessingAnsweredCount = Math.max(0, Number(boardStatus.witnessingAnsweredCount) || 0);
+      observerBoardState.witnessingNextStep = String(boardStatus.witnessingNextStep || '');
+    }
+    if(boardStatus && boardStatus.witnessingComplete === false){
+      applyWitnessingPendingPerspective(boardStatus);
+    }else{
+      hydrateGreetingFromBriefing(briefing);
+    }
     hydrateRoomsFromBriefing(briefing);
     hydratePreparedWorkQueue();
     hydrateAlignmentFromProjectPins();
-    renderWhyTodayPanel(briefing, 'loaded');
+    if(boardStatus && boardStatus.witnessingComplete === false){
+      renderWitnessingPendingEvidence(boardStatus);
+    }else{
+      renderWhyTodayPanel(briefing, 'loaded');
+    }
   }catch(error){
     applyVelocityPerspective(null);
     renderWhyTodayPanel(null, 'unavailable');
@@ -19335,34 +20608,23 @@ async function runScraperPreview(type){
   }
   const criteria = getScraperCriteria();
   saveLeadScraperCriteria(type, criteria);
-  const payload = config.buildPayload(criteria);
-  const session = sessionFor(type);
-  session.payload = payload;
-  if(type === 'organizations' && config.stagedStartUrl && config.stagedStatusBaseUrl){
+  if(type === 'general'){
     try{
-      setScraperLoading(type, {
-        title: 'VAL is starting the staged GOALL employer run.',
-        meaning: 'This run will show Outscraper businesses first, then Gemini research, then review-ready rows.',
-        understanding: [
-          'Step 1 uses Outscraper only for business discovery.',
-          'Step 2 runs Gemini deliberately in a small concurrent batch.',
-          'Apollo and RocketReach only run when Gemini finds a person but still needs contact help.'
-        ],
-        recommendation: 'Watch the board grow. Nothing will enter CRM until approved records are imported.'
-      });
-      await runStagedScraperPreview(type, payload);
-      return;
+      await persistGeneralLeadScraper(criteria);
     }catch(error){
-      renderLeadSourcingMessage(type, 'Staged scraper needs attention', [
+      renderLeadSourcingMessage(type, 'Scraper could not be saved', [
         error.message,
-        'The staged run did not complete cleanly.',
-        'Preview and import remain separate; nothing entered the CRM.'
-      ]);
+        'The active scraper definition did not change.',
+        'Nothing entered CRM and no outreach began.'
+      ], 'Edit scraper');
       return;
     }
   }
+  const payload = config.buildPayload(criteria);
+  const session = sessionFor(type);
+  session.payload = payload;
   setScraperLoading(type, {
-    title: type === 'partners' ? 'VAL is preparing the partner preview.' : 'VAL is preparing the employer preview.',
+    title: type === 'partners' ? 'VAL is preparing the partner preview.' : 'VAL is preparing the organization preview.',
     meaning: 'This is still a preview. Nothing will be added to CRM until approved records are imported.',
     understanding: [
       'Level 1 discovery is running from the configured source mix.',
@@ -19373,8 +20635,8 @@ async function runScraperPreview(type){
   });
   try{
     const result = await postJson(config.previewUrl, payload, {
-      timeoutMs: 180000,
-      timeoutMessage: 'The preview source is still working after 3 minutes. Try a smaller count or open the dedicated GOALL dashboard for the full phased run.'
+      timeoutMs: 20000,
+      timeoutMessage: 'The preview source did not answer within 20 seconds.'
     });
     const leads = Array.isArray(result.leads) ? result.leads : [];
     session.result = result;
@@ -19419,6 +20681,14 @@ async function importApprovedScraperLeads(type){
   }
   const config = scraperApiConfig[type];
   const workflow = scraperWorkflows[type];
+  if(type === 'general' && !config?.importUrl){
+    renderLeadSourcingMessage(type, 'Approved results are ready for a CRM destination', [
+      'The live results and approval decisions are preserved in this session.',
+      'Connect the destination pipeline before importing.',
+      'Outreach remains in prepare-and-queue mode and will not start automatically.'
+    ], 'Edit scraper');
+    return;
+  }
   const session = sessionFor(type);
   const rows = Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead'));
   const approvedIndexes = rows
@@ -19479,6 +20749,10 @@ async function importApprovedScraperLeads(type){
 }
 
 function workspaceInputValue(mode){
+  if(mode === 'cowork'){
+    const activeTextarea = homeCoworkTextareaNode?.();
+    if(activeTextarea) return activeTextarea.value.trim();
+  }
   return workspaceInputPanel.querySelector('[data-workspace-input="' + mode + '"]')?.value.trim() || '';
 }
 
@@ -19668,7 +20942,7 @@ async function runCowork(mode, messageOverride = ''){
   let visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
   if(keepHomeCoworkOpen && await confirmPendingHomeCoworkActionPacket(visiblePrompt)){
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(textarea) textarea.value = '';
     return;
   }
@@ -19682,28 +20956,48 @@ async function runCowork(mode, messageOverride = ''){
   const progressTimers = [];
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
+  const observerCoworkLane = Boolean(deskWorkspace?.classList.contains('observer-cowork-active') || activeCoworkEntry?.entrypointId === 'observer.discussion' || activeCoworkEntry?.entrypointId === 'board.chief_of_staff');
   const calendarContextLines = calendarCoworkContextLines();
+  const hasSelectedCoworkSource = Boolean(activeCoworkSelectedSourceContext && typeof activeCoworkSelectedSourceContext === 'object' && Object.keys(activeCoworkSelectedSourceContext).length);
   const actionPrepLane = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep(visiblePrompt));
   const needsFullValContext = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext(visiblePrompt));
   const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep' && !needsFullValContext && !actionPrepLane);
-  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext && !actionPrepLane);
+  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !hasSelectedCoworkSource && !needsFullValContext && !actionPrepLane);
   const conversationFastLane = Boolean(voiceFastLane || chatFastLane || actionPrepLane);
   const calendarContext = calendarContextLines.length
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
     : '';
   const heldSystemPrompt = [
-    heldContext ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext : '',
+    heldContext ? (observerCoworkLane
+      ? 'You are answering from the selected Board Observer card, not from generic Home VAL. Use the loaded observer context first. If the user asks for evidence, context, what this observer noticed, or which relationship/person is implicated, answer only from the loaded observer card. If names are not attached, say that plainly and do not invent names.\n\n' + heldContext
+      : 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext) : '',
     calendarContext
   ].filter(Boolean).join('\n\n');
   if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(textarea) textarea.value = '';
+  }
+  if(keepHomeCoworkOpen && observerCoworkLane){
+    const cardAnswer = observerCoworkCardAnswer(visiblePrompt, activeCoworkEntry?.context || {});
+    if(cardAnswer){
+      appendHomeCoworkMessage('val', cardAnswer);
+      return;
+    }
+  }
+  if(keepHomeCoworkOpen && hasSelectedCoworkSource && !observerCoworkLane){
+    const briefAnswer = alignmentCoworkBriefAnswer(visiblePrompt, activeCoworkSelectedSourceContext);
+    if(briefAnswer){
+      appendHomeCoworkMessage('val', briefAnswer);
+      const textarea = homeCoworkTextareaNode();
+      if(textarea) textarea.value = '';
+      return;
+    }
   }
   if(mockScrapers || !canUseApi){
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', mode === 'draft' ? 'A draft can begin here. Start with one plain paragraph, then refine from there.' : 'Name the decision, list the tradeoffs, and choose the next reversible step.');
-      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      const textarea = homeCoworkTextareaNode();
       if(textarea) textarea.value = '';
       return;
     }
@@ -19735,13 +21029,13 @@ async function runCowork(mode, messageOverride = ''){
     return;
   }
   if(keepHomeCoworkOpen){
-    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    const textarea = homeCoworkTextareaNode();
     if(suppressVisibleUserPrompt && textarea){
       textarea.value = '';
       textarea.placeholder = 'Add the next thought...';
     }
     if(mode !== 'meeting_prep'){
-      if(voiceFastLane){
+      if(observerCoworkLane || voiceFastLane){
         hideCoworkContextGathering();
       }else if(actionPrepLane){
         const actionDetail = homeCoworkFullContextDetail(visiblePrompt);
@@ -19781,7 +21075,13 @@ async function runCowork(mode, messageOverride = ''){
     });
   }
   try{
-    const requestOptions = conversationFastLane ? {
+    const requestOptions = hasSelectedCoworkSource ? {
+      timeoutMs: 22000,
+      timeoutMessage: 'I have the selected source loaded, but this answer took too long. Ask for one concrete output and I will answer from the loaded packet.'
+    } : observerCoworkLane ? {
+      timeoutMs: 18000,
+      timeoutMessage: 'The observer answer took too long. Ask one direct question about the loaded card and I will answer from that card only.'
+    } : conversationFastLane ? {
       timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
       timeoutMessage: actionPrepLane
         ? 'I heard you, but preparing that action took too long. Ask again with the person and the action in one sentence.'
@@ -19794,8 +21094,8 @@ async function runCowork(mode, messageOverride = ''){
     } : {});
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
-      title: 'Co-Work from Hearth',
-      latencyMode: actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context')),
+      title: observerCoworkLane ? (activeCoworkEntry?.title || 'Observer Co-Work') : 'Co-Work from Hearth',
+      latencyMode: observerCoworkLane ? 'observer_card' : (actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context'))),
       voiceMode: Boolean(voiceFastLane || (actionPrepLane && valCoworkVoiceState.active)),
       messages: [
         ...(heldSystemPrompt ? [{role: 'system', content: heldSystemPrompt}] : []),
@@ -19803,6 +21103,7 @@ async function runCowork(mode, messageOverride = ''){
       ],
       heldContext,
       projectContext: workspaceReturnTarget === 'project' ? activeProjectChatContext() : null,
+      selectedSourceContext: activeCoworkSelectedSourceContext,
       dashboard: {
         hearth: title.textContent,
         witness: witness.textContent,
@@ -19821,7 +21122,7 @@ async function runCowork(mode, messageOverride = ''){
     }
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', content, {meetingPrep: mode === 'meeting_prep'});
-      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      const textarea = homeCoworkTextareaNode();
       if(textarea){
         textarea.value = '';
         textarea.placeholder = 'Add the next thought...';
@@ -19856,7 +21157,7 @@ async function runCowork(mode, messageOverride = ''){
     clearProgressTimers();
     if(keepHomeCoworkOpen){
       const recoveryMessage = valCoworkVoiceState.active
-        ? (error.message || 'I heard you, but that turn did not complete. Ask me one smaller thing and I’ll stay with you.')
+        ? (error.message || 'I heard you, but the connection dropped before I could answer. Your message is still here; try that once more.')
         : 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.';
       appendHomeCoworkMessage('val', recoveryMessage, {silentVoice:!valCoworkVoiceState.active});
       return;
@@ -19981,6 +21282,34 @@ async function runTeachVal(mode){
   });
 }
 
+function resetOpenSurfaceScroll(surface, nestedSelectors = []){
+  const nodes = [
+    surface,
+    ...nestedSelectors.flatMap((selector) => Array.from(surface?.querySelectorAll?.(selector) || []))
+  ].filter(Boolean);
+  [...new Set(nodes)].forEach((node) => {
+    node.scrollTop = 0;
+    node.scrollLeft = 0;
+    node.scrollTo?.({top:0, left:0, behavior:'auto'});
+  });
+}
+
+function resetExecutiveFunctionScroll(){
+  const activeDetail = drawerTray?.querySelector?.('.source-detail[aria-hidden="false"]');
+  resetOpenSurfaceScroll(activeDetail, [
+    '.transcript-detail-panel',
+    '.timeline-review-cards',
+    '.correspondence-thread-body',
+    '.stewardship-network-detail',
+    '.project-manager-dossier'
+  ]);
+}
+
+function finishOpeningExecutiveFunction(){
+  resetExecutiveFunctionScroll();
+  window.requestAnimationFrame(resetExecutiveFunctionScroll);
+}
+
 function restoreRelationshipWindow(){
   retrievalSystem.classList.add('open');
   retrievalSystem.dataset.activeDrawer = 'relationship';
@@ -20007,6 +21336,7 @@ function restoreRelationshipWindow(){
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreProjectWindow(projectId = ''){
@@ -20046,6 +21376,7 @@ function restoreProjectWindow(projectId = ''){
     openProjectIndex();
   }
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreTimelineWindow(){
@@ -20082,6 +21413,7 @@ function restoreTimelineWindow(){
     renderTimelineReviewCards(currentTimelineReviewItems);
   }
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreCorrespondenceWindow(){
@@ -20110,6 +21442,7 @@ function restoreCorrespondenceWindow(){
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   renderCorrespondenceBrief(activeCorrespondenceItem || currentCorrespondenceItems[0]);
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreLeadIntelligenceWindow(){
@@ -20140,10 +21473,12 @@ function restoreLeadIntelligenceWindow(){
   if(leadDrawerPreviewList && !leadDrawerPreviewList.innerHTML.trim()) leadSourcingEmptyBoard();
   scrollLeadIntelligenceActionsIntoView();
   updateCloseAllDrawersButton();
+  finishOpeningExecutiveFunction();
 }
 
 function restoreValWindow(){
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'val';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
   updateDrawerPullLabel();
@@ -20168,6 +21503,7 @@ function restoreValWindow(){
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   updateCloseAllDrawersButton();
   hydrateValDrawer();
+  finishOpeningExecutiveFunction();
 }
 
 function valOperationalCategory(item){
@@ -20220,8 +21556,27 @@ function updateValRoutingPanel({supportCircle = [], documentExamples = [], os = 
 
 async function hydrateValDrawer(){
   if(!valLiveStatus) return;
-  if(document.querySelector('.val-witnessing-entry')){
-    valLiveStatus.textContent = 'Nothing leaves this session. VAL will show what it notices before anything becomes memory.';
+  const witnessingEntry = document.querySelector('.val-witnessing-entry');
+  if(witnessingEntry){
+    if(!canUseApi){
+      valLiveStatus.textContent = 'Live Witnessing status appears when the VAL service is connected.';
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+      return;
+    }
+    valLiveStatus.textContent = 'Restoring your Witnessing Session...';
+    try{
+      const onboarding = await postJson('/api/teach-val/onboarding/start', {resume:true,resumeWitnessing:true,testMode:false,mode:'onboarding'});
+      activeValWitnessingSessionId = onboarding.session?.id || onboarding.id || '';
+      restoreValWitnessingStateFromOnboarding(onboarding);
+      renderValWitnessingEntry(onboarding);
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+    }catch(error){
+      valLiveStatus.textContent = 'Could not restore your Witnessing Session: ' + error.message;
+      renderValDrawerConnections();
+      await refreshValWitnessingConnections();
+    }
     return;
   }
   if(!canUseApi){
@@ -20340,7 +21695,7 @@ function renderScraperWorkflow(type, stage = 'setup'){
     understanding: stageUnderstanding,
     recommendation: stageRecommendation,
     actions: actionsByStage[stage] || actionsByStage.setup,
-    label: (isPartner ? 'Partner' : 'Employer') + ' scraper workspace'
+    label: (isPartner ? 'Partner' : 'Organization') + ' scraper workspace'
   });
   if(stage === 'setup') renderScraperCriteria(workflow, type);
   renderScraperPreviewList(workflow, stage);
@@ -20367,21 +21722,33 @@ function renderScraperUtility(type){
 }
 
 function trainLeadScraper(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   openScraper(selectedType, 'setup');
 }
 
-function saveLeadScraperTraining(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+async function saveLeadScraperTraining(type){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   const criteria = getScraperCriteria();
   saveLeadScraperCriteria(selectedType, criteria);
+  if(selectedType === 'general'){
+    try{
+      await persistGeneralLeadScraper(criteria);
+    }catch(error){
+      renderLeadSourcingMessage(selectedType, 'Scraper could not be saved', [
+        error.message,
+        'The active saved scraper remains unchanged.',
+        'Nothing entered CRM and no outreach began.'
+      ], 'Edit scraper');
+      return;
+    }
+  }
   activeScraperType = selectedType;
   if(leadDrawerPreviewList){
     leadDrawerPreviewList.hidden = false;
     leadDrawerPreviewList.innerHTML = [
       '<div class="preview-list-head"><span>Training saved</span><small>The next run will use this scraper definition.</small></div>',
       '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-        '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' training saved</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the updated sequence.</small></article></section>',
+        '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' saved</strong><span>' + (selectedType === 'general' ? 'This definition belongs to this VAL and is available across devices.' : 'Criteria and source instructions are stored locally for this VAL.') + '</span><small>Run the scraper to test the updated sequence.</small></article></section>',
         '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
         '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered CRM.</small></article></section>',
       '</div>',
@@ -20397,7 +21764,7 @@ function saveLeadScraperTraining(type){
 }
 
 function approveAllPreviewLeads(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   activeScraperType = selectedType;
   const rows = leadDrawerPreviewList ? Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead')) : [];
   const session = sessionFor(selectedType);
@@ -20415,287 +21782,8 @@ function approveAllPreviewLeads(type){
   renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
-function stagedRunStatusLabel(run = {}){
-  if(run.status === 'complete') return 'Review ready';
-  if(run.status === 'failed') return 'Needs attention';
-  if(run.phase === 'outscraper') return 'Step 1 running';
-  if(run.phase === 'gemini') return 'Step 2 running';
-  if(run.phase === 'review') return 'Step 3 running';
-  return 'Queued';
-}
-
-function stagedDecisionStatusText(status){
-  if(status === 'queued_for_research') return 'Waiting for Gemini';
-  if(status === 'not_researched_before_target_met') return 'Not researched - target already reached';
-  if(status === 'no_verified_person') return 'No verified decision-maker name';
-  if(status === 'named') return 'Person identified';
-  return 'Waiting for business discovery';
-}
-
-function stagedReviewStatusText(status){
-  if(status === 'ready') return 'Ready for approval';
-  if(status === 'hold') return 'Held for review';
-  if(status === 'waiting_for_research') return 'Waiting for decision-maker research';
-  if(status === 'not_reviewed_before_target_met') return 'Not reviewed - target already reached';
-  return 'Waiting for enrichment';
-}
-
-function renderStagedRunBoard(type, run = {}){
-  if(!leadDrawerPreviewList) return;
-  const session = sessionFor(type);
-  const businesses = Array.isArray(run.businesses) ? run.businesses.map((lead) => normalizePreviewLead(lead, type)) : [];
-  const decisionMakers = Array.isArray(run.decisionMakers) ? run.decisionMakers.map((lead) => normalizePreviewLead(lead, type)) : [];
-  const reviewLeads = Array.isArray(run.reviewLeads) ? run.reviewLeads.map((lead) => normalizePreviewLead(lead, type)) : [];
-  const stageRows = Array.isArray(run.stageRows) && run.stageRows.length
-    ? run.stageRows.map((row, index) => ({
-        index,
-        business: normalizePreviewLead(row.business || {}, type),
-        decision: row.decision ? normalizePreviewLead(row.decision, type) : null,
-        review: row.review ? normalizePreviewLead(row.review, type) : null,
-        reviewIndex: Number(row.reviewIndex),
-        step2Status: row.step2Status || 'waiting',
-        step3Status: row.step3Status || 'waiting'
-      }))
-    : businesses.map((business, index) => ({
-        index,
-        business,
-        decision: decisionMakers[index] || null,
-        review: reviewLeads[index] || null,
-        reviewIndex: index,
-        step2Status: decisionMakers[index] ? (decisionMakers[index].decisionMakerVerified ? 'named' : 'no_verified_person') : 'waiting',
-        step3Status: reviewLeads[index] ? 'ready' : 'waiting'
-      }));
-  reviewLeads.forEach((lead, index) => {
-    const existing = session.previewLeads?.[index];
-    if(existing && existing._approved === false) lead._approved = false;
-  });
-  session.previewLeads = reviewLeads;
-  session.result = {
-    ...(session.result || {}),
-    ...(run.payload || {}),
-    leads: Array.isArray(run.reviewLeads) ? run.reviewLeads : [],
-    stagedRunId: run.runId,
-    report: run.report || null,
-    searchPlan: run.searchPlan || null
-  };
-  const workflow = scraperWorkflows[type];
-  if(workflow) workflow.previewLeads = reviewLeads;
-  const requested = Number(run.requested || session.payload?.limit || reviewLeads.length || businesses.length || 0) || 0;
-  const verifiedNameCount = reviewLeads.filter((lead) => lead.decisionMakerVerified).length;
-	  const counts = run.counts || {};
-	  const addableReady = Number(counts.addableReady || 0);
-	  const sourceType = run.payload?.sourceType || session.payload?.sourceType || '';
-	  const step1SourceLabel = sourceType === 'csv_upload' ? 'CSV upload' : 'Outscraper discovery';
-	  const header = stagedRunStatusLabel(run) + ' - ' + addableReady + ' of ' + requested + ' addable leads - ' + (counts.businesses || businesses.length) + ' businesses - ' + verifiedNameCount + ' named decision maker' + (verifiedNameCount === 1 ? '' : 's');
-  const summary = [
-    run.message || 'Staged GOALL run is active.',
-    'Raw found: ' + (counts.rawFound || 0),
-    'Duplicates: ' + (counts.duplicates || 0),
-    'CRM matches: ' + (counts.alreadyInCrm || 0),
-    'Addable ready: ' + addableReady,
-    'No import until approval.'
-  ].join(' | ');
-  revealLeadSourcingWorkbench();
-  if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
-  leadDrawerPreviewList.hidden = false;
-  const businessRows = stageRows.length ? stageRows.map((row) => {
-    const lead = row.business;
-    return (
-    '<article class="lead-stage-row" data-lead-stage-index="' + row.index + '">' +
-      '<strong>' + escapeHtml(lead.name) + '</strong>' +
-      '<span>' + escapeHtml(lead.type) + '</span>' +
-      '<small>' + escapeHtml(lead.location) + '</small>' +
-      '<b>' + escapeHtml(lead.score) + '</b>' +
-    '</article>'
-    );
-	  }).join('') : '<article class="lead-stage-row empty"><strong>' + (sourceType === 'csv_upload' ? 'Reading CSV upload' : 'Searching Outscraper') + '</strong><span>Businesses will appear here as they are accepted.</span><small>No fallback model is filling this column.</small></article>';
-  const decisionRows = stageRows.length ? stageRows.map((row) => {
-    const lead = row.decision;
-    if(!lead){
-      return '<article class="lead-stage-row pending" data-lead-stage-index="' + row.index + '">' +
-        '<strong>' + escapeHtml(stagedDecisionStatusText(row.step2Status)) + '</strong>' +
-        '<span>' + escapeHtml(row.business.name) + '</span>' +
-        '<small>Same business is still moving through Step 2.</small>' +
-      '</article>';
-    }
-    return (
-    '<article class="lead-stage-row" data-lead-stage-index="' + row.index + '">' +
-      '<strong>' + escapeHtml(lead.decisionMakerVerified ? lead.contact : 'No verified decision-maker name') + '</strong>' +
-      '<span>' + escapeHtml(lead.decisionMakerVerified ? 'Person identified' : 'Business contact only') + '</span>' +
-      '<small>' + escapeHtml(lead.decisionMakerVerified ? lead.name : (lead.decisionMakerStatus || lead.businessContact || 'Gemini did not verify a person yet')) + '</small>' +
-    '</article>'
-    );
-  }).join('') : '<article class="lead-stage-row empty"><strong>Waiting for businesses</strong><span>Gemini starts after Outscraper has rows.</span><small>Apollo/RocketReach only run when Gemini finds a person but not contact info.</small></article>';
-  const reviewRows = stageRows.length ? stageRows.map((row) => {
-    const lead = row.review;
-    if(!lead){
-      return '<article class="lead-stage-row pending" data-lead-stage-index="' + row.index + '">' +
-        '<strong>' + escapeHtml(row.business.name) + '</strong>' +
-        '<span>' + escapeHtml(stagedReviewStatusText(row.step3Status)) + '</span>' +
-        '<div class="lead-confirm-status"><b>Not approvable yet</b><small>Same business has not reached CRM review.</small></div>' +
-      '</article>';
-    }
-    const leadIndex = Number.isFinite(row.reviewIndex) && row.reviewIndex >= 0 ? row.reviewIndex : reviewLeads.findIndex((candidate) => candidate._raw === lead._raw);
-    return (
-    '<article class="preview-lead lead-stage-row" data-lead-index="' + leadIndex + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
-      '<div class="lead-confirm-main">' +
-        '<strong>' + escapeHtml(lead.name) + '</strong>' +
-        '<span>' + escapeHtml(lead.evidence) + '</span>' +
-      '</div>' +
-      '<div class="lead-confirm-status">' +
-        '<b>' + (run.status === 'complete' ? 'Preview only' : 'Building') + '</b>' +
-        '<small>' + (run.status === 'complete' ? 'Not in CRM yet. Duplicate check is enforced again at import.' : 'This row is not imported. Research is still moving.') + '</small>' +
-      '</div>' +
-      '<div class="preview-controls" aria-label="Review decision for ' + escapeHtml(lead.name) + '">' +
-        '<button type="button" class="preview-choice' + (lead._approved === false ? '' : ' active') + '" data-preview-choice="approved">Approve</button>' +
-        '<button type="button" class="preview-choice' + (lead._approved === false ? ' active' : '') + '" data-preview-choice="held">Hold</button>' +
-      '</div>' +
-    '</article>'
-    );
-  }).join('') : '<article class="lead-stage-row empty"><strong>Waiting for enriched rows</strong><span>Review rows appear one by one.</span><small>No CRM write has happened.</small></article>';
-  leadDrawerPreviewList.innerHTML = [
-    '<div class="preview-list-head"><span>' + escapeHtml(header) + '</span><small data-preview-summary>' + escapeHtml(summary) + '</small></div>',
-    '<div class="lead-sourcing-board" data-lead-sourcing-board>',
-	      '<section class="lead-sourcing-column' + (businesses.length ? ' done' : ' active thinking') + '" data-level="1"><div><span>Step 1</span><h4>Find businesses</h4><small>' + escapeHtml(step1SourceLabel) + '</small></div>' + businessRows + '</section>',
-      '<section class="lead-sourcing-column' + (decisionMakers.length ? ' done' : ' active thinking') + '" data-level="2"><div><span>Step 2</span><h4>Research decision makers</h4><small>Gemini, then Apollo/RocketReach if needed</small></div>' + decisionRows + '</section>',
-      '<section class="lead-sourcing-column' + (reviewLeads.length ? ' active' : '') + '" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' + reviewRows + '</section>',
-    '</div>',
-    '<div class="lead-sourcing-actions">',
-	      run.status === 'complete' ? '<button type="button" data-lead-drawer-action="approve-all" data-lead-drawer-type="' + type + '">Approve All</button>' : '',
-	      '<button type="button" data-lead-drawer-action="import" data-lead-drawer-type="' + type + '"' + (run.status === 'complete' && reviewLeads.length ? '' : ' disabled') + '>Import approved leads</button>',
-	      type === 'organizations' ? '<button type="button" data-lead-drawer-action="upload-csv" data-lead-drawer-type="' + type + '">Upload CSV leads</button>' : '',
-	      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + type + '">Train this scraper</button>',
-    '</div>'
-  ].join('');
-  updatePreviewApprovalSummary();
-}
-
-async function pollStagedScraperRun(type, runId){
-  const config = scraperApiConfig[type];
-  const session = sessionFor(type);
-  if(session.stagedPollTimer) window.clearTimeout(session.stagedPollTimer);
-  const poll = async() => {
-    try{
-      const run = await getJson(config.stagedStatusBaseUrl + '/' + encodeURIComponent(runId), {cache:'no-store'});
-      session.stagedRun = run;
-      renderStagedRunBoard(type, run);
-      if(run.status === 'running' || run.status === 'queued'){
-        session.stagedPollTimer = window.setTimeout(poll, 1200);
-      }else{
-        session.stagedPollTimer = null;
-      }
-    }catch(error){
-      session.stagedPollTimer = null;
-      renderLeadSourcingMessage(type, 'Staged run needs attention', [
-        error.message,
-        'The staged preview could not be refreshed.',
-        'Nothing entered the CRM.'
-      ]);
-    }
-  };
-  await poll();
-}
-
-async function runStagedScraperPreview(type, payload){
-  const config = scraperApiConfig[type];
-  const session = sessionFor(type);
-  if(session.stagedPollTimer) window.clearTimeout(session.stagedPollTimer);
-  renderStagedRunBoard(type, {
-    status:'running',
-    phase:'queued',
-    message:'Starting staged GOALL run.',
-    requested:payload.limit,
-    payload,
-    counts:{requested:payload.limit,businesses:0,decisionMakers:0,reviewReady:0,rawFound:0,duplicates:0,alreadyInCrm:0},
-    businesses:[],
-    decisionMakers:[],
-    reviewLeads:[]
-  });
-  const run = await postJson(config.stagedStartUrl, payload, {
-    timeoutMs: 30000,
-    timeoutMessage: 'The staged run could not start within 30 seconds. Nothing entered CRM.'
-  });
-  session.stagedRun = run;
-  renderStagedRunBoard(type, run);
-  await pollStagedScraperRun(type, run.runId);
-}
-
-function chooseLeadCsvUpload(type){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
-  if(selectedType !== 'organizations') return;
-  let input = document.querySelector('[data-lead-csv-upload]');
-  if(!input){
-    input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv,text/csv';
-    input.hidden = true;
-    input.setAttribute('data-lead-csv-upload', 'true');
-    document.body.appendChild(input);
-    input.addEventListener('change', async() => {
-      const uploadType = input.dataset.leadDrawerType || 'organizations';
-      const file = input.files && input.files[0];
-      input.value = '';
-      if(!file) return;
-      try{
-        await uploadLeadCsv(uploadType, file);
-      }catch(error){
-        renderLeadSourcingMessage(uploadType, 'CSV upload needs attention', [
-          error.message,
-          'The uploaded list was not imported.',
-          'Fix the file or source connection, then try again.'
-        ]);
-      }
-    });
-  }
-  input.dataset.leadDrawerType = selectedType;
-  input.click();
-}
-
-async function uploadLeadCsv(type, file){
-  const config = scraperApiConfig[type];
-  if(!config?.csvUploadUrl) return;
-  const criteria = getScraperCriteria();
-  saveLeadScraperCriteria(type, criteria);
-  const payload = config.buildPayload(criteria);
-  let importTag = payload.importTag || '';
-  if(!importTag){
-    importTag = window.prompt('Add a GHL source tag for this uploaded list, so the team knows where these leads came from.', '');
-    if(importTag === null) return;
-  }
-  payload.importTag = String(importTag || '').replace(/\s+/g, ' ').trim();
-  payload.sourceTag = payload.importTag;
-  payload.sourceType = 'csv_upload';
-  const session = sessionFor(type);
-  session.payload = payload;
-  if(session.stagedPollTimer) window.clearTimeout(session.stagedPollTimer);
-  renderStagedRunBoard(type, {
-    status:'running',
-    phase:'csv',
-    message:'Starting staged CSV enrichment run.',
-    requested:payload.limit,
-    payload,
-    counts:{requested:payload.limit,businesses:0,decisionMakers:0,reviewReady:0,rawFound:0,duplicates:0,alreadyInCrm:0},
-    businesses:[],
-    decisionMakers:[],
-    reviewLeads:[]
-  });
-  const form = new FormData();
-  form.append('file', file);
-  Object.entries(payload).forEach(([key, value]) => {
-    if(value == null) return;
-    form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
-  });
-  const run = await postFormData(config.csvUploadUrl, form, {
-    timeoutMs: 30000,
-    timeoutMessage: 'The CSV enrichment run could not start within 30 seconds. Nothing entered CRM.'
-  });
-  session.stagedRun = run;
-  renderStagedRunBoard(type, run);
-  await pollStagedScraperRun(type, run.runId);
-}
-
 async function handleLeadDrawerAction(action, type, node){
-  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'general';
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'lead_intelligence_packet',
@@ -20710,27 +21798,19 @@ async function handleLeadDrawerAction(action, type, node){
     return;
   }
   if(action === 'save-trainer'){
-    saveLeadScraperTraining(selectedType);
+    await saveLeadScraperTraining(selectedType);
     return;
   }
-	  if(action === 'preview'){
-	    await runScraperPreview(selectedType);
-	    return;
-	  }
-	  if(action === 'upload-csv'){
-	    chooseLeadCsvUpload(selectedType);
-	    return;
-	  }
-	  if(action === 'approve-all'){
+  if(action === 'preview'){
+    await runScraperPreview(selectedType);
+    return;
+  }
+  if(action === 'approve-all'){
     approveAllPreviewLeads(selectedType);
     return;
   }
   if(action === 'import'){
     await importApprovedScraperLeads(selectedType);
-    return;
-  }
-  if(action === 'pipeline'){
-    await handleWorkflowAction('pipeline', node);
   }
 }
 
@@ -20749,7 +21829,7 @@ function valWorkspaceCopy(action){
       meaning: 'This is where VAL begins the partnership by learning who it is partnering with before it tries to optimize the work.',
       understanding: ['VAL asks one meaningful question at a time.', 'Every reflection should show evidence, name what changed in VAL understanding, and invite correction.', 'No account connection, external action, or durable memory promotion happens from this first slice.'],
       recommendation: 'Start with Meeting VAL, then move through story, mission, and principles only after each reflection feels accurate.',
-      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
+      actions: [{label:'Pick Up Where We Left Off', workflow:'valWitnessingResume'}, {label:'Revisit Documents', workflow:'valWitnessingDocuments'}, {label:'Start Fresh', workflow:'valWitnessingFresh'}, {label:'Import from ChatGPT/Claude', workflow:'valOnboarding:ai_history_import'}, {label:'Back to VAL', workflow:'cancel:val'}]
     },
     working_agreements: {
       title: 'Set VAL working agreements.',
@@ -20855,12 +21935,23 @@ const valWitnessingCards = [
     placeholder: 'Name what would create relief, trust, momentum, protection, better decisions, clearer communication, or a stronger first month.',
     helper: 'VAL is listening for the kind of usefulness that would actually matter in your life and work.',
     writesTo: 'success definition, trust conditions, early value, and partnership expectations',
+    next: 'chief_priorities'
+  },
+  {
+    id: 'chief_priorities',
+    category: 'witness_chief_priorities',
+    movement: 'Movement 7',
+    title: 'Chief of Staff Priorities',
+    question: 'When the Board sees everything, what should your Chief of Staff optimize for first?',
+    placeholder: 'Name three priorities. For example: revenue, capacity, values. Or: urgency, relationships, promises.',
+    helper: 'These priorities teach the Chief of Staff how to order what deserves your attention after every Observer has weighed in.',
+    writesTo: 'chief of staff optimization priorities, ordering rules, and Home briefing judgment',
     next: 'connect_sources'
   },
   {
     id: 'connect_sources',
     category: 'witness_connect_sources',
-    movement: 'Movement 7',
+    movement: 'Movement 8',
     title: 'Connect Your World',
     question: 'Choose the sources you want VAL to review with you.',
     placeholder: 'Optional. For example: “meetings that need follow-up,” “new relationships,” or “projects that feel stuck.” Leave this blank if nothing comes to mind yet.',
@@ -20871,7 +21962,7 @@ const valWitnessingCards = [
   {
     id: 'source_review',
     category: 'witness_source_review',
-    movement: 'Movement 8',
+    movement: 'Movement 9',
     title: 'VAL Reviews What It Sees',
     question: 'VAL will prepare a short, confirmable review of the communication rhythm, commitments, capacity signals, and relationship patterns it can see.',
     placeholder: 'Name anything VAL should pay special attention to while preparing that review.',
@@ -20882,7 +21973,7 @@ const valWitnessingCards = [
   {
     id: 'key_relationships',
     category: 'witness_key_relationships',
-    movement: 'Movement 9',
+    movement: 'Movement 10',
     title: 'Confirm Key Relationships',
     question: 'Who should VAL understand first, and do you have a LinkedIn commenting support circle?',
     placeholder: 'For key relationships, name the people VAL should understand. If you have a LinkedIn support circle, include only each person’s name and LinkedIn profile link.',
@@ -20893,7 +21984,7 @@ const valWitnessingCards = [
   {
     id: 'documents_templates',
     category: 'witness_documents_templates',
-    movement: 'Movement 10',
+    movement: 'Movement 11',
     title: 'Documents and Templates',
     question: 'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
     placeholder: 'For each item, say Document or Template. If it is a Document, name the relationship or project it belongs to. If it is a Template, tell VAL what it is used for.',
@@ -20904,7 +21995,7 @@ const valWitnessingCards = [
   {
     id: 'import_context',
     category: 'witness_import_context',
-    movement: 'Movement 11',
+    movement: 'Movement 12',
     title: 'Import Prior Context',
     question: 'Use one prompt in ChatGPT or Claude, then paste the response here.',
     placeholder: 'Paste the full response from ChatGPT or Claude, plus any profiles, assessments, bio notes, health/care context, family schedules, coach notes, or anything VAL should hold lightly.',
@@ -20915,11 +22006,11 @@ const valWitnessingCards = [
   {
     id: 'partnership_agreement',
     category: 'witness_partnership_agreement',
-    movement: 'Movement 12',
+    movement: 'Movement 13',
     title: 'Partnership Promise',
-    question: 'Here is what VAL learned, what VAL will support, and what VAL will protect.',
-    placeholder: 'VAL will create a warm partnership summary here. You can add anything you want included in the first 30 days.',
-    helper: 'This should feel encouraging, protective, and clear.',
+    question: 'What would make the first 30 days with VAL feel genuinely supportive?',
+    placeholder: 'Tell VAL what support, protection, or follow-through would matter most in your first 30 days together.',
+    helper: 'Your earlier answers are already part of this step.',
     writesTo: 'partnership summary, protection priorities, support commitments, open questions, and first 30 day focus',
     next: ''
   }
@@ -20927,10 +22018,11 @@ const valWitnessingCards = [
 const valWitnessingState = {};
 const valWitnessingPhases = [
   {id: 'witness', label: 'Witness', time: '10 min', start: 0, end: 5},
-  {id: 'connect', label: 'Connect', time: '5 min', start: 6, end: 6},
-  {id: 'review', label: 'Review', time: '3 min', start: 7, end: 7},
-  {id: 'relationships', label: 'Confirm relationships', time: '3 min', start: 8, end: 8},
-  {id: 'promise', label: 'Partnership promise', time: '5 min', start: 9, end: 11}
+  {id: 'chief', label: 'Chief priorities', time: '2 min', start: 6, end: 6},
+  {id: 'connect', label: 'Connect', time: '5 min', start: 7, end: 7},
+  {id: 'review', label: 'Review', time: '3 min', start: 8, end: 8},
+  {id: 'relationships', label: 'Confirm relationships', time: '3 min', start: 9, end: 9},
+  {id: 'promise', label: 'Partnership promise', time: '5 min', start: 10, end: 12}
 ];
 
 function valWitnessingCard(idOrCategory = 'meeting_val'){
@@ -21091,7 +22183,8 @@ const valWitnessingConnectionCopy = {
   google: {keyLabel:'Google',fieldLabel:'',placeholder:'',actionLabel:'Connect Google'},
   microsoft: {keyLabel:'Outlook',fieldLabel:'',placeholder:'',actionLabel:'Connect Outlook'},
   krisp: {keyLabel:'Krisp transcripts',fieldLabel:'',placeholder:'',actionLabel:'Connect Krisp'},
-  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'}
+  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'},
+  anthropic: {keyLabel:'Anthropic / Claude',fieldLabel:'Anthropic API key',placeholder:'sk-ant-...',actionLabel:'Connect Anthropic'}
 };
 
 function valWitnessingConnectionCard(connection = {}){
@@ -21099,6 +22192,13 @@ function valWitnessingConnectionCard(connection = {}){
   const copy = valWitnessingConnectionCopy[id] || {keyLabel:connection.label || 'Connection',actionLabel:'Connect'};
   const connected = !!connection.connected;
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
+  const googleAccounts = id === 'google' && Array.isArray(connection.accounts) ? connection.accounts : [];
+  const accountList = googleAccounts.length ? '<div class="val-google-account-list">' + googleAccounts.map(account => [
+    '<div class="val-google-account">',
+      '<span><b>' + escapeConnectionHtml(account.email || account.label || 'Google account') + '</b><small>' + escapeConnectionHtml(account.primary ? 'Primary · Gmail, Calendar, Drive, and Docs' : 'Additional Gmail inbox') + '</small></span>',
+      '<a href="/auth/google?provider=' + encodeURIComponent(account.provider || 'google') + '" target="_blank" rel="noopener">Reconnect</a>',
+    '</div>'
+  ].join('')).join('') + '</div>' : '';
   const action = connection.action === 'oauth' && connection.actionHref
     ? '<a class="val-witnessing-source-action" href="' + escapeConnectionHtml(connection.actionHref) + '" target="_blank" rel="noopener">' + escapeConnectionHtml(copy.actionLabel) + '</a>'
     : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
@@ -21111,7 +22211,9 @@ function valWitnessingConnectionCard(connection = {}){
       '<p>' + escapeConnectionHtml(connection.learns || '') + '</p>',
       '<small>' + escapeConnectionHtml(connection.limits || '') + '</small>',
       connection.error ? '<em>' + escapeConnectionHtml(connection.error) + '</em>' : '',
+      accountList,
       action,
+      id === 'google' && connected ? '<a class="val-witnessing-source-action val-google-add-account" href="' + escapeConnectionHtml(connection.addActionHref || '/auth/google?mode=add') + '" target="_blank" rel="noopener">Add another Gmail account</a>' : '',
     '</article>'
   ].join('');
 }
@@ -21136,23 +22238,43 @@ function renderValWitnessingConnectionHub(){
   ].join('');
 }
 
-let pendingValWitnessingLaunch = null;
+function valWitnessingConnectionSurface(){
+  const connectionSelector = '[data-val-witnessing-connection-list], [data-val-openai-setup-form]';
+  if(deskWorkspace?.getAttribute('aria-hidden') === 'false' && workspaceInputPanel?.querySelector(connectionSelector)) return workspaceInputPanel;
+  if(valDetail?.getAttribute('aria-hidden') === 'false' && valDetail.querySelector(connectionSelector)) return valDetail;
+  if(workspaceInputPanel?.querySelector(connectionSelector)) return workspaceInputPanel;
+  return valDetail || workspaceInputPanel;
+}
 
-function renderValOpenAISetup(){
+function renderValDrawerConnections(){
+  const target = document.querySelector('[data-val-drawer-connections]');
+  if(!target)return;
+  target.innerHTML = renderValWitnessingConnectionHub();
+}
+
+let pendingValWitnessingLaunch = null;
+let openAiSetupRequired = false;
+
+function renderValOpenAISetup({mandatory = false} = {}){
   return [
-    '<section class="val-witnessing-openai-gate" aria-label="Connect OpenAI">',
-      '<span>First, connect OpenAI</span>',
-      '<h4>Connect the intelligence that powers VAL.</h4>',
-      '<p>Your OpenAI API key lets VAL have its Witnessing conversation, prepare drafts, and reason across the parts of your world you choose to connect later.</p>',
+    '<section class="val-witnessing-openai-gate" aria-label="Connect your OpenAI key" data-mandatory="' + String(mandatory) + '">',
+      '<span>Your first VAL connection</span>',
+      '<h4>Connect your OpenAI key.</h4>',
+      '<p>This is the intelligence connection that lets VAL converse, reason across your context, prepare drafts, and support your Board of Observers.</p>',
+      '<div class="val-openai-ownership-note">',
+        '<strong>This key belongs only to you.</strong>',
+        '<p>It is encrypted inside your VAL. No Jessa or shared client AI key will be used for your work.</p>',
+      '</div>',
       '<form class="val-witnessing-credential-form" data-val-openai-setup-form>',
         '<label>',
           '<span>OpenAI API key</span>',
           '<input type="password" autocomplete="off" data-val-witnessing-credential-input="openai" placeholder="sk-...">',
         '</label>',
-        '<div>',
-          '<button type="submit">Save and test OpenAI</button>',
+        '<div class="val-openai-setup-actions">',
+          '<button type="button" data-val-openai-setup-submit>Save, test, and enter VAL</button>',
+          '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Create an OpenAI key</a>',
         '</div>',
-        '<small data-val-witnessing-credential-status>Your key is encrypted and never shown again. You will choose other connections later, only when you are ready.</small>',
+        '<small data-val-witnessing-credential-status>Your key will be encrypted, validated, and never shown again.</small>',
       '</form>',
     '</section>'
   ].join('');
@@ -21160,20 +22282,51 @@ function renderValOpenAISetup(){
 
 function openValOpenAISetup(cardId = 'meeting_val', options = {}){
   pendingValWitnessingLaunch = {cardId,options};
+  openAiSetupRequired = options.mandatory === true;
+  hearth.classList.toggle('openai-setup-required',openAiSetupRequired);
+  deskWorkspace.classList.toggle('openai-setup-required',openAiSetupRequired);
+  returnButton.disabled = openAiSetupRequired;
+  returnButton.hidden = openAiSetupRequired;
+  returnButton.setAttribute('aria-hidden',String(openAiSetupRequired));
   setWorkspaceContent({
     lens: 'VAL',
-    title: 'Connect OpenAI to start VAL.',
-    meaning: 'Before VAL asks anything of you, it needs the intelligence that makes its responses thoughtful and specific.',
-    understanding: ['Your key powers VAL. It does not give VAL permission to send, change, or share anything.'],
-    recommendation: 'Save and test your OpenAI API key to begin your Witnessing Session.',
-    actions: [{label:'Back to VAL', workflow:'cancel:val'}],
+    title: 'Your VAL is ready for its intelligence connection.',
+    meaning: 'Connect your own OpenAI key once. After it validates, VAL will remember the connection and bring you directly into your private executive environment.',
+    understanding: ['Your key powers VAL. It does not give VAL permission to send, change, or share anything.','Usage remains inside your own OpenAI account, never Jessa’s or another client’s account.'],
+    recommendation: 'Create or paste your OpenAI key below, then save and test it.',
+    actions: openAiSetupRequired?[]:[{label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL OpenAI setup'
   });
   deskWorkspace.classList.add('witnessing-mode');
   workspaceInputPanel.hidden = false;
-  workspaceInputPanel.innerHTML = renderValOpenAISetup();
+  workspaceInputPanel.innerHTML = renderValOpenAISetup({mandatory:openAiSetupRequired});
+  const setupForm = workspaceInputPanel.querySelector('[data-val-openai-setup-form]');
+  const setupButton = workspaceInputPanel.querySelector('[data-val-openai-setup-submit]');
+  let setupSubmissionStarted = false;
+  const submitSetup = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if(setupSubmissionStarted) return;
+    setupSubmissionStarted = true;
+    try{
+      await completeValOpenAISetup();
+    }finally{
+      setupSubmissionStarted = false;
+    }
+  };
+  setupForm?.addEventListener('submit',submitSetup);
+  setupButton?.addEventListener('click',submitSetup);
   workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="openai"]')?.focus();
   openWorkspaceShell('VAL OpenAI setup', {returnTarget:'val'});
+}
+
+function releaseValOpenAISetup(){
+  openAiSetupRequired = false;
+  hearth.classList.remove('openai-setup-required');
+  deskWorkspace.classList.remove('openai-setup-required');
+  returnButton.disabled = false;
+  returnButton.hidden = false;
+  returnButton.setAttribute('aria-hidden','false');
 }
 
 async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', options = {}){
@@ -21189,8 +22342,22 @@ async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', op
   }
 }
 
+async function enforceOpenAIConnectionOnDashboardEntry(){
+  if(!canUseApi || mockScrapers) return true;
+  try{
+    const readiness = await getJson('/api/val/witnessing/readiness', {cache:'no-store'});
+    if(!readiness.requiresOpenAIKey) return true;
+    openValOpenAISetup('dashboard',{mandatory:true,afterConnect:'dashboard'});
+    return false;
+  }catch(error){
+    valLiveStatus.textContent = 'VAL could not confirm the OpenAI connection: ' + error.message;
+    return true;
+  }
+}
+
 function renderValWitnessingConnections(payload = {}){
-  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  const root = valWitnessingConnectionSurface();
+  const target = root?.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
   const connections = Array.isArray(payload.connections) ? payload.connections : [];
   valWitnessingConnectionState = {...payload,connections};
@@ -21200,7 +22367,8 @@ function renderValWitnessingConnections(payload = {}){
 }
 
 async function refreshValWitnessingConnections(){
-  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  const root = valWitnessingConnectionSurface();
+  const target = root?.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
   if(!canUseApi){
     target.innerHTML = '<p class="val-witnessing-connection-loading">Connection status appears when VAL is connected to its live server.</p>';
@@ -21237,7 +22405,8 @@ window.addEventListener('message', event => {
 function showValWitnessingCredentialForm(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
   const copy = valWitnessingConnectionCopy[id];
-  const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+  const root = valWitnessingConnectionSurface();
+  const slot = root?.querySelector('[data-val-witnessing-credential-slot]');
   if(!copy || !copy.fieldLabel || !slot) return;
   slot.innerHTML = [
     '<form class="val-witnessing-credential-form" data-val-witnessing-credential-form="' + escapeHtml(id) + '">',
@@ -21252,30 +22421,70 @@ function showValWitnessingCredentialForm(provider = ''){
       '<small data-val-witnessing-credential-status>VAL will encrypt this key. It will not be shown again.</small>',
     '</form>'
   ].join('');
-  workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]')?.focus();
+  root.querySelector('[data-val-witnessing-credential-input="' + id + '"]')?.focus();
 }
 
 async function saveValWitnessingCredential(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
-  const input = workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
-  const status = workspaceInputPanel.querySelector('[data-val-witnessing-credential-status]');
+  const root = valWitnessingConnectionSurface();
+  const input = root?.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
+  const status = root?.querySelector('[data-val-witnessing-credential-status]');
+  const submit = root?.querySelector('[data-val-openai-setup-submit]');
   const apiKey = input?.value.trim() || '';
   if(!apiKey){
     if(status) status.textContent = 'Paste the connection key before saving it.';
     return;
   }
+  if(submit?.disabled) return false;
+  status?.classList.remove('is-error');
+  if(submit){
+    submit.disabled = true;
+    submit.textContent = 'Testing your connection...';
+    submit.setAttribute('aria-busy','true');
+  }
   if(status) status.textContent = 'Saving and testing this connection...';
   try{
-    const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey});
+    const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey}, {
+      timeoutMs:20000,
+      timeoutMessage:'OpenAI did not finish validating within 20 seconds. Your key is saved; press this button once more to test it again.'
+    });
     if(input) input.value = '';
-    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    if(submit) submit.textContent = 'Connected. Entering VAL...';
+    const slot = root?.querySelector('[data-val-witnessing-credential-slot]');
     if(slot) slot.innerHTML = '<p class="val-witnessing-credential-success">' + escapeHtml(result.message || 'Connection saved.') + '</p>';
     renderValWitnessingConnections({connections:result.connections || []});
     return true;
   }catch(error){
-    if(status) status.textContent = error.message || 'That connection could not be saved.';
+    const message = error.message || 'That connection could not be saved.';
+    if(status){
+      status.textContent = message;
+      status.classList.add('is-error');
+    }
+    if(submit){
+      submit.disabled = false;
+      submit.textContent = /quota|billing|credit/i.test(message)
+        ? 'OpenAI needs API credits'
+        : 'Save, test, and enter VAL';
+      submit.removeAttribute('aria-busy');
+    }
     return false;
   }
+}
+
+async function completeValOpenAISetup(){
+  const connected = await saveValWitnessingCredential('openai');
+  if(!connected) return false;
+  const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
+  pendingValWitnessingLaunch = null;
+  if(launch.options?.afterConnect === 'dashboard'){
+    releaseValOpenAISetup();
+    closeWorkspace();
+    hydrateHomePresence();
+  }else{
+    releaseValOpenAISetup();
+    await openValWitnessingSession(launch.cardId,launch.options);
+  }
+  return true;
 }
 
 async function continueValWitnessingWithSources(category = 'witness_connect_sources'){
@@ -21297,9 +22506,16 @@ function valWitnessingContextTools(card){
   if(card.id === 'documents_templates'){
     return [
       '<div class="val-witnessing-tool-row">',
-        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload document or template</button>',
+        '<label class="val-witnessing-document-category">',
+          '<span>Category</span>',
+          '<select data-val-witnessing-document-category="' + escapeHtml(card.category) + '">',
+            valWitnessingDocumentCategories.map(category=>'<option value="' + escapeHtml(category.value) + '">' + escapeHtml(category.label) + '</option>').join(''),
+          '</select>',
+        '</label>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload files</button>',
         '<input type="file" data-val-witnessing-file-input="' + escapeHtml(card.category) + '" multiple hidden>',
-      '</div>'
+      '</div>',
+      '<section class="val-observer-document-receipts" data-val-observer-document-receipts="' + escapeHtml(card.category) + '" hidden></section>'
     ].join('');
   }
   if(card.id === 'import_context'){
@@ -21333,6 +22549,14 @@ let valFirstLookDelivery = null;
 
 function valFirstLookComplete(run = valFirstLookRun){
   return String(run?.status || '').toLowerCase() === 'complete';
+}
+
+function valFirstLookCandidateIsResolved(candidate = {}){
+  return ['delivered', 'excluded'].includes(String(candidate.decision || '').toLowerCase());
+}
+
+function valFirstLookCandidateReviewIsComplete(candidates = valFirstLookCandidates){
+  return !candidates.length || candidates.every(valFirstLookCandidateIsResolved);
 }
 function valFirstLookDate(value){
   const date = new Date(value || '');
@@ -21457,7 +22681,7 @@ function renderValFirstLookCandidateMap(){
       relationships.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Relationships for Stewardship</h5><small>'+relationships.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+relationships.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       projects.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Projects for Project Managers</h5><small>'+projects.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+projects.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       ready.length?'<div class="val-first-look-delivery"><strong>'+ready.length+' approved item'+(ready.length===1?'':'s')+' ready for delivery.</strong><p>Delivery creates local Stewardship and Project Managers packets with their notes and source references. It does not send, schedule, or change anything outside VAL.</p><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookDeliver">Deliver approved items</button></div>':'',
-      delivered.length?'<div class="val-first-look-delivery delivered"><strong>'+delivered.length+' item'+(delivered.length===1?'':'s')+' delivered.</strong><p>VAL created the approved local packets and preserved their First Look notes and source references.</p><div><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:stewardship">Open Stewardship</button><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:projects">Open Project Managers</button></div></div>':'',
+      delivered.length?'<div class="val-first-look-delivery delivered"><strong>'+delivered.length+' item'+(delivered.length===1?'':'s')+' delivered.</strong><p>VAL created the approved local packets and preserved their First Look notes and source references. Continue Witnessing to Confirm Relationships and the Partnership Promise.</p></div>':'',
     '</section>'
   ].join('');
 }
@@ -21541,7 +22765,7 @@ function renderValFirstLookConversation({state = 'ready', error = '', run = valF
       '<div class="val-conversation-actions">',
         complete
           ? (valFirstLookCandidates.length
-            ? (valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue Witnessing</button>':'')
+            ? (valFirstLookCandidateReviewIsComplete()?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue Witnessing</button>':'')
             : '<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookBuildMap">Build the proposed map</button>')
           : state === 'preparing'
             ? ''
@@ -21789,8 +23013,8 @@ function openValFirstLookDestination(destination=''){
   if(destination==='projects')projectDrawerLink?.click();
 }
 async function continueValWitnessingAfterFirstLook(){
-  if(valFirstLookCandidates.length&&!valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')){
-    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Review and deliver the proposed relationship and project packets before moving past the First Look.'});
+  if(!valFirstLookCandidateReviewIsComplete()){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Review every proposed item and deliver the ones you kept before moving past the First Look.'});
     return;
   }
   await openValWitnessingQuestion('key_relationships');
@@ -21991,8 +23215,8 @@ async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
   deskWorkspace.classList.add('witnessing-mode');
   renderValWitnessingConversation({
     card,
-    rawResponse: resumeTarget?.rawResponse ?? workspaceInputValue('val-witnessing-' + card.category),
-    state: resumeTarget?.state || (index === 0 ? 'intro' : 'question'),
+    rawResponse: resumeTarget?.rawResponse ?? valWitnessingState[card.category]?.rawResponse ?? workspaceInputValue('val-witnessing-' + card.category),
+    state: options.update ? 'question' : (resumeTarget?.state || (index === 0 ? 'intro' : 'question')),
     error: resumeTarget?.error || '',
     witness: resumeTarget?.witness || null
   });
@@ -22056,7 +23280,7 @@ async function saveValWitnessingCard(category){
     openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
     return;
   }
-  if(!(await ensureOpenAIConnectionBeforeWitnessing(card.id,{resume:true}))) return;
+  if(card.id !== 'documents_templates' && !(await ensureOpenAIConnectionBeforeWitnessing(card.id,{resume:true}))) return;
   try{
     const sessionId = await ensureValWitnessingSession();
     const result = await postJson(
@@ -22138,6 +23362,7 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
     rawResponse,
     confirmation
   };
+  let updatingCompletedSession = false;
   if(canUseApi && !mockScrapers){
     if(confirmation === 'yes'){
       renderValWitnessingConversation({
@@ -22154,6 +23379,7 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
         {confirmation},
         {timeoutMs:12000,timeoutMessage:'VAL is shaping the next question from what you just confirmed. Please try again.'}
       );
+      updatingCompletedSession = !!result?.updatingCompletedSession;
       const next = card.next ? valWitnessingCard(card.next) : null;
       const nextQuestion = String(result?.nextQuestion || '').trim();
       if(next && nextQuestion){
@@ -22165,6 +23391,10 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
     }catch(error){
       valWitnessingState[card.category].confirmationError = error.message;
     }
+  }
+  if(updatingCompletedSession && confirmation === 'yes'){
+    await openValWitnessingSession('meeting_val',{resume:true});
+    return;
   }
   if(confirmation === 'clarify' || confirmation === 'mostly'){
     renderValWitnessingConversation({
@@ -22204,6 +23434,10 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
       }catch(error){
         completionResult = {error:error.message};
       }
+    }
+    if(!completionResult?.error){
+      await openObserverBoardAfterWitnessing();
+      return;
     }
     renderValWitnessingConversation({card, rawResponse, state:'complete', witness: completionResult || witness});
   }
@@ -22329,6 +23563,62 @@ function valWitnessingResumeTarget(onboarding = {}){
   return {card, state: 'witnessed', rawResponse};
 }
 
+function renderValWitnessingEntry(onboarding = {}){
+  const entry = document.querySelector('.val-witnessing-entry');
+  if(!entry)return;
+  const target = valWitnessingResumeTarget(onboarding);
+  const imports = Array.isArray(onboarding.imports) ? onboarding.imports : [];
+  const byCategory = new Map(imports.map(item=>[item.category,item]));
+  const complete = target.state === 'complete' || onboarding.session?.status === 'committed' || onboarding.session?.state?.stage === 'complete';
+  const title = document.querySelector('[data-val-witnessing-title]');
+  if(complete){
+    if(title)title.textContent='Update Witnessing';
+    entry.setAttribute('aria-label','Review completed VAL Witnessing Session');
+    entry.innerHTML = [
+      '<div class="val-witnessing-entry-summary">',
+        '<span>Witnessing Session complete</span>',
+        '<strong>Your partnership context is saved.</strong>',
+        '<p>Review any step below. Updating one answer preserves the rest of the completed session.</p>',
+      '</div>',
+      '<div class="val-witnessing-update-list">',
+        valWitnessingCards.filter(card=>card.id!=='source_review').map(card=>{
+          const saved=byCategory.get(card.category);
+          return [
+            '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpdate:' + escapeHtml(card.id) + '">',
+              '<span>' + escapeHtml(card.movement) + '</span>',
+              '<strong>' + escapeHtml(card.title) + '</strong>',
+              '<small>' + (saved?'Update':'Add answer') + '</small>',
+            '</button>'
+          ].join('');
+        }).join(''),
+      '</div>',
+      '<div class="val-entry-actions">',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingOpenBoard">View Board of Observers</button>',
+      '</div>',
+      '<small data-val-live-status>Your saved answers remain intact until you deliberately update one.</small>'
+    ].join('');
+    valLiveStatus = entry.querySelector('[data-val-live-status]') || valLiveStatus;
+    return;
+  }
+  const hasSavedAnswers = imports.length > 0;
+  const actionLabel = hasSavedAnswers ? 'Resume Witnessing' : 'Start Witnessing';
+  if(title)title.textContent=actionLabel;
+  entry.setAttribute('aria-label','Continue VAL Witnessing Session');
+  entry.innerHTML = [
+    '<div class="val-witnessing-entry-summary">',
+      '<span>' + escapeHtml(hasSavedAnswers ? 'Witnessing Session in progress' : 'Begin your Witnessing Session') + '</span>',
+      '<strong>' + escapeHtml(hasSavedAnswers ? 'Pick up at ' + target.card.title + '.' : target.card.title) + '</strong>',
+      '<p>' + escapeHtml(target.card.question) + '</p>',
+    '</div>',
+    '<div class="val-entry-actions">',
+      '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume">' + escapeHtml(actionLabel) + '</button>',
+      hasSavedAnswers ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFresh">Start Fresh</button>' : '',
+    '</div>',
+    '<small data-val-live-status>' + escapeHtml(hasSavedAnswers ? 'Your previous answers are already saved. Continue from the next unfinished step.' : 'VAL will save each answer as you move through the session.') + '</small>'
+  ].join('');
+  valLiveStatus = entry.querySelector('[data-val-live-status]') || valLiveStatus;
+}
+
 async function resumeValWitnessingSession(){
   if(!canUseApi) return {sessionId: '', target: {card: valWitnessingCard('meeting_val'), state: 'intro', rawResponse: ''}};
   const result = await postJson('/api/teach-val/onboarding/start', {resume:true, resumeWitnessing:true, testMode:false, mode:'onboarding'});
@@ -22346,6 +23636,26 @@ async function resumeValWitnessingSession(){
     };
   }
   return {sessionId: activeValWitnessingSessionId, target, onboarding: result};
+}
+
+async function reopenValWitnessingDocuments(){
+  return reopenValWitnessingCard('documents_templates');
+}
+
+async function reopenValWitnessingCard(cardId){
+  if(!canUseApi){
+    await openValWitnessingSession(cardId);
+    return;
+  }
+  const resumed=await resumeValWitnessingSession();
+  const sessionId=resumed.sessionId;
+  if(!sessionId)throw new Error('VAL could not find your saved Witnessing Session.');
+  const result=await postJson(
+    '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/reopen-witnessing-card/' + encodeURIComponent(cardId),
+    {}
+  );
+  restoreValWitnessingStateFromOnboarding(result);
+  await openValWitnessingSession(cardId,{update:true});
 }
 
 async function startFreshValWitnessingSession(){
@@ -22826,6 +24136,7 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingResume',
   'valWitnessingFresh',
   'valWitnessingBegin',
+  'valWitnessingUpdate',
   'valWitnessingQuestion',
   'valWitnessingSave',
   'valWitnessingSkipTo',
@@ -22864,6 +24175,10 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
     await openValWitnessingSession('meeting_val', {resume:true});
     return;
   }
+  if(command === 'valWitnessingUpdate'){
+    await reopenValWitnessingCard(type || 'meeting_val');
+    return;
+  }
   if(command === 'valWitnessingQuestion'){
     await openValWitnessingQuestion(type || 'meeting_val');
     return;
@@ -22897,7 +24212,7 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
     return;
   }
   if(command === 'valWitnessingCredentialForm'){
-    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    const slot = valWitnessingConnectionSurface()?.querySelector('[data-val-witnessing-credential-slot]');
     if(type === 'close'){
       if(slot) slot.innerHTML = '';
       return;
@@ -22983,6 +24298,10 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'contactOpen'){
     openCanonicalRelationshipFile(type);
+    return;
+  }
+  if(command === 'linkedin' && type === 'profiles'){
+    await openLinkedInEngagementWorkspace({page:'profiles'});
     return;
   }
   if(valWitnessingWorkflowCommands.has(command)){
@@ -23726,7 +25045,7 @@ async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
     }
   });
   if(!preflight.ok) return;
-  openLinkedInEngagementWorkspace();
+  await openLinkedInEngagementWorkspace();
 }
 
 function homeWorkspacePayload(action){
@@ -24122,31 +25441,420 @@ function openHomeSourceDrawerDestination(workspace = {}){
   restoreLeadIntelligenceWindow();
 }
 
+function collectHomeCoworkSourceIds(value, result = {transcriptIds:new Set(), evidenceIds:new Set(), observationIds:new Set()}, depth = 0){
+  if(!value || depth > 6) return result;
+  if(Array.isArray(value)){
+    value.forEach((item) => collectHomeCoworkSourceIds(item, result, depth + 1));
+    return result;
+  }
+  if(typeof value !== 'object') return result;
+  const sourceType = String(value.source_type || value.sourceType || value.type || value.kind || '').toLowerCase();
+  const sourceId = value.source_id || value.sourceId || value.id || value.transcriptId || value.transcript_id || '';
+  if(value.transcriptId || value.transcript_id || /transcript/.test(sourceType)){
+    const id = value.transcriptId || value.transcript_id || sourceId;
+    if(id) result.transcriptIds.add(String(id));
+  }
+  ['source_ids','sourceIds'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list) && /transcript/.test(sourceType)) list.forEach((id) => id && result.transcriptIds.add(String(id)));
+  });
+  ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list)) list.forEach((id) => id && result.evidenceIds.add(String(id)));
+  });
+  ['sourceObservationIds','sourceObservationIdsJson','observationIds','observation_ids'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list)) list.forEach((id) => id && result.observationIds.add(String(id)));
+  });
+  Object.keys(value).forEach((key) => {
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|evidence_refs|whyNowPacket|why_now_packet|target|sourceItem|payload|preparedPayloadJson|prepared_payload_json)$/i.test(key)){
+      collectHomeCoworkSourceIds(value[key], result, depth + 1);
+    }
+  });
+  return result;
+}
+
+function collectHomeCoworkContextText(value, result = [], depth = 0){
+  if(!value || depth > 4 || result.length > 80) return result;
+  if(typeof value === 'string' || typeof value === 'number'){
+    const text = projectCleanText(value);
+    if(text) result.push(text);
+    return result;
+  }
+  if(Array.isArray(value)){
+    value.slice(0, 20).forEach((item) => collectHomeCoworkContextText(item, result, depth + 1));
+    return result;
+  }
+  if(typeof value !== 'object') return result;
+  Object.keys(value).forEach((key) => {
+    if(result.length > 80) return;
+    if(/^(title|name|label|summary|meaning|description|project|projectName|project_name|projectTitle|project_title|relationshipName|relationship_name|contactName|contact_name|personName|person_name|counterpartyName|counterparty_name|what_changed|why_it_matters|what_val_now_knows|evidence_summary|recommended_next_step|source_title|sourceTitle|sourceRefs|source_refs|metadata|metadataJson|payload|packetFields|sourceItem)$/i.test(key)){
+      collectHomeCoworkContextText(value[key], result, depth + 1);
+    }
+  });
+  return result;
+}
+
+function homeCoworkContextLines(active = {}, sourceItem = {}, sourceRefs = []){
+  const values = [
+    active.title,
+    active.meaning,
+    active.summary,
+    active.recommendation,
+    ...(Array.isArray(active.understanding) ? active.understanding : []),
+    active.packetFields?.what_changed,
+    active.packetFields?.why_it_matters,
+    active.packetFields?.what_val_now_knows,
+    active.packetFields?.evidence_summary,
+    active.packetFields?.recommended_next_step,
+    sourceItem.title,
+    sourceItem.summary,
+    sourceItem.reason_it_matters,
+    sourceItem.why,
+    sourceItem.recommendation,
+    sourceItem.whatChanged,
+    sourceItem.what_changed,
+    sourceItem.whyNowPacket?.why_now,
+    sourceItem.whyNowPacket?.decision_needed,
+    sourceItem.whyNowPacket?.cost_if_delayed,
+    sourceItem.why_now_packet?.why_now,
+    sourceItem.why_now_packet?.decision_needed,
+    sourceItem.why_now_packet?.cost_if_delayed,
+    ...sourceOfSourceLines(sourceItem),
+    ...sourceRefs.map((ref) => typeof ref === 'string'
+      ? ref
+      : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.detail || ref.title || ''))
+  ];
+  return Array.from(new Set(values.map((value) => projectCleanText(value)).filter(Boolean))).slice(0, 30);
+}
+
+function homeCoworkSourceItem(active = {}){
+  const fromWorkspace = active.sourceItem && typeof active.sourceItem === 'object' ? active.sourceItem : {};
+  const fromPacket = active.packetFields?.sourceItem && typeof active.packetFields.sourceItem === 'object' ? active.packetFields.sourceItem : {};
+  const merged = {...fromPacket, ...fromWorkspace};
+  const fallbackId = active.sourceId || active.source_id || active.id || '';
+  if(!Object.keys(merged).length && fallbackId){
+    return {
+      id: fallbackId,
+      title: active.title || active.name || '',
+      summary: active.meaning || active.summary || '',
+      sourceType: active.sourceType || active.source_type || active.cardType || '',
+      sourceId: fallbackId
+    };
+  }
+  return {
+    ...active,
+    ...merged,
+    id: merged.id || merged.sourceId || merged.source_id || fallbackId || active.id || '',
+    title: merged.title || active.title || active.name || '',
+    summary: merged.summary || active.meaning || active.summary || '',
+    sourceType: merged.sourceType || merged.source_type || active.sourceType || active.source_type || '',
+    sourceId: merged.sourceId || merged.source_id || active.sourceId || active.source_id || ''
+  };
+}
+
+function firstHomeCoworkValueByKeys(value, keys = [], depth = 0){
+  if(!value || depth > 5) return '';
+  if(Array.isArray(value)){
+    for(const item of value){
+      const found = firstHomeCoworkValueByKeys(item, keys, depth + 1);
+      if(found) return found;
+    }
+    return '';
+  }
+  if(typeof value !== 'object') return '';
+  for(const key of keys){
+    const direct = value[key];
+    if(typeof direct === 'string' && projectCleanText(direct)) return projectCleanText(direct);
+    if(direct && typeof direct === 'object'){
+      const label = direct.name || direct.title || direct.label;
+      if(typeof label === 'string' && projectCleanText(label)) return projectCleanText(label);
+    }
+  }
+  for(const nestedKey of Object.keys(value)){
+    if(/^(metadata|metadataJson|payload|packetFields|sourceItem|target|sourceRefs|source_refs|preparedArtifact|prepared_artifact|whyNowPacket|why_now_packet)$/i.test(nestedKey)){
+      const found = firstHomeCoworkValueByKeys(value[nestedKey], keys, depth + 1);
+      if(found) return found;
+    }
+  }
+  return '';
+}
+
+function homeCoworkEnvelopeHint(active = {}, sourceItem = {}, sourceRefs = []){
+  const contextRoot = {active, sourceItem, sourceRefs};
+  const projectName = firstHomeCoworkValueByKeys(contextRoot, [
+    'projectName','project_name','projectTitle','project_title','project','projectDisplayName','project_display_name'
+  ]);
+  if(projectName){
+    return {
+      envelopeType: 'project',
+      displayName: projectName,
+      projectName,
+      reason: 'Project context wins before relationship context.'
+    };
+  }
+  const relationshipName = firstHomeCoworkValueByKeys(contextRoot, [
+    'relationshipName','relationship_name','contactName','contact_name','personName','person_name','counterpartyName','counterparty_name','person','contact'
+  ]);
+  if(relationshipName){
+    return {
+      envelopeType: 'relationship',
+      displayName: relationshipName,
+      relationshipName,
+      reason: 'No project was attached, so relationship context is the working envelope.'
+    };
+  }
+  return {
+    envelopeType: 'general',
+    displayName: 'General VAL context',
+    reason: 'No project or relationship was attached to this packet.'
+  };
+}
+
+function homeCoworkEnvelopeLine(envelope = {}){
+  if(!envelope || typeof envelope !== 'object') return '';
+  if(envelope.envelopeType === 'project'){
+    return 'Envelope: Project ' + (envelope.displayName || envelope.projectName || 'selected project') + (envelope.managerColorName ? ' (' + envelope.managerColorName + ')' : '') + '.';
+  }
+  if(envelope.envelopeType === 'relationship'){
+    return 'Envelope: Relationship ' + (envelope.displayName || envelope.relationshipName || 'selected relationship') + '.';
+  }
+  return 'Envelope: General VAL context.';
+}
+
+function homeCoworkSelectedSourceContext(active = {}){
+  const sourceItem = homeCoworkSourceItem(active);
+  const workingBrief = sourceItem.workingBrief || sourceItem.working_brief || active.workingBrief || active.working_brief || sourceItem.rawCommitment?.workingBrief || sourceItem.rawCommitment?.working_brief || null;
+  const sourceRefs = workingBrief?.sourceRefs || sourceItem.sourceRefsJson || sourceItem.source_refs || sourceItem.sourceRefs || active.sourceRefsJson || active.source_refs || active.sourceRefs || sourceItem.metadata?.sourceRefs || sourceItem.metadataJson?.sourceRefs || active.evidence || sourceItem.evidence || [];
+  const ids = collectHomeCoworkSourceIds({active, sourceItem, sourceRefs});
+  const envelope = workingBrief?.envelope || homeCoworkEnvelopeHint(active, sourceItem, sourceRefs);
+  const contextLines = Array.isArray(workingBrief?.contextLines) && workingBrief.contextLines.length ? workingBrief.contextLines : homeCoworkContextLines(active, sourceItem, sourceRefs);
+  return {
+    cardTitle: compactSentence(workingBrief?.objective || active.title || sourceItem.title || '', ''),
+    cardMeaning: compactSentence(workingBrief?.sourceSummary || active.meaning || active.summary || sourceItem.summary || sourceItem.reason_it_matters || '', ''),
+    sourceIdentity: sourceIdentityForItem(sourceItem),
+    sourceRefs,
+    contextLines,
+    sourceBrief: contextLines.join('\n'),
+    workingBrief,
+    envelope,
+    transcriptIds: Array.from(ids.transcriptIds),
+    evidenceIds: Array.from(ids.evidenceIds),
+    observationIds: Array.from(ids.observationIds),
+    sourceItem
+  };
+}
+
+function alignmentCoworkBriefAnswer(prompt = '', selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return '';
+  const text = String(prompt || '').toLowerCase();
+  const asksForArtifact = /\b(html|css|iframe|embed|code|build|create|draft|template|page|mockup|wireframe|copy)\b/.test(text);
+  if(!/\b(outline|element|context|evidence|source|what is this|what do you know|what have you got|brief|dashboard|proposal|handoff)\b/.test(text) && !asksForArtifact) return '';
+  const brief = selectedSourceContext.workingBrief || {};
+  const title = selectedSourceContext.cardTitle || brief.objective || 'this work';
+  const envelope = selectedSourceContext.envelope || brief.envelope || {};
+  const projectLine = envelope.envelopeType === 'project'
+    ? 'This is attached to the ' + (envelope.projectName || envelope.displayName || 'selected') + ' project.'
+    : envelope.envelopeType === 'relationship'
+    ? 'This is attached to the ' + (envelope.relationshipName || envelope.displayName || 'selected') + ' relationship.'
+    : '';
+  const lines = Array.from(new Set([
+    ...(Array.isArray(brief.contextLines) ? brief.contextLines : []),
+    ...(Array.isArray(selectedSourceContext.contextLines) ? selectedSourceContext.contextLines : []),
+    ...(Array.isArray(selectedSourceContext.sourceRefs) ? selectedSourceContext.sourceRefs.map((ref) => typeof ref === 'string' ? ref : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.title || '')) : [])
+  ].map((line) => compactSentence(line, '', 360)).filter(Boolean))).slice(0, 8);
+  if(!lines.length) return '';
+  const dashboardLike = /\bdashboard\b/i.test(title + ' ' + lines.join(' '));
+  if(asksForArtifact && (dashboardLike || /\b(html|css|iframe|embed|dashboard|page|template)\b/.test(text))){
+    const summaryLines = lines.slice(0, 5);
+    const titleText = compactSentence(title, 'Dashboard handoff');
+    const projectText = projectLine || 'This is attached to the selected Alignment packet.';
+    const metricOne = summaryLines[0] || 'Source context loaded from the selected packet.';
+    const metricTwo = summaryLines.find((line) => /\b(next|handoff|owner|action|finish|send|review)\b/i.test(line)) || summaryLines[1] || 'Next step needs one clear owner.';
+    const metricThree = summaryLines.find((line) => /\b(risk|block|loose|waiting|unclear|trust|relationship)\b/i.test(line)) || summaryLines[2] || 'Open questions stay visible until resolved.';
+    return [
+      'Yes. I have the packet, so I’m not going to ask what “this” is.',
+      '',
+      'Here is a clean iframe-ready first version based on the loaded context:',
+      '',
+      '```html',
+      '<!doctype html>',
+      '<html lang="en">',
+      '<head>',
+      '  <meta charset="utf-8" />',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+      '  <title>' + escapeHtml(titleText) + '</title>',
+      '  <style>',
+      '    :root {',
+      '      --sage: #6f806c;',
+      '      --rose: #c98995;',
+      '      --ink: #232521;',
+      '      --muted: #6f726a;',
+      '      --line: rgba(111, 128, 108, 0.22);',
+      '      --glass: rgba(255,255,255,0.78);',
+      '    }',
+      '    * { box-sizing: border-box; }',
+      '    body {',
+      '      margin: 0;',
+      '      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;',
+      '      color: var(--ink);',
+      '      background: linear-gradient(135deg, rgba(111,128,108,.11), rgba(201,137,149,.12));',
+      '    }',
+      '    .val-dashboard {',
+      '      width: 100%;',
+      '      min-height: 100vh;',
+      '      padding: 24px;',
+      '      background: var(--glass);',
+      '    }',
+      '    .eyebrow {',
+      '      margin: 0 0 10px;',
+      '      font-size: 11px;',
+      '      letter-spacing: .16em;',
+      '      text-transform: uppercase;',
+      '      color: var(--sage);',
+      '    }',
+      '    h1 {',
+      '      margin: 0;',
+      '      max-width: 760px;',
+      '      font-size: clamp(28px, 4vw, 48px);',
+      '      line-height: 1.04;',
+      '      font-weight: 520;',
+      '      letter-spacing: 0;',
+      '    }',
+      '    .context {',
+      '      margin: 14px 0 28px;',
+      '      max-width: 760px;',
+      '      color: var(--muted);',
+      '      font-size: 15px;',
+      '      line-height: 1.55;',
+      '    }',
+      '    .grid {',
+      '      display: grid;',
+      '      grid-template-columns: repeat(3, minmax(0, 1fr));',
+      '      gap: 12px;',
+      '    }',
+      '    .card {',
+      '      min-height: 156px;',
+      '      padding: 18px;',
+      '      border: 1px solid var(--line);',
+      '      border-radius: 14px;',
+      '      background: rgba(255,255,255,.82);',
+      '      box-shadow: 0 18px 45px rgba(36, 35, 30, .08);',
+      '    }',
+      '    .label {',
+      '      margin: 0 0 18px;',
+      '      font-size: 10px;',
+      '      letter-spacing: .14em;',
+      '      text-transform: uppercase;',
+      '      color: var(--sage);',
+      '    }',
+      '    .value {',
+      '      margin: 0;',
+      '      font-size: 18px;',
+      '      line-height: 1.35;',
+      '      font-weight: 460;',
+      '    }',
+      '    .next {',
+      '      margin-top: 12px;',
+      '      border-color: rgba(201,137,149,.28);',
+      '      background: linear-gradient(135deg, rgba(255,255,255,.88), rgba(201,137,149,.10));',
+      '    }',
+      '    @media (max-width: 760px) {',
+      '      .val-dashboard { padding: 18px; }',
+      '      .grid { grid-template-columns: 1fr; }',
+      '    }',
+      '  </style>',
+      '</head>',
+      '<body>',
+      '  <main class="val-dashboard">',
+      '    <p class="eyebrow">VAL prepared context</p>',
+      '    <h1>' + escapeHtml(titleText) + '</h1>',
+      '    <p class="context">' + escapeHtml(projectText) + '</p>',
+      '    <section class="grid" aria-label="Dashboard context">',
+      '      <article class="card">',
+      '        <p class="label">Purpose</p>',
+      '        <p class="value">' + escapeHtml(metricOne) + '</p>',
+      '      </article>',
+      '      <article class="card">',
+      '        <p class="label">Next Move</p>',
+      '        <p class="value">' + escapeHtml(metricTwo) + '</p>',
+      '      </article>',
+      '      <article class="card next">',
+      '        <p class="label">Watch Point</p>',
+      '        <p class="value">' + escapeHtml(metricThree) + '</p>',
+      '      </article>',
+      '    </section>',
+      '  </main>',
+      '</body>',
+      '</html>',
+      '```',
+      '',
+      'Use this as the first iframe pass. The next refinement should be visual polish or live CRM fields, not rebuilding the context.'
+    ].join('\n');
+  }
+  if(dashboardLike){
+    return [
+      'Here is the loaded context I have for ' + title + ':',
+      projectLine,
+      '',
+      ...lines.map((line) => '- ' + line),
+      '',
+      'For the dashboard itself, I would turn this into: purpose, status, owners, next step, timeline, open questions, and any handoff notes already named in the source. If you want, I can now draft the iframe-ready HTML from this packet.'
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    'Here is the source context I have for ' + title + ':',
+    projectLine,
+    '',
+    ...lines.map((line) => '- ' + line),
+    '',
+    'I can work directly from this packet. Tell me whether you want a draft, a plan, wording, HTML, or the next decision.'
+  ].filter(Boolean).join('\n');
+}
+
 function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
+  const isAlignment = /alignment/i.test(String(active.lens || active.cardType || ''));
   activeClarityWorkspace = active;
+  const cardTitle = compactSentence(active.title, 'this action');
+  const alignmentQuestion = alignmentCoworkQuestion(cardTitle);
+  const selectedSourceContext = homeCoworkSelectedSourceContext(active);
+  const envelopeLine = homeCoworkEnvelopeLine(selectedSourceContext.envelope);
   openContextualCoworkSession({
     returnTarget: 'home',
-    title: 'Co-Work with VAL: ' + compactSentence(active.title, 'Home card'),
-    meaning: 'How can I help with ' + compactSentence(active.title, 'this Home card') + '?',
+    title: isAlignment ? 'Work through this action' : 'Co-Work with VAL: ' + cardTitle,
+    meaning: isAlignment ? cardTitle : 'Work through this card with VAL.',
     context: [
       active.packetFields?.what_changed ? 'What happened: ' + active.packetFields.what_changed : '',
       active.packetFields?.why_it_matters ? 'Why it matters: ' + active.packetFields.why_it_matters : '',
       active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
-      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
+      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : '',
+      isAlignment ? envelopeLine : '',
+      isAlignment ? 'Envelope rule: Project context wins first. Relationship context is fallback only when no project is attached. Use the selected Envelope as the primary working context.' : '',
+      isAlignment ? 'Private selected context JSON: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : '',
+      isAlignment ? 'Alignment Co-Work rule: help the user finish the actual task. If they ask for an artifact such as HTML, copy, a draft, a checklist, or a working plan, produce the artifact directly in the chat using the loaded packet/envelope before asking for more. Do not ask what "this" is when cardTitle, sourceRefs, transcriptIds, evidenceIds, or envelope are present. Do not narrate process, expose backend context, or send them to another page unless they ask.' : ''
     ].filter(Boolean),
-    recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
-    placeholder: 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
-    helper: 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
+    recommendation: isAlignment ? 'Finish it, change it, delegate it, or ask VAL to prepare the next move.' : active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
+    placeholder: isAlignment ? 'Tell VAL what you need to finish this...' : 'Tell VAL what you need from this card...',
+    helper: isAlignment ? 'VAL has the action context loaded. If this needs to become a draft, task, email, or appointment, VAL will prepare it and ask before anything external happens.' : 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
     initialValue: '',
-    backWorkflow: 'cancel:meeting'
+    heading: isAlignment ? alignmentQuestion : '',
+    detail: isAlignment ? cardTitle : '',
+    publicDetail: isAlignment ? 'Work it through here, then mark it done when it is complete.' : '',
+    initialMessage: isAlignment ? alignmentQuestion : '',
+    selectedSourceContext,
+    backWorkflow: 'cancel:meeting',
+    showGathering: !isAlignment
   });
 }
 
 function alignmentDraftFromWorkspace(workspace = {}){
   const fields = workspace.packetFields || {};
   const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
+  const packet = workspace.preparedWorkPacket || workspace.prepared_work_packet || source.preparedWorkPacket || source.prepared_work_packet || workspace.payload?.preparedWorkPacket || workspace.payload?.prepared_work_packet || source.payload?.preparedWorkPacket || source.payload?.prepared_work_packet || {};
+  const artifact = workspace.preparedArtifact || workspace.prepared_artifact || source.preparedArtifact || source.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || source.payload?.preparedArtifact || source.payload?.prepared_artifact || {};
   const candidates = [
     workspace.draftBody,
     workspace.draft_body,
@@ -24166,20 +25874,277 @@ function alignmentDraftFromWorkspace(workspace = {}){
     source.prepared_draft,
     source.preparedArtifact?.body,
     source.prepared_artifact?.body,
+    metadata.preparedArtifact?.body,
+    metadata.prepared_artifact?.body,
     source.payload?.preparedArtifact?.body,
     source.payload?.prepared_artifact?.body
   ].map((value) => String(value || '').trim()).filter(Boolean);
   const body = candidates.find((value) => value.length > 20) || '';
-  if(!body) return null;
+  if(!body){
+    const fallbackLines = [
+      workspace.title || source.title || fields.what_changed,
+      workspace.meaning || fields.why_it_matters,
+      packet.what_val_prepared || artifact.what_val_prepared || artifact.summary || source.whatValPrepared || source.what_val_prepared,
+      packet.prepared_work || artifact.prepared_work,
+      packet.review_boundary || artifact.reviewBoundary || artifact.review_boundary,
+      packet.source_context || artifact.sourceContext || artifact.source_context,
+      fields.evidence_summary,
+      fields.recommended_next_step || workspace.recommendation || source.recommendation
+    ].map((line) => compactSentence(projectCleanText(line), '')).filter(Boolean);
+    const uniqueLines = Array.from(new Set(fallbackLines));
+    if(!uniqueLines.length){
+      uniqueLines.push(
+        'VAL has created a review packet from the current Alignment context.',
+        'Review the source, decide the next move, then approve, revise, or hold.'
+      );
+    }
+    return {
+      title: workspace.draftTitle || workspace.draft_title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.title || 'Prepared work packet',
+      body: uniqueLines.map((line) => '- ' + line).join('\n')
+    };
+  }
   return {
-    title: workspace.draftTitle || workspace.draft_title || workspace.preparedArtifact?.subject || source.draftTitle || source.draft_title || source.preparedArtifact?.subject || 'Prepared draft',
+    title: workspace.draftTitle || workspace.draft_title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.preparedArtifact?.subject || 'Prepared draft',
     body
   };
+}
+
+function leverageDraftFromWorkspace(workspace = {}){
+  const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
+  const artifact = preparedArtifactForHomeItem(source);
+  const activeArtifact = workspace.preparedArtifact || workspace.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || {};
+  const candidates = [
+    workspace.draftBody,
+    workspace.draft_body,
+    workspace.preparedDraft,
+    workspace.prepared_draft,
+    workspace.payload?.draftBody,
+    workspace.payload?.draft_body,
+    activeArtifact.body,
+    activeArtifact.content,
+    activeArtifact.html,
+    activeArtifact.instruction,
+    Array.isArray(activeArtifact.sections) ? activeArtifact.sections.join('\n\n') : '',
+    artifact.body,
+    artifact.content,
+    artifact.html,
+    artifact.instruction,
+    Array.isArray(artifact.sections) ? artifact.sections.join('\n\n') : '',
+    source.draftBody,
+    source.draft_body,
+    source.preparedDraft,
+    source.prepared_draft,
+    metadata.preparedArtifact?.body,
+    metadata.prepared_artifact?.body,
+    metadata.preparedArtifact?.html,
+    metadata.prepared_artifact?.html
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const body = candidates.find((value) => value.length >= 8) || '';
+  if(!body) return null;
+  return {
+    title: workspace.draftTitle || workspace.draft_title || activeArtifact.subject || activeArtifact.title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.title || 'Prepared work',
+    body
+  };
+}
+
+function leverageDraftActionLabel(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const verb = preparedApprovalVerb(item);
+  if(verb === 'sent') return 'Approve and send';
+  if(verb === 'scheduled') return 'Approve and schedule';
+  if(verb === 'created') return 'Approve and create';
+  if(verb === 'updated') return 'Approve and update';
+  if(verb === 'attached') return 'Approve and attach';
+  return 'Approve';
+}
+
+function leverageExecutiveFacts(workspace = {}, draft = null){
+  const active = workspace || {};
+  const source = active.sourceItem || {};
+  const fields = active.packetFields || homePacketDisplayFields(source, 'leverage');
+  const metadata = itemMetadata(source);
+  const artifact = active.preparedArtifact || active.prepared_artifact || source.preparedArtifact || source.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const identity = sourceIdentityForItem(source);
+  const verb = preparedApprovalVerb(source);
+  const prepared = compactSentence(draft?.title || artifact.subject || artifact.title || fields.what_changed || active.title, 'Prepared work');
+  const decision = compactSentence(artifact.reviewBoundary || artifact.review_boundary || active.recommendation || fields.recommended_next_step, 'Review, edit, approve, or hold.');
+  const consequenceMap = {
+    sent:'The message leaves VAL.',
+    scheduled:'The calendar changes.',
+    created:'The item is created.',
+    updated:'The record is updated.',
+    attached:'The prepared packet is attached.',
+    approved:'The work is marked approved.'
+  };
+  const sourceLabel = compactSentence(fields.source_label || identity.label || source.title || active.title, 'Prepared source');
+  return [
+    {label:'Prepared',value:prepared},
+    {label:'Decision',value:decision},
+    {label:'If approved',value:consequenceMap[verb] || consequenceMap.approved},
+    {label:'Source',value:sourceLabel}
+  ];
+}
+
+function leveragePreparedIdentifiers(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const sourceContext = item.sourceContext || item.source_context || artifact.sourceContext || artifact.source_context || metadata.sourceContext || metadata.source_context || {};
+  return {
+    draftId: item.draftId || item.draft_id || artifact.draftId || artifact.draft_id || sourceContext.draftId || sourceContext.draft_id || metadata.draftId || metadata.draft_id || '',
+    readyForYouId: item.readyForYouId || item.ready_for_you_id || sourceContext.readyForYouId || sourceContext.ready_for_you_id || metadata.readyForYouId || metadata.ready_for_you_id || item.id || '',
+    externalActionPacketId: item.externalActionPacketId || item.external_action_packet_id || sourceContext.externalActionPacketId || sourceContext.external_action_packet_id || metadata.externalActionPacketId || metadata.external_action_packet_id || ''
+  };
+}
+
+function leveragePreparedRecipient(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const sourceContext = item.sourceContext || item.source_context || artifact.sourceContext || artifact.source_context || metadata.sourceContext || metadata.source_context || {};
+  const to = item.to || item.recipientEmail || item.recipient_email || artifact.to || artifact.recipientEmail || artifact.recipient_email || sourceContext.to || sourceContext.recipientEmail || sourceContext.recipient_email || metadata.to || metadata.recipientEmail || metadata.recipient_email || '';
+  return String(to || '').trim();
+}
+
+function leveragePreparedSendPayload(workspace = {}, draft = null){
+  const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
+  const artifact = preparedArtifactForHomeItem(source);
+  const ids = leveragePreparedIdentifiers(source);
+  return {
+    to: leveragePreparedRecipient(source),
+    subject: draft?.title || artifact.subject || artifact.title || source.subject || source.title || 'VAL prepared message',
+    body: draft?.body || artifact.body || artifact.content || source.draftBody || source.draft_body || '',
+    provider: source.provider || artifact.provider || metadata.provider || 'gmail',
+    threadId: source.threadId || source.thread_id || artifact.threadId || artifact.thread_id || metadata.threadId || metadata.thread_id || '',
+    messageId: source.messageId || source.message_id || artifact.messageId || artifact.message_id || metadata.messageId || metadata.message_id || '',
+    sourceContext:{
+      source:'hearth_leverage',
+      draftId:ids.draftId,
+      readyForYouId:ids.readyForYouId,
+      originalSource:source.source || metadata.source || ''
+    },
+    sourceRefs:source.sourceRefsJson || source.sourceRefs || source.source_refs || metadata.sourceRefs || metadata.source_refs || [],
+    finalApprovalSurface:'hearth_leverage'
+  };
+}
+
+function removeCurrentLeverageItem(){
+  const active = activeHomeWorkspace?.workspace || {};
+  const activeSource = active.sourceItem || {};
+  if(!activeSource || !Object.keys(activeSource).length) return;
+  const activeIdentity = sourceIdentityForItem(activeSource);
+  setHomeRoomQueue('leverage', (homeRoomQueues.leverage || []).filter((item) => {
+    const source = item?.sourceItem || item || {};
+    const identity = sourceIdentityForItem(source);
+    return (identity.id || identity.label) !== (activeIdentity.id || activeIdentity.label);
+  }));
+  setRoomCopy(currentState);
+}
+
+async function approvePreparedLeverageItem(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const draft = leverageDraftFromWorkspace(workspace);
+  const verb = preparedApprovalVerb(item);
+  const ids = leveragePreparedIdentifiers(item);
+  if(/sent/.test(verb)){
+    const payload = leveragePreparedSendPayload(workspace, draft);
+    if(!payload.body || !payload.to){
+      renderHomeActionResult('approve_prepared', {
+        status:'needs_recipient',
+        message:'VAL has the draft, but cannot send until the recipient is attached.'
+      });
+      return;
+    }
+    try{
+      const result = await postJson('/api/val/external-actions/email-send-now', {...payload, approvalNote:'Sent from Leverage.'});
+      if(result.ok && result.executed){
+        removeCurrentLeverageItem();
+        setWorkspaceContent({
+          lens:'Leverage Receipt',
+          title:'Sent.',
+          meaning:result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'The approved message left VAL through the send gate.',
+          understanding:[payload.subject, 'Recipient: ' + payload.to, 'Provider: ' + payload.provider],
+          recommendation:'Open the next prepared item, or return to the desk.',
+          actions:[{label:'Open next prepared item', workflow:'leverage'}, {label:'Close and return to desk', workflow:'cancel:meeting'}],
+          label:'Leverage send receipt',
+          sourceItem:item,
+          suppressClarityStandard:true
+        });
+        return;
+      }
+      renderHomeActionResult('approve_prepared', {
+        status:'send_not_completed',
+        message: result.error || result.packet?.status || 'The send gate did not complete. Nothing else changed.'
+      });
+      return;
+    }catch(error){
+      renderHomeActionResult('approve_prepared', {
+        status:'send_failed',
+        message:'The send gate did not complete: ' + error.message
+      });
+      return;
+    }
+  }
+  if(canUseApi && ids.externalActionPacketId){
+    try{
+      const result = await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/execute', {finalConfirmation:true,executedBy:'hearth_leverage'});
+      if(result.ok && result.executed) removeCurrentLeverageItem();
+      renderHomeActionResult('approve_prepared', {
+        status:result.executed ? 'executed' : 'execution_not_completed',
+        message:result.executed ? 'VAL executed the approved prepared action.' : (result.error || 'The execution gate did not complete.')
+      });
+      return;
+    }catch(error){
+      renderHomeActionResult('approve_prepared', {status:'execution_failed', message:error.message});
+      return;
+    }
+  }
+  if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/approve', {note:'Approved from Hearth Leverage.'}).catch(() => null);
+  }
+  removeCurrentLeverageItem();
+  renderPreparedApprovalReceipt();
+}
+
+async function savePreparedLeverageEdits(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const ids = leveragePreparedIdentifiers(item);
+  const editor = scraperPreviewList?.querySelector('[data-leverage-draft-editor]');
+  const body = editor?.value || workspace.draftBody || '';
+  if(activeHomeWorkspace?.workspace) activeHomeWorkspace.workspace.draftBody = body;
+  if(canUseApi && ids.draftId){
+    await postJson('/api/val/drafts/' + encodeURIComponent(ids.draftId), {body}, {method:'PATCH'}).catch(() => null);
+  }else if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/draft', {body}, {method:'PATCH'}).catch(() => null);
+  }
+  renderHomeActionResult('save_prepared_edits', {
+    status: ids.draftId || ids.readyForYouId ? 'draft_edits_saved' : 'local_edits_saved',
+    message: ids.draftId || ids.readyForYouId ? 'VAL saved the edits to the prepared draft and will learn from the final approved version.' : 'VAL saved the edited prepared work locally for review.'
+  });
+}
+
+async function holdPreparedLeverageItem(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const ids = leveragePreparedIdentifiers(item);
+  if(canUseApi && ids.readyForYouId){
+    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
+  }else if(canUseApi && ids.externalActionPacketId){
+    await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
+  }
+  removeCurrentLeverageItem();
+  renderHomeActionResult('hold_prepared', {
+    status:'held',
+    message:'VAL held this prepared work. Nothing was sent, scheduled, or changed.'
+  });
 }
 
 function renderAlignmentFunctionWorkspace(workspace = {}){
   const active = workspace || {};
   const fields = active.packetFields || {};
+  const selectedSourceContext = homeCoworkSelectedSourceContext(active);
   const title = compactSentence(active.title || fields.what_changed || 'Alignment review', 'Alignment review');
   const meaning = fields.why_it_matters || active.meaning || 'VAL is holding the signal, the context, and the recommended next move for review.';
   const recommendation = fields.recommended_next_step || active.recommendation || 'Review the signal, then decide what should happen next.';
@@ -24197,15 +26162,14 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   );
   const evidence = fields.evidence_summary || fields.source_type || active.coworkContext || 'No source evidence is exposed here until you choose to inspect it.';
   const known = fields.what_val_now_knows || 'VAL is keeping the relevant context private until it is useful to show.';
-  const draft = alignmentDraftFromWorkspace(active);
-  const preparedDraftCount = Number(leveragePreparedCount?.dataset?.count || 0);
-  const canLoadDraft = Boolean(draft || preparedDraftCount > 0);
+  activeCoworkSelectedSourceContext = selectedSourceContext;
   activeCoworkHeldContext = [
     title,
     'Why it matters: ' + meaning,
     'What VAL now knows: ' + known,
     'Evidence: ' + evidence,
-    'Recommended next step: ' + recommendation
+    'Recommended next step: ' + recommendation,
+    selectedSourceContextHasLoadedPacket(selectedSourceContext) ? 'Loaded selected packet: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : ''
   ].filter(Boolean).join('\n');
   activeCoworkContextLocked = false;
   setWorkspaceContent({
@@ -24233,11 +26197,11 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
       '</header>',
       '<div class="alignment-room-board">',
         '<section class="alignment-room-primary">',
-          '<div class="alignment-room-meta"><span>Current Signal</span></div>',
+          '<div class="alignment-room-meta"><span>Next Action</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
-          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (canLoadDraft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
-          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+          '<div class="alignment-room-recommendation"><span>Why this is here</span><p>' + escapeHtml(visibleRecommendation) + '</p></div>',
+          '<div class="alignment-room-actions"><button type="button" data-home-action="alignment_done">Done</button><button type="button" data-home-action="cowork_card_context">Co-work with VAL</button></div>',
         '</section>',
       '</div>',
       '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
@@ -24247,7 +26211,7 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   workspaceInputPanel.innerHTML = [
     '<form class="home-cowork-chatbar alignment-room-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
-      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this alignment signal" placeholder="Frame the decision, draft the reply, create the task, or hold..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this alignment action" placeholder="Help me complete this action..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
       '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
@@ -24262,13 +26226,15 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
 function renderLeverageFunctionWorkspace(workspace = {}){
   const active = workspace || {};
   const fields = active.packetFields || {};
+  const queueEntries = leverageReviewableQueueEntries();
+  const selectedQueueIndex = leverageWorkspaceQueueIndex(active, queueEntries);
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
   const title = compactSentence(
     active.title || fields.what_changed || (count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting' : 'No prepared work is waiting right now'),
     'Leverage review'
   );
   const meaning = fields.why_it_matters || active.meaning || (count ? 'Review prepared work before anything leaves VAL.' : 'Leverage opens only real prepared work, not loose possibilities.');
-  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Load the draft when it is ready for review.' : 'Nothing needs approval from Leverage.');
+  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Review the prepared work, edit what needs editing, then approve or hold.' : 'Nothing needs approval from Leverage.');
   const visibleMeaning = compactSentence(
     meaning
       .replace(/^VAL has counted prepared work,\s*but\s*/i, '')
@@ -24281,7 +26247,9 @@ function renderLeverageFunctionWorkspace(workspace = {}){
       .replace(/^Review the draft before/i, 'Review before'),
     recommendation
   );
-  const draft = alignmentDraftFromWorkspace(active);
+  const draft = leverageDraftFromWorkspace(active);
+  const approvalLabel = leverageDraftActionLabel(active);
+  const executiveFacts = leverageExecutiveFacts(active, draft);
   activeCoworkHeldContext = [
     title,
     'Leverage context: ' + meaning,
@@ -24317,8 +26285,15 @@ function renderLeverageFunctionWorkspace(workspace = {}){
           '<div class="alignment-room-meta"><span>Prepared Work</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
-          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (draft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
-          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+          queueEntries.length > 1 ? '<nav class="leverage-work-queue" aria-label="Choose prepared work"><div class="leverage-work-queue-heading"><span>Waiting for you</span><strong>Choose what to review</strong><small>' + queueEntries.length + ' prepared items</small></div><div class="leverage-work-queue-items">' + queueEntries.map(({queueItem,queueIndex}, position) => {
+            const sourceItem = queueItem?.sourceItem || queueItem || {};
+            const queueTitle = leverageDraftFromWorkspace({sourceItem})?.title || itemTitle(sourceItem, 'Prepared work');
+            const kind = preparedArtifactKind(sourceItem);
+            const selected = queueIndex === selectedQueueIndex;
+            return '<button type="button" data-leverage-select-index="' + queueIndex + '" aria-pressed="' + String(selected) + '"' + (selected ? ' class="is-selected"' : '') + '><span>' + (position + 1) + '</span><strong>' + escapeHtml(queueTitle) + '</strong><small>' + escapeHtml(kind ? kind.replace(/_/g, ' ') : 'Ready to review') + '</small></button>';
+          }).join('') + '</div></nav>' : '',
+          '<div class="leverage-review-facts">' + executiveFacts.map((fact) => '<article><span>' + escapeHtml(fact.label) + '</span><p>' + escapeHtml(fact.value) + '</p></article>').join('') + '</div>',
+          draft ? '<section class="alignment-room-draft leverage-draft-review" data-alignment-draft-preview tabindex="-1"><label><span>' + escapeHtml(draft.title) + '</span><textarea data-leverage-draft-editor aria-label="Edit prepared work">' + escapeHtml(draft.body) + '</textarea></label><div class="leverage-draft-actions"><button type="button" data-home-action="approve_prepared">' + escapeHtml(approvalLabel) + '</button><button type="button" data-home-action="save_prepared_edits">Save edits</button><button type="button" data-home-action="hold_prepared">Hold</button></div></section>' : '',
         '</section>',
       '</div>',
       '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
@@ -24338,6 +26313,40 @@ function renderLeverageFunctionWorkspace(workspace = {}){
   ].join('');
   enableValAutocorrect(workspaceInputPanel);
   openWorkspaceShell('Leverage function workspace', {returnTarget:'home', keepDrawerOpen:true});
+  window.requestAnimationFrame(() => {
+    const queue = scraperPreviewList.querySelector('.leverage-work-queue-items');
+    const selected = queue?.querySelector('[aria-pressed="true"]');
+    if(queue && selected && queue.scrollWidth > queue.clientWidth){
+      queue.scrollLeft = Math.max(0, selected.offsetLeft - 12);
+    }
+  });
+}
+
+function leverageReviewableQueueEntries(){
+  return (homeRoomQueues.leverage || []).map((queueItem, queueIndex) => ({queueItem,queueIndex})).filter(({queueItem}) => {
+    const sourceItem = queueItem?.sourceItem || queueItem || {};
+    return hasPreparedWorkPacketAndActionStatus(sourceItem) && Boolean(leverageDraftFromWorkspace({sourceItem}));
+  });
+}
+
+function leverageReviewableQueueItems(){
+  return leverageReviewableQueueEntries().map(({queueItem}) => queueItem);
+}
+
+function leverageWorkspaceQueueIndex(workspace = {}, entries = leverageReviewableQueueEntries()){
+  const activeSource = workspace.sourceItem || {};
+  const activeIds = leveragePreparedIdentifiers(activeSource);
+  const activeIdentity = sourceIdentityForItem(activeSource);
+  const match = entries.find(({queueItem}) => {
+    const sourceItem = queueItem?.sourceItem || queueItem || {};
+    if(sourceItem === activeSource) return true;
+    const ids = leveragePreparedIdentifiers(sourceItem);
+    if(activeIds.draftId && ids.draftId === activeIds.draftId) return true;
+    if(activeIds.readyForYouId && ids.readyForYouId === activeIds.readyForYouId) return true;
+    const identity = sourceIdentityForItem(sourceItem);
+    return Boolean(activeIdentity.id && identity.id === activeIdentity.id);
+  });
+  return match?.queueIndex ?? -1;
 }
 
 function openVelocityAwarenessWorkspace(){
@@ -24383,20 +26392,49 @@ function openAlignmentExecutionWorkspace(){
   renderAlignmentFunctionWorkspace(workspace);
 }
 
-function openLeverageApprovalWorkspace(){
-  const items = homeRoomQueues.leverage || [];
-  const firstWorkspace = items.length ? activateHomeQueueItem('leverage', 0) : null;
-  if(firstWorkspace){
-    activeHomeWorkspace = {roomName:'leverage', workspace:firstWorkspace};
-    activeClarityWorkspace = firstWorkspace;
-    renderLeverageFunctionWorkspace(firstWorkspace);
+function currentAlignmentWorkspace(){
+  return activateHomeQueueItem('alignment', 0) || (() => {
+    const content = currentState.rooms?.alignment?.workspace || {};
+    const item = content.sourceItem || {};
+    const fields = homePacketDisplayFields(item, 'alignment');
+    return {
+      ...content,
+      title: fields.what_changed || content.title || 'Alignment action',
+      meaning: fields.why_it_matters || content.meaning || 'The Chief of Staff selected this as the next action.',
+      recommendation: fields.recommended_next_step || content.recommendation || 'Complete this action, or co-work with VAL if you need help.',
+      packetFields: fields,
+      coworkContext: fields.cowork_context,
+      sourceItem: item,
+      cardType: 'highest_leverage'
+    };
+  })();
+}
+
+function openAlignmentCoworkDirect(){
+  const workspace = currentAlignmentWorkspace();
+  activeHomeWorkspace = {roomName:'alignment', workspace};
+  activeClarityWorkspace = workspace;
+  openHomeCardCowork(workspace);
+}
+
+function openLeverageApprovalWorkspace(preferredQueueIndex = null){
+  const reviewableEntries = leverageReviewableQueueEntries();
+  const requestedIndex = Number(preferredQueueIndex);
+  const selectedEntry = Number.isInteger(requestedIndex) && preferredQueueIndex !== null
+    ? reviewableEntries.find(({queueIndex}) => queueIndex === requestedIndex)
+    : reviewableEntries[0];
+  const selectedWorkspace = selectedEntry ? activateHomeQueueItem('leverage', selectedEntry.queueIndex) : null;
+  if(selectedWorkspace){
+    activeHomeWorkspace = {roomName:'leverage', workspace:selectedWorkspace};
+    activeClarityWorkspace = selectedWorkspace;
+    renderLeverageFunctionWorkspace(selectedWorkspace);
     return;
   }
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
   renderLeverageFunctionWorkspace({
-    title: count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-    meaning: count ? 'Prepared work is still loading into review. Nothing has been approved or sent.' : 'Leverage opens only real prepared work, not loose possibilities.',
-    recommendation: count ? 'Open Leverage again once the review queue finishes loading.' : 'Nothing needs approval from Leverage.',
+    title: count ? 'Prepared work is still attaching.' : 'No prepared work is waiting right now.',
+    meaning: count ? 'VAL can see prepared-work candidates, but no reviewable draft body or artifact is attached yet.' : 'Leverage opens only real prepared work, not loose possibilities.',
+    recommendation: count ? 'VAL should finish the artifact before Leverage asks you to review it. No approval is requested from an empty packet.' : 'Nothing needs approval from Leverage.',
     packetFields: {},
     sourceItem: {},
     cardType: 'prepared_work'
@@ -24658,6 +26696,10 @@ async function handleHomeRoomAction(action, node = null){
   if(node?.dataset?.homeRoomItemAction){
     activateHomeQueueItem(node.dataset.homeRoomItemAction, node.dataset.homeRoomIndex);
   }
+  if(action === 'alignment_done'){
+    markAlignmentCardDone();
+    return;
+  }
   if(action === 'cowork_card_context'){
     openHomeCardCowork(activeHomeWorkspace?.workspace || activeClarityWorkspace);
     return;
@@ -24667,7 +26709,15 @@ async function handleHomeRoomAction(action, node = null){
     return;
   }
   if(action === 'approve_prepared'){
-    renderPreparedApprovalReceipt();
+    await approvePreparedLeverageItem();
+    return;
+  }
+  if(action === 'save_prepared_edits'){
+    await savePreparedLeverageEdits();
+    return;
+  }
+  if(action === 'hold_prepared'){
+    await holdPreparedLeverageItem();
     return;
   }
   if(action === 'complete_project_pin'){
@@ -24759,6 +26809,7 @@ function openCoworkSession(){
   closeCalendarPanel();
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
+  activeCoworkSelectedSourceContext = null;
   setWorkspaceContent({
     lens: coworkSession.lens,
     title: coworkSession.title,
@@ -24778,12 +26829,67 @@ function openCoworkSession(){
   });
 }
 
+function homeCoworkSourceReceiptMarkup(selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return '';
+  const sourceItem = selectedSourceContext.sourceItem || {};
+  const identity = selectedSourceContext.sourceIdentity || sourceIdentityForItem(sourceItem);
+  const sourceRefs = Array.isArray(selectedSourceContext.sourceRefs) ? selectedSourceContext.sourceRefs : [];
+  const evidence = Array.isArray(sourceItem.evidence) ? sourceItem.evidence : [];
+  const sourceTitle = compactSentence(
+    identity.label ||
+    sourceItem.target?.label ||
+    sourceItem.source_title ||
+    sourceItem.sourceTitle ||
+    sourceItem.title ||
+    selectedSourceContext.cardTitle ||
+    'Selected source',
+    'Selected source'
+  );
+  const sourceType = compactSentence(
+    identity.type ||
+    sourceItem.target?.type ||
+    sourceItem.source_type ||
+    sourceItem.sourceType ||
+    'source',
+    'source'
+  ).replace(/_/g, ' ');
+  const sourceId = compactSentence(
+    identity.id ||
+    sourceItem.target?.id ||
+    sourceItem.source_id ||
+    sourceItem.sourceId ||
+    '',
+    ''
+  );
+  const lines = [
+    selectedSourceContext.cardMeaning,
+    sourceItem.whyNowPacket?.decision_needed,
+    sourceItem.whyNowPacket?.cost_if_delayed,
+    sourceItem.reason_it_matters,
+    sourceItem.why,
+    sourceItem.summary,
+    ...sourceRefs.map((ref) => typeof ref === 'string' ? ref : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.title || '')),
+    ...evidence.map((item) => typeof item === 'string' ? item : (item.summary || item.title || ''))
+  ].map((line) => compactSentence(projectCleanText(line), '')).filter(Boolean);
+  const uniqueLines = Array.from(new Set(lines)).slice(0,4);
+  return [
+    '<div class="home-cowork-source-receipt" data-home-cowork-source-receipt>',
+      '<span>Source loaded</span>',
+      '<strong>' + escapeHtml(sourceTitle) + '</strong>',
+      '<small>' + escapeHtml(sourceType + (sourceId ? ' · ' + sourceId : '')) + '</small>',
+      uniqueLines.length ? '<ul>' + uniqueLines.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul>' : '',
+    '</div>'
+  ].join('');
+}
+
 function renderHomeCoworkPreview(options = {}){
   const heading = options.heading || 'What shall we accomplish together?';
   const detail = options.detail || '';
   const placeholder = options.placeholder || 'Tell VAL what you want to accomplish';
   const initialMessage = options.initialMessage || heading;
   const historyMessage = options.historyMessage || 'No earlier project Co-Work thread is loaded in this view.';
+  const speakerDetail = options.speakerDetail || 'VAL can prepare drafts, decisions, and next steps. Anything external still asks for approval.';
+  const sourceReceiptMarkup = homeCoworkSourceReceiptMarkup(options.selectedSourceContext);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief', 'observer-cowork-overlay-panel');
@@ -24795,6 +26901,7 @@ function renderHomeCoworkPreview(options = {}){
           '<strong>' + escapeHtml(heading) + '</strong>',
           detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
         '</div>',
+        sourceReceiptMarkup,
         '<div class="home-cowork-history">',
           '<span>Previous conversations</span>',
           '<button type="button" aria-pressed="true">Current thread</button>',
@@ -24809,11 +26916,11 @@ function renderHomeCoworkPreview(options = {}){
           '</span>',
           '<div>',
             '<p>VAL</p>',
-            '<small>Scoped conversation. No external action happens from here.</small>',
+            '<small>' + escapeHtml(speakerDetail) + '</small>',
           '</div>',
         '</div>',
         '<div class="home-cowork-thread" data-home-cowork-response>',
-          '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage) + '</p></article>',
+          renderHomeCoworkMessage('val', initialMessage),
         '</div>',
       '</section>',
       '<section class="home-cowork-context-gathering" data-cowork-context-gathering hidden aria-live="polite" aria-busy="true">',
@@ -24841,6 +26948,18 @@ function renderHomeCoworkPreview(options = {}){
 
 function homeCoworkResponseNode(){
   return scraperPreviewList?.querySelector?.('[data-home-cowork-response]') || null;
+}
+
+function homeCoworkFormNode(){
+  return scraperPreviewList?.querySelector?.('[data-home-cowork-form]') || workspaceInputPanel?.querySelector?.('[data-home-cowork-form]') || null;
+}
+
+function homeCoworkTextareaNode(){
+  return homeCoworkFormNode()?.querySelector?.('[data-workspace-input="cowork"]') || null;
+}
+
+function homeCoworkSubmitNode(){
+  return homeCoworkFormNode()?.querySelector?.('[data-home-cowork-submit]') || null;
 }
 
 function renderMeetingPrepInlineMarkdown(value = ''){
@@ -24913,7 +27032,61 @@ function renderHomeCoworkMessage(role = 'val', text = '', options = {}){
   const body = options.meetingPrep && role === 'val'
     ? renderHomeCoworkMeetingPrepText(text)
     : '<p>' + escapeHtml(text || '') + '</p>';
-  return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + '</article>';
+  const copyButton = role === 'val'
+    ? '<button type="button" class="home-cowork-copy-output" data-cowork-copy-output="' + escapeHtml(text || '') + '" aria-label="Copy VAL response" title="Copy response"><span aria-hidden="true"></span></button>'
+    : '';
+  return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + copyButton + '</article>';
+}
+
+async function copyTextToClipboard(value = ''){
+  const text = String(value || '');
+  if(!text) return false;
+  if(navigator.clipboard?.writeText){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(error){
+      // Fall through to the selection-based browser fallback.
+    }
+  }
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  helper.style.pointerEvents = 'none';
+  document.body.appendChild(helper);
+  helper.select();
+  helper.setSelectionRange(0, helper.value.length);
+  let copied = false;
+  try{
+    copied = document.execCommand('copy');
+  }catch(error){
+    copied = false;
+  }
+  helper.remove();
+  return copied;
+}
+
+async function copyCoworkOutput(copyOutputButton){
+  if(!copyOutputButton) return false;
+  const value = copyOutputButton.dataset.coworkCopyOutput || '';
+  const copied = await copyTextToClipboard(value);
+  copyOutputButton.classList.toggle('is-copied', copied);
+  copyOutputButton.setAttribute('aria-label', copied ? 'Copied' : 'Copy unavailable');
+  if(!copied){
+    const textarea = homeCoworkTextareaNode() || deskWorkspace.querySelector('[data-workspace-input="cowork"]');
+    if(textarea){
+      textarea.value = value;
+      textarea.focus();
+      textarea.select();
+    }
+  }
+  window.setTimeout(() => {
+    copyOutputButton.classList.remove('is-copied');
+    copyOutputButton.setAttribute('aria-label', 'Copy VAL response');
+  }, 1200);
+  return copied;
 }
 
 function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
@@ -24946,7 +27119,7 @@ function showCoworkContextGathering(detail = '', options = {}){
     const currentPanel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
     if(!currentPanel || currentPanel.hidden) return;
     hideCoworkContextGathering();
-    appendHomeCoworkMessage('val', 'VAL could not finish gathering this context in time. Nothing was changed. Try opening the source again when you are ready.');
+    appendHomeCoworkMessage('val', 'I have the action. The deeper source context is taking longer than it should, but we can keep working from what is already here.');
   }, 18000);
 }
 
@@ -24957,6 +27130,139 @@ function hideCoworkContextGathering(){
   }
   const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
   if(panel) panel.hidden = true;
+}
+
+function taskWorkspacePreviewText(value = '', limit = 220){
+  const clean = compactSentence(String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\s*-\s*\[\s*\]\s*/g, ' ')
+    .replace(/^Hi everyone,?\s*here are[^:]*:?\s*/i, '')
+    .replace(/^Here are[^:]*action items[^:]*:?\s*/i, '')
+    .replace(/^Hi everyone,?\s*here are[^:]*:?\s*/i, '')
+    .replace(/^Action Items?\s*:?\s*/i, '')
+    .replace(/^Key Points?\s*:?\s*/i, '')
+    .replace(/^Meeting overview\s*:?\s*/i, '')
+    .replace(/\s+-\s+_?Jessa\s+Grace_?\s*-\s*Due\s*:?\s*[^.]*$/i, '')
+    .replace(/\s+-\s+Due\s*:?\s*[^.]*$/i, '')
+    .trim(), '');
+  if(!clean) return '';
+  const sentence = clean.split(/(?<=[.!?])\s+/).find((line) => line.length >= 18 && line.length <= limit) || clean;
+  if(sentence.length <= limit) return sentence;
+  return sentence.slice(0, limit).replace(/\s+\S*$/, '').trim() + '...';
+}
+
+function taskWorkspaceDisplayTitle(task = {}){
+  if(task.__workspaceKind === 'transcript_task') return String(task.title || task.rawCommitment?.evidence_quote || 'Action item').trim();
+  return taskWorkspacePreviewText(task.title || task.description || task.notes || '', 120) || 'Untitled commitment';
+}
+
+function taskWorkspaceDisplayNotes(task = {}){
+  const sourceTitle = task.rawCommitment?.source_title || task.sourceTitle || '';
+  const evidence = taskWorkspacePreviewText(task.notes || task.rawCommitment?.evidence_quote || '', 180);
+  if(task.__workspaceKind === 'transcript_task'){
+    const context = evidence && evidence !== taskWorkspaceDisplayTitle(task) ? evidence : '';
+    return [sourceTitle ? 'From ' + sourceTitle : 'From transcript', context].filter(Boolean).join(' · ');
+  }
+  if(evidence && evidence !== taskWorkspaceDisplayTitle(task)) return evidence;
+  if(sourceTitle) return 'Source-backed context is attached from ' + sourceTitle + '.';
+  return 'Source-backed context is attached. Open the source transcript when you need the full evidence.';
+}
+
+function taskWorkspaceExecutiveScore(task = {}){
+  const text = [task.title,task.notes,task.rawCommitment?.evidence_quote,task.rawCommitment?.evidence_summary].filter(Boolean).join(' ');
+  let score = 0;
+  if(task.rawCommitment?.workingBrief || task.workingBrief) score += 8;
+  if(task.relatedTranscriptId || task.relatedEmailId || task.sourceId) score += 4;
+  if(task.dueDate) score += 3;
+  if(/\b(proposal|dashboard|handoff|email|reply|intro|introduction|schedule|calendar|meeting|call|client|approval|send|finish|review|prepare|draft)\b/i.test(text)) score += 5;
+  if(/\bGOALL|Mike|Michele|Michelle|Greg|Ed|Aric|Mark|client|agency\b/i.test(text)) score += 4;
+  if(String(task.schedulingStatus || '').toLowerCase().includes('needs')) score -= 3;
+  if(String(text).length > 700) score -= 4;
+  return score;
+}
+
+function normalizeTaskWorkspaceItem(item = {}){
+  if(['commitment','canonical_work','transcript_task'].includes(item.__workspaceKind)) return item;
+  if(item.source_type || item.owner_type || item.evidence_quote){
+    const status = String(item.status || '').toLowerCase();
+    const canonicalWorkItemId = item.canonical_work_item_id || '';
+    const transcriptTask = item.workspace_kind === 'transcript_task' || Boolean(item.transcript_task_id);
+    const owner = item.owner_type === 'user'
+      ? (item.counterparty_name || item.owner_name || '')
+      : (item.owner_name || item.counterparty_name || '');
+    return {
+      id:item.id || '',
+      __workspaceKind:transcriptTask ? 'transcript_task' : (canonicalWorkItemId ? 'canonical_work' : 'commitment'),
+      canonicalWorkItemId,
+      title:transcriptTask ? String(item.title || item.evidence_quote || 'Action item').trim() : (taskWorkspacePreviewText(item.title || item.description || item.evidence_quote || '', 140) || 'Untitled commitment'),
+      notes:taskWorkspacePreviewText(item.evidence_summary || item.description || item.evidence_quote || '', 240),
+      workingBrief:item.workingBrief || item.working_brief || null,
+      sourceRefs:item.sourceRefs || item.source_refs || [],
+      relatedTaskIds:Array.isArray(item.related_task_ids) ? item.related_task_ids : [],
+      ownerType:item.owner_type || '',
+      sourceContext:item.sourceContext || item.source_context || {},
+      contactName:owner,
+      dueDate:item.due_at || '',
+      completed:['complete','completed','dismissed'].includes(status),
+      schedulingStatus:status === 'drafted' ? 'Draft ready' : (status === 'needs_resolution' ? 'Needs context' : (item.status || 'Open')),
+      sourceType:'commitment',
+      sourceId:item.source_id || '',
+      sourceCommitmentId:item.id || '',
+      relatedTranscriptId:item.source_type === 'transcript' ? item.source_id || '' : '',
+      relatedEmailId:item.source_type === 'email' ? item.source_id || '' : '',
+      details:[{
+        text:item.evidence_quote || item.evidence_summary || item.description || '',
+        sourceType:item.source_type || '',
+        sourceId:item.source_id || '',
+        sourceTitle:item.source_title || '',
+        transcriptId:item.source_type === 'transcript' ? item.source_id || '' : '',
+        emailId:item.source_type === 'email' ? item.source_id || '' : '',
+        commitmentId:item.id || ''
+      }].filter((detail) => detail.text || detail.sourceId),
+      rawCommitment:item
+    };
+  }
+  return item;
+}
+
+function commitmentWorkingBriefForTask(task = {}){
+  return task.workingBrief || task.working_brief || task.rawCommitment?.workingBrief || task.rawCommitment?.working_brief || null;
+}
+
+function selectedSourceContextFromCommitmentTask(task = {}){
+  const brief = commitmentWorkingBriefForTask(task) || {};
+  const raw = task.rawCommitment || {};
+  const sourceRefs = Array.isArray(brief.sourceRefs) ? brief.sourceRefs : (Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : (Array.isArray(task.sourceRefs) ? task.sourceRefs : [])));
+  const sourceContext = brief.sourceContext || raw.source_context || task.sourceContext || {};
+  const sourceItem = {
+    ...raw,
+    id:raw.id || task.id || '',
+    title:raw.title || task.title || '',
+    summary:raw.evidence_summary || task.notes || '',
+    sourceType:raw.source_type || sourceContext.sourceType || task.sourceType || '',
+    sourceId:raw.source_id || sourceContext.sourceId || task.sourceId || '',
+    sourceTitle:raw.source_title || sourceContext.sourceTitle || '',
+    sourceRefs,
+    workingBrief:brief
+  };
+  const envelope = brief.envelope || homeCoworkEnvelopeHint({title:task.title,sourceItem}, sourceItem, sourceRefs);
+  const contextLines = Array.isArray(brief.contextLines) && brief.contextLines.length
+    ? brief.contextLines
+    : homeCoworkContextLines({title:task.title,meaning:task.notes}, sourceItem, sourceRefs);
+  return {
+    cardTitle: compactSentence(brief.objective || task.title || sourceItem.title || '', 'this commitment'),
+    cardMeaning: compactSentence(brief.sourceSummary || task.notes || sourceItem.summary || '', ''),
+    sourceIdentity: sourceIdentityForItem(sourceItem),
+    sourceRefs,
+    contextLines,
+    sourceBrief: contextLines.join('\n'),
+    workingBrief: brief,
+    envelope,
+    transcriptIds: sourceContext.transcriptId ? [sourceContext.transcriptId] : (task.relatedTranscriptId ? [task.relatedTranscriptId] : []),
+    evidenceIds: [],
+    observationIds: [],
+    sourceItem
+  };
 }
 
 function taskWorkspaceDetails(task = {}){
@@ -24974,7 +27280,7 @@ function taskWorkspaceTranscriptId(task = {}){
 }
 
 function taskWorkspaceIdentityValues(task = {}){
-  const values = new Set([task.id,task.sourceId,task.relatedTranscriptId,task.transcriptId,task.relatedEmailId,task.relatedContactId].filter(Boolean).map(String));
+  const values = new Set([task.id,task.sourceId,task.relatedTranscriptId,task.transcriptId,task.relatedEmailId,task.relatedContactId,task.contactId,task.personId].filter(Boolean).map(String));
   taskWorkspaceDetails(task).forEach((detail) => {
     if(!detail || typeof detail !== 'object') return;
     ['id','taskId','sourceId','transcriptId','transcriptTaskId','emailId','projectId','draftId'].forEach((key) => {
@@ -24985,19 +27291,98 @@ function taskWorkspaceIdentityValues(task = {}){
 }
 
 function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
-  const identities = taskWorkspaceIdentityValues(task);
-  const transcriptId = taskWorkspaceTranscriptId(task);
-  const matchesIdentity = (value) => {
-    const text = JSON.stringify(value || {});
-    if(transcriptId && text.includes(transcriptId)) return true;
-    return Array.from(identities).some((identity) => identity.length > 5 && text.includes(identity));
+  const commitmentId = String(task.sourceCommitmentId || task.rawCommitment?.id || task.id || '');
+  const directTaskIds = new Set([
+    commitmentId,
+    task.id,
+    task.sourceCommitmentId,
+    task.rawCommitment?.id,
+    task.rawCommitment?.sourceCommitmentId,
+    task.rawCommitment?.source_commitment_id
+  ].filter(Boolean).map(String));
+  const packetIdValues = (value) => {
+    const metadata = value?.metadataJson || value?.metadata_json || value?.metadata || {};
+    const sourceContext = value?.sourceContext || value?.source_context || value?.preparedArtifact?.sourceContext || value?.prepared_artifact?.source_context || {};
+    const artifact = value?.preparedArtifact || value?.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+    const sourcePacket = artifact.source_packet || artifact.sourcePacket || metadata.sourcePacket || metadata.source_packet || {};
+    const linkedContext = artifact.linked_context || artifact.linkedContext || metadata.linkedContext || metadata.linked_context || {};
+    const linkedTask = linkedContext.task || {};
+    const linkedTranscript = linkedContext.transcript || {};
+    const refs = [
+      value?.sourceRefsJson,
+      value?.source_refs,
+      value?.sourceRefs,
+      metadata.sourceRefsJson,
+      metadata.source_refs,
+      metadata.sourceRefs,
+      artifact.source_refs,
+      artifact.sourceRefs,
+      sourcePacket.source_refs,
+      sourcePacket.sourceRefs
+    ].flatMap((entry) => Array.isArray(entry) ? entry : []);
+    const ids = [
+      value?.id,
+      value?.commitmentId,
+      value?.commitment_id,
+      value?.sourceCommitmentId,
+      value?.source_commitment_id,
+      value?.sourceId,
+      value?.source_id,
+      value?.draftId,
+      value?.draft_id,
+      metadata.commitmentId,
+      metadata.commitment_id,
+      metadata.taskId,
+      metadata.task_id,
+      metadata.sourceId,
+      metadata.source_id,
+      metadata.draftId,
+      metadata.draft_id,
+      sourceContext.commitmentId,
+      sourceContext.commitment_id,
+      sourceContext.sourceCommitmentId,
+      sourceContext.source_commitment_id,
+      sourceContext.sourceId,
+      sourceContext.source_id,
+      sourcePacket.commitment_id,
+      sourcePacket.commitmentId,
+      sourcePacket.source_id,
+      sourcePacket.sourceId,
+      linkedTask.id,
+      linkedTask.taskId,
+      linkedTask.commitmentId,
+      linkedTask.commitment_id,
+      linkedTranscript.id,
+      linkedTranscript.transcriptId,
+      ...refs.flatMap((ref) => [ref?.id, ref?.sourceId, ref?.source_id, ref?.transcriptId, ref?.transcript_id, ref?.commitmentId, ref?.commitment_id])
+    ].filter(Boolean).map(String);
+    return Array.from(new Set(ids));
   };
-  const attachedDrafts = drafts.filter((draft) => matchesIdentity(draft.sourceContext || draft)).slice(0,4).map((draft) => ({
+  const matchesCommitment = (value) => {
+    if(!commitmentId) return false;
+    const ids = packetIdValues(value);
+    for(const id of directTaskIds){
+      if(ids.includes(id)) return true;
+    }
+    return false;
+  };
+  const attachedDrafts = drafts.filter((draft) => matchesCommitment(draft)).slice(0,2).map((draft) => ({
     kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
   }));
-  const attachedReady = readyItems.filter(matchesIdentity).slice(0,4).map((item) => ({
-    kind:'prepared',id:item.id || '',title:item.title || item.whatValPrepared || 'Prepared work',status:item.status || item.itemStatus || 'ready',body:item.whatValPrepared || item.summary || item.whatUserNeedsToDo || ''
-  }));
+  const attachedReady = readyItems
+    .filter(matchesCommitment)
+    .filter((item) => hasPreparedWorkPacketAndActionStatus(item) && Boolean(leverageDraftFromWorkspace({sourceItem:item})))
+    .slice(0,2)
+    .map((item) => {
+      const draft = leverageDraftFromWorkspace({sourceItem:item}) || {};
+      return {
+        kind:preparedArtifactKind(item) || 'prepared_work',
+        id:item.id || '',
+        title:draft.title || item.title || item.whatValPrepared || 'Prepared work',
+        status:item.status || item.itemStatus || 'ready',
+        body:draft.body || ''
+      };
+    });
   return [...attachedDrafts,...attachedReady].filter((item,index,list) => list.findIndex((candidate) => candidate.kind === item.kind && candidate.id === item.id) === index);
 }
 
@@ -25019,40 +27404,66 @@ function taskWorkspaceSourceLabel(task = {}){
   return 'Manual';
 }
 
+function setTaskCompanionOpenCount(count = 0){
+  const safeCount = Math.max(0, Number(count) || 0);
+  if(taskCompanionCount) taskCompanionCount.textContent = String(safeCount);
+  if(taskCompanionButton){
+    taskCompanionButton.dataset.openCount = String(safeCount);
+    taskCompanionButton.setAttribute('aria-label', 'Open your tasks: ' + safeCount + ' open');
+    taskCompanionButton.title = safeCount + ' open tasks';
+  }
+}
+
 function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
+  tasks = (Array.isArray(tasks) ? tasks : []).map(normalizeTaskWorkspaceItem);
+  currentTaskWorkspaceTasks = tasks;
+  currentTaskWorkspaceDrafts = Array.isArray(drafts) ? drafts : [];
+  currentTaskWorkspaceReadyItems = Array.isArray(readyItems) ? readyItems : [];
+  currentTaskWorkspacePreparedByTask = {};
   const openTasks = tasks.filter((task) => !task.completed).sort((a,b) => {
+    const scoreDelta = taskWorkspaceExecutiveScore(b) - taskWorkspaceExecutiveScore(a);
+    if(scoreDelta) return scoreDelta;
     if(!a.dueDate && !b.dueDate) return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
     if(!a.dueDate) return 1;
     if(!b.dueDate) return -1;
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
   });
-  if(taskCompanionCount) taskCompanionCount.textContent = String(openTasks.length);
+  const visibleOpenTasks = openTasks;
+  setTaskCompanionOpenCount(openTasks.length);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<section class="task-workspace" aria-label="Unresolved tasks">',
-      '<header class="task-workspace-header"><div><span>Tasks</span><strong>' + escapeHtml(openTasks.length) + ' unresolved</strong></div><p>Due soonest first. Prepared work stays attached to the task that needs it.</p></header>',
-      openTasks.length ? '<div class="task-workspace-list">' + openTasks.map((task) => {
+    '<section class="task-workspace" aria-label="Your open tasks">',
+      '<header class="task-workspace-header"><div><span>Your tasks</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Every transcript Action Item stays here until it is done. Open the source or co-work with VAL when you need the surrounding context.</p></header>',
+      openTasks.length ? '<div class="task-workspace-list">' + visibleOpenTasks.map((task) => {
         const transcriptId = taskWorkspaceTranscriptId(task);
         const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
+        if(task.id) currentTaskWorkspacePreparedByTask[String(task.id)] = attachments;
         const owner = task.contactName || task.assignedToName || 'Unassigned';
         const status = task.schedulingStatus && task.schedulingStatus !== 'unscheduled' ? task.schedulingStatus : 'Open';
+        const hasPrepared = attachments.length > 0;
+        const state = hasPrepared
+          ? 'VAL Ready'
+          : (task.ownerType === 'other' && owner ? 'Waiting on ' + owner : (task.ownerType === 'unknown' ? 'Owner to confirm' : 'Needs You'));
+        const displayTitle = taskWorkspaceDisplayTitle(task);
+        const displayNotes = taskWorkspaceDisplayNotes(task);
         return [
-          '<article class="task-workspace-row">',
+          '<article class="task-workspace-row" data-task-workspace-row="' + escapeHtml(task.id || '') + '">',
             '<div class="task-workspace-row-main">',
-              '<div class="task-workspace-check" aria-hidden="true"></div>',
-              '<div><span>' + escapeHtml(taskWorkspaceSourceLabel(task)) + '</span><h3>' + escapeHtml(task.title || 'Untitled task') + '</h3><p>' + escapeHtml(task.notes || '') + '</p></div>',
+              '<button type="button" class="task-workspace-check" data-task-done="' + escapeHtml(task.id || '') + '" aria-label="Mark done: ' + escapeHtml(displayTitle) + '"></button>',
+              '<div><span>' + escapeHtml(state) + '</span><h3>' + escapeHtml(displayTitle) + '</h3><p>' + escapeHtml(displayNotes) + '</p></div>',
             '</div>',
             '<dl class="task-workspace-meta"><div><dt>Due</dt><dd>' + escapeHtml(taskWorkspaceDueLabel(task.dueDate)) + '</dd></div><div><dt>Owner</dt><dd>' + escapeHtml(owner) + '</dd></div><div><dt>Status</dt><dd>' + escapeHtml(status) + '</dd></div></dl>',
-            attachments.length ? '<div class="task-workspace-prepared"><span>VAL has work ready here</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(compactSentence(item.body,'Prepared work is attached.')) + '</p><small>' + escapeHtml(item.status) + '</small></div>').join('') + '</div>' : '',
+            attachments.length ? '<div class="task-workspace-prepared"><span>Prepared by VAL</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(taskWorkspacePreviewText(item.title, 90) || 'Prepared draft') + '</strong><small>' + escapeHtml(item.status || 'ready') + '</small></div>').join('') + '</div>' : '',
             '<div class="task-workspace-actions">',
               transcriptId ? '<button type="button" data-task-open-transcript="' + escapeHtml(transcriptId) + '">Open source transcript</button>' : '',
-              attachments.length ? '<button type="button" class="primary" data-task-open-prepared="' + escapeHtml(task.id || '') + '">Continue prepared work</button>' : '',
+              '<button type="button" data-task-cowork="' + escapeHtml(task.id || '') + '">Co-work</button>',
+              attachments.length ? '<button type="button" class="primary" data-task-open-prepared="' + escapeHtml(task.id || '') + '">Review draft</button>' : '',
             '</div>',
           '</article>'
         ].join('');
-      }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>Nothing unresolved.</strong><p>VAL will place new commitments here with their source and any prepared work.</p></div>',
+      }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>No open commitments.</strong><p>VAL will place promises, follow-through, and source-backed open loops here when they need attention.</p></div>',
     '</section>'
   ].join('');
 }
@@ -25060,35 +27471,45 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
 async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
-    const tasks = await getJson('/api/val/tasks', {cache:'no-store'});
-    taskCompanionCount.textContent = String((Array.isArray(tasks)?tasks:[]).filter((task) => !task.completed).length);
+    const result = await getJson('/api/val/work-items/tasks?limit=500', {cache:'no-store'});
+    const items = Array.isArray(result?.tasks) ? result.tasks.map(normalizeTaskWorkspaceItem) : [];
+    setTaskCompanionOpenCount(items.filter((task) => !task.completed).length);
   }catch(error){
-    taskCompanionCount.textContent = '0';
+    setTaskCompanionOpenCount(0);
   }
 }
 
 async function openTaskWorkspace(){
   closeCalendarPanel();
   setWorkspaceContent({
-    lens:'Tasks',title:'Tasks',meaning:'Every unresolved commitment, with its source and prepared work.',
+    lens:'Tasks',title:'Tasks',meaning:'Every open transcript Action Item and source-backed task, with its evidence and prepared work.',
     understanding:[],recommendation:'',actions:[{label:'Close and return to desk',workflow:'cancel:meeting'}],
     label:'Task workspace',suppressClarityStandard:true
   });
   deskWorkspace.classList.add('task-workspace-mode');
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
-  scraperPreviewList.innerHTML = '<section class="task-workspace-loading" aria-live="polite"><span></span><strong>Opening tasks</strong><p>VAL is connecting each task to its source and prepared work.</p></section>';
+  scraperPreviewList.innerHTML = '<section class="task-workspace-loading" aria-live="polite"><span></span><strong>Opening commitments</strong><p>VAL is connecting each promise to its source and prepared work.</p></section>';
   workspaceInputPanel.hidden = true;
   hearth.dataset.distance='judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
   openWorkspaceShell('Tasks',{returnTarget:'home'});
   try{
-    const [tasksResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/tasks',{cache:'no-store'}),
+    const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
+      getJson('/api/val/work-items/tasks?limit=500',{cache:'no-store', timeoutMs:12000, timeoutMessage:'Tasks are taking too long to load source context.'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
-      getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
+      getJson('/api/val/ready-for-you?limit=25',{cache:'no-store'})
     ]);
-    renderTaskWorkspace(Array.isArray(tasksResult)?tasksResult:[],draftsResult?.drafts || [],readyResult?.items || []);
+    const readyItems = [
+      ...safeArray(readyResult?.preparedItems),
+      ...safeArray(readyResult?.prepared_items),
+      ...safeArray(readyResult?.allBuilt),
+      ...safeArray(readyResult?.items)
+    ].filter((item,index,list) => {
+      const id = String(item?.id || item?.metadataJson?.commitmentId || item?.metadata_json?.commitment_id || '');
+      return id ? list.findIndex((candidate) => String(candidate?.id || candidate?.metadataJson?.commitmentId || candidate?.metadata_json?.commitment_id || '') === id) === index : true;
+    });
+    renderTaskWorkspace(Array.isArray(commitmentsResult?.tasks)?commitmentsResult.tasks:[],draftsResult?.drafts || [],readyItems);
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;
@@ -25096,7 +27517,7 @@ async function openTaskWorkspace(){
       });
     }
   }catch(error){
-    scraperPreviewList.innerHTML = '<section class="task-workspace-empty"><strong>Tasks could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
+    scraperPreviewList.innerHTML = '<section class="task-workspace task-workspace-empty" aria-label="Commitments unavailable"><strong>Commitments could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
   }
 }
 
@@ -25107,13 +27528,470 @@ async function openTaskSourceTranscript(transcriptId = ''){
   await openTimelineTranscript(transcriptId);
 }
 
-async function openTaskPreparedWork(){
-  await hydratePreparedWorkQueue();
-  openLeverageApprovalWorkspace();
+function taskById(taskId = ''){
+  return (currentTaskWorkspaceTasks || []).find((task) => String(task.id || '') === String(taskId || '')) || null;
+}
+
+function cssEscape(value = ''){
+  if(window.CSS?.escape) return window.CSS.escape(String(value || ''));
+  return String(value || '').replace(/["\\]/g, '\\$&');
+}
+
+async function completeTaskFromWorkspace(taskId = ''){
+  const task = taskById(taskId);
+  const row = scraperPreviewList?.querySelector('[data-task-workspace-row="' + cssEscape(taskId) + '"]');
+  const completedTaskIds = new Set([
+    taskId,
+    ...safeArray(task?.relatedTaskIds),
+    ...safeArray(task?.rawCommitment?.related_task_ids)
+  ].filter(Boolean).map(String));
+  const previousTasks = currentTaskWorkspaceTasks;
+  if(row) row.classList.add('is-completing');
+  currentTaskWorkspaceTasks = currentTaskWorkspaceTasks.filter((item) => !completedTaskIds.has(String(item.id || '')));
+  renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
+  try{
+    if(canUseApi && taskId){
+      if(task?.__workspaceKind === 'canonical_work'){
+        await postJson('/api/val/work-items/' + encodeURIComponent(task.canonicalWorkItemId || taskId) + '/transition', {
+          status:'complete',
+          eventType:'user_marked_done',
+          payload:{surface:'home_commitments'}
+        });
+      }else if(task?.__workspaceKind === 'transcript_task'){
+        await postJson('/api/val/transcript-tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you',relatedTaskIds:task.relatedTaskIds || task.rawCommitment?.related_task_ids || []});
+      }else if(task?.__workspaceKind === 'commitment'){
+        await postJson('/api/val/commitments/' + encodeURIComponent(taskId) + '/status', {status:'complete', reason:'Marked done from Home commitments.'});
+      }else{
+        await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
+      }
+    }
+  }catch(error){
+    currentTaskWorkspaceTasks = previousTasks;
+    renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
+    appendHomeCoworkMessage('val', 'I could not mark that commitment done yet. Nothing else changed. ' + (error.message || ''));
+  }
+}
+
+function openTaskCowork(taskId = ''){
+  const task = taskById(taskId) || {};
+  const selectedSourceContext = selectedSourceContextFromCommitmentTask(task);
+  const brief = selectedSourceContext.workingBrief || {};
+  activeCoworkHeldContext = [
+    'Commitment: ' + (task.title || 'Untitled commitment'),
+    brief.envelope ? homeCoworkEnvelopeLine(brief.envelope) : '',
+    brief.sourceQuote ? 'Source quote: ' + brief.sourceQuote : '',
+    Array.isArray(brief.contextLines) && brief.contextLines.length ? 'Loaded working brief: ' + brief.contextLines.join(' | ') : '',
+    task.notes ? 'Why it matters: ' + task.notes : '',
+    task.contactName ? 'Owner/contact: ' + task.contactName : '',
+    task.dueDate ? 'Due: ' + taskWorkspaceDueLabel(task.dueDate) : '',
+    task.details ? 'Evidence: ' + taskWorkspaceDetails(task).map((detail) => typeof detail === 'string' ? detail : detail.text || JSON.stringify(detail)).filter(Boolean).join(' | ') : ''
+  ].filter(Boolean).join('\n');
+  activeCoworkContextLocked = true;
+  openContextualCoworkSession({
+    returnTarget:'home',
+    title:'Co-work with VAL: ' + compactSentence(task.title || 'Commitment', 'Commitment'),
+    meaning:'Work through this commitment without leaving the context behind.',
+    context:activeCoworkHeldContext.split('\n'),
+    recommendation:'Clarify the next move, draft only if needed, or mark it done when it is complete.',
+    placeholder:brief.suggestedPrompt || 'Help me finish this commitment...',
+    helper:'VAL has this commitment packet, source evidence, and working brief loaded.',
+    initialValue:'',
+    selectedSourceContext,
+    initialMessage:brief.suggestedPrompt || '',
+    backWorkflow:'cancel:meeting',
+    showGathering:false
+  });
+}
+
+async function openTaskPreparedWork(taskId = ''){
+  const task = taskById(taskId) || {};
+  const attachments = currentTaskWorkspacePreparedByTask[String(taskId || '')] || [];
+  const prepared = attachments[0];
+  if(!prepared){
+    openTaskCowork(taskId);
+    return;
+  }
+  const workspace = {
+    lens:'Leverage',
+    title:prepared.title || task.title || 'Prepared work',
+    meaning:task.notes || 'VAL prepared work for this commitment.',
+    recommendation:'Review the prepared work, edit it if needed, then approve or hold.',
+    draftTitle:prepared.title || 'Prepared draft',
+    draftBody:prepared.body || '',
+    sourceItem:{
+      id:prepared.id || task.id || '',
+      title:prepared.title || task.title || 'Prepared work',
+      summary:task.notes || prepared.body || '',
+      target:{type:prepared.kind || 'draft', id:prepared.id || task.id || '', name:prepared.title || task.title || 'Prepared work'},
+      preparedArtifactKind:prepared.kind === 'draft' ? 'email_draft' : prepared.kind || 'prepared_work',
+      preparedArtifact:{kind:prepared.kind === 'draft' ? 'email_draft' : prepared.kind || 'prepared_work', id:prepared.id || task.id || '', title:prepared.title || 'Prepared draft', body:prepared.body || ''}
+    },
+    packetFields:{
+      what_changed:prepared.title || task.title || 'Prepared work',
+      why_it_matters:task.notes || 'This prepared work is attached to a commitment.',
+      recommended_next_step:'Review, edit, approve, or hold.',
+      evidence_summary:'Commitment: ' + (task.title || 'Untitled commitment')
+    },
+    cardType:'prepared_work'
+  };
+  activeHomeWorkspace = {roomName:'leverage', workspace};
+  activeClarityWorkspace = workspace;
+  renderLeverageFunctionWorkspace(workspace);
 }
 
 function observerConversationId(value = ''){
   return String(value || 'observer').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'observer';
+}
+
+function observerLiveReviews(observerName = '', limit = 8){
+  const name = String(observerName || '').trim();
+  if(!name) return [];
+  const indexed = safeArray(observerBoardState.reviewsByObserver?.[name]);
+  const fromPackets = safeArray(observerBoardState.livePackets)
+    .map((packet) => safeArray(packet.payloadJson?.observerReviews).find((review) => review?.observerName === name))
+    .filter(Boolean);
+  const reviews = indexed.length ? indexed : fromPackets;
+  return reviews
+    .slice()
+    .sort((a,b) => String(b.reviewedAt || '').localeCompare(String(a.reviewedAt || '')))
+    .slice(0, limit);
+}
+
+function observerReviewIsCompletedDeduction(review = {}){
+  const version = Number(review.reviewVersion || review.review_version || 0);
+  const mode = String(review.reviewMode || review.review_mode || '');
+  return review.status === 'observed' && (
+    review.evidenceQualified === true
+    || (version >= 3 && (/^model_backed_observer_suite_/.test(mode) || mode === 'durable_observer_run_v1'))
+  );
+}
+
+function observerReviewIsCompletedCheck(review = {}){
+  const version = Number(review.reviewVersion || review.review_version || 0);
+  const mode = String(review.reviewMode || review.review_mode || '');
+  return review.evidenceQualified === true
+    || (version >= 3 && (/^model_backed_observer_suite_/.test(mode) || mode === 'durable_observer_run_v1'));
+}
+
+function observerCompletedLiveReviews(observerName = '', limit = 6){
+  return observerLiveReviews(observerName, 80)
+    .filter(observerReviewIsCompletedCheck)
+    .slice(0, limit);
+}
+
+function observerMeaningfulLiveReviews(observerName = '', limit = 6){
+  return observerLiveReviews(observerName, 24)
+    .filter(observerReviewIsCompletedDeduction)
+    .slice(0, limit);
+}
+
+function observerCompactLine(value = '', fallback = '', limit = 220){
+  const clean = String(value || fallback || '')
+    .replace(/\b(?:Source|Evidence):\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(clean.length <= limit) return clean;
+  const clipped = clean.slice(0, limit + 1);
+  const sentence = clipped.match(/^(.{40,}?[.!?])(?:\s|$)/)?.[1];
+  const boundary = sentence || clipped.slice(0, Math.max(clipped.lastIndexOf(' '), limit - 24));
+  return boundary.replace(/[,:;\s]+$/, '') + '…';
+}
+
+function observerReviewEvidenceLine(review = {}){
+  const evidence = review.evidence || {};
+  const title = evidence.packetTitle || evidence.packetType || 'Board packet';
+  const sourceType = String(evidence.sourceType || 'source').replace(/_/g, ' ');
+  const quote = evidence.quoteOrSummary || review.observation || '';
+  const entities = [
+    ...safeArray(review.people),
+    ...safeArray(review.projects)
+  ].filter(Boolean).slice(0, 4);
+  const createdAt = evidence.sourceCreatedAt || '';
+  const date = createdAt && !Number.isNaN(new Date(createdAt).getTime())
+    ? new Date(createdAt).toLocaleDateString([], {month:'short',day:'numeric'})
+    : '';
+  return observerCompactLine([title, sourceType, entities.join(', '), date].filter(Boolean).join(' · ') + (quote ? ': ' + quote : ''), title, 260);
+}
+
+function observerEvidenceItem(review = {}){
+  const rawLink = String(review?.evidence?.sourceLink || '').trim();
+  const safeLink = /^(?:https?:\/\/|\/(?!\/))/i.test(rawLink) ? rawLink : '';
+  return {text:observerReviewEvidenceLine(review),link:safeLink};
+}
+
+function observerEvidenceItemMarkup(item){
+  const evidence = item && typeof item === 'object' ? item : {text:String(item || ''),link:''};
+  const text = escapeHtml(evidence.text || '');
+  return evidence.link
+    ? '<li><a href="' + escapeHtml(evidence.link) + '" target="_blank" rel="noopener noreferrer">' + text + '</a></li>'
+    : '<li>' + text + '</li>';
+}
+
+function observerReviewSummaryLine(review = {}){
+  return observerCompactLine(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 240);
+}
+
+function observerGroundedWatching(review = {}, fallback = ''){
+  if(review.watching && review.watchingEvidence?.quoteOrSummary) return observerCompactLine(review.watching, fallback, 220);
+  const evidence = review.evidence || {};
+  const title = observerCompactLine(evidence.packetTitle || evidence.packetType || 'this source', 'this source', 90);
+  const quote = observerCompactLine(evidence.quoteOrSummary || '', '', 150);
+  if(quote) return 'I am watching what changes next in “' + title + '.” The source currently says: “' + quote + '”';
+  return fallback;
+}
+
+function observerGroundedConcern(review = {}, fallback = ''){
+  if(review.concern && review.concernEvidence?.quoteOrSummary) return observerCompactLine(review.concern, fallback, 220);
+  return fallback;
+}
+
+function observerAgentDefinition(observer = {}){
+  const name = String(observer?.name || observer || '').trim();
+  const liveDefinition = observerBoardState.definitionsByObserver?.[name];
+  if(liveDefinition) return liveDefinition;
+  const fallback = observerBoardState.observers.find(item => item.name === name) || observer || {};
+  return {
+    observerId:observerConversationId(name),
+    observerName:name,
+    version:'v1',
+    truthProtected:fallback.truth || 'This Observer is waiting for its bounded definition.',
+    question:fallback.stance || ''
+  };
+}
+
+function observerReviewTime(value = ''){
+  if(!value || Number.isNaN(new Date(value).getTime())) return '';
+  return new Date(value).toLocaleString([], {
+    month:'short',
+    day:'numeric',
+    hour:'numeric',
+    minute:'2-digit'
+  });
+}
+
+function observerAgentProof(observer = {}, {isChief=false,meaningfulReviews=[],completedReviews=[],checkedReviews=[]} = {}){
+  if(isChief){
+    const receiptCount = Number(observerBoardState.observerEvidenceSummary?.receiptCount || 0);
+    const observerCount = Number(observerBoardState.observerEvidenceSummary?.observerCount || 0);
+    return {
+      truthProtected:'Completed Observer evidence becomes an ordered executive brief.',
+      status:receiptCount ? 'Board evidence available' : 'Waiting for completed Observer reviews',
+      detail:receiptCount
+        ? receiptCount + ' review receipt' + (receiptCount === 1 ? '' : 's') + ' across ' + observerCount + ' Observer' + (observerCount === 1 ? '' : 's')
+        : 'No completed review receipts are being claimed.',
+      state:receiptCount ? 'observed' : 'waiting',
+      version:'Chief of Staff v1'
+    };
+  }
+  const definition = observerAgentDefinition(observer);
+  const latestCompleted = completedReviews[0] || null;
+  const latestChecked = checkedReviews[0] || null;
+  const latest = latestCompleted || latestChecked;
+  const completedAt = observerReviewTime(latest?.reviewedAt || latest?.reviewed_at || '');
+  const meaningful = Boolean(meaningfulReviews.length);
+  const completed = Boolean(completedReviews.length);
+  return {
+    truthProtected:definition.truthProtected,
+    status:meaningful
+      ? 'Observation stored'
+      : completed
+        ? 'Review complete · No meaningful signal'
+        : latestChecked
+          ? 'Review received · Completion pending'
+          : 'Waiting for a completed review',
+    detail:completed
+      ? completedReviews.length + ' completed packet review' + (completedReviews.length === 1 ? '' : 's') + (completedAt ? ' · ' + completedAt : '')
+      : latestChecked
+        ? 'A packet receipt exists, but VAL is not presenting it as a completed deduction.'
+        : 'No review result is being invented.',
+    state:meaningful ? 'observed' : completed ? 'no-signal' : latestChecked ? 'pending' : 'waiting',
+    version:'Observer ' + (latest?.observerVersion || latest?.observer_version || definition.version || 'v1')
+  };
+}
+
+function observerPresentation(observer = {}, review = {}){
+  const name = String(observer.name || '').trim();
+  const watchingByObserver = {
+    'Executive Inbox':'I am watching which human conversation now deserves executive attention.',
+    Relationship:'I am watching for changes in trust, warmth, distance, and repair.',
+    Project:'I am watching whether this work is moving, blocked, or losing long-term value.',
+    Capacity:'I am watching the tradeoff between current demands and sound decision-making.',
+    Courage:'I am watching for an important decision being hidden inside safer activity.',
+    Delight:'I am watching for what restores energy, curiosity, and connection.',
+    Opportunity:'I am watching whether this opening becomes concrete enough to act on.',
+    Momentum:'I am watching for meaningful movement rather than activity alone.',
+    Meaning:'I am watching how this connects to the larger story and stated values.',
+    Synchronicity:'I am watching whether this convergence repeats without calling it certainty.',
+    Commitment:'I am watching whether this promise is being carried, renegotiated, or neglected.',
+    Calendar:'I am watching whether the schedule protects the time this actually requires.',
+    Environment:'I am watching which physical or external conditions change what is possible.',
+    Witnessing:'I am watching whether current choices remain consistent with what you have told me about yourself.'
+  };
+  const concernByObserver = {
+    'Executive Inbox':'The right person may be neglected while lower-value communication consumes attention.',
+    Relationship:'Trust can erode quietly when a change in warmth or distance is left unnamed.',
+    Project:'A blocked dependency can make activity look like progress.',
+    Capacity:'Too many competing demands can reduce the quality of the next decision.',
+    Courage:'Avoidance can keep the safest work moving while the important decision waits.',
+    Delight:'Effectiveness can become brittle when energy and connection disappear from the workday.',
+    Opportunity:'An opening can expire if its timing or owner stays unclear.',
+    Momentum:'Visible activity can conceal that the meaningful work has stopped moving.',
+    Meaning:'A locally efficient choice can drift away from the larger purpose.',
+    Synchronicity:'A repeated pattern can be ignored or overclaimed before enough evidence exists.',
+    Commitment:'An unowned promise can become a trust debt.',
+    Calendar:'The schedule can promise more than the available time can honestly hold.',
+    Environment:'External conditions can quietly undermine an otherwise sound plan.',
+    Witnessing:'A recommendation can be efficient and still conflict with the user’s stated way of moving through life.'
+  };
+  return {
+    watching:observerCompactLine(
+      observerGroundedWatching(review, watchingByObserver[name]),
+      'I am continuing to watch this evidence through my assigned lens.',
+      220
+    ),
+    concern:observerCompactLine(
+      observerGroundedConcern(review, concernByObserver[name]),
+      'I am not holding a supported concern from this evidence.',
+      200
+    ),
+    explore:observerCompactLine(
+      review.question || observer.stance,
+      'What would become clearer if we examined this signal together?',
+      180
+    )
+  };
+}
+
+function observerReviewNamedLine(review = {}){
+  const people = safeArray(review.people).filter(Boolean);
+  const projects = safeArray(review.projects).filter(Boolean);
+  const objects = safeArray(review.decisionObjects).filter(Boolean);
+  const left = [
+    people.length ? 'People: ' + people.join(', ') : '',
+    projects.length ? 'Projects: ' + projects.join(', ') : '',
+    objects.length ? 'Work: ' + objects.join(', ') : ''
+  ].filter(Boolean).join(' | ');
+  const finding = observerReviewSummaryLine(review);
+  return left ? left + ' — ' + finding : finding;
+}
+
+function normalizedObserverProofReviews(context = {}){
+  return safeArray(context.observerProofReviews).map((review) => ({
+    ...review,
+    status:review.status || 'observed',
+    observerName:review.observerName || context.selectedObserver?.name || '',
+    lensFinding:review.lensFinding || review.observation || review.line || '',
+    observation:review.observation || review.lensFinding || review.line || '',
+    evidence:{
+      ...(review.evidence || {}),
+      packetTitle:review.evidence?.packetTitle || review.packetTitle || 'Board packet',
+      sourceType:review.evidence?.sourceType || review.sourceType || 'source',
+      sourceId:review.evidence?.sourceId || review.sourceId || '',
+      quoteOrSummary:review.evidence?.quoteOrSummary || review.evidenceLine || review.line || review.observation || review.lensFinding || ''
+    }
+  }));
+}
+
+const OBSERVER_CARD_ENTITY_STOPWORDS = new Set([
+  'VAL','Board','Observer','Observers','Chief','Staff','Relationship','Relationships','Project','Projects','Capacity','Courage','Delight',
+  'Meaning','Momentum','Commitment','Calendar','Environment','Witnessing','Executive','Inbox','Currently','Seeing','Watching','Evidence',
+  'Concern','Question','Source','Trail','Home','GHL','CRM','HTML','CSS','SMS','Tone','Transcript','Calendar','The',
+  'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'
+]);
+
+function observerCardNamedPeopleFromText(text = ''){
+  const matches = String(text || '').match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g) || [];
+  const seen = new Set();
+  return matches
+    .map((name) => compactSentence(name, name, 80))
+    .filter((name) => name && !OBSERVER_CARD_ENTITY_STOPWORDS.has(name) && !OBSERVER_CARD_ENTITY_STOPWORDS.has(String(name).split(/\s+/)[0]))
+    .filter((name) => {
+      const key = String(name).toLowerCase();
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+function observerCardProjectsFromText(text = ''){
+  const raw = String(text || '');
+  const projects = [];
+  if(/\bGOALL\b/i.test(raw)) projects.push('GOALL');
+  if(/\bdashboard|handoff|projection/i.test(raw)) projects.push('dashboard handoff');
+  if(/\bproposal|payment|pricing/i.test(raw)) projects.push('proposal or payment decision');
+  return Array.from(new Set(projects)).slice(0, 4);
+}
+
+function observerCardReviewFromVisibleContext(observer = {}, context = {}){
+  const sourceTrail = safeArray(context.sourceTrail);
+  const text = [
+    observer.currentlySeeing,
+    observer.watching,
+    safeArray(observer.evidenceItems).join(' '),
+    observer.evidence,
+    observer.concern,
+    observer.explore,
+    observer.incomingObservation,
+    sourceTrail.map((item) => item.line || item.title || item.summary || '').join(' ')
+  ].filter(Boolean).join(' ');
+  const line = compactSentence([
+    observer.currentlySeeing,
+    observer.concern,
+    observer.explore
+  ].filter(Boolean).join(' '), observer.currentlySeeing || observer.concern || observer.explore || '', 700);
+  const evidenceLine = compactSentence([
+    safeArray(observer.evidenceItems).join('; '),
+    observer.evidence,
+    sourceTrail.map((item) => item.line || item.title || item.summary || '').filter(Boolean).join(' | ')
+  ].filter(Boolean).join(' | '), '', 900);
+  if(!line && !evidenceLine) return null;
+  return {
+    status:'observed',
+    observerName:observer.name || 'Observer',
+    people:observerCardNamedPeopleFromText(text),
+    projects:observerCardProjectsFromText(text),
+    decisionObjects:observerCardProjectsFromText(text),
+    lensFinding:line || evidenceLine,
+    observation:line || evidenceLine,
+    evidence:{quoteOrSummary:evidenceLine || line}
+  };
+}
+
+function homeExactObserverProofReviews(observer = null, briefing = executiveBriefingState || {}, limit = 8){
+  if(!observer?.name) return [];
+  const chiefItem = briefing?.chiefRecommendation || briefing?.highestLeverageMove || null;
+  const exactReceipts = safeArray(chiefItem?.observerFindings)
+    .filter((receipt) => receipt?.observer === observer.name)
+    .filter((receipt) => receipt.observerRunId && receipt.packetId)
+    .map((receipt) => ({
+      status:receipt.status || 'observed',
+      observerName:receipt.observer,
+      observerId:receipt.observerId || '',
+      observerVersion:receipt.observerVersion || '',
+      observerRunId:receipt.observerRunId,
+      eventRunId:receipt.eventRunId || '',
+      promptKey:receipt.promptKey || '',
+      packetId:receipt.packetId,
+      sourceType:receipt.sourceType || '',
+      sourceId:receipt.sourceId || '',
+      sourceProcessingRecordId:receipt.sourceProcessingRecordId || '',
+      canonicalWorkItemId:receipt.canonicalWorkItemId || '',
+      lensFinding:receipt.finding || '',
+      observation:receipt.finding || '',
+      watching:receipt.watching || '',
+      concern:receipt.concern || '',
+      question:receipt.question || '',
+      people:safeArray(receipt.people),
+      projects:safeArray(receipt.projects),
+      decisionObjects:safeArray(receipt.decisionObjects),
+      evidenceRefs:safeArray(receipt.evidence),
+      evidence:safeArray(receipt.evidence)[0] || null,
+      confidence:Number(receipt.confidence) || 0,
+      reviewedAt:receipt.reviewedAt || '',
+      exactChiefReceipt:true
+    }));
+  return exactReceipts.slice(0, limit);
 }
 
 function observerConversationContext(observer = null, role = 'observer'){
@@ -25125,22 +28003,30 @@ function observerConversationContext(observer = null, role = 'observer'){
     title:item.title || item.sourceItem?.title || '',
     summary:item.summary || item.meaning || item.sourceItem?.summary || ''
   }))]));
+  const selectedObserverLiveReviews = observer ? observerLiveReviews(observer.name, 10) : [];
+  const selectedObserverMeaningfulReviews = observer ? observerMeaningfulLiveReviews(observer.name, 6) : [];
+  const hasSelectedObserverProof = Boolean(selectedObserverLiveReviews.length || selectedObserverMeaningfulReviews.length);
   const selectedObserver = observer ? {
     name:observer.name,
     stance:observer.stance,
     truth:observer.truth,
-    evidence:observer.evidence,
-    currentlySeeing:observer.currentlySeeing,
-    watching:observer.watching,
-    concern:observer.concern,
-    explore:observer.explore,
-    perspective:observer.perspective
+    evidence:hasSelectedObserverProof ? observer.evidence : 'No source-backed evidence is loaded for this Observer yet.',
+    evidenceItems:hasSelectedObserverProof ? (observer.evidenceItems || []) : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'],
+    currentlySeeing:hasSelectedObserverProof ? observer.currentlySeeing : 'No source-backed signal is loaded for this lens yet.',
+    watching:hasSelectedObserverProof ? observer.watching : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.',
+    concern:hasSelectedObserverProof ? observer.concern : 'No concern should be claimed until a source-backed review exists.',
+    explore:hasSelectedObserverProof ? observer.explore : 'Open or ingest a source packet, then ask this Observer what it noticed.',
+    perspective:observer.perspective,
+    packetFrom:hasSelectedObserverProof ? observer.packetFrom : 'No live source',
+    incomingObservation:hasSelectedObserverProof ? observer.incomingObservation : 'This card is waiting for proof before it makes a claim.',
+    liveReviews:selectedObserverLiveReviews,
+    meaningfulReviews:selectedObserverMeaningfulReviews
   } : null;
   return {
     title:role === 'chief' ? 'Chat with Your Chief of Staff' : 'Talk with the ' + (observer?.name || 'Selected') + ' Observer',
     role,
     selectedObserver,
-    board:role === 'chief' ? observerBoardState : {chiefOfStaff:observerBoardState.chiefOfStaff,observer:selectedObserver},
+    board:role === 'chief' ? observerBoardState : {chiefOfStaff:observerBoardState.chiefOfStaff,observer:selectedObserver,livePackets:observerBoardState.livePackets,reviewsByObserver:observerBoardState.reviewsByObserver},
     home:queueSummary,
     executiveBriefing:executiveBriefingState ? {
       perspective:executiveBriefingState.perspective || executiveBriefingState.message || executiveBriefingState.summary || '',
@@ -25171,41 +28057,349 @@ function observerConversationContext(observer = null, role = 'observer'){
   };
 }
 
+function homeObserverContextOpening(observer = null, briefing = executiveBriefingState || {}){
+  const perspective = chiefOfStaffPerspectiveFromBriefing(briefing || {});
+  const observerName = observer?.name || 'this Observer';
+  const evidenceSources = homeBriefingEvidenceSources(briefing || {});
+  const sourceLines = evidenceSources.map(executiveEvidenceLine).filter(Boolean);
+  const proofReviews = homeExactObserverProofReviews(observer, briefing, 5);
+  const meaningfulProof = proofReviews.filter((review) => review.status === 'observed');
+  const readLine = cleanVelocityPerspectiveLine(perspective.witness, 220) || homeObserverWatchingLine(observer, briefing || {});
+  return [
+    'Here is why I brought ' + observerName + ' into Home.',
+    '',
+    readLine,
+    '',
+    meaningfulProof.length ? 'What ' + observerName + ' actually observed:' : 'What ' + observerName + ' checked:',
+    proofReviews.length
+      ? proofReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)).join('\n')
+      : '- The exact Observer receipt used by the Chief of Staff is not attached, so I should not substitute a different recent review.',
+    '',
+    sourceLines.length ? 'Source trail:' : 'Source trail missing:',
+    sourceLines.length ? sourceLines.map((line) => '- ' + line).join('\n') : '- The originating source has not attached yet.',
+    '',
+    'Ask me about the exact signal, the person or project involved, what changed, or what I would do next.'
+  ].filter(Boolean).join('\n');
+}
+
+function homeObserverContextPatch(observer = null, briefing = executiveBriefingState || {}){
+  const perspective = chiefOfStaffPerspectiveFromBriefing(briefing || {});
+  const evidenceSources = homeBriefingEvidenceSources(briefing || {});
+  const observerName = observer?.name || 'Observer';
+  const exactProofReviews = homeExactObserverProofReviews(observer, briefing, 8);
+  const exactMeaningfulReviews = exactProofReviews.filter((review) => review.status === 'observed');
+  const leadReceipt = exactMeaningfulReviews[0] || exactProofReviews[0] || null;
+  return {
+    source:'home_full_context',
+    homeFullContext:true,
+    selectedObserver:{
+      ...(observer || {}),
+      name:observerName,
+      currentlySeeing:leadReceipt?.observation || 'The exact Chief of Staff receipt is not attached.',
+      watching:leadReceipt?.watching || '',
+      concern:leadReceipt?.concern || '',
+      explore:leadReceipt?.question || '',
+      evidence:leadReceipt?.evidence?.quoteOrSummary || '',
+      evidenceItems:leadReceipt?.evidence?.quoteOrSummary ? [leadReceipt.evidence.quoteOrSummary] : [],
+      packetFrom:leadReceipt?.sourceType || '',
+      incomingObservation:leadReceipt?.observation || '',
+      liveReviews:exactProofReviews,
+      meaningfulReviews:exactMeaningfulReviews,
+      exactChiefReceipt:true
+    },
+    chiefOfStaffRead:{
+      headline:perspective.headline,
+      witness:perspective.witness,
+      orientation:perspective.orientation,
+      permission:perspective.permission,
+      selectedObserver:observerName
+    },
+    sourceTrail:evidenceSources.map((item) => ({
+      line:executiveEvidenceLine(item),
+      identity:sourceIdentityForItem(item),
+      title:itemTitle(item, 'Supporting source'),
+      summary:item.summary || item.reason_it_matters || item.reason || item.why || '',
+      sourceRefs:item.sourceRefsJson || item.sourceRefs || item.source_refs || item.evidence || []
+    })),
+    observerProofReviews:exactProofReviews.map((review) => ({
+      status:review.status || '',
+      observerName:review.observerName || observerName,
+      observerId:review.observerId || '',
+      observerVersion:review.observerVersion || '',
+      observerRunId:review.observerRunId || '',
+      eventRunId:review.eventRunId || '',
+      promptKey:review.promptKey || '',
+      packetId:review.packetId || '',
+      sourceType:review.sourceType || '',
+      sourceId:review.sourceId || '',
+      sourceProcessingRecordId:review.sourceProcessingRecordId || '',
+      canonicalWorkItemId:review.canonicalWorkItemId || '',
+      line:observerReviewNamedLine(review),
+      evidenceLine:observerReviewEvidenceLine(review),
+      people:safeArray(review.people),
+      projects:safeArray(review.projects),
+      decisionObjects:safeArray(review.decisionObjects),
+      observation:review.observation || '',
+      lensFinding:review.lensFinding || '',
+      watching:review.watching || '',
+      concern:review.concern || '',
+      question:review.question || '',
+      evidenceRefs:safeArray(review.evidenceRefs),
+      evidence:review.evidence || null,
+      confidence:Number(review.confidence) || 0,
+      reviewedAt:review.reviewedAt || '',
+      exactChiefReceipt:true
+    })),
+    openingAnswer:homeObserverContextOpening(observer, briefing)
+  };
+}
+
+function observerCoworkContextLines(context = {}){
+  const observer = context.selectedObserver || {};
+  const chiefRead = context.chiefOfStaffRead || {};
+  const sourceTrail = Array.isArray(context.sourceTrail) ? context.sourceTrail : [];
+  const proofReviews = Array.isArray(context.observerProofReviews) ? context.observerProofReviews : [];
+  const meaningfulReviews = safeArray(observer.meaningfulReviews).slice(0, 5);
+  const liveReviews = safeArray(observer.liveReviews).slice(0, 8);
+  if(context.role === 'chief'){
+    return [
+      'Lens: Chief of Staff',
+      observerBoardState.chiefOfStaff?.view ? 'Currently seeing: ' + observerBoardState.chiefOfStaff.view : '',
+      observerBoardState.chiefOfStaff?.why ? 'What I am watching: ' + observerBoardState.chiefOfStaff.why : '',
+      observerBoardState.chiefOfStaff?.next ? 'What I would like to explore: ' + observerBoardState.chiefOfStaff.next : '',
+      context.home ? 'Home lanes: ' + JSON.stringify(context.home).slice(0, 1200) : ''
+    ].filter(Boolean);
+  }
+  return [
+    observer.name ? 'Lens: ' + observer.name : '',
+    chiefRead.witness ? 'Chief of Staff read: ' + chiefRead.witness : '',
+    chiefRead.orientation ? 'Why this Observer: ' + chiefRead.orientation : '',
+    proofReviews.length ? 'Home proof reviews: ' + proofReviews.map((review) => review.line || review.evidenceLine).filter(Boolean).join(' | ') : '',
+    meaningfulReviews.length ? 'Observer reviewed packets: ' + meaningfulReviews.map(observerReviewSummaryLine).join(' | ') : '',
+    !meaningfulReviews.length && liveReviews.length ? 'Observer checked packets with no current meaningful signal: ' + liveReviews.map(observerReviewEvidenceLine).slice(0, 4).join(' | ') : '',
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'What I am watching: ' + observer.watching : '',
+    Array.isArray(observer.evidenceItems) && observer.evidenceItems.length ? 'Evidence: ' + observer.evidenceItems.join('; ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    sourceTrail.length ? 'Source trail: ' + sourceTrail.map((item) => item.line || item.title).filter(Boolean).join(' | ') : '',
+    observer.concern ? 'My concern: ' + observer.concern : '',
+    observer.explore ? 'What I would like to explore: ' + observer.explore : '',
+    observer.packetFrom || observer.incomingObservation ? 'Latest packet: ' + [observer.packetFrom ? 'from ' + observer.packetFrom : '', observer.incomingObservation || ''].filter(Boolean).join(' - ') : ''
+  ].filter(Boolean);
+}
+
+function observerCoworkHeldContext(context = {}){
+  const lines = observerCoworkContextLines(context);
+  return [
+    'Selected Board of Observers context.',
+    'Use these exact observer-card details as source truth. If the user asks about "this", "the context", "currently seeing", "watching", "evidence", "my concern", or "what to explore", answer from these details directly.',
+    'Do not say the observer has no context if these lines are present.',
+    '',
+    ...lines
+  ].join('\n');
+}
+
+function observerCoworkCardAnswer(prompt = '', context = {}){
+  const observer = context.selectedObserver || {};
+  if(!observer.name) return '';
+  const text = projectCleanText(prompt).toLowerCase();
+  if(!text) return '';
+  const asksEvidence = /\bevidence|proof|source|where.*come from|what.*have\b/i.test(text);
+  const asksRelationshipRepair = /\bwhich relationships?|who|repair|presence|distance|open loops?|warmth|trust|tone|changed?|shifts?|friction\b/i.test(text);
+  const asksContext = /\bcontext|card|currently seeing|watching|concern|explore|mean|noticed|pattern|signal|why|what changed|how.*changed\b/i.test(text);
+  if(!asksEvidence && !asksRelationshipRepair && !asksContext) return '';
+  const proofReviews = normalizedObserverProofReviews(context);
+  const livePackets = safeArray(context.board?.livePackets || context.board?.packets || observerBoardState.livePackets);
+  const meaningfulReviews = (safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews.length ? proofReviews : observerMeaningfulLiveReviews(observer.name, 6))
+    .filter((review) => review.status === 'observed')
+    .slice(0, 6);
+  const effectiveMeaningfulReviews = meaningfulReviews;
+  const checkedReviews = safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : (proofReviews.length ? proofReviews : observerLiveReviews(observer.name, 8));
+  const hasInspectableReviews = Boolean(effectiveMeaningfulReviews.length || checkedReviews.length || livePackets.length);
+  const visibleContextLines = [
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'What I am watching: ' + observer.watching : '',
+    Array.isArray(observer.evidenceItems) && observer.evidenceItems.length ? 'Evidence loaded: ' + observer.evidenceItems.join('; ') : (observer.evidence ? 'Evidence loaded: ' + observer.evidence : ''),
+    observer.concern ? 'My concern: ' + observer.concern : '',
+    observer.explore ? 'What I would explore next: ' + observer.explore : ''
+  ].filter((line) => line && !/no source-backed|waiting for reviewed packets|no live packet|waiting for proof/i.test(line));
+  if(hasInspectableReviews && (asksEvidence || asksRelationshipRepair || asksContext)){
+    if(!effectiveMeaningfulReviews.length){
+      return [
+        observer.name + ' checked the live Board packets and is not claiming a meaningful signal from this lens yet.',
+        '',
+        checkedReviews.length ? 'What I checked:' : 'What is missing:',
+        checkedReviews.length ? checkedReviews.slice(0, 5).map((review) => '- ' + observerReviewEvidenceLine(review)).join('\n') : '- No packet reviews are attached to this Observer yet.',
+        '',
+        'I would rather say “not enough signal yet” than make up a relationship, risk, or pattern.'
+      ].join('\n');
+    }
+    if(asksRelationshipRepair && observer.name === 'Relationship'){
+      const repairReviews = effectiveMeaningfulReviews.filter((review) => /\b(frustrat|tension|repair|distance|cold|upset|conflict|strained|trust risk|tone (?:shift|change)|relationship strain)\b/i.test([
+        review.lensFinding,
+        review.observation,
+        review.evidence?.quoteOrSummary
+      ].filter(Boolean).join(' ')));
+      const repairNamed = repairReviews
+        .flatMap((review) => safeArray(review.people).map((person) => ({person,review})))
+        .filter((item) => item.person)
+        .slice(0, 5);
+      if(!repairReviews.length){
+        return [
+          'I do not have source-backed evidence that a specific relationship needs repair right now.',
+          '',
+          'I do have relationship signals, but a reply, mention, or open loop is not automatically a repair issue:',
+          ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+          '',
+          'I will name a repair only when the source shows tension, distance, frustration, a trust change, or another concrete relational shift.'
+        ].join('\n');
+      }
+      return [
+        repairNamed.length
+          ? 'I would look first at ' + repairNamed.map((item) => item.person).join(', ') + '.'
+          : 'I found a repair signal, but the packet does not attach a reliable person name yet.',
+        '',
+        'Why I am saying that:',
+        ...repairReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+        safeArray(context.sourceTrail).length ? '\nEvidence I can point to:\n' + safeArray(context.sourceTrail).slice(0, 4).map((item) => '- ' + (item.line || item.title || item.summary || 'Supporting source')).join('\n') : '',
+        '',
+        observer.explore ? 'What I would explore next: ' + observer.explore : 'What I would explore next: what changed, who is affected, and what protects trust without adding noise.'
+      ].filter(Boolean).join('\n');
+    }
+    return [
+      observer.name + ' is answering from packet reviews, not from a generic guess:',
+      '',
+      ...effectiveMeaningfulReviews.slice(0, 5).map((review) => '- ' + observerReviewNamedLine(review)),
+      '',
+      'Source trail:',
+      ...effectiveMeaningfulReviews.slice(0, 3).map((review) => '- ' + observerReviewEvidenceLine(review))
+    ].join('\n');
+  }
+  if(visibleContextLines.length && (asksEvidence || asksRelationshipRepair || asksContext)){
+    const named = observerCardNamedPeopleFromText(visibleContextLines.join(' '));
+    if(asksRelationshipRepair && observer.name === 'Relationship'){
+      return [
+        named.length
+          ? 'The relationship names visible in this loaded card are: ' + named.join(', ') + '.'
+          : 'I cannot name a relationship for repair from this card yet.',
+        '',
+        'What Relationship actually has loaded:',
+        ...visibleContextLines.map((line) => '- ' + line),
+        '',
+        named.length
+          ? 'Next useful question: which of those people needs presence before strategy?'
+          : 'I should not turn “trust and warmth” into a named repair claim until the source packet attaches the person, quote, and reason.'
+      ].join('\n');
+    }
+    return [
+      observer.name + ' is answering from the loaded card context:',
+      '',
+      ...visibleContextLines.map((line) => '- ' + line),
+      '',
+      'If you want a named person, project, quote, or exact source, the packet needs to include that proof before I claim it.'
+    ].join('\n');
+  }
+  return [
+    observer.name + ' does not have a source-backed answer attached to this card yet.',
+    '',
+    'What is loaded right now is the Observer lens, not the proof behind this specific question.',
+    '',
+    'To answer this with integrity, VAL needs the packet reviews that name the source, quote, person, project, and why this Observer responded.',
+    '',
+    'No external action was taken.'
+  ].join('\n');
+}
+
+function observerCoworkContextMarkup(context = {}){
+  const lines = observerCoworkContextLines(context);
+  if(!lines.length) return '';
+  return [
+    '<div class="observer-cowork-source" data-observer-cowork-source>',
+      '<span>Loaded Observer Context</span>',
+      '<ul>',
+        lines.slice(0, 7).map((line) => '<li>' + escapeHtml(line) + '</li>').join(''),
+      '</ul>',
+    '</div>'
+  ].join('');
+}
+
 function observerBoardCardMarkup(observer = null, position = {}){
   const isChief = !observer;
   const name = isChief ? 'Chief of Staff' : observer.name;
   const observerId = isChief ? 'chief-of-staff' : observerConversationId(observer.name);
   const role = isChief ? 'chief' : 'observer';
+  const meaningfulReviews = isChief ? [] : observerMeaningfulLiveReviews(name, 4);
+  const completedReviews = isChief ? [] : observerCompletedLiveReviews(name, 5);
+  const checkedReviews = isChief ? [] : observerLiveReviews(name, 5);
+  const receivedCount = isChief ? 0 : observerLiveReviews(name, 80).length;
+  const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
+  const agentProof = observerAgentProof(observer || {}, {isChief,meaningfulReviews,completedReviews,checkedReviews});
+  const latestDeduction = meaningfulReviews[0] || null;
+  const presentation = latestDeduction ? observerPresentation(observer, latestDeduction) : null;
   const currentlySeeing = isChief
     ? 'The full Board is active.'
-    : observer.currentlySeeing || observer.truth;
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.lensFinding || latestDeduction.observation, '', 220)
+      : completedReviews.length
+        ? 'I am not currently holding any reliable observations about your ' + name.toLowerCase() + '.'
+      : hasLiveReviews
+        ? name + ' received ' + receivedCount + ' packet' + (receivedCount === 1 ? '' : 's') + '. A concise source-backed deduction has not completed yet.'
+        : 'No source-backed signal is loaded for this lens yet.';
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
-    : observer.watching || observer.evidence;
+    : latestDeduction
+      ? presentation.watching
+      : completedReviews.length
+        ? 'Nothing active right now.'
+      : hasLiveReviews
+        ? 'Waiting for the Observer review to distinguish a real signal from ordinary source material.'
+        : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
   const evidenceItems = isChief
-    ? [observerBoardState.observers.length + ' observers','Active packet field','1 synthesis layer']
-    : observer.evidenceItems || [position.signals || observer.evidence];
+    ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
+      : meaningfulReviews.length
+      ? meaningfulReviews.map(observerEvidenceItem)
+      : completedReviews.length
+        ? ['No qualifying evidence has been received.']
+      : checkedReviews.length
+        ? checkedReviews.slice(0, 3).map((review) => 'Received: ' + observerReviewEvidenceLine(review))
+        : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
-    : observer.concern || observer.truth;
+    : latestDeduction
+      ? presentation.concern
+      : completedReviews.length ? 'No supported concern right now.'
+      : hasLiveReviews ? 'No concern is being claimed before the deduction is complete.' : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
-    : observer.explore || observer.stance;
-  const packetFrom = isChief ? 'Board' : observer.packetFrom || 'Chief of Staff';
+    : latestDeduction
+      ? presentation.explore
+      : completedReviews.length ? 'Nothing to explore yet.'
+      : hasLiveReviews ? 'What, if anything, becomes meaningful through this lens?' : 'Open or ingest a source packet, then ask this Observer what it noticed.';
+  const packetFrom = isChief ? 'Board' : String(latestDeduction?.evidence?.sourceType || checkedReviews[0]?.evidence?.sourceType || 'No live source').replace(/_/g, ' ');
   const packetObservation = isChief
     ? 'Several perspectives are converging around the same decision.'
-    : observer.incomingObservation || observer.stance;
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.observation || latestDeduction.lensFinding, '', 210)
+      : completedReviews.length ? 'Review complete. No meaningful signal was found through this lens.' : hasLiveReviews ? 'Packet received. The Observer has not stored a completed deduction yet.' : 'This card is waiting for proof before it makes a claim.';
   const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
   return [
     '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
-      '<span>' + escapeHtml(name) + '</span>',
+      '<header>',
+        '<span>' + escapeHtml(name) + '</span>',
+        '<button type="button" aria-label="Close ' + escapeHtml(name) + ' context" data-observer-card-close>×</button>',
+      '</header>',
+      '<section class="observer-agent-proof" data-observer-proof-status="' + escapeHtml(agentProof.state) + '">',
+        '<div><em>What I Protect</em><p>' + escapeHtml(agentProof.truthProtected) + '</p></div>',
+        '<div class="observer-agent-receipt"><span><i></i>' + escapeHtml(agentProof.status) + '</span><small>' + escapeHtml(agentProof.detail) + ' · ' + escapeHtml(agentProof.version) + '</small></div>',
+      '</section>',
       '<button type="button" aria-label="' + escapeHtml(chatLabel) + '" data-observer-cowork="' + escapeHtml(observerId) + '" data-observer-role="' + escapeHtml(role) + '">' + escapeHtml(chatLabel) + '</button>',
       '<div><em>Currently Seeing</em><p>' + escapeHtml(currentlySeeing) + '</p></div>',
       '<div><em>What I’m Watching</em><p>' + escapeHtml(watching) + '</p></div>',
-      '<div><em>Evidence</em><ul>' + evidenceItems.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul></div>',
+      '<div><em>Evidence</em><ul>' + evidenceItems.map(observerEvidenceItemMarkup).join('') + '</ul></div>',
       '<div><em>My Concern</em><p>' + escapeHtml(concern) + '</p></div>',
       '<div><em>What I’d Like to Explore</em><p>' + escapeHtml(explore) + '</p></div>',
-      '<figure class="observer-card-packet-note" aria-live="polite"><i></i><figcaption><span>New observation received from ' + escapeHtml(packetFrom) + '</span><p>' + escapeHtml(packetObservation) + '</p></figcaption></figure>',
+      latestDeduction
+        ? '<figure class="observer-card-packet-note" aria-live="polite"><i></i><figcaption><span>New observation received from ' + escapeHtml(packetFrom) + '</span><p>' + escapeHtml(packetObservation) + '</p></figcaption></figure>'
+        : '',
     '</aside>'
   ].join('');
 }
@@ -25274,6 +28468,11 @@ function updateObserverSelectedCard(observerId = ''){
     if(y > 62) slot.classList.add('near-bottom');
     slot.innerHTML = observerBoardCardMarkup(observer, position);
     slot.hidden = false;
+    slot.querySelector('[data-observer-card-close]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissObserverSelectedCard();
+    });
     workspaceInputPanel.querySelector('.observer-graph-field')?.classList.add('observer-card-open');
     requestAnimationFrame(updateObserverCardObscuredLabels);
   }else{
@@ -25282,7 +28481,22 @@ function updateObserverSelectedCard(observerId = ''){
   }
 }
 
-function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage} = {}){
+function handleObserverBoardNodeActivation(node, event = null){
+  if(!node) return false;
+  const observerId = node.dataset?.observerCowork || '';
+  if(!observerId) return false;
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  if(node.classList.contains('observer-node')){
+    updateObserverSelectedCard(observerId);
+    return true;
+  }
+  void openObserverCowork(observerId,node.dataset?.observerRole || 'observer');
+  return true;
+}
+
+function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage, context} = {}){
+  const sourceMarkup = observerCoworkContextMarkup(context || {});
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
   scraperPreviewList.classList.add('observer-cowork-overlay-panel');
@@ -25296,6 +28510,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
             detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
             '<small>Saved privately and carried forward when you return.</small>',
           '</div>',
+          sourceMarkup,
           '<div class="home-cowork-history">',
             '<span>Previous conversations</span>',
             '<button type="button" aria-pressed="true">Current thread</button>',
@@ -25308,13 +28523,13 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
               '<span class="val-presence-orbit"></span>',
               '<span class="val-presence-core">VAL</span>',
             '</span>',
-            '<div>',
+          '<div>',
               '<p>VAL</p>',
-              '<small>Scoped observer conversation. Nothing external happens from here.</small>',
+              '<small>' + escapeHtml(context?.selectedObserver?.name ? context.selectedObserver.name + ' context is loaded.' : 'Board context is loaded.') + '</small>',
             '</div>',
           '</div>',
           '<div class="home-cowork-thread" data-home-cowork-response>',
-            '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage || 'I am here with this Observer lens. What would you like to examine together?') + '</p></article>',
+            renderHomeCoworkMessage('val', initialMessage || 'This Observer is loaded with the evidence behind the card. What do you want to examine first?'),
           '</div>',
           '<section class="observer-cowork-chatbar-shell" data-observer-cowork-chatbar>',
             '<form class="home-cowork-chatbar observer-cowork-chatbar" data-home-cowork-form>',
@@ -25340,7 +28555,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
   enableValAutocorrect(scraperPreviewList);
 }
 
-async function openObserverCowork(observerId = '', role = 'observer'){
+async function openObserverCowork(observerId = '', role = 'observer', options = {}){
   const isChief = role === 'chief';
   const observer = isChief ? null : observerBoardState.observers.find((item) => observerConversationId(item.name) === observerId);
   if(!isChief && !observer) return;
@@ -25350,42 +28565,49 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   const detail = isChief
     ? 'Your Chief of Staff can see the full Board context and help you find patterns, risks, and opportunities.'
     : 'This Observer holds the ' + observer.name + ' lens and the evidence available to it.';
-  const context = observerConversationContext(observer,isChief ? 'chief' : 'observer');
+  const context = {
+    ...observerConversationContext(observer,isChief ? 'chief' : 'observer'),
+    ...(options.contextPatch || {})
+  };
   closeCalendarPanel();
   if(!deskWorkspace.classList.contains('observer-board-mode') || !workspaceInputPanel.querySelector('.observer-live-board')){
-    openObserverBoard();
+    await openObserverBoard();
   }
   workspaceReturnTarget = 'board';
   updateWorkspaceReturnButton();
   deskWorkspace.classList.add('home-cowork-mode','observer-board-mode','observer-cowork-active');
   deskWorkspace.setAttribute('aria-label', title);
   activeCoworkContextLocked = true;
-  activeCoworkHeldContext = title;
+  activeCoworkHeldContext = observerCoworkHeldContext(context);
   renderObserverCoworkOverlay({
-    heading:title,
-    detail,
-    placeholder:isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...',
-    initialMessage:isChief
+    title:options.title || title,
+    detail:options.detail || detail,
+    placeholder:options.placeholder || (isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...'),
+    initialMessage:options.initialMessage || context.openingAnswer || (isChief
       ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
-      : 'I am here with the ' + observer.name + ' lens. What would you like to examine together?',
-    historyMessage:'This conversation is saved and will be here when you return.'
+      : (safeArray(context.selectedObserver?.meaningfulReviews).length || safeArray(context.selectedObserver?.liveReviews).length)
+        ? observer.name + ' is loaded with the evidence behind this card. What do you want to examine first?'
+        : observer.name + ' is available as a lens, but live packet proof has not loaded for this card yet. I will not invent evidence.'),
+    historyMessage:'This conversation is saved and will be here when you return.',
+    context
   });
-  activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'opening'};
+  activeCoworkEntry = {entrypointId,observerId:stableId,title:options.title || title,context,sessionId:'',workItemId:'',status:'ready'};
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
-  showCoworkContextGathering('VAL is restoring this saved conversation and refreshing its current evidence.',{noTimeout:true});
+  hideCoworkContextGathering();
   try{
     const result = await postJson('/api/val/cowork/entries/open',{
       entrypointId,
       scope:{entityType:isChief ? 'observer_board' : 'observer',entityId:stableId,sectionId:isChief ? 'board' : 'observer'},
-      title,
+      title:options.title || title,
       context
     },{timeoutMs:15000,timeoutMessage:'VAL could not open this saved conversation yet.'});
-    renderCoworkEntryResult(result,{hydrateConversation:true,suppressMessage:true});
+    const userAlreadyStarted = Boolean(homeCoworkResponseNode()?.querySelector?.('.home-cowork-message.user'));
+    const preserveInitialContext = Boolean(options.initialMessage || options.contextPatch?.openingAnswer || options.contextPatch?.homeFullContext);
+    renderCoworkEntryResult(result,{hydrateConversation:!userAlreadyStarted && !preserveInitialContext,suppressMessage:true});
   }catch(error){
-    activeCoworkEntry = null;
     hideCoworkContextGathering();
-    appendHomeCoworkMessage('val','I could not open this saved conversation yet. Nothing was lost. ' + error.message,{replace:true});
+    console.warn('Observer saved conversation unavailable:', error);
   }
 }
 
@@ -25394,6 +28616,7 @@ function observerBoardHasWitnessingContext(options = {}){
   const query = window.location.search || '';
   if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=false\b|board-before-witnessing)/i.test(query)) return false;
   if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=true\b|board-after-witnessing|stress=orbs|stress-orbs|hundreds-of-orbs)/i.test(query)) return true;
+  if(typeof observerBoardState.witnessingComplete === 'boolean') return observerBoardState.witnessingComplete;
   try{
     return localStorage.getItem('valWitnessingComplete') === 'true';
   }catch(error){
@@ -25409,14 +28632,25 @@ function markWitnessingCompleteForBoard(){
   }
 }
 
-function openObserverBoardAfterWitnessing(){
+async function openObserverBoardAfterWitnessing(){
   markWitnessingCompleteForBoard();
-  openObserverBoard({afterWitnessing:true});
+  await openObserverBoard({afterWitnessing:true,waitForLiveContext:true});
 }
 
-function openObserverBoard(options = {}){
+async function openObserverBoard(options = {}){
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']);
+  const existingSelectedObserverId = deskWorkspace?.classList.contains('observer-board-mode')
+    ? workspaceInputPanel?.querySelector?.('.observer-node.is-selected')?.dataset?.observerCowork || ''
+    : '';
+  const requestedSelectedObserverId = options.selectedObserverId || existingSelectedObserverId || '';
+  let liveContextPromise = null;
+  if(!options.skipLiveLoad){
+    liveContextPromise = loadLiveObserverBoardContext();
+    await liveContextPromise;
+  }
   const chief = observerBoardState.chiefOfStaff;
   const observerPositions = {
+    'Chief of Staff': {x:50,y:50,side:'bridge',visualName:'Chief of Staff',signals:'Board synthesis'},
     'Capacity': {x:50,y:17,side:'bridge',visualName:'Capacity',signals:'Decision quality and load',pulseDur:'18.8s',pulseDelay:'6.6s'},
     'Calendar': {x:36,y:24,side:'sage',visualName:'Calendar',signals:'Time and preparation windows',pulseDur:'17.4s',pulseDelay:'4.2s'},
     'Momentum': {x:25,y:32,side:'sage',visualName:'Momentum',signals:'Meaningful movement',pulseDur:'19.2s',pulseDelay:'8.4s'},
@@ -25437,14 +28671,10 @@ function openObserverBoard(options = {}){
     return {observer,position,index,visualName:position.visualName || observer.name};
   });
   const witnessingComplete = observerBoardHasWitnessingContext(options);
+  const stressMode = witnessingComplete && /(?:[?&]stress=orbs\b|stress-orbs|hundreds-of-orbs)/i.test(window.location.search || '');
+  const livePacketConnections = observerBoardConnectionsFromPackets(observerBoardState.livePackets || []);
+  const showPacketField = witnessingComplete && (livePacketConnections.length > 0 || stressMode);
   const observerSideClass = (position) => String(position.side || '').includes('rose') ? 'rose' : String(position.side || '').includes('sage') ? 'sage' : 'bridge';
-  const centerPathFor = (position, bend = 0) => {
-    const dx = 50 - position.x;
-    const dy = 50 - position.y;
-    const mx = position.x + dx * .52 + bend;
-    const my = position.y + dy * .48 - bend * .42;
-    return 'M' + position.x + ' ' + position.y + ' C' + (position.x + dx * .22 + bend * .35).toFixed(1) + ' ' + (position.y + dy * .18).toFixed(1) + ' ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' 50 50';
-  };
   const pathBetweenObservers = (fromName, toName, bend = 0) => {
     const from = observerPositions[fromName];
     const to = observerPositions[toName];
@@ -25453,17 +28683,7 @@ function openObserverBoard(options = {}){
     const cy = ((from.y + to.y) / 2 - bend * .34).toFixed(1);
     return 'M' + from.x + ' ' + from.y + ' C' + cx + ' ' + cy + ' ' + cx + ' ' + cy + ' ' + to.x + ' ' + to.y;
   };
-  const baseObserverPaths = witnessingComplete ? positionedObservers.map(({position}) => {
-    const side = observerSideClass(position);
-    return '<path class="observer-path observer-path-' + side + (String(position.side || '').includes('selected') ? ' selected' : '') + '" d="' + centerPathFor(position, 0) + '" />';
-  }).join('') : '';
-  const observerFilaments = witnessingComplete ? positionedObservers.map(({position,index}) => {
-    const side = observerSideClass(position);
-    const bend = (index % 2 ? -1 : 1) * (1.4 + (index % 3) * .55);
-    return '<path class="observer-filament observer-filament-' + side + '" d="' + centerPathFor(position, bend) + '" />';
-  }).join('') : '';
-  const liveConnections = observerBoardPrototypeConnections();
-  const stressMode = witnessingComplete && /(?:[?&]stress=orbs\b|stress-orbs|hundreds-of-orbs)/i.test(window.location.search || '');
+  const liveConnections = livePacketConnections;
   const stressLabels = ['Email','Draft','Task','Comment','Transcript','Packet','Signal','Context','Reply','Memory','Promise','Meeting','Source'];
   const stressPairs = stressMode
     ? Array.from({length:18}, (_, index) => {
@@ -25483,8 +28703,8 @@ function openObserverBoard(options = {}){
         return [from,to,label,side,bend,duration,begin,radius];
       })
     : [];
-  const allLiveConnections = witnessingComplete ? (stressMode ? liveConnections.concat(stressPairs) : liveConnections) : [];
-  const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius]) => {
+  const allLiveConnections = showPacketField ? (stressMode && !liveConnections.length ? observerBoardPrototypeConnections().concat(stressPairs) : liveConnections.concat(stressPairs)) : [];
+  const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius,packetCount]) => {
     const d = pathBetweenObservers(from,to,bend);
     const orbRadius = radius || (stressMode ? '1.05' : '.62');
     const orbRx = (Number(orbRadius) * .72).toFixed(2);
@@ -25493,7 +28713,7 @@ function openObserverBoard(options = {}){
     if(!d) return '';
     return [
       '<path class="observer-live-thread observer-live-thread-' + side + (stressMode ? ' observer-live-thread-stress' : '') + '" d="' + d + '" />',
-      '<g class="observer-live-packet' + (stressMode ? ' observer-live-packet-stress' : '') + '" tabindex="0" aria-label="' + escapeHtml(label) + ' signal">',
+      '<g class="observer-live-packet' + (stressMode ? ' observer-live-packet-stress' : '') + '" tabindex="0" aria-label="' + escapeHtml(label) + ' signal" data-packet-count="' + escapeHtml(String(packetCount || 1)) + '">',
         '<ellipse class="observer-live-hit" rx="' + hitRx + '" ry="' + hitRadius + '"></ellipse>',
         '<ellipse class="observer-live-orb observer-live-orb-' + side + '" rx="' + orbRx + '" ry="' + escapeHtml(orbRadius) + '"></ellipse>',
         '<text class="observer-live-label" x="1.8" y="-1.8">' + escapeHtml(label) + '</text>',
@@ -25519,9 +28739,38 @@ function openObserverBoard(options = {}){
       '</button>'
     ].join('');
   }).join('');
-  const boardStatus = witnessingComplete
-    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : 'Packet Field Active')
-    : 'Holding Space';
+  const sourceSummary = observerBoardState.sourceSummary || {};
+  const completedObserverNames = observerBoardState.observers.filter((observer) =>
+    observerCompletedLiveReviews(observer.name, 1).length > 0
+  );
+  const deductionObserverNames = observerBoardState.observers.filter((observer) =>
+    observerMeaningfulLiveReviews(observer.name, 1).length > 0
+  );
+  const completedObserverCount = completedObserverNames.length;
+  const deductionObserverCount = deductionObserverNames.length;
+  const boardStatus = showPacketField
+    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Source Packets · ' + allLiveConnections.length + ' Visible Routes')
+    : witnessingComplete
+      ? 'Context Receipt Pending'
+      : observerBoardState.witnessingSessionId
+      ? 'First Look Needed'
+      : 'Holding Space';
+  const boardHoldingMessage = witnessingComplete
+    ? [
+        '<div class="observer-holding-space" role="status">',
+          '<strong>Your Witnessing Session is complete.</strong>',
+          '<span>The Board packet receipt has not loaded yet, so no Observer conclusion is being shown.</span>',
+        '</div>'
+      ].join('')
+    : observerBoardState.witnessingSessionId
+    ? [
+        '<div class="observer-holding-space" role="status">',
+          '<strong>Your Witnessing Session is paused.</strong>',
+          '<span>' + escapeHtml(observerBoardState.witnessingNextStep || 'Continue Witnessing before the Board presents conclusions.') + '.</span>',
+          '<button type="button" data-workflow-action="valWitnessingResume">Continue Witnessing</button>',
+        '</div>'
+      ].join('')
+    : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>';
   closeCalendarPanel();
   setWorkspaceContent({
     lens: 'Board of Observers',
@@ -25545,18 +28794,22 @@ function openObserverBoard(options = {}){
   renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
-    '<section class="observer-live-board ' + (witnessingComplete ? 'packets-active' : 'awaiting-witnessing') + '" aria-label="Live Board of Observers">',
+    '<section class="observer-live-board ' + (showPacketField ? 'packets-active' : 'awaiting-witnessing') + '" aria-label="Live Board of Observers">',
       '<aside class="observer-board-intro">',
         '<span>VAL</span>',
         '<h3>Board of Observers</h3>',
-        '<p>' + observerBoardState.observers.length + ' observers. One intelligence field. Every signal VAL receives can move through the Board before it becomes guidance.</p>',
+        '<p>' + (showPacketField
+          ? completedObserverCount
+            ? completedObserverCount + ' of ' + observerBoardState.observers.length + ' Observers completed source-backed review; ' + deductionObserverCount + ' found a meaningful signal. Open any Observer to inspect what it received and why it responded.'
+            : observerBoardState.observers.length + ' Observers received the live packets. Their concise deductions are still processing, so VAL is not presenting conclusions yet.'
+          : witnessingComplete
+            ? 'Your Witnessing Session is complete. The Board is waiting for its source packet receipt before presenting any conclusion.'
+            : observerBoardState.observers.length + ' Observers are waiting for a completed Witnessing Session before presenting conclusions.') + '</p>',
       '</aside>',
       '<div class="observer-graph-field">',
         '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',
-        witnessingComplete ? '' : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>',
+        showPacketField ? '' : boardHoldingMessage,
         '<svg class="observer-signal-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">',
-          baseObserverPaths,
-          observerFilaments,
           liveThreads,
         '</svg>',
         '<button type="button" class="observer-card-dismiss-surface" data-observer-card-dismiss aria-label="Return to Board of Observers" onpointerdown="event.preventDefault();event.stopPropagation();const graph=this.closest(\'.observer-graph-field\');const slot=graph&&graph.querySelector(\'[data-observer-card-slot]\');if(slot){slot.hidden=true;slot.setAttribute(\'hidden\',\'\');slot.innerHTML=\'\';}graph&&graph.classList.remove(\'observer-card-open\');graph&&graph.querySelectorAll(\'.observer-node.is-selected,.observer-node-label.is-card-obscured\').forEach((item)=>item.classList.remove(\'is-selected\',\'is-card-obscured\'));"></button>',
@@ -25568,6 +28821,7 @@ function openObserverBoard(options = {}){
       '</div>',
     '</section>'
   ].join('');
+  wireWitnessingResumeButtons(workspaceInputPanel);
   const observerGraphField = workspaceInputPanel.querySelector('.observer-graph-field');
   const observerDismissSurface = workspaceInputPanel.querySelector('[data-observer-card-dismiss]');
   observerDismissSurface?.addEventListener('pointerdown', (event) => {
@@ -25593,9 +28847,64 @@ function openObserverBoard(options = {}){
     event.preventDefault();
     event.stopPropagation();
   }, true);
+  workspaceInputPanel.querySelectorAll('.observer-node[data-observer-cowork],.observer-chief-card[data-observer-cowork]').forEach((node) => {
+    node.addEventListener('click', (event) => handleObserverBoardNodeActivation(node, event), true);
+  });
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']);
+  window.requestAnimationFrame(() => resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel', '.observer-selected-card']));
+  const selectedObserverName = options.selectedObserverName || options.observerName || '';
+  const selectedObserverId = requestedSelectedObserverId || (selectedObserverName ? observerConversationId(selectedObserverName) : '');
+  if(selectedObserverId){
+    requestAnimationFrame(() => updateObserverSelectedCard(selectedObserverId));
+  }
+}
+
+async function hydrateObserverBoardLiveContext(){
+  if(!canUseApi||mockScrapers)return;
+  try{
+    const [board,runsPayload]=await Promise.all([
+      getJson('/api/val/board/context?limit=100'),
+      getJson('/api/val/observers/runs?limit=200')
+    ]);
+    const packets=Array.isArray(board.packets)?board.packets:[];
+    const runs=Array.isArray(runsPayload.runs)?runsPayload.runs:[];
+    const latestByObserver=new Map();
+    runs.forEach(run=>{
+      const name=run.observerName||run.observer_name;
+      if(name&&!latestByObserver.has(name))latestByObserver.set(name,run);
+    });
+    observerBoardState.observers.forEach(observer=>{
+      const card=workspaceInputPanel.querySelector('[data-observer-name="' + CSS.escape(observer.name) + '"]');
+      if(!card)return;
+      const run=latestByObserver.get(observer.name);
+      const output=run?.outputJson||run?.output_json||{};
+      const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||null;
+      const relevantPackets=packets.filter(packet=>
+        (packet.routeObserversJson||packet.route_observers_json||[]).some(route=>route.observerName===observer.name)
+      );
+      const statement=output.observation||review?.observation||review?.seeing||'No completed evidence-backed observation yet.';
+      const evidence=(output.evidence||review?.evidence||[])[0];
+      card.querySelector('p').textContent=statement;
+      card.querySelector('small').textContent=evidence?.quote_or_summary
+        ? 'Evidence: “' + evidence.quote_or_summary + '”'
+        : 'Evidence: ' + relevantPackets.length + ' source packet' + (relevantPackets.length===1?'':'s') + ' available; no supported claim stored yet.';
+    });
+    const chiefCard=workspaceInputPanel.querySelector('.observer-chief-card');
+    if(chiefCard){
+      chiefCard.querySelector('strong').textContent=packets.length
+        ? packets.length + ' live source packet' + (packets.length===1?' is':'s are') + ' available to all 14 Observers.'
+        : 'Holding space for Analytical and Relational Context.';
+      chiefCard.querySelector('p').textContent=packets.length
+        ? 'Each Observer must either store an evidence-backed observation or explicitly return no meaningful signal from its lens.'
+        : 'No Observer activity is being claimed because no live source packets are present.';
+    }
+  }catch(error){
+    const note=workspaceInputPanel.querySelector('.observer-board-note');
+    if(note)note.textContent='Live Board evidence could not load: ' + (error.message||'unknown error');
+  }
 }
 
 function orientHomeCoworkFromInput(){
@@ -25612,32 +28921,728 @@ function orientHomeCoworkFromInput(){
   ].join('');
 }
 
+const valStudioObserverDefaults = ['commitment','relationship','delight','synchronicity'];
+function valStudioDefaultSpec(){
+  return {
+    name:'New executive Environment',
+    outcome:'Turn a recurring source into a clear, governed result.',
+    purpose:'Remove repeated executive work without hiding judgment or taking unapproved action.',
+    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'immediate'},
+    observerIds:[...valStudioObserverDefaults],
+    connections:{emailProvider:'gmail',googleDocumentId:''},
+    approvals:{sendEmail:'required',appendGoogleDoc:'required'}
+  };
+}
+let valStudioState = {
+  stage:0,
+  mode:'library',
+  notice:'',
+  environmentId:'',
+  environment:null,
+  versionNumber:0,
+  activeVersionNumber:0,
+  environments:[],
+  network:null,
+  communications:null,
+  transcripts:[],
+  lastTest:null,
+  spec:valStudioDefaultSpec()
+};
+
+async function valStudioRequest(url,method='GET',body=null){
+  const response=await fetch(url,{
+    method,
+    headers:body?{'Content-Type':'application/json'}:undefined,
+    body:body?JSON.stringify(body):undefined,
+    credentials:'same-origin'
+  });
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload.ok===false)throw new Error(payload.error||`VAL Studio request failed (${response.status}).`);
+  return payload;
+}
+
+function valStudioCurrentSpec(){
+  const root=scraperPreviewList.querySelector('[data-val-studio]');
+  if(!root)return valStudioState.spec;
+  const field=name=>root.querySelector(`[name="${name}"]`);
+  const checked=name=>Boolean(field(name)?.checked);
+  const value=name=>String(field(name)?.value||'').trim();
+  const has=name=>Boolean(field(name));
+  const observerFields=Array.from(root.querySelectorAll('[name="observerId"]'));
+  return {
+    ...valStudioState.spec,
+    name:has('environmentName')?(value('environmentName')||valStudioState.spec.name):valStudioState.spec.name,
+    outcome:has('environmentOutcome')?(value('environmentOutcome')||valStudioState.spec.outcome):valStudioState.spec.outcome,
+    purpose:has('environmentPurpose')?(value('environmentPurpose')||valStudioState.spec.purpose):valStudioState.spec.purpose,
+    trigger:{
+      type:'krisp_transcript_received',
+      eventTitlePattern:has('eventTitlePattern')?value('eventTitlePattern'):valStudioState.spec.trigger.eventTitlePattern,
+      eventTitleConfirmed:has('eventTitleConfirmed')?checked('eventTitleConfirmed'):valStudioState.spec.trigger.eventTitleConfirmed,
+      mode:'immediate'
+    },
+    observerIds:observerFields.length?observerFields.filter(input=>input.checked).map(input=>input.value):valStudioState.spec.observerIds,
+    connections:{
+      emailProvider:has('emailProvider')?(value('emailProvider')||'gmail'):valStudioState.spec.connections.emailProvider,
+      googleDocumentId:has('googleDocumentId')?value('googleDocumentId'):valStudioState.spec.connections.googleDocumentId
+    },
+    approvals:{
+      sendEmail:has('emailPreauthorized')?(checked('emailPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.sendEmail,
+      appendGoogleDoc:has('docPreauthorized')?(checked('docPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.appendGoogleDoc
+    }
+  };
+}
+
+function valStudioSelectedObserverNames(){
+  const selected=new Set(valStudioState.spec.observerIds||[]);
+  const observers=observerBoardState?.observers||[];
+  const names=observers.filter(observer=>selected.has(String(observer.name||'').toLowerCase())).map(observer=>observer.name);
+  if(names.length)return names;
+  const labels={
+    executive_inbox:'Executive Inbox',
+    commitment:'Commitment',
+    relationship:'Relationship',
+    delight:'Delight',
+    synchronicity:'Synchronicity',
+    capacity:'Capacity',
+    courage:'Courage',
+    momentum:'Momentum',
+    project:'Project',
+    meaning:'Meaning',
+    opportunity:'Opportunity',
+    calendar:'Calendar',
+    environment:'Environment',
+    witnessing:'Witnessing'
+  };
+  return Array.from(selected).map(id=>labels[id]||id).filter(Boolean);
+}
+
+function valStudioRecurringTitleSuggestion(value=''){
+  return String(value||'')
+    .replace(/\s*[-|]\s*(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?\b.*$/i,'')
+    .replace(/\s*[-|]\s*(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?.*$/i,'')
+    .replace(/\s*[-|]\s*\d{1,2}\/\d{1,2}(?:\/\d{2,4})?.*$/,'')
+    .trim();
+}
+
+function valStudioVisualMap(){
+  const names=valStudioSelectedObserverNames();
+  return [
+    '<div class="val-studio-map" aria-label="Environment map">',
+      '<div class="val-studio-source-node">',
+        '<span>Trigger</span>',
+        '<strong>Krisp transcript</strong>',
+        '<small>' + escapeHtml(valStudioState.spec.trigger.eventTitlePattern||'Recurring event to confirm') + '</small>',
+      '</div>',
+      '<div class="val-studio-flow-line source-flow" aria-hidden="true"></div>',
+      '<div class="val-studio-round-table">',
+        '<span class="val-studio-round-ring" aria-hidden="true"></span>',
+        '<strong>Round Table</strong>',
+        '<small>Observes</small>',
+        names.map((name,index)=>(
+          '<span class="val-studio-observer-node node-' + index + '" title="' + escapeHtml(name) + '">' +
+            '<i></i><b>' + escapeHtml(name) + '</b>' +
+          '</span>'
+        )).join(''),
+      '</div>',
+      '<div class="val-studio-chief-node">',
+        '<span>Chief of Staff</span>',
+        '<strong>Consults</strong>',
+        '<small>The Environment governs.</small>',
+      '</div>',
+      '<div class="val-studio-action-rail">',
+        '<span>Produces</span>',
+        '<strong>Email</strong>',
+        '<strong>Google Doc</strong>',
+      '</div>',
+    '</div>'
+  ].join('');
+}
+
+function valStudioStagePanel(){
+  const spec=valStudioState.spec;
+  const transcripts=valStudioState.transcripts;
+  const stage=valStudioState.stage;
+  if(stage===0)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Outcome</p>',
+      '<h3>What should happen without consuming another executive hour?</h3>',
+      '<label><span>Environment name</span><input name="environmentName" type="text" value="' + escapeHtml(spec.name) + '"></label>',
+      '<label><span>Outcome</span><textarea name="environmentOutcome">' + escapeHtml(spec.outcome) + '</textarea></label>',
+      '<label><span>Purpose</span><textarea name="environmentPurpose">' + escapeHtml(spec.purpose) + '</textarea></label>',
+      '<div class="val-studio-learning-rule">',
+        '<div><strong>Something VAL should understand differently?</strong><p>Every durable learning candidate still requires review before it changes future judgment.</p></div>',
+        '<button type="button" data-val-studio-teach>Teach VAL a correction</button>',
+      '</div>',
+    '</section>'
+  ].join('');
+  if(stage===1)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Evidence</p>',
+      '<h3>Which recurring event begins this Environment?</h3>',
+      '<label><span>Start with a real transcript</span>',
+        '<select name="historicalTranscript">',
+          '<option value="">Select a recent Krisp transcript</option>',
+          transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
+        '</select>',
+      '</label>',
+      '<label><span>Recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="VAL will suggest this from the transcript"></label>',
+      '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>This is the recurring event VAL should recognize.</span></label>',
+      '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL sends Krisp’s Action Items and Key Points exactly as received. It may add headings and one short introduction. It may not rewrite the source.</p></div>',
+    '</section>'
+  ].join('');
+  if(stage===2){
+    const selected=new Set(spec.observerIds||[]);
+    const definitions=[
+      ['executive_inbox','Executive Inbox','Does this need human judgment?'],
+      ['commitment','Commitment','What was promised?'],
+      ['relationship','Relationship','What changed between people?'],
+      ['delight','Delight','Where is life here?'],
+      ['synchronicity','Synchronicity','What is repeating?'],
+      ['capacity','Capacity','What does this cost?'],
+      ['courage','Courage','What is being avoided?'],
+      ['momentum','Momentum','What is moving now?'],
+      ['project','Project','What project does this move?'],
+      ['meaning','Meaning','Why does this matter?'],
+      ['opportunity','Opportunity','What opening is present?'],
+      ['calendar','Calendar','When does this matter?'],
+      ['environment','Environment','What condition changes this?'],
+      ['witnessing','Witnessing','What did the executive already reveal?']
+    ];
+    return [
+      '<section class="val-studio-stage-panel">',
+        '<p class="val-studio-eyebrow">Round Table</p>',
+        '<h3>Choose the perspectives that should observe each meeting.</h3>',
+        '<div class="val-studio-observer-picker">',
+          definitions.map(([id,name,question])=>(
+            '<label class="val-studio-observer-choice">' +
+              '<input name="observerId" type="checkbox" value="' + id + '" ' + (selected.has(id)?'checked':'') + '>' +
+              '<span><strong>' + name + '</strong><small>' + question + '</small></span>' +
+            '</label>'
+          )).join(''),
+        '</div>',
+        '<div class="val-studio-chief-advice"><span>Chief of Staff</span><p>Commitment and Relationship belong here. Delight and Synchronicity can notice what a mechanical follow-up would miss. I would keep all four for the first test.</p></div>',
+      '</section>'
+    ].join('');
+  }
+  if(stage===3)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Actions</p>',
+      '<h3>Connect the places this Environment is allowed to act.</h3>',
+      '<div class="val-studio-two-fields">',
+        '<label><span>Send from</span><select name="emailProvider"><option value="gmail" ' + (spec.connections.emailProvider==='gmail'?'selected':'') + '>Connected Gmail</option><option value="outlook" ' + (spec.connections.emailProvider==='outlook'?'selected':'') + '>Connected Outlook</option></select></label>',
+        '<label><span>Google Doc ID</span><input name="googleDocumentId" type="text" value="' + escapeHtml(spec.connections.googleDocumentId||'') + '" placeholder="Paste the existing document ID"></label>',
+      '</div>',
+      '<div class="val-studio-action-contract">',
+        '<div><span>Email</span><strong>All attendees</strong><small>One message. Every attendee except the executive.</small><label class="val-studio-confirm"><input name="emailPreauthorized" type="checkbox" ' + (spec.approvals.sendEmail==='preauthorized'?'checked':'') + '><span>Allow automatically for this recipient type</span></label></div>',
+        '<div><span>Google Doc</span><strong>Append after email</strong><small>If this fails, retry the document only. Never resend the email.</small><label class="val-studio-confirm"><input name="docPreauthorized" type="checkbox" ' + (spec.approvals.appendGoogleDoc==='preauthorized'?'checked':'') + '><span>Allow automatically for this document</span></label></div>',
+      '</div>',
+    '</section>'
+  ].join('');
+  const lastTest=valStudioState.lastTest;
+  return [
+    '<section class="val-studio-stage-panel val-studio-test-panel">',
+      '<p class="val-studio-eyebrow">Test and Activate</p>',
+      '<h3>Prove the Environment with real history before it can go live.</h3>',
+      '<p class="val-studio-test-boundary">The test shows the source, every Observer receipt, the Round Table, Chief advice, recipients, and exact proposed outputs. No external actions occur.</p>',
+      '<label><span>Historical evidence</span><select name="testTranscriptId">',
+        '<option value="">Select the MGSH transcript to test</option>',
+        transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
+      '</select></label>',
+      '<div class="val-studio-test-actions">',
+        '<button type="button" data-val-studio-test>Test with Historical Evidence</button>',
+      '</div>',
+      '<div data-val-studio-status>' + (lastTest?valStudioTestResult(lastTest):'') + '</div>',
+      lastTest?.status==='completed'?[
+        '<div class="val-studio-activation">',
+          '<div><span>Ready</span><strong>The Environment has passed its historical test.</strong><p>Make it live and VAL will recognize the next matching Krisp transcript automatically.</p></div>',
+          '<button type="button" data-val-studio-activate>Make Environment Live</button>',
+        '</div>'
+      ].join(''):'',
+    '</section>'
+  ].join('');
+}
+
+function valStudioTestResult(run={}){
+  const receipts=safeArray(run.receiptsJson||run.receipts_json);
+  const observers=receipts.filter(receipt=>receipt.type==='observer_receipt_v1');
+  const observed=observers.filter(receipt=>receipt.status==='observed');
+  const quiet=observers.filter(receipt=>receipt.status!=='observed');
+  const roundTable=receipts.find(receipt=>receipt.type==='round_table_receipt_v1')||{};
+  const chief=receipts.find(receipt=>receipt.type==='chief_advisory_receipt_v1')||{};
+  const outputs=run.outputsJson||run.outputs_json||{};
+  const input=run.inputJson||run.input_json||{};
+  const recipients=String(outputs.email?.to||'').split(',').map(value=>value.trim()).filter(Boolean);
+  const meetingTitle=input.title||outputs.email?.subject||'the selected meeting';
+  const observerWord=observed.length===1?'Observer':'Observers';
+  const quietNames=quiet.map(receipt=>receipt.observerName).filter(Boolean);
+  return [
+    '<div class="val-studio-test-result">',
+      '<div class="val-studio-test-banner"><div><strong>This Environment understood the assignment.</strong><p>Using ' + escapeHtml(meetingTitle) + ', VAL proved the complete follow-through without sending or changing anything.</p></div><span>Safe historical test</span></div>',
+      '<section class="val-studio-test-summary">',
+        '<span>What VAL will do</span>',
+        '<strong>Send the exact Krisp Action Items and Key Points to ' + escapeHtml(String(recipients.length)) + ' attendee' + (recipients.length===1?'':'s') + ', then preserve the same overview in the connected Google Doc.</strong>',
+        '<p>Email must succeed before the document is updated. A document retry will never resend the email.</p>',
+      '</section>',
+      observed.length?'<div class="val-studio-receipt-list val-studio-observed-list">' +
+        observed.map(receipt=>{
+          const evidence=safeArray(receipt.evidence)[0];
+          return '<article><span>' + escapeHtml(receipt.observerName||'Observer') + ' noticed</span>' +
+            '<strong>' + escapeHtml(receipt.observation||'Source-backed signal found.') + '</strong>' +
+            (evidence?.quote_or_summary?'<p>From the meeting: “' + escapeHtml(evidence.quote_or_summary) + '”</p>':'') + '</article>';
+        }).join('') +
+      '</div>':'',
+      quiet.length?'<div class="val-studio-quiet-receipt"><strong>' + escapeHtml(quietNames.join(' and ')||String(quiet.length)+' selected Observers') + ' stayed quiet.</strong><p>They reviewed the meeting and found nothing strong enough to claim through their lenses. VAL will not invent meaning where the evidence does not support it.</p></div>':'',
+      '<div class="val-studio-chief-receipt"><span>Chief of Staff</span><strong>' + escapeHtml(observed.length?observed.length+' '+observerWord+' found something worth carrying forward.':'The source is complete and no Observer interpretation needs to be added.') + '</strong><p>' + escapeHtml(chief.recommendation||roundTable.conclusion||'The Environment is ready for your decision.') + '</p></div>',
+      '<div class="val-studio-output-proof">',
+        '<article><span>Email delivery</span><strong>' + escapeHtml(recipients.length?recipients.length+' confirmed attendee'+(recipients.length===1?'':'s'):'Recipients need attention') + '</strong><p>' + escapeHtml(recipients.join(', ')||'No recipients were found.') + '</p><small>' + escapeHtml(outputs.email?.subject||'') + '</small></article>',
+        '<article><span>Shared record</span><strong>' + escapeHtml(outputs.googleDoc?.documentId?'Google Doc destination confirmed':'Google Doc needs attention') + '</strong><p>' + escapeHtml(outputs.googleDoc?.documentId?'The same meeting overview will be appended only after the email succeeds.':'Connect the destination document before activation.') + '</p></article>',
+      '</div>',
+    '</div>'
+  ].join('');
+}
+
+function valStudioEnvironmentStatus(environment={}){
+  if(environment.status==='active'&&environment.draftVersion)return {label:'Live · Draft changes',tone:'active-draft'};
+  if(environment.status==='active')return {label:'Live',tone:'live'};
+  if(environment.status==='needs_attention')return {label:'Needs attention',tone:'attention'};
+  if(environment.status==='paused')return {label:'Paused',tone:'paused'};
+  return {label:'Draft',tone:'draft'};
+}
+
+function valStudioResumeStage(spec={}){
+  if(!String(spec.name||'').trim()||!String(spec.outcome||'').trim()||!String(spec.purpose||'').trim())return 0;
+  if(!String(spec.trigger?.eventTitlePattern||'').trim()||spec.trigger?.eventTitleConfirmed!==true)return 1;
+  if(!safeArray(spec.observerIds).length)return 2;
+  if(!String(spec.connections?.emailProvider||'').trim()||!String(spec.connections?.googleDocumentId||'').trim())return 3;
+  return 4;
+}
+
+function valStudioNotice(){
+  if(!valStudioState.notice)return '<div class="val-studio-notice is-empty" hidden></div>';
+  return '<div class="val-studio-notice" role="status">' + escapeHtml(valStudioState.notice) + '</div>';
+}
+
+function valStudioLibraryView(){
+  const environments=safeArray(valStudioState.environments);
+  const network=valStudioState.network||{};
+  const liveCount=environments.filter(item=>item.status==='active').length;
+  const draftCount=environments.filter(item=>item.status==='draft'||item.draftVersion).length;
+  return [
+    '<div class="val-studio val-studio-library" data-val-studio>',
+      '<header class="val-studio-library-header">',
+        '<div><span>VAL Studio</span><strong>Environments</strong><p>Governed work VAL can recognize, reason through, and complete.</p></div>',
+        '<div class="val-studio-library-actions">',
+          '<button type="button" data-val-studio-import>Import Environment</button>',
+          '<button type="button" data-val-studio-new>New Environment</button>',
+          '<input type="file" accept=".json,.val-environment.json,application/json" data-val-studio-import-file hidden>',
+        '</div>',
+      '</header>',
+      valStudioNotice(),
+      environments.length?[
+        '<div class="val-studio-library-summary">',
+          '<span><strong>' + escapeHtml(String(environments.length)) + '</strong> Total</span>',
+          '<span><strong>' + escapeHtml(String(liveCount)) + '</strong> Live</span>',
+          '<span><strong>' + escapeHtml(String(draftCount)) + '</strong> Draft' + (draftCount===1?'':'s') + '</span>',
+          '<span><strong>' + escapeHtml(String(network.counts?.packets||0)) + '</strong> Shared result packet' + (Number(network.counts?.packets||0)===1?'':'s') + '</span>',
+        '</div>',
+        '<div class="val-studio-network-note"><span>Shared Intelligence Network</span><strong>The Chief of Staff sees every Environment result. Active Environments receive that context without triggering one another.</strong></div>',
+        '<div class="val-studio-environment-list" aria-label="Your Environments">',
+          environments.map(environment=>{
+            const version=environment.draftVersion||environment.activeVersion||{};
+            const spec=version.specJson||{};
+            const state=valStudioEnvironmentStatus(environment);
+            const observers=safeArray(spec.observerIds);
+            return [
+              '<button type="button" class="val-studio-environment-row" data-val-studio-open="' + escapeHtml(environment.id||'') + '">',
+                '<span class="val-studio-environment-state ' + escapeHtml(state.tone) + '"><i aria-hidden="true"></i>' + escapeHtml(state.label) + '</span>',
+                '<span class="val-studio-environment-copy"><strong>' + escapeHtml(environment.name||spec.name||'Untitled Environment') + '</strong><small>' + escapeHtml(spec.outcome||'Outcome not defined yet.') + '</small></span>',
+                '<span class="val-studio-environment-meta"><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'Trigger not confirmed') + '</strong><small>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</small></span>',
+                '<span class="val-studio-environment-arrow" aria-hidden="true">→</span>',
+              '</button>'
+            ].join('');
+          }).join(''),
+        '</div>'
+      ].join(''):[
+        '<div class="val-studio-library-empty">',
+          '<span class="val-presence-mark"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span>',
+          '<strong>Your first Environment starts with a repeated outcome.</strong>',
+          '<p>Name the result you want VAL to carry, then choose the evidence, perspectives, and connected actions it may use.</p>',
+          '<button type="button" data-val-studio-new>Create Your First Environment</button>',
+        '</div>'
+      ].join(''),
+      '<footer class="val-studio-library-footer"><span>Every Environment is tested against real history before it can go live.</span><strong>The executive remains the governing authority.</strong></footer>',
+    '</div>'
+  ].join('');
+}
+
+function valStudioLiveView(){
+  const spec=valStudioState.spec;
+  const observers=valStudioSelectedObserverNames();
+  const communications=valStudioState.communications||{};
+  const incoming=safeArray(communications.incoming);
+  const outgoing=safeArray(communications.outgoing);
+  const used=incoming.filter(item=>item.delivery?.status==='used').length;
+  return [
+    '<div class="val-studio val-studio-live-home" data-val-studio>',
+      '<header class="val-studio-header">',
+        '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(spec.name) + '</strong></div>',
+        '<small class="val-studio-live-status"><i aria-hidden="true"></i>Live</small>',
+      '</header>',
+      valStudioNotice(),
+      '<div class="val-studio-live-layout">',
+        '<section class="val-studio-live-overview">',
+          '<div class="val-studio-live-heading">',
+            '<span>Active Environment</span>',
+            '<h3>' + escapeHtml(spec.name) + '</h3>',
+            '<p>' + escapeHtml(spec.outcome) + '</p>',
+          '</div>',
+          '<div class="val-studio-live-contract">',
+            '<article><span>Begins when</span><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'The confirmed recurring event arrives') + '</strong><p>Krisp transcript received</p></article>',
+            '<article><span>Round Table</span><strong>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</strong><p>' + escapeHtml(observers.join(', ')) + '</p></article>',
+            '<article><span>Produces</span><strong>Email + shared record</strong><p>Exact Action Items and Key Points</p></article>',
+            '<article><span>Protection</span><strong>Email succeeds first</strong><p>A document retry never resends the email.</p></article>',
+          '</div>',
+          '<div class="val-studio-live-note"><strong>VAL is listening for the next matching meeting.</strong><span>The current version remains active until you deliberately replace it with another tested version.</span></div>',
+          '<section class="val-studio-communications">',
+            '<div class="val-studio-communications-heading"><span>Shared Intelligence</span><strong>' + escapeHtml(String(incoming.length)) + ' received · ' + escapeHtml(String(used)) + ' used · ' + escapeHtml(String(outgoing.length)) + ' published</strong></div>',
+            incoming.length?'<div class="val-studio-communication-list">' + incoming.slice(0,3).map(packet=>'<article><span>' + escapeHtml(packet.delivery?.status==='used'?'Used in a run':'Available context') + '</span><strong>' + escapeHtml(packet.title||'Environment result') + '</strong><p>' + escapeHtml(packet.summary||'') + '</p></article>').join('') + '</div>':'<p class="val-studio-communications-empty">No sibling Environment has published context yet. The first live result will appear here with its source lineage.</p>',
+          '</section>',
+        '</section>',
+        '<aside class="val-studio-canvas">',
+          '<p class="val-studio-eyebrow">Live Structure</p>',
+          valStudioVisualMap(),
+          '<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>',
+        '</aside>',
+      '</div>',
+      '<footer class="val-studio-live-footer">',
+        '<div><strong>Active version ' + escapeHtml(String(valStudioState.activeVersionNumber||valStudioState.versionNumber||1)) + '</strong><span>Running from the confirmed contract above.</span></div>',
+        '<div class="val-studio-live-actions">',
+          '<button type="button" data-val-studio-share>Share Environment</button>',
+          '<button type="button" data-val-studio-edit>Edit Environment</button>',
+        '</div>',
+      '</footer>',
+    '</div>'
+  ].join('');
+}
+
+function renderValStudio(){
+  valStudioState.spec=valStudioCurrentSpec();
+  if(valStudioState.mode==='library'){
+    scraperPreviewList.hidden=false;
+    scraperPreviewList.classList.add('val-studio-surface');
+    scraperPreviewList.innerHTML=valStudioLibraryView();
+    wireValStudio();
+    return;
+  }
+  if(valStudioState.mode==='live'){
+    scraperPreviewList.hidden=false;
+    scraperPreviewList.classList.add('val-studio-surface');
+    scraperPreviewList.innerHTML=valStudioLiveView();
+    wireValStudio();
+    return;
+  }
+  const stages=['Outcome','Evidence','Round Table','Actions','Test'];
+  const hasActiveVersion=Boolean(valStudioState.environment?.activeVersion);
+  const hasSavedDraft=Boolean(valStudioState.environment?.draftVersion);
+  const versionLabel=hasActiveVersion
+    ?'Live v'+escapeHtml(String(valStudioState.activeVersionNumber||1))+' remains active · '+(hasSavedDraft?'Editing draft v'+escapeHtml(String(valStudioState.versionNumber||1)):'Changes not saved')
+    :(valStudioState.environmentId?'Draft version '+escapeHtml(String(valStudioState.versionNumber||1)):'New Environment');
+  scraperPreviewList.hidden=false;
+  scraperPreviewList.classList.add('val-studio-surface');
+  scraperPreviewList.innerHTML=[
+    '<div class="val-studio" data-val-studio>',
+      '<header class="val-studio-header">',
+        '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>' + escapeHtml(valStudioState.spec.name) + '</strong></div>',
+        '<div class="val-studio-header-actions">',
+          '<small>' + versionLabel + '</small>',
+          valStudioState.environmentId?'<button type="button" data-val-studio-share>Share Environment</button>':'',
+        '</div>',
+      '</header>',
+      valStudioNotice(),
+      '<nav class="val-studio-steps" aria-label="Environment setup">',
+        stages.map((label,index)=>'<button type="button" data-val-studio-stage="' + index + '" class="' + (index===valStudioState.stage?'active':'') + '"><span>0' + (index+1) + '</span>' + label + '</button>').join(''),
+      '</nav>',
+      '<div class="val-studio-layout">',
+        '<div class="val-studio-editor">' + valStudioStagePanel() + '</div>',
+        '<aside class="val-studio-canvas">',
+          '<p class="val-studio-eyebrow">Live Structure</p>',
+          valStudioVisualMap(),
+          '<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>',
+        '</aside>',
+      '</div>',
+      '<footer class="val-studio-footer">',
+        '<button type="button" data-val-studio-back ' + (valStudioState.stage===0?'disabled':'') + '>Back</button>',
+        '<span data-val-studio-save-status>Changes stay in Draft until tested.</span>',
+        valStudioState.stage<4?'<button type="button" data-val-studio-next>Continue</button>':'',
+      '</footer>',
+    '</div>'
+  ].join('');
+  wireValStudio();
+}
+
+async function saveValStudioDraft(){
+  valStudioState.spec=valStudioCurrentSpec();
+  const url=valStudioState.environmentId?`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}`:'/api/val/environments';
+  const payload=await valStudioRequest(url,valStudioState.environmentId?'PUT':'POST',{spec:valStudioState.spec});
+  valStudioState.environmentId=payload.environment.id;
+  valStudioState.environment=payload.environment;
+  valStudioState.environments=[
+    payload.environment,
+    ...safeArray(valStudioState.environments).filter(item=>item.id!==payload.environment.id)
+  ];
+  valStudioState.versionNumber=payload.environment.draftVersion?.versionNumber||payload.environment.activeVersion?.versionNumber||1;
+  valStudioState.activeVersionNumber=payload.environment.activeVersion?.versionNumber||valStudioState.activeVersionNumber||0;
+  return payload;
+}
+
+async function shareValStudioEnvironment(){
+  if(!valStudioState.environmentId)throw new Error('Save this Environment before sharing it.');
+  const response=await fetch(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/export`,{
+    credentials:'same-origin'
+  });
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload.ok===false)throw new Error(payload.error||'VAL could not prepare this Environment for sharing.');
+  const name=String(payload.share?.template?.name||'VAL Environment')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,80)||'val-environment';
+  const blob=new Blob([JSON.stringify(payload.share,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement('a');
+  anchor.href=url;
+  anchor.download=`${name}.val-environment.json`;
+  anchor.hidden=true;
+  anchor.addEventListener('click',event=>event.stopPropagation(),{once:true});
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  valStudioState.notice='Environment ready to share. Private evidence, identities, connections, approvals, and run history were removed.';
+  renderValStudio();
+}
+
+async function importValStudioEnvironment(file){
+  if(!file)throw new Error('Choose a VAL Environment share file.');
+  let share;
+  try{
+    share=JSON.parse(await file.text());
+  }catch(_error){
+    throw new Error('That file is not readable VAL Environment JSON.');
+  }
+  const result=await valStudioRequest('/api/val/environments/import','POST',share);
+  valStudioState.environment=result.environment;
+  valStudioState.environmentId=result.environment.id;
+  valStudioState.environments=[
+    result.environment,
+    ...safeArray(valStudioState.environments).filter(item=>item.id!==result.environment.id)
+  ];
+  valStudioState.versionNumber=result.environment.draftVersion?.versionNumber||1;
+  valStudioState.activeVersionNumber=0;
+  valStudioState.spec=result.environment.draftVersion?.specJson||valStudioDefaultSpec();
+  valStudioState.lastTest=null;
+  valStudioState.mode='builder';
+  valStudioState.stage=valStudioResumeStage(valStudioState.spec);
+  valStudioState.notice='Imported as a disconnected Draft. Confirm your trigger, connections, approval boundaries, and historical test before making it live.';
+  renderValStudio();
+}
+
+function wireValStudio(){
+  const root=scraperPreviewList.querySelector('[data-val-studio]');
+  if(!root)return;
+  root.addEventListener('click',event=>event.stopPropagation());
+  root.querySelector('[data-val-studio-library]')?.addEventListener('click',()=>{
+    valStudioState.notice='';
+    valStudioState.mode='library';
+    renderValStudio();
+  });
+  root.querySelectorAll('[data-val-studio-new]').forEach(button=>button.addEventListener('click',()=>{
+    valStudioState.notice='';
+    valStudioState.mode='builder';
+    valStudioState.stage=0;
+    valStudioState.environmentId='';
+    valStudioState.environment=null;
+    valStudioState.versionNumber=0;
+    valStudioState.activeVersionNumber=0;
+    valStudioState.lastTest=null;
+    valStudioState.communications=null;
+    valStudioState.spec=valStudioDefaultSpec();
+    renderValStudio();
+  }));
+  const importInput=root.querySelector('[data-val-studio-import-file]');
+  root.querySelector('[data-val-studio-import]')?.addEventListener('click',()=>importInput?.click());
+  importInput?.addEventListener('change',async()=>{
+    try{
+      await importValStudioEnvironment(importInput.files?.[0]);
+    }catch(error){
+      valStudioState.notice=error.message;
+      renderValStudio();
+    }
+  });
+  root.querySelectorAll('[data-val-studio-share]').forEach(button=>button.addEventListener('click',async()=>{
+    button.disabled=true;
+    try{
+      await shareValStudioEnvironment();
+    }catch(error){
+      valStudioState.notice=error.message;
+      renderValStudio();
+    }
+  }));
+  root.querySelectorAll('[data-val-studio-open]').forEach(button=>button.addEventListener('click',async()=>{
+    const environment=valStudioState.environments.find(item=>item.id===button.dataset.valStudioOpen);
+    if(!environment)return;
+    const version=environment.draftVersion||environment.activeVersion;
+    valStudioState.environment=environment;
+    valStudioState.environmentId=environment.id;
+    valStudioState.versionNumber=version?.versionNumber||1;
+    valStudioState.activeVersionNumber=environment.activeVersion?.versionNumber||0;
+    valStudioState.spec=version?.specJson||valStudioDefaultSpec();
+    valStudioState.lastTest=null;
+    valStudioState.communications=null;
+    valStudioState.mode=environment.status==='active'&&environment.activeVersion&&!environment.draftVersion?'live':'builder';
+    valStudioState.notice='';
+    valStudioState.stage=environment.draftVersion?valStudioResumeStage(valStudioState.spec):0;
+    renderValStudio();
+    try{
+      const [runs,communications]=await Promise.all([
+        valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/runs?limit=10`),
+        valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/communications?limit=50`)
+      ]);
+      if(valStudioState.environmentId!==environment.id||valStudioState.mode==='library')return;
+      valStudioState.communications=communications;
+      valStudioState.lastTest=safeArray(runs.runs).find(run=>
+        run.testMode
+        &&run.status==='completed'
+        &&Number(run.versionNumber)===Number(version?.versionNumber)
+      )||null;
+      renderValStudio();
+    }catch(_error){}
+  }));
+  root.querySelector('[data-val-studio-edit]')?.addEventListener('click',()=>{
+    valStudioState.mode='builder';
+    valStudioState.stage=0;
+    valStudioState.lastTest=null;
+    valStudioState.spec=valStudioState.environment?.activeVersion?.specJson||valStudioState.spec;
+    renderValStudio();
+  });
+  root.querySelectorAll('[data-val-studio-stage]').forEach(button=>button.addEventListener('click',async()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    valStudioState.stage=Number(button.dataset.valStudioStage)||0;
+    renderValStudio();
+  }));
+  root.querySelector('[data-val-studio-back]')?.addEventListener('click',()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    valStudioState.stage=Math.max(0,valStudioState.stage-1);
+    renderValStudio();
+  });
+  root.querySelector('[data-val-studio-next]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-save-status]');
+    try{
+      valStudioState.spec=valStudioCurrentSpec();
+      if(status)status.textContent='Saving the Environment contract...';
+      await saveValStudioDraft();
+      valStudioState.stage=Math.min(4,valStudioState.stage+1);
+      renderValStudio();
+    }catch(error){if(status)status.textContent=error.message;}
+  });
+  root.querySelector('[data-val-studio-teach]')?.addEventListener('click',event=>{
+    const action={label: 'Teach VAL a correction',workflow:'teach:extract'};
+    void handleWorkflowAction(action.workflow,event.currentTarget);
+  });
+  root.querySelector('[name="historicalTranscript"]')?.addEventListener('change',event=>{
+    const transcript=valStudioState.transcripts.find(item=>String(item.id||item.transcriptId)===event.target.value);
+    const titleInput=root.querySelector('[name="eventTitlePattern"]');
+    if(transcript&&titleInput){
+      titleInput.value=valStudioRecurringTitleSuggestion(transcript.title||transcript.meetingTitle||'');
+      root.querySelector('[name="eventTitleConfirmed"]').checked=false;
+    }
+  });
+  root.querySelectorAll('input,textarea,select').forEach(field=>field.addEventListener('change',()=>{
+    valStudioState.spec=valStudioCurrentSpec();
+    const canvas=root.querySelector('.val-studio-canvas');
+    if(canvas)canvas.innerHTML='<p class="val-studio-eyebrow">Live Structure</p>'+valStudioVisualMap()+'<div class="val-studio-governance"><strong>The Environment governs.</strong><span>The Round Table observes. The Chief of Staff advises. External actions remain bounded.</span></div>';
+  }));
+  root.querySelector('[data-val-studio-test]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-status]');
+    const transcriptId=root.querySelector('[name="testTranscriptId"]')?.value||'';
+    try{
+      if(!transcriptId)throw new Error('Choose the historical MGSH transcript first.');
+      if(status)status.innerHTML='<p class="val-studio-running">Each selected Observer is reviewing the exact source...</p>';
+      await saveValStudioDraft();
+      const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/test`,'POST',{transcriptId});
+      valStudioState.lastTest=result.run;
+      renderValStudio();
+    }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
+  });
+  root.querySelector('[data-val-studio-activate]')?.addEventListener('click',async()=>{
+    const status=root.querySelector('[data-val-studio-status]');
+    try{
+      if(status)status.innerHTML='<p class="val-studio-running">Confirming the tested version...</p>';
+      const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(valStudioState.environmentId)}/activate`,'POST',{});
+      valStudioState.lastTest={...valStudioState.lastTest,activated:true};
+      valStudioState.environment=result.environment;
+      valStudioState.environments=[
+        result.environment,
+        ...safeArray(valStudioState.environments).filter(item=>item.id!==result.environment.id)
+      ];
+      valStudioState.versionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
+      valStudioState.activeVersionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
+      valStudioState.spec=result.environment.activeVersion?.specJson||valStudioState.spec;
+      valStudioState.communications=await valStudioRequest(`/api/val/environments/${encodeURIComponent(result.environment.id)}/communications?limit=50`).catch(()=>null);
+      valStudioState.mode='live';
+      renderValStudio();
+    }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
+  });
+}
+
+async function hydrateValStudio(){
+  const status=scraperPreviewList.querySelector('[data-val-studio-loading]');
+  try{
+    const [environmentPayload,transcriptPayload,networkPayload]=await Promise.all([
+      valStudioRequest('/api/val/environments?limit=20'),
+      valStudioRequest('/api/val/transcripts?days=3650&limit=100'),
+      valStudioRequest('/api/val/environments/network?limit=100')
+    ]);
+    valStudioState.environments=safeArray(environmentPayload.environments);
+    valStudioState.transcripts=safeArray(transcriptPayload.transcripts);
+    valStudioState.network=networkPayload;
+    valStudioState.communications=null;
+    valStudioState.mode='library';
+    valStudioState.stage=0;
+    renderValStudio();
+  }catch(error){
+    if(status)status.innerHTML='<strong>VAL Studio could not load.</strong><span>'+escapeHtml(error.message)+'</span>';
+  }
+}
+
 function openTeachValSession(){
   closeCalendarPanel();
+  closeDrawer();
   setWorkspaceContent({
-    lens: teachValSession.lens,
-    title: teachValSession.title,
-    meaning: teachValSession.meaning,
-    understanding: teachValSession.understanding,
-    recommendation: teachValSession.recommendation,
-    actions: [
-      {label: 'Extract teaching signal', workflow: 'teach:extract'},
-      {label: 'Build review updates', workflow: 'teach:review'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-    ],
-    label: 'Teach VAL workspace'
+    lens: 'VAL Studio',
+    title: 'VAL Studio',
+    meaning: 'View and compose governed executive functions from VAL’s Observers, connected evidence, and bounded actions.',
+    understanding: [],
+    recommendation: 'Choose an existing Environment or begin a new one with the outcome you want VAL to carry.',
+    actions: [],
+    label: 'VAL Studio'
   });
-  renderWorkspaceInput({
-    label: 'Teach VAL',
-    placeholder: "Example: This wasn't useful because... / Show me more like this... / I would have handled this differently...",
-    helper: 'Teach VAL creates reviewable learning candidates. Sensitive or durable memory should be confirmed before it becomes part of VAL.',
-    mode: 'teach'
-  });
+  if(workspaceGrid)workspaceGrid.hidden=true;
+  if(judgmentSequence)judgmentSequence.innerHTML='';
+  if(agencyNote)agencyNote.textContent='';
+  workspaceActions.innerHTML='';
+  workspaceInputPanel.hidden=true;
+  scraperPreviewList.hidden=false;
+  scraperPreviewList.classList.add('val-studio-surface');
+  scraperPreviewList.innerHTML='<div class="val-studio-loading" data-val-studio-loading><span class="val-presence-mark"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><strong>Opening VAL Studio</strong><span>Loading Environments and real transcript evidence.</span></div>';
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
+  resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel']);
+  window.requestAnimationFrame(() => resetOpenSurfaceScroll(deskWorkspace, ['.workspace-panel']));
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
+  void hydrateValStudio();
 }
 
 function openWorkspace(roomName){
@@ -25660,7 +29665,7 @@ async function handlePrimaryAction(button){
     return;
   }
   if(roomName === 'alignment'){
-    openAlignmentExecutionWorkspace();
+    openAlignmentCoworkDirect();
     return;
   }
   if(roomName === 'leverage'){
@@ -25697,7 +29702,138 @@ async function handlePrimaryAction(button){
   openWorkspace(button.dataset.openRoom);
 }
 
+function alignmentCompletionCommitmentId(item = {}){
+  const metadata = itemMetadata(item);
+  const identity = sourceIdentityForItem(item);
+  const candidates = [
+    item.sourceCommitmentId,
+    item.commitmentId,
+    item.rawCommitment?.id,
+    metadata.sourceCommitmentId,
+    metadata.commitmentId,
+    item.target?.type === 'commitment' ? item.target?.id : '',
+    /commitment/i.test(String(identity.type || item.sourceType || item.source_type || '')) ? identity.id : ''
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+function alignmentCompletionChiefRecommendationId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.chiefRecommendationId,
+    item.chief_recommendation_id,
+    metadata.chiefRecommendationId,
+    metadata.chief_recommendation_id,
+    item.target?.type === 'chief_of_staff_recommendation' ? item.target?.id : ''
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+function alignmentCompletionChiefQueuePacketId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.chiefQueuePacketId,
+    item.chief_queue_packet_id,
+    metadata.chiefQueuePacketId,
+    metadata.chief_queue_packet_id
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+function alignmentCompletionCanonicalWorkItemId(item = {}){
+  const metadata = itemMetadata(item);
+  const candidates = [
+    item.canonicalWorkItemId,
+    item.canonical_work_item_id,
+    metadata.canonicalWorkItemId,
+    metadata.canonical_work_item_id
+  ].filter(Boolean).map(String);
+  return candidates.find(Boolean) || '';
+}
+
+async function persistAlignmentDone(item = {}){
+  const commitmentId = alignmentCompletionCommitmentId(item);
+  const chiefRecommendationId = alignmentCompletionChiefRecommendationId(item);
+  const chiefQueuePacketId = alignmentCompletionChiefQueuePacketId(item);
+  const canonicalWorkItemId = alignmentCompletionCanonicalWorkItemId(item);
+  if(!canUseApi) return;
+  if(commitmentId && !canonicalWorkItemId){
+    await postJson('/api/val/commitments/' + encodeURIComponent(commitmentId) + '/status', {
+      status:'complete',
+      reason:'Marked done from Home Alignment.'
+    });
+  }
+  if(chiefRecommendationId){
+    await postJson('/api/val/chief-of-staff/' + encodeURIComponent(chiefRecommendationId) + '/complete', {
+      outcome:'completed',
+      completionNote:'Marked done from Home Alignment.',
+      canonicalWorkItemId,
+      feedback:{packetId:chiefQueuePacketId,chiefQueuePacketId,canonicalWorkItemId}
+    });
+  }else if(canonicalWorkItemId){
+    await postJson('/api/val/work-items/' + encodeURIComponent(canonicalWorkItemId) + '/transition', {
+      status:'complete',
+      eventType:'alignment_marked_done',
+      payload:{surface:'home_alignment',chiefQueuePacketId}
+    });
+  }
+}
+
+function markAlignmentCardDone(){
+  const queue = homeRoomQueues.alignment || [];
+  const handledItem = queue[0]?.sourceItem || queue[0] || {};
+  const handledTitle = itemTitle(handledItem, 'Alignment action');
+  markHomeItemCompleted('alignment', handledItem, 'done');
+  void persistAlignmentDone(handledItem).catch((error) => {
+    console.warn('[hearth] Alignment done could not persist:', error.message);
+  });
+  if(queue.length) queue.shift();
+  homeRoomQueues.alignment = queue.map((item, index) => ({...item, priority:index + 1}));
+  if(homeRoomQueues.alignment.length){
+    updateAlignmentRoomFromQueue();
+  }else{
+    updateRoomFromBriefing('alignment', {
+      card: {
+        observation: 'Alignment handled.',
+        implication: 'No other action is asking for the room right now.',
+        invitation: 'The Chief of Staff will surface the next move only when it earns Home.',
+        title: 'Alignment handled.',
+        summary: 'No other action is asking for the room right now.',
+        action: 'Co-work'
+      },
+      workspace: {
+        lens: 'Alignment',
+        title: 'Alignment handled.',
+        meaning: 'The current human action has been marked done in this Home session.',
+        understanding: [
+          'No email, task, CRM update, calendar change, or external action was taken from this click.',
+          'The Chief of Staff will select the next source-backed move when one earns Home.'
+        ],
+        recommendation: 'Return to the desk. If this should become durable system memory, teach VAL the completed outcome.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    });
+    setRoomCopy(currentState);
+  }
+  const alignmentRoom = document.querySelector('.living-room.alignment');
+  if(alignmentRoom){
+    alignmentRoom.querySelector('[data-alignment-done-confirmation]')?.remove();
+    const confirmation = document.createElement('p');
+    confirmation.className = 'alignment-done-confirmation';
+    confirmation.dataset.alignmentDoneConfirmation = 'true';
+    confirmation.textContent = compactSentence(handledTitle, 'Alignment action') + ' marked done.';
+    const actionButton = alignmentRoom.querySelector('.room-action');
+    alignmentRoom.insertBefore(confirmation, actionButton || null);
+    window.setTimeout(() => confirmation.remove(), 2600);
+  }
+  markRoomAttended('alignment', 'done');
+  hearth.classList.add('desk-settling');
+  window.setTimeout(() => hearth.classList.remove('desk-settling'), 620);
+}
+
 function closeWorkspace(){
+  if(openAiSetupRequired) return;
   stopValCoworkVoiceMode();
   if(workspaceReturnTarget === 'board' && deskWorkspace?.classList.contains('observer-cowork-active')){
     hideCoworkContextGathering();
@@ -25774,6 +29910,7 @@ function openCalendarPanel(){
   hearth.classList.add('calendar-open');
   calendarTab.setAttribute('aria-expanded', 'true');
   fullCalendarPanel.setAttribute('aria-hidden', 'false');
+  resetOpenSurfaceScroll(fullCalendarPanel, ['.calendar-panel-inner']);
   refreshCalendarSourceStatus();
   hydrateCalendarPanel();
 }
@@ -25785,10 +29922,45 @@ function closeCalendarPanel(){
   renderCalendarPacketReceiptStrip(null);
 }
 
+async function openHomeObserverFullContext(){
+  await Promise.race([
+    loadLiveObserverBoardContext(),
+    new Promise((resolve) => window.setTimeout(resolve, 2500))
+  ]);
+  const observer = selectHomeObserverSignal(executiveBriefingState || {});
+  if(!observer){
+    return openObserverBoard();
+  }
+  const contextPatch = homeObserverContextPatch(observer, executiveBriefingState || {});
+  return openObserverCowork(observerConversationId(observer.name), 'observer', {
+    title:'Talk with ' + observer.name,
+    detail:'This is the context ' + observer.name + ' gave the Chief of Staff for the Home read.',
+    placeholder:'Ask ' + observer.name + ' what it noticed...',
+    initialMessage:contextPatch.openingAnswer,
+    contextPatch
+  });
+}
+
 leanButton?.addEventListener('click', () => {
   const isOpen = evidence.classList.toggle('open');
   hearth.classList.toggle('evidence-open', isOpen);
   leanButton.setAttribute('aria-expanded', String(isOpen));
+});
+
+evidence?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-home-evidence-action]');
+  if(!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const action = button.dataset.homeEvidenceAction;
+  evidence.classList.remove('open');
+  hearth.classList.remove('evidence-open');
+  leanButton?.setAttribute('aria-expanded', 'false');
+  if(action === 'board'){
+    return openHomeObserverFullContext();
+  }
+  if(action === 'alignment') return openAlignmentExecutionWorkspace();
+  if(action === 'leverage') return openLeverageApprovalWorkspace();
 });
 
 freshDeskButton?.addEventListener('click', clearRoomAttendance);
@@ -25804,18 +29976,25 @@ drawerPull.addEventListener('click', () => {
   updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
-    drawerTray.scrollTo?.({top:0, left:0});
+    drawerTray?.scrollTo?.({top:0, left:0});
     window.requestAnimationFrame(() => drawerTray.scrollIntoView?.({block:'nearest', inline:'nearest'}));
   }
   updateCloseAllDrawersButton();
 });
 
 closeAllDrawersButton?.addEventListener('click', closeDrawer);
-executiveCompassCore?.addEventListener('click', closeExecutiveCompassFromCore);
 
 document.addEventListener('click', (event) => {
   const closeButton = event.target.closest('.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail');
-  if(!closeButton || !closeButton.closest('#drawer-tray')) return;
+  const activeExecutiveFunction = Boolean(
+    retrievalSystem?.classList.contains('open') &&
+    (
+      retrievalSystem.dataset.activeDrawer ||
+      drawerTray.matches('.val-open,.relationship-open,.project-open,.timeline-open,.correspondence-open,.commitment-open,.document-open,.source-open')
+    )
+  );
+  const clickedOutsideExecutiveFunction = activeExecutiveFunction && !event.target.closest('#drawer-tray');
+  if((!closeButton || !closeButton.closest('#drawer-tray')) && !clickedOutsideExecutiveFunction) return;
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
@@ -25825,7 +30004,7 @@ document.addEventListener('click', (event) => {
 function openCompassAxisWorkspace(roomName){
   closeDrawer();
   if(roomName === 'alignment'){
-    openAlignmentExecutionWorkspace();
+    openAlignmentCoworkDirect();
     return;
   }
   if(roomName === 'leverage'){
@@ -25842,6 +30021,7 @@ executiveCompassAxisNodes?.addEventListener('click', (event) => {
 });
 
 valDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   relationshipDrawerLink.setAttribute('aria-expanded', 'false');
@@ -25872,6 +30052,12 @@ valDrawerLink?.addEventListener('click', () => {
   }
 });
 
+studioDrawerLink?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  openTeachValSession();
+});
+
 async function handleValDetailWorkflowClick(event){
   const workflowButton = event.target.closest('[data-workflow-action]');
   if(!workflowButton || !workflowButton.closest('#val-detail')) return false;
@@ -25892,6 +30078,15 @@ async function handleValDetailWorkflowClick(event){
     await openValWitnessingSession('meeting_val', {resume:true});
     return true;
   }
+  if(action.startsWith('valWitnessingUpdate:')){
+    await reopenValWitnessingCard(action.split(':')[1] || 'meeting_val');
+    return true;
+  }
+  if(action === 'valWitnessingRefreshConnections' || action.startsWith('valWitnessingCredentialForm:')){
+    const parts = action.split(':');
+    await handleValWitnessingWorkflowAction(parts[0],parts[1]||'',parts.slice(2));
+    return true;
+  }
   const preflight = await ensureHearthClickPacket({
     node:workflowButton,
     packetName:'val_os_packet',
@@ -25909,13 +30104,32 @@ async function handleValDetailWorkflowClick(event){
     openValConnectionsWorkspace();
     return true;
   }
+  if(action === 'valWitnessingResume'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return true;
+  }
+  if(action === 'valWitnessingFresh'){
+    await openValWitnessingSession('meeting_val', {fresh:true});
+    return true;
+  }
+  if(action === 'valWitnessingDocuments'){
+    await reopenValWitnessingDocuments();
+    return true;
+  }
   await handleWorkflowAction(action, workflowButton);
   return true;
 }
 
 valDetail?.addEventListener('click', handleValDetailWorkflowClick);
+valDetail?.addEventListener('submit', async (event) => {
+  const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
+  if(!credentialForm)return;
+  event.preventDefault();
+  await saveValWitnessingCredential(credentialForm.dataset.valWitnessingCredentialForm);
+});
 
 sourceDrawerLink.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -25947,6 +30161,7 @@ sourceDrawerLink.addEventListener('click', () => {
 });
 
 relationshipDrawerLink.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'source-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -25981,6 +30196,7 @@ projectDrawerLink.addEventListener('click', () => {
     showFeatureComingSoon('Project Managers');
     return;
   }
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -26002,9 +30218,8 @@ projectDrawerLink.addEventListener('click', () => {
   document.querySelector('#project-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
     retrievalSystem.dataset.activeDrawer = 'project';
-    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:clientFeatureLocks.pipelineCommandRoom?'drawer:pipelines':'drawer:projects', label:clientFeatureLocks.pipelineCommandRoom?'Pipelines drawer':'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
-    if(clientFeatureLocks.pipelineCommandRoom) hydrateMarkPipelineCommandRoom();
-    else openProjectIndex();
+    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
+    openProjectIndex();
   } else {
     retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
@@ -26012,6 +30227,7 @@ projectDrawerLink.addEventListener('click', () => {
 });
 
 timelineDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -26042,6 +30258,7 @@ timelineDrawerLink?.addEventListener('click', () => {
 });
 
 correspondenceDrawerLink?.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   const willOpen = !drawerTray.classList.contains('correspondence-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -26355,13 +30572,6 @@ drawerTray.addEventListener('click', async (event) => {
     if(transcriptAction.dataset.transcriptAction === 'create_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'), 'create');
     return;
   }
-  const transcriptTaskCreate = event.target.closest('[data-transcript-task-create]');
-  if(transcriptTaskCreate){
-    event.preventDefault();
-    event.stopPropagation();
-    await openTranscriptActionItemCowork(transcriptTaskCreate.dataset.transcriptTaskCreate, Number(transcriptTaskCreate.dataset.transcriptTaskIndex));
-    return;
-  }
   const transcriptFocus = event.target.closest('[data-transcript-focus]');
   if(transcriptFocus){
     event.preventDefault();
@@ -26379,6 +30589,43 @@ drawerTray.addEventListener('click', async (event) => {
       full.hidden = nextHidden;
       transcriptFull.textContent = nextHidden ? 'View full transcript' : 'Hide full transcript';
     }
+    return;
+  }
+  const transcriptLoadMore = event.target.closest('[data-transcript-load-more]');
+  if(transcriptLoadMore){
+    event.preventDefault();
+    event.stopPropagation();
+    await loadTimelineTranscripts({openFirst:false,days:timelineTranscriptRefreshDays,append:true});
+    return;
+  }
+  const transcriptDelete = event.target.closest('[data-transcript-delete]');
+  if(transcriptDelete){
+    event.preventDefault();
+    event.stopPropagation();
+    const confirmation=transcriptDelete.parentElement?.querySelector('[data-transcript-delete-confirmation="' + cssEscape(transcriptDelete.dataset.transcriptDelete) + '"]');
+    transcriptDelete.hidden=true;
+    if(confirmation) confirmation.hidden=false;
+    return;
+  }
+  const transcriptDeleteConfirm = event.target.closest('[data-transcript-delete-confirm]');
+  if(transcriptDeleteConfirm){
+    event.preventDefault();
+    event.stopPropagation();
+    try{
+      await deleteTimelineTranscript(transcriptDeleteConfirm.dataset.transcriptDeleteConfirm);
+    }catch(error){
+      setTimelineTranscriptActionStatus(error.message||'Transcript deletion failed.','danger');
+    }
+    return;
+  }
+  const transcriptDeleteCancel = event.target.closest('[data-transcript-delete-cancel]');
+  if(transcriptDeleteCancel){
+    event.preventDefault();
+    event.stopPropagation();
+    const confirmation=transcriptDeleteCancel.closest('[data-transcript-delete-confirmation]');
+    if(confirmation) confirmation.hidden=true;
+    const deleteButton=confirmation?.parentElement?.querySelector('[data-transcript-delete]');
+    if(deleteButton) deleteButton.hidden=false;
     return;
   }
   const timelineAction = event.target.closest('[data-timeline-action]');
@@ -26437,11 +30684,28 @@ drawerTray.addEventListener('click', async (event) => {
     await openProjectSourceReview(update);
     return;
   }
+  const projectGraphLinkButton = event.target.closest('[data-project-graph-link]');
+  if(projectGraphLinkButton){
+    event.preventDefault();
+    event.stopPropagation();
+    const links = Array.isArray(activeProjectProfile?.graphLinks) ? activeProjectProfile.graphLinks : [];
+    const link = links[Number(projectGraphLinkButton.dataset.projectGraphLink)] || null;
+    if(link) await openProjectGraphLink(link);
+    return;
+  }
   const correspondenceFilter = event.target.closest('[data-correspondence-filter]');
   if(correspondenceFilter){
     event.preventDefault();
     event.stopPropagation();
     currentCorrespondenceFilter = correspondenceFilter.dataset.correspondenceFilter || 'requires_reply';
+    if(currentCorrespondenceFilter==='archive'){
+      await hydrateCorrespondenceArchive();
+      return;
+    }
+    if(currentCorrespondenceItems===currentCorrespondenceArchiveItems||currentCorrespondenceItems.every(item=>item.status==='resolved')){
+      currentCorrespondenceItems=currentCorrespondenceActiveItems.slice();
+      activeCorrespondenceItem=currentCorrespondenceItems[0]||null;
+    }
     renderCorrespondenceList();
     const visibleItems = sortedCorrespondenceItems(currentCorrespondenceItems.filter((item) => correspondenceItemMatchesFilter(item)));
     if(visibleItems.length && !visibleItems.some((item) => item.id === activeCorrespondenceItem?.id)){
@@ -26769,6 +31033,15 @@ drawerTray.addEventListener('click', async (event) => {
     await openProjectProfileFromDrawer(projectProfileButton.dataset.projectOpenProfile, projectProfileButton);
     return;
   }
+  const projectShowIndexButton = event.target.closest('[data-project-show-index]');
+  if(projectShowIndexButton){
+    event.preventDefault();
+    event.stopPropagation();
+    setProjectDetailMode('index');
+    renderProjectRolodex();
+    projectRolodex?.querySelector('[data-project-open-profile]')?.focus({preventScroll:true});
+    return;
+  }
   const projectRelationshipChoice = event.target.closest('[data-project-relationship-choice]');
   if(projectRelationshipChoice){
     event.preventDefault();
@@ -26865,8 +31138,16 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('click', (event) => {
+  const homeCardCommand = event.target.closest('[data-home-card-command]');
+  if(homeCardCommand){
+    event.preventDefault();
+    event.stopPropagation();
+    if(homeCardCommand.dataset.homeCardCommand === 'alignment_done') markAlignmentCardDone();
+    return;
+  }
   const launchTarget = event.target.closest([
     '[data-open-room]',
+    '[data-home-card-command]',
     '.cowork-notebook',
     '.task-companion-button',
     '.next-meeting-card',
@@ -26916,18 +31197,13 @@ agendaItems.forEach((item) => {
 });
 observerBoardButton?.addEventListener('click', openObserverBoard);
 coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(coworkNotebook));
-teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
+teachPen.addEventListener('click', openTeachValSession);
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
 workspaceInputPanel.addEventListener('submit', async (event) => {
   const openAiSetupForm = event.target.closest('[data-val-openai-setup-form]');
   if(openAiSetupForm){
     event.preventDefault();
-    const connected = await saveValWitnessingCredential('openai');
-    if(connected){
-      const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
-      pendingValWitnessingLaunch = null;
-      await openValWitnessingSession(launch.cardId,launch.options);
-    }
+    await completeValOpenAISetup();
     return;
   }
   const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
@@ -26939,6 +31215,13 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   handleHomeCoworkFormSubmit(event);
 });
 workspaceInputPanel.addEventListener('click', (event) => {
+  const copyOutputButton = event.target.closest('[data-cowork-copy-output]');
+  if(copyOutputButton){
+    event.preventDefault();
+    event.stopPropagation();
+    void copyCoworkOutput(copyOutputButton);
+    return;
+  }
   const observerDismissButton = event.target.closest('[data-observer-card-dismiss]');
   if(observerDismissButton){
     event.preventDefault();
@@ -26951,15 +31234,18 @@ workspaceInputPanel.addEventListener('click', (event) => {
     maybeDismissObserverSelectedCard(event);
     return;
   }
-  event.preventDefault();
-  event.stopPropagation();
-  if(observerButton.classList.contains('observer-node')){
-    updateObserverSelectedCard(observerButton.dataset.observerCowork || '');
+  if(handleObserverBoardNodeActivation(observerButton, event)){
     return;
   }
-  void openObserverCowork(observerButton.dataset.observerCowork || '',observerButton.dataset.observerRole || 'observer');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
+  const leverageSelection = event.target.closest('[data-leverage-select-index]');
+  if(leverageSelection){
+    event.preventDefault();
+    event.stopPropagation();
+    openLeverageApprovalWorkspace(Number(leverageSelection.dataset.leverageSelectIndex));
+    return;
+  }
   const alignmentDraftButton = event.target.closest('[data-alignment-load-draft]');
   if(alignmentDraftButton){
     event.preventDefault();
@@ -26980,6 +31266,20 @@ scraperPreviewList?.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await openTaskSourceTranscript(taskTranscript.dataset.taskOpenTranscript || '');
+    return;
+  }
+  const taskDone = event.target.closest('[data-task-done]');
+  if(taskDone){
+    event.preventDefault();
+    event.stopPropagation();
+    await completeTaskFromWorkspace(taskDone.dataset.taskDone || '');
+    return;
+  }
+  const taskCowork = event.target.closest('[data-task-cowork]');
+  if(taskCowork){
+    event.preventDefault();
+    event.stopPropagation();
+    openTaskCowork(taskCowork.dataset.taskCowork || '');
     return;
   }
   const taskPrepared = event.target.closest('[data-task-open-prepared]');
@@ -27102,6 +31402,7 @@ document.addEventListener('click', async (event) => {
 });
 
 leadSourcingEmptyBoard();
+void hydrateGeneralLeadScraper();
 
 async function routeWorkspaceActionClick(event){
   const homeActionButton = event.target.closest('[data-home-action]');
@@ -27209,6 +31510,13 @@ workspaceInputPanel.addEventListener('change', async (event) => {
 });
 
 scraperPreviewList?.addEventListener('submit', (event) => {
+  const linkedinWatchForm = event.target.closest('[data-linkedin-watch-form]');
+  if(linkedinWatchForm){
+    event.preventDefault();
+    event.stopPropagation();
+    void addLinkedInWatchedProfile(linkedinWatchForm);
+    return;
+  }
   handleHomeCoworkFormSubmit(event);
 });
 scraperPreviewList?.addEventListener('input', handleHomeCoworkInput);
@@ -27227,11 +31535,35 @@ scraperPreviewList?.addEventListener('click', (event) => {
 });
 
 deskWorkspace.addEventListener('click', async (event) => {
+  const copyOutputButton = event.target.closest('[data-cowork-copy-output]');
+  if(copyOutputButton){
+    event.preventDefault();
+    event.stopPropagation();
+    await copyCoworkOutput(copyOutputButton);
+    return;
+  }
   const linkedinPageButton = event.target.closest('[data-linkedin-page]');
   if(linkedinPageButton){
     event.preventDefault();
     event.stopPropagation();
     setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
+    return;
+  }
+  const linkedinRefresh = event.target.closest('[data-linkedin-refresh]');
+  if(linkedinRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    linkedinRefresh.disabled = true;
+    linkedinRefresh.textContent = 'Checking';
+    await hydrateLinkedInVisibility({force:true,refresh:true});
+    renderLinkedInEngagementList('posts');
+    return;
+  }
+  const linkedinStopWatch = event.target.closest('[data-linkedin-stop-watch]');
+  if(linkedinStopWatch){
+    event.preventDefault();
+    event.stopPropagation();
+    await stopLinkedInWatchedProfile(linkedinStopWatch.dataset.linkedinStopWatch, linkedinStopWatch);
     return;
   }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
@@ -27286,6 +31618,23 @@ async function handleScraperPreviewClick(event){
     setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
     return;
   }
+  const linkedinRefresh = event.target.closest('[data-linkedin-refresh]');
+  if(linkedinRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    linkedinRefresh.disabled = true;
+    linkedinRefresh.textContent = 'Checking';
+    await hydrateLinkedInVisibility({force:true,refresh:true});
+    renderLinkedInEngagementList('posts');
+    return;
+  }
+  const linkedinStopWatch = event.target.closest('[data-linkedin-stop-watch]');
+  if(linkedinStopWatch){
+    event.preventDefault();
+    event.stopPropagation();
+    await stopLinkedInWatchedProfile(linkedinStopWatch.dataset.linkedinStopWatch, linkedinStopWatch);
+    return;
+  }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -27333,6 +31682,7 @@ Array.from(new Set([scraperPreviewList, leadDrawerPreviewList].filter(Boolean)))
 });
 
 document.addEventListener('keydown', (event) => {
+  if(handleHomeCoworkEnterToSend(event)) return;
   if(event.key !== 'Escape') return;
   if(correspondenceRelationshipResults && !correspondenceRelationshipResults.hidden){
     correspondenceRelationshipResults.hidden = true;
@@ -27421,6 +31771,16 @@ roomButtons.forEach((button) => {
 rooms.forEach((room) => {
   room.addEventListener('click', async (event) => {
     if(hearth.classList.contains('drawer-open')) return;
+    const selectedRoomItem = event.target.closest('.room-item-list [data-home-room-source][data-home-room-index]');
+    if(selectedRoomItem){
+      event.preventDefault();
+      event.stopPropagation();
+      const roomName = selectedRoomItem.dataset.homeRoomSource || room.dataset.room || '';
+      const queueIndex = Number(selectedRoomItem.dataset.homeRoomIndex);
+      if(roomName === 'leverage') openLeverageApprovalWorkspace(queueIndex);
+      else openHomeItemCowork(roomName, queueIndex);
+      return;
+    }
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
     if(actionButton){
@@ -27451,13 +31811,22 @@ observeHearthClickContracts();
 applyHearthTimePeriod();
 window.setInterval(applyHearthTimePeriod, 5 * 60 * 1000);
 setState(hearth.dataset.state || 'quiet');
-hydrateClientConfig().finally(() => hydrateHomePresence());
+hydrateClientConfig();
+hydrateHomePresence();
 hydrateCalendarPanel();
 
-if(location.hash === '#valWitnessingResume'){
-  setTimeout(() => {
+async function initializeAuthenticatedDashboardEntry(){
+  const ready = await enforceOpenAIConnectionOnDashboardEntry();
+  if(!ready) return;
+  if(location.hash === '#valWitnessingResume'){
     openValWitnessingSession('meeting_val', {resume:true}).catch((error) => {
       valLiveStatus.textContent = 'Could not open the Witnessing Session: ' + error.message;
     });
-  }, 120);
+  }
+  if(location.hash === '#valWitnessingDocuments'){
+    reopenValWitnessingDocuments().catch((error) => {
+      valLiveStatus.textContent = 'Could not reopen Documents: ' + error.message;
+    });
+  }
 }
+window.setTimeout(initializeAuthenticatedDashboardEntry,120);

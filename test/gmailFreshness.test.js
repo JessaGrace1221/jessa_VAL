@@ -10,11 +10,18 @@ const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 test('gmail fetch uses the bounded 90-day executive window and sorts newest first',()=>{
   assert.match(server,/query='in:inbox newer_than:14d'/);
   assert.match(server,/const activeDays=Math\.max\(1,Math\.min\(90,Number\.isFinite\(requestedDays\)\?requestedDays:14\)\)/);
-  assert.match(server,/const recentQuery=`in:anywhere -in:sent newer_than:\$\{activeDays\}d`/);
-  assert.match(server,/const unreadQuery=`in:anywhere -in:sent is:unread newer_than:\$\{activeDays\}d`/);
-  assert.match(server,/fetchGmailMessages\(\{query:`in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const recentQuery=afterDate\?`in:anywhere -in:sent after:\$\{afterDate\}`:`in:anywhere -in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const unreadQuery=afterDate\?`in:anywhere -in:sent is:unread after:\$\{afterDate\}`:`in:anywhere -in:sent is:unread newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const sentQuery=afterDate\?`in:sent after:\$\{afterDate\}`:`in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/saveSourceSyncCheckpoint\('gmail'/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
+  assert.match(server,/sourceSyncCheckpoint\('gmail_sent_history'\)/);
+  assert.match(server,/fetchGmailSentNetworkMessages\(\)/);
+  assert.match(server,/\[\.\.\.emails,\.\.\.\(documentGmail\.emails\|\|\[\]\),\.\.\.durableSentGmail\]/);
+  assert.match(server,/saveSourceSyncCheckpoint\('gmail_sent_history'/);
+  assert.match(server,/durableOutboundRecipientEmails/);
+  assert.match(server,/timed\.outboundRecipients\?\.has/);
 });
 
 test('gmail refresh retries rejected access tokens and exposes sync status',()=>{
@@ -24,6 +31,13 @@ test('gmail refresh retries rejected access tokens and exposes sync status',()=>
   assert.match(server,/lastFetchedCount/);
   assert.match(server,/lastAnalyzedCount/);
   assert.match(server,/app\.post\('\/api\/email\/gmail\/refresh'/);
+});
+
+test('outlook refresh uses the same durable incremental checkpoint contract',()=>{
+  assert.match(server,/sourceSyncCheckpoint\('outlook'\)/);
+  assert.match(server,/fetchUnifiedOutlookEmails\(limit,\{receivedAfter:outlookSyncCheckpoint\?\.lastSuccessfulSyncAt\|\|''\}\)/);
+  assert.match(server,/query\.set\('\$filter',`receivedDateTime ge \$\{receivedAfterDate\.toISOString\(\)\}`\)/);
+  assert.match(server,/saveSourceSyncCheckpoint\('outlook'/);
 });
 
 test('executive inbox UI has manual refresh and visible sync metadata',()=>{
@@ -77,11 +91,20 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/queue'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/resolve-thread'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/safe-contact'/);
+  assert.match(server,/async function admitSafeListedExecutiveInboxMessages/);
+  assert.match(server,/admittedCount:admitted\.length/);
+  assert.match(server,/manual_executive_contact_override/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/link-context'/);
   assert.match(server,/executive_inbox_context_link/);
   assert.match(server,/function executiveInboxSafeListed/);
   assert.match(server,/This is here because you told VAL this sender belongs in Executive Inbox/);
   assert.match(server,/function canonicalExecutiveInboxQueue/);
+  assert.match(server,/function localExecutiveInboxQueue/);
+  assert.match(server,/canonicalExecutiveInboxQueue\(req,\{force=false,preferCached=!force\}=\{\}\)/);
+  assert.match(server,/if\(preferCached\)\{\s*return localExecutiveInboxQueue\(req,\{limit:req\.query\?\.limit\|\|30\}\);/);
+  assert.match(server,/cached:true/);
+  assert.match(server,/staleAllowed:true/);
+  assert.match(server,/req\.query\.force==='1'\|\|req\.query\.refresh==='1'/);
   assert.match(server,/fetchGmailMessages\(\{query:`in:sent to:\$\{sender\}`/);
   assert.match(server,/waitingOnResponseFromSent\(sentGmail\.emails\|\|\[\],Array\.from\(gmailMap\.values\(\)\),0\)/);
   assert.match(server,/function emailShouldPrepareDraft/);
@@ -101,7 +124,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/needsThreadContent:true/);
   assert.match(server,/No generic draft was created/);
   assert.match(server,/filter\(d=>!executiveInboxDraftLooksGeneric\(d\)\)/);
-  assert.match(server,/if\(draft\)email\.preparedDraft=draft/);
+  assert.doesNotMatch(server,/preparedDraftResults=await Promise\.all\(emails\.map/);
+  assert.match(server,/const preparedDraft=!waiting \? await prepareSourceBackedExecutiveInboxDraft/);
+  assert.match(server,/async function prepareSourceBackedExecutiveInboxDraft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
 });
