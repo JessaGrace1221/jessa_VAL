@@ -9167,6 +9167,8 @@ function normalizeCorrespondenceDraft(draft = {}){
     threadId: source.threadId || '',
     recipientEmail: source.to || source.recipientEmail || source.recipient || source.forwardTo || source.classification?.from?.email || source.conversationContext?.latest_inbound?.from?.email || '',
     provider: source.provider || source.classification?.provider || draft.provider || 'gmail',
+    googleProvider: source.googleProvider || source.google_provider || draft.googleProvider || draft.google_provider || 'google',
+    accountEmail: source.accountEmail || source.account_email || draft.accountEmail || draft.account_email || '',
     senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || source.classification?.from?.email || '',
     senderName: sender.name || latestInbound.fromName || latestInbound.from_name || source.classification?.from?.name || '',
     receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || draft.createdAt || '',
@@ -9211,6 +9213,8 @@ function normalizeCorrespondenceReadyItem(item = {}){
     threadId: metadata.threadId || '',
     recipientEmail: metadata.to || metadata.recipientEmail || metadata.email || draft.to || draft.recipientEmail || '',
     provider: metadata.provider || item.provider || 'gmail',
+    googleProvider: metadata.googleProvider || metadata.google_provider || item.googleProvider || item.google_provider || 'google',
+    accountEmail: metadata.accountEmail || metadata.account_email || item.accountEmail || item.account_email || '',
     senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || metadata.fromEmail || metadata.senderEmail || '',
     senderName: sender.name || latestInbound.fromName || latestInbound.from_name || metadata.fromName || metadata.senderName || metadata.contactName || '',
     receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || item.createdAt || '',
@@ -9248,13 +9252,15 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   const admission = email.executiveInboxAdmission || {};
   const staleDraft = correspondenceDraftLooksGeneric(draft.body || '');
   return {
-    id: 'gmail-scan-' + (email.messageId || email.threadId || index),
+    id: 'gmail-scan-' + (email.accountId || email.accountEmail || 'primary') + '-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
     messageId: email.messageId || '',
     conversationId: email.conversationId || email.unifiedConversationId || email.unified_conversation_id || source.conversationId || '',
     threadId: email.threadId || '',
     recipientEmail: sender.email || source.to || '',
     provider: email.provider || 'gmail',
+    googleProvider: email.googleProvider || email.google_provider || 'google',
+    accountEmail: email.accountEmail || email.account_email || '',
     senderEmail: sender.email || '',
     senderName: sender.name || sender.email || 'Gmail sender',
     receivedAt: email.date || email.receivedAt || email.internalDate || '',
@@ -9262,7 +9268,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     status: waitingForResponse ? 'waiting_for_response' : (needsContext ? 'needs_context' : 'ready_for_review'),
     summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
     whyNow: admission.reason || email.recommendedAction || email.reason || 'This thread matched the Executive Inbox rule gate.',
-    context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
+    context: [sender.name || sender.email, email.accountEmail, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
     prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.'),
     needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.'),
     draftBody: staleDraft ? '' : (draft.body || ''),
@@ -10391,7 +10397,13 @@ async function openCorrespondenceAttachment(index = 0){
   setCorrespondenceAttachmentPanel(true);
   renderCorrespondenceAttachmentView({filename:attachment.name, mimeType:attachment.mimeType || attachment.type, size:attachment.size, message:'Loading attachment source...'}, attachment);
   try{
-    const params = new URLSearchParams({messageId, attachmentId, filename:attachment.filename || attachment.name || '', mimeType:attachment.mimeType || attachment.type || ''});
+    const params = new URLSearchParams({
+      messageId,
+      attachmentId,
+      filename:attachment.filename || attachment.name || '',
+      mimeType:attachment.mimeType || attachment.type || '',
+      googleProvider:attachment.googleProvider || activeCorrespondenceItem?.googleProvider || activeCorrespondenceItem?.raw?.googleProvider || 'google'
+    });
     const result = await getJson('/api/val/executive-inbox/attachment?' + params.toString(), {timeoutMs:22000, timeoutMessage:'Attachment source took longer than expected.'});
     renderCorrespondenceAttachmentView(result, attachment);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Opened attachment source in read-only preview.';
@@ -10859,6 +10871,8 @@ function correspondenceSendPayload(item = activeCorrespondenceItem){
     subject,
     body,
     provider: item.provider || source.provider || raw.provider || 'gmail',
+    googleProvider: item.googleProvider || source.googleProvider || source.google_provider || raw.googleProvider || raw.google_provider || 'google',
+    accountEmail: item.accountEmail || source.accountEmail || source.account_email || raw.accountEmail || raw.account_email || '',
     threadId: item.threadId || source.threadId || '',
     messageId: source.messageId || '',
     sourceContext: {
@@ -22178,6 +22192,13 @@ function valWitnessingConnectionCard(connection = {}){
   const copy = valWitnessingConnectionCopy[id] || {keyLabel:connection.label || 'Connection',actionLabel:'Connect'};
   const connected = !!connection.connected;
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
+  const googleAccounts = id === 'google' && Array.isArray(connection.accounts) ? connection.accounts : [];
+  const accountList = googleAccounts.length ? '<div class="val-google-account-list">' + googleAccounts.map(account => [
+    '<div class="val-google-account">',
+      '<span><b>' + escapeConnectionHtml(account.email || account.label || 'Google account') + '</b><small>' + escapeConnectionHtml(account.primary ? 'Primary · Gmail, Calendar, Drive, and Docs' : 'Additional Gmail inbox') + '</small></span>',
+      '<a href="/auth/google?provider=' + encodeURIComponent(account.provider || 'google') + '" target="_blank" rel="noopener">Reconnect</a>',
+    '</div>'
+  ].join('')).join('') + '</div>' : '';
   const action = connection.action === 'oauth' && connection.actionHref
     ? '<a class="val-witnessing-source-action" href="' + escapeConnectionHtml(connection.actionHref) + '" target="_blank" rel="noopener">' + escapeConnectionHtml(copy.actionLabel) + '</a>'
     : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
@@ -22190,7 +22211,9 @@ function valWitnessingConnectionCard(connection = {}){
       '<p>' + escapeConnectionHtml(connection.learns || '') + '</p>',
       '<small>' + escapeConnectionHtml(connection.limits || '') + '</small>',
       connection.error ? '<em>' + escapeConnectionHtml(connection.error) + '</em>' : '',
+      accountList,
       action,
+      id === 'google' && connected ? '<a class="val-witnessing-source-action val-google-add-account" href="' + escapeConnectionHtml(connection.addActionHref || '/auth/google?mode=add') + '" target="_blank" rel="noopener">Add another Gmail account</a>' : '',
     '</article>'
   ].join('');
 }

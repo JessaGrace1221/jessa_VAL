@@ -7092,6 +7092,42 @@ button.observer-node:focus-visible{
 .val-witnessing-source-card em{
   color:rgba(122,51,44,.84);
 }
+.val-google-account-list{
+  display:grid;
+  gap:6px;
+  margin-top:2px;
+}
+.val-google-account{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  border-top:1px solid rgba(64,86,61,.14);
+  padding-top:7px;
+}
+.val-google-account span{
+  display:grid;
+  min-width:0;
+  gap:2px;
+}
+.val-google-account b{
+  overflow-wrap:anywhere;
+  color:rgba(34,19,15,.88);
+  font-size:.75rem;
+}
+.val-google-account small{
+  color:rgba(58,33,27,.58);
+  font-size:.66rem;
+}
+.val-google-account a{
+  color:rgba(47,67,43,.9);
+  font-size:.68rem;
+  font-weight:750;
+}
+.val-google-add-account{
+  border-color:rgba(164,103,112,.24);
+  background:linear-gradient(110deg,rgba(224,236,216,.9),rgba(244,220,224,.86));
+}
 .val-witnessing-source-action{
   display:inline-flex;
   align-items:center;

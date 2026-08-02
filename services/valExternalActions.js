@@ -350,6 +350,8 @@ function createValExternalActionsService({
     const subject=compactText(payload.subject||payload.title||'VAL email',320);
     const body=String(payload.body||payload.bodyText||payload.message||payload.bodyPreview||'').trim();
     const provider=String(payload.provider||payload.targetSystem||'gmail').trim().toLowerCase();
+    const googleProvider=String(payload.googleProvider||payload.google_provider||'google').trim();
+    const accountEmail=compactText(payload.accountEmail||payload.account_email||'',320);
     const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
     const packet=basePacket({
@@ -361,10 +363,10 @@ function createValExternalActionsService({
       targetId:payload.threadId||payload.messageId||to||subject,
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
-      payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
+      payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,googleProvider,accountEmail,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
       refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.draftId||sourceContext.docId||payload.id||'',quoteOrSummary:subject,confidence:0.9})],
       approvalPolicy:'approval_required',
-      sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
+      sourceContext:{...sourceContext,source:'send_gate',googleProvider,accountEmail,finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
     });
     packet.whatWillHappen='After final approval, VAL will send exactly this email through the connected provider and save an execution receipt.';
     packet.whatWillNotHappen='VAL will not send any other email, modify CRM, create calendar events, publish content, or change the draft contents beyond the fields shown in this send gate.';

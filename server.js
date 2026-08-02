@@ -8605,8 +8605,9 @@ async function requireOpenAIForNewWitnessing(res){
   return true;
 }
 async function witnessingConnectionStatusPayload(){
-  const [google,microsoftTokens]=await Promise.all([
+  const [google,googleAccounts,microsoftTokens]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
+    listGoogleAccounts({hydrate:true}).catch(()=>[]),
     loadOAuthTokens('microsoft').catch(()=>null)
   ]);
   const openai=await tenantOpenAIConnectionReadiness();
@@ -8624,6 +8625,8 @@ async function witnessingConnectionStatusPayload(){
         connected:!!google.connected,
         action:'oauth',
         actionHref:'/auth/google',
+        addActionHref:'/auth/google?mode=add',
+        accounts:googleAccounts,
         learns:'Gmail, Google Calendar, Drive, and Docs context.',
         limits:'VAL reads evidence only. It never sends, changes a calendar, or shares a file without approval.',
         missingScopes:google.missingScopes||[],
@@ -10944,8 +10947,10 @@ app.get('/api/val/executive-inbox/attachment',async(req,res)=>{
     const attachmentId=String(req.query.attachmentId||'').trim();
     const filename=String(req.query.filename||'email-attachment').trim().slice(0,220)||'email-attachment';
     const mimeType=String(req.query.mimeType||'application/octet-stream').trim()||'application/octet-stream';
+    const googleProvider=String(req.query.googleProvider||'google').trim();
     if(!messageId||!attachmentId)return res.status(400).json({ok:false,error:'Message id and attachment id are required.',noExternalAction:true});
-    const payload=await gmailFetchJson(
+    const payload=await gmailFetchJsonForProvider(
+      googleProvider,
       `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {},
       'Gmail email attachment'
@@ -10959,7 +10964,7 @@ app.get('/api/val/executive-inbox/attachment',async(req,res)=>{
       text='';
     }
     const previewable=/^(image\/|application\/pdf$|text\/)/i.test(mimeType) && buffer.length <= 8*1024*1024;
-    await auditLog({req,action:'executive_inbox_attachment_viewed',resourceType:'executive_inbox_attachment',resourceId:[messageId,attachmentId].join(':'),metadata:{messageId,attachmentId,filename,mimeType,size:buffer.length},success:true}).catch(()=>{});
+    await auditLog({req,action:'executive_inbox_attachment_viewed',resourceType:'executive_inbox_attachment',resourceId:[googleProvider,messageId,attachmentId].join(':'),metadata:{googleProvider,messageId,attachmentId,filename,mimeType,size:buffer.length},success:true}).catch(()=>{});
     res.json({
       ok:true,
       filename,
@@ -11426,6 +11431,27 @@ async function loadOAuthTokens(provider){
   return tokens[`${tenant}:${userId}:${provider}`] ? decryptOAuthTokens(tokens[`${tenant}:${userId}:${provider}`]) : null;
 }
 
+async function listOAuthTokenRecords(providerPrefix=''){
+  await valDbReady;
+  const userId=currentUserId();
+  const tenant=tenantId();
+  const prefix=String(providerPrefix||'').trim();
+  if(pgPool){
+    const r=await dbQuery(
+      `select provider,tokens,updated_at from val_oauth_tokens
+       where tenant_id=$1 and user_id=$2 and (provider=$3 or provider like $4)
+       order by case when provider=$3 then 0 else 1 end, updated_at asc`,
+      [tenant,userId,prefix,`${prefix}:%`]
+    );
+    return (r.rows||[]).map(row=>({provider:row.provider,tokens:decryptOAuthTokens(row.tokens||{}),updatedAt:row.updated_at?.toISOString?.()||row.updated_at||''}));
+  }
+  const tokens=valStore().oauthTokens||{};
+  return Object.entries(tokens)
+    .filter(([key])=>key===`${tenant}:${userId}:${prefix}`||key.startsWith(`${tenant}:${userId}:${prefix}:`))
+    .map(([key,value])=>({provider:key.slice(`${tenant}:${userId}:`.length),tokens:decryptOAuthTokens(value),updatedAt:value.updated_at||''}))
+    .sort((a,b)=>a.provider===prefix?-1:b.provider===prefix?1:String(a.updatedAt).localeCompare(String(b.updatedAt)));
+}
+
 const KRISP_OAUTH_CLIENT_ID_ENV_NAMES = ['KRISP_OAUTH_CLIENT_ID','KRISP_CLIENT_ID'];
 const KRISP_OAUTH_CLIENT_SECRET_ENV_NAMES = ['KRISP_OAUTH_CLIENT_SECRET','KRISP_CLIENT_SECRET'];
 const KRISP_OAUTH_REDIRECT_URI_ENV_NAMES = ['KRISP_OAUTH_REDIRECT_URI','KRISP_REDIRECT_URI'];
@@ -11616,6 +11642,102 @@ async function ensureGoogleTokensLoaded(){
   googleTokensLoaded = true;
 }
 
+function googleAccountId(email=''){
+  return crypto.createHash('sha256').update(String(email||'').trim().toLowerCase()).digest('hex').slice(0,16);
+}
+function googleProviderForEmail(email=''){
+  return `google:${googleAccountId(email)}`;
+}
+function googleOAuthState(payload={}){
+  const body=Buffer.from(JSON.stringify({...payload,tenantId:tenantId(),userId:currentUserId(),issuedAt:Date.now()})).toString('base64url');
+  const signature=crypto.createHmac('sha256',GOOGLE_CLIENT_SECRET||'val-google-oauth').update(body).digest('base64url');
+  return `${body}.${signature}`;
+}
+function parseGoogleOAuthState(value=''){
+  try{
+    const [body,signature]=String(value||'').split('.');
+    const expected=crypto.createHmac('sha256',GOOGLE_CLIENT_SECRET||'val-google-oauth').update(body).digest('base64url');
+    if(!body||!signature||signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))return null;
+    const payload=JSON.parse(Buffer.from(body,'base64url').toString('utf8'));
+    if(payload.tenantId!==tenantId()||payload.userId!==currentUserId()||Date.now()-Number(payload.issuedAt||0)>15*60*1000)return null;
+    return payload;
+  }catch(error){return null;}
+}
+async function googleProfile(accessToken=''){
+  if(!accessToken)return {};
+  const response=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:`Bearer ${accessToken}`}});
+  const data=await readJsonResponse(response);
+  if(!response.ok)throw new Error(data?.error?.message||`Google profile lookup failed (${response.status})`);
+  return {email:String(data.emailAddress||'').trim().toLowerCase(),historyId:String(data.historyId||'')};
+}
+async function listGoogleAccounts({hydrate=false}={}){
+  let records=await listOAuthTokenRecords('google');
+  if(hydrate){
+    for(const record of records){
+      if(record.tokens.account_email)continue;
+      try{
+        const profile=await googleProfile(await getGoogleTokenForProvider(record.provider));
+        if(profile.email){
+          record.tokens={...record.tokens,account_email:profile.email,account_label:profile.email,account_id:googleAccountId(profile.email),is_primary:record.provider==='google',gmail_history_id:profile.historyId};
+          await saveOAuthTokens(record.provider,record.tokens);
+        }
+      }catch(error){}
+    }
+    records=await listOAuthTokenRecords('google');
+  }
+  return records.map((record,index)=>({
+    provider:record.provider,
+    accountId:record.tokens.account_id||googleAccountId(record.tokens.account_email||record.provider),
+    email:record.tokens.account_email||'',
+    label:record.tokens.account_label||record.tokens.account_email||`Google account ${index+1}`,
+    primary:record.provider==='google',
+    connected:!!(record.tokens.access_token||record.tokens.refresh_token),
+    scopes:googleScopeList(record.tokens),
+    missingGmailScopes:missingGoogleScopes(REQUIRED_GMAIL_SCOPES,record.tokens),
+    updatedAt:record.updatedAt||''
+  }));
+}
+
+async function getGoogleTokenForProvider(provider='google'){
+  const key=String(provider||'google');
+  if(key==='google')return getGoogleToken();
+  let tokens=await loadOAuthTokens(key);
+  if(!tokens)return null;
+  const expiresAt=(tokens.issued_at||0)+(tokens.expires_in||3600)*1000-60000;
+  if(tokens.access_token&&Date.now()<expiresAt)return tokens.access_token;
+  if(!tokens.refresh_token)return null;
+  const response=await fetch('https://oauth2.googleapis.com/token',{
+    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({client_id:GOOGLE_CLIENT_ID,client_secret:GOOGLE_CLIENT_SECRET,refresh_token:tokens.refresh_token,grant_type:'refresh_token'})
+  });
+  const fresh=await readJsonResponse(response);
+  if(!response.ok||fresh.error)throw new Error(fresh.error_description||fresh.error||`Google token refresh failed (${response.status})`);
+  tokens={...tokens,...fresh,refresh_token:fresh.refresh_token||tokens.refresh_token,issued_at:Date.now()};
+  await saveOAuthTokens(key,tokens);
+  return tokens.access_token||null;
+}
+
+async function gmailFetchJsonForProvider(provider='google',url,options={},label='Gmail request'){
+  let token=await getGoogleTokenForProvider(provider);
+  if(!token)throw new Error('Google auth required');
+  let response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+  let data=await readJsonResponse(response);
+  if(response.status===401){
+    const saved=await loadOAuthTokens(provider);
+    if(saved?.refresh_token){
+      await saveOAuthTokens(provider,{...saved,access_token:'',issued_at:0});
+      if(provider==='google'){googleTokens={...googleTokens,access_token:'',issued_at:0};}
+      token=await getGoogleTokenForProvider(provider);
+      if(token){
+        response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+        data=await readJsonResponse(response);
+      }
+    }
+  }
+  if(!response.ok)throw new Error(data?.error?.message||`${label} failed (${response.status})`);
+  return data;
+}
+
 function googleScopeList(tokens=googleTokens){
   return String(tokens?.scope||'').split(/\s+/).map(s=>s.trim()).filter(Boolean);
 }
@@ -11737,8 +11859,13 @@ app.get('/auth/google', (req, res) => {
     lastGoogleAuthError=problems.join('; ');
     return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth needs configuration</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(redirectUri)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(requestBaseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
   }
+  const mode=String(req.query.mode||'primary')==='add'?'add':'primary';
+  const requestedProvider=String(req.query.provider||'google');
+  const provider=requestedProvider==='google'||requestedProvider.startsWith('google:')?requestedProvider:'google';
+  const state=googleOAuthState({mode,provider});
   const scopes = GOOGLE_SCOPES.join(' ');
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
+  const prompt=mode==='add'?'select_account consent':'consent';
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=${encodeURIComponent(prompt)}&include_granted_scopes=true&state=${encodeURIComponent(state)}`;
   res.redirect(url);
 });
 
@@ -11833,7 +11960,9 @@ app.get('/auth/callback', async (req, res) => {
     const problems=googleOAuthConfigProblems(req);
     if(problems.length) throw new Error(problems.join('; '));
     const redirectUri=googleRedirectUri(req);
-    const existingTokens = await loadOAuthTokens('google') || googleTokens || {};
+    const parsedState=parseGoogleOAuthState(req.query.state||'');
+    if(req.query.state&&!parsedState)throw new Error('This Google connection request expired. Return to VAL and start it again.');
+    const oauthState=parsedState||{mode:'primary',provider:'google'};
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {'Content-Type':'application/x-www-form-urlencoded'},
@@ -11846,18 +11975,33 @@ app.get('/auth/callback', async (req, res) => {
     });
     const exchangedTokens = await r.json();
     if(exchangedTokens.error) throw new Error(exchangedTokens.error_description || exchangedTokens.error);
-    googleTokens = {
+    const profile=await googleProfile(exchangedTokens.access_token);
+    if(!profile.email)throw new Error('Google connected, but Gmail did not identify the account address.');
+    const existingAccounts=await listGoogleAccounts();
+    const matching=existingAccounts.find(account=>account.email===profile.email);
+    const targetProvider=matching?.provider||(oauthState.mode==='add'?googleProviderForEmail(profile.email):oauthState.provider||'google');
+    const existingTokens = await loadOAuthTokens(targetProvider) || (targetProvider==='google'?googleTokens:{}) || {};
+    const nextTokens = {
       ...existingTokens,
       ...exchangedTokens,
-      refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || process.env.GOOGLE_REFRESH_TOKEN
+      refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || (targetProvider==='google'?process.env.GOOGLE_REFRESH_TOKEN:'') || '',
+      account_email:profile.email,
+      account_label:profile.email,
+      account_id:googleAccountId(profile.email),
+      is_primary:targetProvider==='google',
+      gmail_history_id:profile.historyId
     };
-    googleTokens.issued_at = Date.now();
-    googleTokensLoaded = true;
+    nextTokens.issued_at = Date.now();
+    if(targetProvider==='google'){
+      googleTokens=nextTokens;
+      googleTokensLoaded = true;
+    }
     lastGoogleAuthError = null;
-    await saveOAuthTokens('google',googleTokens);
-    console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token, 'scope count:', googleScopeList().length);
-    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'google',metadata:{scopes:googleScopeList(),hasRefreshToken:!!googleTokens.refresh_token},success:true}).catch(()=>{});
-    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Google connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>Google Calendar, Gmail, Drive, and Docs are connected to VAL.</h2><p>Returning to VAL now.</p><p><a href="/">Return to VAL</a></p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'google'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
+    await saveOAuthTokens(targetProvider,nextTokens);
+    console.log('Google account stored:',profile.email,'provider:',targetProvider,'refresh_token present:',!!nextTokens.refresh_token);
+    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:targetProvider,metadata:{email:profile.email,primary:targetProvider==='google',scopes:googleScopeList(nextTokens),hasRefreshToken:!!nextTokens.refresh_token},success:true}).catch(()=>{});
+    const connectedCopy=targetProvider==='google'?'Google Calendar, Gmail, Drive, and Docs are connected to VAL.':`${profile.email} is connected as an additional Gmail inbox.`;
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Google connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>${escapeHtml(connectedCopy)}</h2><p>Returning to VAL now.</p><p><a href="/">Return to VAL</a></p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'google'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
   }
@@ -12082,15 +12226,21 @@ async function fetchOutlookCalendarEvents(start,end,maxResults=75){
   }));
 }
 
-async function fetchGoogleCalendarEvents(start,end,maxResults=50){
-  const token = await getGoogleToken();
-  if(!token) throw new Error('Google auth required');
+async function fetchGoogleCalendarEventsForAccount({account,start,end,maxResults=50}={}){
+  const googleProvider=account?.provider||'google';
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  const scopes=googleScopeList(accountTokens);
+  const calendarReadable=scopes.includes('https://www.googleapis.com/auth/calendar.readonly')||scopes.includes('https://www.googleapis.com/auth/calendar.events');
+  if(!calendarReadable)throw new Error(`Reconnect ${account?.email||'Google'} to grant Calendar permission.`);
+  const token=await getGoogleTokenForProvider(googleProvider);
+  if(!token)throw new Error(`${account?.email||'Google'} needs to reconnect.`);
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=${maxResults}&maxAttendees=50`;
   const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
   const d = await r.json();
   if(d.error) throw new Error(d.error.message || 'Google calendar error');
   return (d.items||[]).map(e=>({
-    id: e.id,
+    id:`${googleProvider}:${e.id}`,
+    providerEventId:e.id,
     summary: e.summary||'(No title)',
     title: e.summary||'(No title)',
     startTime: e.start?.dateTime||e.start?.date,
@@ -12101,10 +12251,49 @@ async function fetchGoogleCalendarEvents(start,end,maxResults=50){
     organizer:e.organizer?{name:e.organizer.displayName||'',email:e.organizer.email||''}:{},
     status: e.status,
     source: 'google',
-    calendarName: 'Google Calendar',
+    calendarName:account?.email?`${account.email} Calendar`:'Google Calendar',
+    googleProvider,
+    accountId:account?.accountId||'',
+    accountEmail:account?.email||'',
+    sourceAccount:account?.email||account?.label||'Google',
     meetingLink:e.hangoutLink||(e.conferenceData?.entryPoints||[]).find(p=>p.entryPointType==='video')?.uri||'',
     raw:e
   }));
+}
+
+function googleCalendarEventDedupeKey(event={}){
+  const raw=event.raw||{};
+  if(raw.iCalUID)return `ical:${String(raw.iCalUID).toLowerCase()}`;
+  return [event.title||event.summary||'',event.startTime||'',event.endTime||'',event.organizer?.email||'']
+    .map(value=>String(value||'').trim().toLowerCase())
+    .join('|');
+}
+
+async function fetchGoogleCalendarEvents(start,end,maxResults=50){
+  const accounts=(await listGoogleAccounts()).filter(account=>account.connected);
+  if(!accounts.length)throw new Error('Google auth required');
+  const results=await Promise.allSettled(accounts.map(account=>fetchGoogleCalendarEventsForAccount({account,start,end,maxResults})));
+  const events=[];
+  const errors=[];
+  results.forEach((result,index)=>{
+    if(result.status==='fulfilled')events.push(...result.value);
+    else errors.push(`${accounts[index]?.email||'Google'}: ${result.reason?.message||result.reason}`);
+  });
+  if(!events.length&&errors.length)throw new Error(errors.join(' | '));
+  const merged=new Map();
+  events.forEach(event=>{
+    const key=googleCalendarEventDedupeKey(event);
+    const existing=merged.get(key);
+    if(!existing){
+      merged.set(key,{...event,sourceAccounts:[event.sourceAccount].filter(Boolean)});
+      return;
+    }
+    const sourceAccounts=Array.from(new Set([...(existing.sourceAccounts||[]),event.sourceAccount].filter(Boolean)));
+    merged.set(key,{...existing,sourceAccounts});
+  });
+  return Array.from(merged.values())
+    .sort((a,b)=>new Date(a.startTime||0)-new Date(b.startTime||0))
+    .slice(0,Math.min(Number(maxResults)||50,2500));
 }
 
 function defaultTaskCalendarSettings(){
@@ -13069,7 +13258,9 @@ function sourceProcessingDocumentsFromEmail(email={}){
         sourceType:`${email.provider||'email'}_attachment`,
         sourceId:[email.messageId||email.id||email.threadId||'email',attachment.id||attachment.attachmentId||filename].join(':'),
         sourceUrl:email.webLink||'',
-        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`
+        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`,
+        googleProvider:email.googleProvider||email.google_provider||'google',
+        accountEmail:email.accountEmail||email.account_email||''
       };
     });
   const driveDocuments=sourceProcessingDriveDocumentsFromEmail(email)
@@ -13344,51 +13535,38 @@ async function recentEmailActions(userId,limit=200){
   }
   return (valStore().emailActionLog||[]).filter(a=>a.tenantId===tenantId()&&a.userId===userId).slice(-limit).reverse();
 }
-async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
-  await ensureGoogleTokensLoaded();
-  const token=await getGoogleToken();
-  if(token) await hydrateGoogleTokenScopes(token);
-  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
-  if(missing.length) return {emails:[],needsAuth:true,missingScopes:missing,error:'Reconnect Google to grant Gmail read permission.',provider:'gmail',userId,tenantId:tenantIdValue};
-  if(!token)return {emails:[],needsAuth:true,missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),error:lastGoogleAuthError||'Google auth required',provider:'gmail',userId,tenantId:tenantIdValue};
+async function fetchGmailMessagesForAccount({account,userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
+  const googleProvider=account?.provider||'google';
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly'],accountTokens);
+  const token=await getGoogleTokenForProvider(googleProvider);
+  if(missing.length)return {emails:[],needsAuth:true,missingScopes:missing,error:`Reconnect ${account?.email||'Google'} to grant Gmail read permission.`,provider:'gmail',googleProvider,userId,tenantId:tenantIdValue};
+  if(!token)return {emails:[],needsAuth:true,missingScopes:missing,error:`${account?.email||'Google'} needs to reconnect.`,provider:'gmail',googleProvider,userId,tenantId:tenantIdValue};
   const limit=Math.min(Number(maxResults)||20,500);
   const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${encodeURIComponent(limit)}`;
   let d;
-  try{d=await gmailFetchJson(searchUrl,{},'Gmail message search');}
-  catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};}
+  try{d=await gmailFetchJsonForProvider(googleProvider,searchUrl,{},'Gmail message search');}
+  catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',googleProvider,missingScopes:missing,query,userId,tenantId:tenantIdValue};}
   const messages=d.messages||[];
   const details=await mapWithConcurrency(messages.slice(0,limit),5,async m=>{
     const format=includeBody?'full':'full';
     try{
-      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
-      return normalizeGmailMessage(md);
+      const md=await gmailFetchJsonForProvider(googleProvider,`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
+      return {...normalizeGmailMessage(md),googleProvider,accountId:account?.accountId||'',accountEmail:account?.email||'',sourceAccount:account?.email||account?.label||'Google'};
     }catch(e){return null;}
   });
-  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
+  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',googleProvider,accountEmail:account?.email||'',missingScopes:missing,query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
+}
+async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false,googleProvider=''}={}){
+  const accounts=(await listGoogleAccounts()).filter(account=>account.connected&&(!googleProvider||account.provider===googleProvider));
+  if(!accounts.length)return {emails:[],needsAuth:true,missingScopes:REQUIRED_GMAIL_SCOPES,error:'Google auth required',provider:'gmail',userId,tenantId:tenantIdValue};
+  const results=await Promise.all(accounts.map(account=>fetchGmailMessagesForAccount({account,userId,tenantId:tenantIdValue,query,maxResults,includeBody})));
+  const emails=sortEmailsNewestFirst(results.flatMap(result=>result.emails||[])).slice(0,Math.min(Number(maxResults)||20,500));
+  const errors=results.filter(result=>result.error).map(result=>`${result.accountEmail||'Google'}: ${result.error}`);
+  return {emails,needsAuth:results.every(result=>result.needsAuth),provider:'gmail',accounts:results.map(result=>({email:result.accountEmail||'',provider:result.googleProvider||'',count:(result.emails||[]).length,error:result.error||''})),errors,query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:emails.length};
 }
 async function fetchGmailSentNetworkMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId()}={}){
-  await ensureGoogleTokensLoaded();
-  const token=await getGoogleToken();
-  if(token)await hydrateGoogleTokenScopes(token);
-  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
-  if(missing.length||!token)return {emails:[],needsAuth:true,missingScopes:missing,error:lastGoogleAuthError||'Reconnect Google to grant Gmail read permission.',provider:'gmail',userId,tenantId:tenantIdValue};
-  const query='in:sent newer_than:90d';
-  let listing;
-  try{
-    const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=500`;
-    listing=await gmailFetchJson(searchUrl,{},'Gmail sent mail search');
-  }catch(error){
-    return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(error.message),error:error.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};
-  }
-  const headerQuery=new URLSearchParams({format:'metadata'});
-  for(const header of ['From','To','Cc','Subject','Date'])headerQuery.append('metadataHeaders',header);
-  const details=await mapWithConcurrency((listing.messages||[]).slice(0,500),12,async(message)=>{
-    try{
-      const url=`https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}?${headerQuery.toString()}`;
-      return normalizeGmailMessage(await gmailFetchJson(url,{},'Gmail sent mail recipient detail'));
-    }catch(error){return null;}
-  });
-  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:(listing.messages||[]).length};
+  return fetchGmailMessages({userId,tenantId:tenantIdValue,query:'in:sent newer_than:90d',maxResults:500,includeBody:false});
 }
 async function fetchUnifiedGmailEmails(limit=20){
   return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
@@ -20598,7 +20776,9 @@ async function linkedGmailAttachmentContextForQuery(query='',projectContext=null
   const messageId=String(selected.sourceId||raw.messageId||raw.message_id||'').trim();
   const attachmentId=String(raw.attachmentId||raw.attachment_id||'').trim();
   if(!messageId||!attachmentId) return '';
-  const payload=await gmailFetchJson(
+  const googleProvider=String(selected.googleProvider||raw.googleProvider||raw.google_provider||'google');
+  const payload=await gmailFetchJsonForProvider(
+    googleProvider,
     `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
     {},
     'Gmail document attachment'
@@ -35684,7 +35864,9 @@ async function loadEmailThreadForCowork({messageId='',threadId='',conversationId
   const richMessages=await mapWithConcurrency(messages,4,async(message)=>{
     if((message.bodyHtml||message.body_html)||String(message.provider||selectedProvider||'').toLowerCase()!=='gmail'||!message.messageId)return message;
     try{
-      const fresh=normalizeGmailMessage(await gmailFetchJson(
+      const googleProvider=String(message.googleProvider||message.google_provider||message.raw?.googleProvider||message.raw?.google_provider||'google');
+      const fresh=normalizeGmailMessage(await gmailFetchJsonForProvider(
+        googleProvider,
         `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(message.messageId)}?format=full`,
         {},
         'Gmail thread message body'
@@ -35695,7 +35877,9 @@ async function loadEmailThreadForCowork({messageId='',threadId='',conversationId
         bodyText:fresh.bodyText||message.bodyText,
         bodyHtml:fresh.bodyHtml||message.bodyHtml||'',
         attachments:fresh.attachments?.length ? fresh.attachments : message.attachments,
-        raw:{...(message.raw||{}),...fresh}
+        googleProvider,
+        accountEmail:message.accountEmail||message.account_email||message.raw?.accountEmail||message.raw?.account_email||'',
+        raw:{...(message.raw||{}),...fresh,googleProvider}
       };
     }catch(e){
       return message;
@@ -36536,9 +36720,10 @@ const valCowork = registerValCoworkRoutes(app,{
   logger:console
 });
 async function executeGmailDraftPacket({packet,payload}){
-  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
-  if((status.missingScopes||[]).length)throw new Error('Gmail compose scope missing');
-  const token=await getGoogleToken();
+  const googleProvider=String(payload.googleProvider||payload.google_provider||'google');
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  if(missingGoogleScopes(['https://www.googleapis.com/auth/gmail.compose'],accountTokens).length)throw new Error('Gmail compose scope missing');
+  const token=await getGoogleTokenForProvider(googleProvider);
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
   const to=payload.to||(/@/.test(packet.targetId||'')?packet.targetId:'');
   const body=payload.body||payload.bodyPreview||'';
@@ -36547,7 +36732,7 @@ async function executeGmailDraftPacket({packet,payload}){
   const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||packet.targetId||undefined}})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
-  return {providerResponseId:d.id||d.message?.id||'',providerResponseSummary:'Created Gmail draft. Nothing was sent.',raw:d};
+  return {providerResponseId:d.id||d.message?.id||'',providerResponseSummary:`Created Gmail draft${accountTokens.account_email?` in ${accountTokens.account_email}`:''}. Nothing was sent.`,raw:{...d,googleProvider,accountEmail:accountTokens.account_email||''}};
 }
 async function executeOutlookDraftPacket({packet,payload}){
   const token=await getMicrosoftToken();
@@ -36587,16 +36772,17 @@ async function executeEmailSendPacket({packet,payload}){
     }
     return {providerResponseId:packet.id,providerResponseSummary:`Sent Outlook email to ${to}.`,raw:{provider:'outlook',status:202}};
   }
-  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.send']);
-  if((status.missingScopes||[]).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
-  const token=await getGoogleToken();
+  const googleProvider=String(payload.googleProvider||payload.google_provider||'google');
+  const accountTokens=await loadOAuthTokens(googleProvider)||{};
+  if(missingGoogleScopes(['https://www.googleapis.com/auth/gmail.send'],accountTokens).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
+  const token=await getGoogleTokenForProvider(googleProvider);
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
   const lines=[`To: ${to}`,`Subject: ${subject}`,'',body];
   const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
   const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
-  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}.`,raw:d};
+  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}${accountTokens.account_email?` from ${accountTokens.account_email}`:''}.`,raw:{...d,googleProvider,accountEmail:accountTokens.account_email||''}};
 }
 async function executeSmsPacket({packet,payload}){
   const contactId=String(payload.contactId||payload.contact_id||packet.targetId||'').trim();
