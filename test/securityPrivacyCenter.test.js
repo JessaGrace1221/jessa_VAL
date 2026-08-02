@@ -71,6 +71,7 @@ test('sensitive actions create audit events',()=>{
 test('temporary public Hearth test mode is explicit and owner-scoped',()=>{
   assert.match(server,/VAL_PUBLIC_HEARTH_TEST_MODE/);
   assert.match(server,/function publicHearthTestUser/);
+  assert.match(server,/const sessionUser=await getSessionUser\(req\);[\s\S]*?requestContext\.run\(\{user:sessionUser\}/);
   assert.match(server,/requestContext\.run\(\{user,publicHearthTest:true\}/);
   assert.match(server,/if\(PUBLIC_HEARTH_TEST_MODE\) return res\.redirect\('\/dashboard'\)/);
   assert.match(server,/publicHearthTestMode:PUBLIC_HEARTH_TEST_MODE/);

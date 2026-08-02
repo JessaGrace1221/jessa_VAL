@@ -9,16 +9,37 @@ const routes = fs.readFileSync(path.join(root, 'services/valDocumentsRoutes.js')
 
 const {
   createValDocumentsService,
+  documentRecord,
   documentMatches,
   documentLooksLikeCalendarInvite
 } = require('../services/valDocuments');
 
+test('documents preserve their durable executive category separately from links', () => {
+  const document = documentRecord({
+    id:'contract_1',
+    title:'Current GOALL Agreement',
+    documentCategory:'current_contracts',
+    project:'GOALL',
+    relationship:'Mike'
+  });
+  assert.equal(document.category,'current_contracts');
+  assert.equal(document.project,'GOALL');
+  assert.equal(document.relationship,'Mike');
+});
+
 test('documents routes expose canonical document index and reference APIs', () => {
   assert.match(server, /registerValDocumentsRoutes/);
   assert.match(server, /const valDocuments = registerValDocumentsRoutes/);
+  assert.match(server, /afterDocumentEvent:async\(event\)=>\{/);
+  assert.match(server, /source:'document_reference_history'/);
+  assert.match(server, /sourceType:'document'/);
+  assert.match(server, /processCanonicalBoardEvidence\(\{/);
   assert.match(routes, /\/api\/val\/documents'/);
   assert.match(routes, /\/api\/val\/documents\/reference/);
   assert.match(routes, /reference-used/);
+  assert.match(routes, /afterDocumentEvent/);
+  assert.match(routes, /eventType:'document_reference_used'/);
+  assert.match(routes, /sourceType:'document'/);
   assert.match(routes, /val_document_reference_used/);
 });
 

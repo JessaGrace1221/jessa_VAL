@@ -9,6 +9,7 @@ const vm=require('node:vm');
 const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(__dirname,'..','dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(__dirname,'..','command-center.js'),'utf8');
+const hearthJs=fs.readFileSync(path.join(__dirname,'..','hearth-prototype.js'),'utf8');
 
 test('Teach VAL commit promotes onboarding into core memory and evidence',()=>{
   assert.match(server,/async function promoteTeachValOnboardingToCoreMemory/);
@@ -18,7 +19,7 @@ test('Teach VAL commit promotes onboarding into core memory and evidence',()=>{
   assert.match(server,/await saveEvidenceItem\(\{/);
   assert.match(server,/runObservationEngine\(evidence,\{candidates:teachValEvidenceCandidates\(included\),replace:true\}\)/);
   assert.match(server,/promotion=await promoteTeachValOnboardingToCoreMemory\(\{session,imports,items:included,payload\}\)/);
-  assert.match(server,/res\.json\(\{ok:true,payload,webhook,promotion,operationalInsights/);
+  assert.match(server,/res\.json\(\{ok:true,payload,webhook,promotion,boardReceipt,operationalInsights/);
 });
 
 test('Teach VAL onboarding categories map into universal observation types',()=>{
@@ -498,6 +499,13 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/const PARTNERSHIP_PROTOCOL_CARDS/);
   assert.match(server,/function partnershipProtocolCardFor/);
   assert.match(server,/async function observePartnershipProtocolAnswer/);
+  assert.match(server,/function witnessingUploadIds/);
+  assert.match(server,/async function witnessingUploadedDocumentContext/);
+  assert.match(server,/where user_id=\$1 and id=any\(\$2::text\[\]\)/);
+  assert.match(server,/uploadedVia\|\|metadata\.uploaded_via/);
+  assert.match(server,/const observedResponse=uploadedDocumentContext\.modelContext/);
+  assert.match(server,/uploadedDocuments:uploadedDocumentContext\.documents/);
+  assert.match(server,/documentCategory:req\.body\.documentCategory\|\|'other'/);
   assert.match(server,/async function witnessPartnershipProtocolAnswer/);
   assert.match(server,/function fallbackPartnershipProtocolGraph/);
   assert.match(server,/function fallbackPartnershipProtocolWitness/);
@@ -569,6 +577,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   for(const category of [
     'witness_support_style',
     'witness_partnership_useful',
+    'witness_chief_priorities',
     'witness_connect_sources',
     'witness_source_review',
     'witness_key_relationships',
@@ -579,8 +588,13 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
     assert.match(server,new RegExp(category));
   }
   assert.match(server,/documents_templates/);
+  assert.match(server,/reopen-witnessing-card\/:cardId/);
+  assert.match(server,/preservesCompletedSession:session\.status==='committed'\|\|state\.stage==='complete'/);
+  assert.match(server,/reopenedWitnessingCard/);
   assert.match(server,/import_context/);
   assert.match(server,/partnership_agreement/);
+  assert.match(server,/chief_of_staff\.optimization_priorities/);
+  assert.match(server,/home_briefing_ordering_rules/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId'/);
   assert.match(server,/living_executive_graph_v1/);
   assert.match(server,/livingExecutiveGraph:graph/);
@@ -591,7 +605,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/immediate_consumers/);
   assert.match(server,/future_consumers/);
   assert.match(server,/saveTeachValImport/);
-  assert.match(server,/status:isSourceConnectionStep\?'Confirmed':'Witnessed'/);
+  assert.match(server,/status:isSourceConnectionStep\?'Confirmed':\(isDocumentStep\?'Saved':'Witnessed'\)/);
   assert.doesNotMatch(server,/Memory saved/);
 });
 
@@ -647,10 +661,34 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/normalizePartnershipWitnessResponse/);
   assert.match(turn,/repairPartnershipWitnessJson/);
   assert.match(turn,/fallbackPartnershipProtocolWitness\(\{card,rawResponse,graph\}\)/);
-  assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
+  assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse:observedResponse,priorImports\}\)/);
   assert.doesNotMatch(route,/composePartnershipProtocolNextQuestion/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'[\s\S]*?composePartnershipProtocolNextQuestion/);
   assert.match(server,/nextQuestion/);
   assert.match(server,/openai_connection_required/);
   assert.match(server,/Your answer is still here\. Please try again\./);
+});
+
+test('Witnessing document receipt saves immediately while Observer reading continues separately',()=>{
+  const route=server.match(/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId',[\s\S]*?\n}\);\napp\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'/)?.[0] || '';
+  assert.match(server,/function witnessingDocumentReceiptTurn/);
+  assert.match(route,/const isDocumentStep=card\.id==='documents_templates'/);
+  assert.match(route,/if\(!isDocumentStep&&!\(await requireOpenAIForNewWitnessing\(res\)\)\) return/);
+  assert.match(route,/witnessingDocumentReceiptTurn\(\{card,rawResponse,documents:uploadedDocumentContext\.documents,nextCard\}\)/);
+  assert.match(route,/observerReviewStatus:'queued'/);
+  assert.match(route,/advance:!updatingCompletedSession&&\(isSourceConnectionStep\|\|isDocumentStep\)/);
+  assert.match(server,/app\.post\('\/api\/val\/files\/:id\/observer-review'/);
+  assert.match(server,/Only About Me documents are reviewed by all 14 Observers/);
+});
+
+test('Witnessing resumes the saved step and completed sessions expose per-step updates',()=>{
+  assert.match(hearthJs,/function renderValWitnessingEntry/);
+  assert.match(hearthJs,/Pick up at /);
+  assert.match(hearthJs,/valWitnessingUpdate:/);
+  assert.match(hearthJs,/Update':'Add answer/);
+  assert.match(hearthJs,/async function reopenValWitnessingCard/);
+  assert.match(server,/reopen-witnessing-card\/:cardId/);
+  assert.doesNotMatch(server,/Only the Documents and Templates step can be reopened/);
+  assert.match(server,/updatingCompletedSession/);
+  assert.match(server,/state\.stage=updatingCompletedSession\?'complete':card\.category/);
 });

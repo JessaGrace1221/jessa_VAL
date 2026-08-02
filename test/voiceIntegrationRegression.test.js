@@ -63,7 +63,9 @@ test('voice waits for Deepgram before falling back to browser speech',()=>{
 });
 
 test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=>{
-  assert.match(hearth,/const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca'/);
+  assert.match(hearth,/let VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca'/);
+  assert.match(server,/voiceWidgetId: process\.env\.GHL_VOICE_WIDGET_ID \|\| '6a6253197742c156ecacd8ca'/);
+  assert.match(hearth,/if\(config\?\.voiceWidgetId\) VAL_GHL_VOICE_WIDGET_ID = String\(config\.voiceWidgetId\)\.trim\(\)/);
   assert.match(hearth,/const VAL_GHL_WIDGET_LOADER_SRC = 'https:\/\/widgets\.leadconnectorhq\.com\/loader\.js'/);
   assert.match(hearth,/function valGhlVoiceWidgetApi/);
   assert.match(hearth,/window\.leadConnector\?\.chatWidget/);
@@ -91,7 +93,8 @@ test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=
   assert.match(hearthCss,/pointer-events:auto!important/);
   assert.match(hearthCss,/pointer-events:none!important/);
   assert.match(hearthCss,/\.val-cowork-voice-hint/);
-  assert.match(hearthCss,/color:rgba\(255,251,244,\.92\)/);
+  assert.match(hearth,/Talk to VAL/);
+  assert.match(hearthCss,/color:rgba\(255,253,248,1\)/);
 });
 
 test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
@@ -110,8 +113,8 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(hearth,/const actionPrepLane = Boolean\(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep\(visiblePrompt\)\);/);
   assert.match(hearth,/const needsFullValContext = Boolean\(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext\(visiblePrompt\)\);/);
   assert.match(hearth,/const voiceFastLane = Boolean\(valCoworkVoiceState\.active && mode !== 'meeting_prep' && !needsFullValContext && !actionPrepLane\);/);
-  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext && !actionPrepLane\);/);
-  assert.match(hearth,/latencyMode: actionPrepLane \? 'action_fast' : \(voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)\)/);
+  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !hasSelectedCoworkSource && !needsFullValContext && !actionPrepLane\);/);
+  assert.match(hearth,/latencyMode: observerCoworkLane \? 'observer_card' : \(actionPrepLane \? 'action_fast' : \(voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)\)\)/);
   assert.match(hearth,/showCoworkContextGathering\('VAL is thinking with you\.', \{noTimeout:true\}\);/);
   assert.doesNotMatch(hearth,/showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'\)/);
   assert.match(server,/function hearthFastChatEnabled/);
@@ -122,6 +125,9 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(server,/Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context/);
   assert.match(server,/calendar, appointments, schedule, or meetings/);
   assert.match(server,/maxTokens:voiceMode\?260:520/);
+  assert.match(server,/VAL’s reasoning connection needs attention right now/);
+  assert.match(server,/You do not need to shorten or repeat it/);
+  assert.doesNotMatch(server,/did not get a clean fast response/);
   assert.match(server,/saveDeferred:true/);
   assert.match(server,/fastHearthChat:true/);
   assert.match(hearth,/timeoutMs: actionPrepLane \? 14000 : \(voiceFastLane \? 22000 : 28000\)/);
@@ -191,7 +197,11 @@ test('Home VAL voice supports source questions and spoken approval handoff',()=>
 
 test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/app\.post\('\/api\/val\/ghl\/voice-turn'/);
+  assert.match(server,/p==='\/api\/val\/ghl\/voice-turn'&&req\.method==='POST'/);
   assert.match(server,/function ghlVoiceUserMessage/);
+  assert.match(server,/body\.parameters/);
+  assert.match(server,/body\.args/);
+  assert.match(server,/ghlVoiceUserMessage\(value\)/);
   assert.match(server,/function ghlVoiceContextText/);
   assert.match(server,/'conversationText'/);
   assert.match(server,/'callTranscript'/);
@@ -220,7 +230,10 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(ghlMeetingPrepBlock,/GHL voice custom actions time out quickly/);
   assert.match(server,/speak:content/);
   assert.match(server,/val_response:content/);
-  assert.match(server,/GHL did not pass me the user’s words yet/);
+  assert.match(server,/GHL did not pass the caller’s spoken request to VAL/);
+  assert.match(server,/res\.status\(422\)\.json/);
+  assert.match(server,/error:'missing_user_utterance'/);
+  assert.match(server,/receivedFields/);
   assert.match(server,/const priorMessages=await conversationMessagesForContext\(conversationId,10\)/);
   assert.match(server,/const actionContext=ghlVoiceActionContext\(\{lastUser,voiceContextText,priorMessagesText\}\)/);
   assert.match(server,/const actionRequest=hearthActionIntent\(lastUser\)\?lastUser:actionContext/);
@@ -257,6 +270,7 @@ test('GHL voice actions can inherit recipient and body from transcript context',
 test('Home VAL chat Rolodex resolves action contacts from Stewardship context',()=>{
   assert.match(server,/function hearthActionProfileCompany/);
   assert.match(server,/function hearthActionUsableEmail/);
+  assert.match(server,/function hearthActionProfileContactId/);
   assert.match(server,/example\.com/);
   assert.match(server,/function hearthActionCompanyHint/);
   assert.match(server,/Julian Method|is\\s\+where\\s\+\(\?:she\|he\|they\)\\s\+works/);
@@ -264,8 +278,21 @@ test('Home VAL chat Rolodex resolves action contacts from Stewardship context',(
   assert.match(server,/function hearthActionLooseNameScore/);
   assert.match(server,/listRelationshipProfiles\(\{limit:800\}\)/);
   assert.match(server,/relationshipProfilePrimaryEmail\(profile\)/);
+  assert.match(server,/relationshipProfilePrimaryPhone\(profile\)/);
+  assert.match(server,/const contactId=hearthActionProfileContactId\(profile\)/);
   assert.match(server,/hearthActionLooseNameScore\(cleanNeedle,comparable\)/);
   assert.match(server,/resolveContactFromContext\(\{name:needle,email:directEmail,company:companyHint\}\)/);
+});
+
+test('Home VAL prepares SMS as a real approval packet when GHL contact is linked',()=>{
+  assert.match(server,/valExternalActions\.createSmsSendPacket/);
+  assert.match(server,/contactId:contact\.contactId/);
+  assert.match(server,/await processExternalActionBoardEvidence\(packet\)/);
+  assert.match(server,/sourceType:'external_action'/);
+  assert.match(server,/boardPacketType:externalActionBoardPacketType\(packet\)/);
+  assert.match(server,/I found \$\{contactName\} and prepared the SMS for approval/);
+  assert.match(server,/needs:'ghl_contact_link'/);
+  assert.match(server,/Say “Send” when you want me to send it\. Nothing has been sent yet\./);
 });
 
 test('Stewardship Network stores GHL-ready email and phone details in the Rolodex',()=>{

@@ -67,8 +67,9 @@ function buildReceipt({uuid,scope,packet={},providerResult={},error='',auditRefs
 }
 function contextTargets(packet={}){
   const ctx=jsonValue(packet.sourceContextJson||packet.source_context_json,{});
+  const readyForYouItemId=ctx.readyForYouItemId||ctx.readyForYouId||ctx.ready_for_you_item_id||ctx.ready_for_you_id;
   return [
-    ctx.readyForYouItemId&&{table:'ready_for_you_items',id:ctx.readyForYouItemId,type:'source_context'},
+    readyForYouItemId&&{table:'ready_for_you_items',id:readyForYouItemId,type:'source_context'},
     ctx.reviewUpdateId&&{table:'val_review_updates',id:ctx.reviewUpdateId,type:'source_context'},
     ctx.conversationId&&{table:'conversation_classifications',id:ctx.conversationId,type:'source_context'},
     ctx.meetingPrepBriefId&&{table:'meeting_prep_briefs',id:ctx.meetingPrepBriefId,type:'source_context'},

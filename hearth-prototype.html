@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=executive-compass-20260720d">
+<link rel="stylesheet" href="./hearth-prototype.css?v=tenant-time-20260729a">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -29,18 +29,24 @@
     <p class="hearth-kicker">VAL Home</p>
     <h1 id="hearth-title">Good morning.</h1>
     <div class="hearth-lines" aria-live="polite">
-      <p data-line="witness">VAL is checking live briefing evidence.</p>
-      <p data-line="orientation">Home should update from Velocity, Alignment, and Leverage packets.</p>
-      <p data-line="permission">If no packet earns attention, VAL should say that plainly.</p>
+      <p data-line="witness">The Chief of Staff is listening across the Board of Observers.</p>
+      <p data-line="orientation">If one Observer has the signal that matters most, it will enter Home.</p>
+      <p data-line="permission">If nothing earns the room, VAL will keep the desk quiet.</p>
     </div>
+    <button class="lean-button" type="button" aria-expanded="false" aria-controls="hearth-evidence">
+      Why this read?
+    </button>
     <button class="refresh-perspective-button" type="button" data-refresh-perspective>
       Refresh Perspective
     </button>
   </section>
 
+  <section id="hearth-evidence" class="hearth-evidence" aria-label="Chief of Staff evidence">
+  </section>
+
   <aside class="desk-companions" aria-label="Desk companions">
     <p class="companions-label">Desk companions</p>
-    <button class="task-companion-button" type="button" aria-label="Open unresolved tasks" title="Tasks">
+    <button class="task-companion-button" type="button" aria-label="Open commitments" title="Commitments">
       <span class="task-companion-icon" aria-hidden="true"><i></i><i></i><i></i></span>
       <span data-task-companion-count>0</span>
     </button>
@@ -80,7 +86,7 @@
       </span>
     </button>
     <button class="teach-pen" type="button">
-      <span>Teach VAL</span>
+      <span>VAL Studio</span>
     </button>
   </aside>
 
@@ -112,7 +118,7 @@
 
   <section class="desk-workspace" id="desk-workspace" aria-label="Home workspace" aria-hidden="true">
     <div class="workspace-panel">
-      <button class="return-button" type="button" aria-label="Close card and return to the desk">Close card</button>
+      <button class="return-button" type="button" aria-label="Close this function">×</button>
       <p class="workspace-kicker">Home</p>
       <h2>No Home card is open.</h2>
       <p class="workspace-meaning">
@@ -162,7 +168,7 @@
       <h2>Today</h2>
       <p class="calendar-panel-summary">Only meetings that can change preparation, relationships, or commitments need your attention here.</p>
       <div class="calendar-source-status" data-calendar-source-status>
-        <strong>Checking Google Calendar...</strong>
+        <strong>Connect inbox/calendar</strong>
         <span>VAL uses this connection for meeting prep, commitments, and daily rhythm.</span>
         <button type="button" data-google-oauth>Connect Google</button>
       </div>
@@ -194,7 +200,7 @@
     <button class="close-all-drawers" type="button" hidden>Close all drawers</button>
     <div class="drawer-tray" id="drawer-tray" aria-hidden="true">
       <p class="drawer-kicker">Executive Functions</p>
-      <button class="executive-compass-core" type="button" aria-label="Return to Home">
+      <button class="executive-compass-core" type="button" aria-label="Open Witnessing Session and Connections" aria-expanded="false" aria-controls="val-detail" title="Witnessing Session and Connections">
         <span>VAL</span>
       </button>
       <div class="executive-compass-field" aria-hidden="true">
@@ -295,10 +301,10 @@
           <span>Lead Intelligence</span>
           <small>Client scrapers and CRM handoff</small>
         </button>
-        <button type="button" class="drawer-link val-drawer-link" data-drawer-tone="clay-green" aria-expanded="false" aria-controls="val-detail">
+        <button type="button" class="drawer-link studio-drawer-link" data-drawer-tone="clay-green" aria-label="Open VAL Studio">
           <svg class="compass-icon" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="glyphVal" x1="7" y1="24" x2="41" y2="24"><stop stop-color="#c6d8b2"/><stop offset=".28" stop-color="#d9a2a1"/><stop offset="1" stop-color="#f0a3aa"/></linearGradient></defs><path stroke="url(#glyphVal)" d="M24 5c2 10 5 15 15 19-10 4-13 9-15 19-2-10-5-15-15-19 10-4 13-9 15-19Z"/><path stroke="url(#glyphVal)" d="M24 15v18M15 24h18M12 12c7-5 17-5 24 0M12 36c7 5 17 5 24 0"/><circle fill="#f0a3aa" cx="12" cy="12" r="1.4"/><circle fill="#f0a3aa" cx="36" cy="36" r="1.4"/></svg>
-          <span>VAL</span>
-          <small>Onboarding, agreements, memory, connections</small>
+          <span>VAL Studio</span>
+          <small>Build and govern executive Environments</small>
         </button>
       </div>
       <div class="workspace-packet-receipt drawer-packet-receipt" data-drawer-packet-receipt hidden></div>
@@ -306,18 +312,19 @@
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">VAL</p>
-            <h3>Witnessing Session</h3>
+            <h3 data-val-witnessing-title>Restoring Witnessing</h3>
             <p>This is where VAL begins learning who it is partnering with, what it notices, and what it must protect before work leaves the system.</p>
           </div>
           <button type="button" class="close-val-detail" aria-label="Return to Executive Functions"></button>
         </div>
-        <div class="val-witnessing-entry" aria-label="Begin VAL Witnessing Session">
-          <p>One thoughtful question at a time. Later, you can choose the real-world sources VAL may review with you.</p>
+        <div class="val-witnessing-entry" aria-label="Restore VAL Witnessing Session">
+          <p>Restoring your saved Witnessing Session...</p>
           <div class="val-entry-actions">
-            <button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session</button>
+            <button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume" data-val-variable-packet="val_os_packet">Continue Witnessing</button>
           </div>
-          <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
+          <small data-val-live-status>Your saved answers remain intact.</small>
         </div>
+        <div class="val-drawer-connections" data-val-drawer-connections></div>
       </div>
       <div class="source-detail document-detail" id="document-detail" aria-hidden="true" hidden data-internal-surface="documents">
         <div class="source-detail-header">
@@ -625,9 +632,9 @@
                 <div class="transcript-link-list" data-transcript-links></div>
               </div>
               <section class="transcript-section timeline-transcript-cowork">
-                <h4>Co-Work on This Transcript</h4>
-                <p>VAL will use this selected meeting's exact source receipt to prepare a reviewable internal result.</p>
-                <button type="button" data-transcript-cowork="">Open Transcript Working Brief</button>
+                <h4>Chat about this transcript</h4>
+                <p>VAL will use this selected meeting's exact Action Items, Key Points, and verified connections. Prepared drafts remain in Leverage.</p>
+                <button type="button" data-transcript-cowork="">Chat about this transcript</button>
               </section>
               <button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>
               <div class="transcript-full-text" data-transcript-full hidden></div>
@@ -645,15 +652,30 @@
           </div>
           <button type="button" class="close-correspondence-detail" aria-label="Return to Executive Functions"></button>
         </div>
+        <section class="correspondence-trust-receipt" data-correspondence-trust-receipt aria-live="polite" aria-label="Executive Inbox evidence receipt">
+          <div>
+            <span>Inbox receipt</span>
+            <strong data-correspondence-trust-title>Opening saved evidence...</strong>
+            <p data-correspondence-trust-detail>VAL is checking which conversations genuinely require executive attention.</p>
+          </div>
+          <dl>
+            <div><dt>Needs attention</dt><dd data-correspondence-trust-attention>—</dd></div>
+            <div><dt>Stayed out</dt><dd data-correspondence-trust-excluded>—</dd></div>
+            <div><dt>Executive contacts</dt><dd data-correspondence-trust-contacts>—</dd></div>
+          </dl>
+        </section>
         <div class="correspondence-filterbar" aria-label="Executive Inbox filters">
           <div class="correspondence-tabs" role="tablist" aria-label="Conversation state">
-            <button type="button" class="active" data-correspondence-filter="requires_reply">Requires Reply <span data-correspondence-filter-count="requires_reply">0</span></button>
+            <button type="button" data-correspondence-filter="requires_reply">Requires Reply <span data-correspondence-filter-count="requires_reply">0</span></button>
             <button type="button" data-correspondence-filter="waiting">Waiting on You <span data-correspondence-filter-count="waiting">0</span></button>
             <button type="button" data-correspondence-filter="tracking">FYI / Tracking <span data-correspondence-filter-count="tracking">0</span></button>
-            <button type="button" data-correspondence-filter="all">All <span data-correspondence-filter-count="all">0</span></button>
+            <button type="button" class="active" data-correspondence-filter="all">All <span data-correspondence-filter-count="all">0</span></button>
+            <button type="button" data-correspondence-filter="archive">Archive <span data-correspondence-filter-count="archive">0</span></button>
           </div>
           <div class="correspondence-filter-actions">
             <button type="button" data-correspondence-tools-toggle aria-expanded="false" aria-controls="correspondence-tools-panel">Controls</button>
+            <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Rules</button>
+            <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create Rule</button>
             <button type="button" data-correspondence-sort data-correspondence-sort-mode="priority">Sort: Priority</button>
           </div>
         </div>
@@ -691,7 +713,7 @@
                 <h4 id="correspondence-rules-title">Saved Executive Inbox Rules</h4>
                 <p>Active behavior VAL can apply when a future conversation matches the rule scope.</p>
               </div>
-              <button type="button" data-correspondence-rules-close aria-label="Close saved rules">Close</button>
+              <button type="button" data-correspondence-rules-close aria-label="Close saved rules">×</button>
             </div>
             <div class="correspondence-rules-list" data-correspondence-rules-list></div>
           </div>
@@ -704,7 +726,7 @@
                 <h4 id="correspondence-rule-composer-title">Create a Rule</h4>
                 <p>Tell VAL what should happen when future email matches this kind of situation. Nothing runs without the existing review boundaries.</p>
               </div>
-              <button type="button" data-correspondence-rule-composer-close aria-label="Close rule creator">Close</button>
+              <button type="button" data-correspondence-rule-composer-close aria-label="Close rule creator">×</button>
             </div>
             <div class="correspondence-rule-composer-grid">
               <label>
@@ -736,7 +758,7 @@
                 <h4 id="correspondence-attachment-title" data-correspondence-attachment-title>Email attachment</h4>
                 <p data-correspondence-attachment-meta>Read-only source view. Nothing is sent, downloaded, moved, or changed.</p>
               </div>
-              <button type="button" data-correspondence-attachment-close aria-label="Close attachment viewer">Close</button>
+              <button type="button" data-correspondence-attachment-close aria-label="Close attachment viewer">×</button>
             </div>
             <div class="correspondence-attachment-view" data-correspondence-attachment-view>
               <p>Select an attachment from the thread.</p>
@@ -781,6 +803,11 @@
               <div><span>Source</span><strong data-correspondence-field="source">Gmail</strong></div>
               <div><span>Relationship</span><strong data-correspondence-field="relationship-state">Unlinked</strong></div>
             </div>
+            <div class="correspondence-decision-actions" aria-label="Executive Inbox contact decisions">
+              <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
+              <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not an executive contact</button>
+              <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
+            </div>
             <section class="correspondence-summary-card" aria-label="Conversation summary">
               <span>Conversation Summary</span>
               <p data-correspondence-field="decision-summary">Select a conversation to see why VAL put it here.</p>
@@ -801,9 +828,6 @@
               <button type="button" class="correspondence-discuss" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Discuss with VAL</button>
               <button type="button" data-correspondence-action="forward" onclick="runCorrespondenceActionClick(this,event);return false;">Forward</button>
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
-              <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
-              <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
-              <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not executive contact</button>
             </div>
             <div class="correspondence-draft-preview" data-correspondence-draft-preview>
               <label for="correspondence-draft-body">Draft</label>
@@ -889,7 +913,7 @@
             <p class="correspondence-writing-rule-note">VAL applies these rules only when preparing private Executive Inbox reply drafts or discussing the selected email thread. They are saved rules, so you can view them again here or under View rules.</p>
             <div class="correspondence-writing-rule-actions">
               <button type="button" data-correspondence-action="save_draft_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Save Tone Rules</button>
-              <button type="button" data-correspondence-writing-rules-close>Close</button>
+              <button type="button" data-correspondence-writing-rules-close aria-label="Close writing rules">×</button>
             </div>
           </div>
         </section>
@@ -960,14 +984,13 @@
           <div>
             <p class="drawer-kicker">Lead Intelligence</p>
             <h3>Lead Sourcing</h3>
-            <p>Choose a scraper, watch it move through three steps, then import only approved records.</p>
+            <p>Run your scraper, verify each source, then import only the records you approve.</p>
           </div>
           <button type="button" class="close-source-detail" aria-label="Return to Executive Functions"></button>
         </div>
         <div class="lead-sourcing-control-bar" aria-label="Lead sourcing controls">
-          <button type="button" data-open-scraper="organizations">Run organization scraper</button>
-          <button type="button" data-open-scraper="partners">Run partner scraper</button>
-          <button type="button" data-lead-drawer-action="train">Train this scraper</button>
+          <button type="button" data-open-scraper="general">Run my scraper</button>
+          <button type="button" data-lead-drawer-action="train" data-lead-drawer-type="general">Edit scraper</button>
         </div>
         <section class="lead-sourcing-drawer-workbench" data-lead-sourcing-drawer-workbench>
           <div class="scraper-preview-list" data-lead-drawer-preview aria-label="Lead sourcing board"></div>
@@ -976,8 +999,8 @@
         <div class="lead-intelligence-hero lead-sourcing-context">
           <div>
             <span>Jessa VAL</span>
-            <strong>Two starter scraper definitions are ready.</strong>
-            <small>Training updates criteria, sources, CRM destination, approval rules, and import behavior for this VAL.</small>
+            <strong>One flexible scraper is included.</strong>
+            <small>Find a business, person, role, pain point, or location. Edit or replace this scraper whenever you need. Additional active scrapers are $200/month each.</small>
           </div>
           <a href="./dashboard.html" class="source-action primary">Open Pipeline</a>
         </div>
@@ -988,6 +1011,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=executive-compass-20260720d"></script>
+  <script src="./hearth-prototype.js?v=general-scraper-20260729a"></script>
 </body>
 </html>

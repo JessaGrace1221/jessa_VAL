@@ -1,8 +1,13 @@
+const crypto=require('node:crypto');
+
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function normalizeEmail(value){const email=String(value||'').trim().toLowerCase();return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';}
 function normalizeName(value){return String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
 function stableKey(parts=[]){return parts.map(v=>String(v||'').trim().toLowerCase()).filter(Boolean).join(':')||'unknown';}
+function durableId(prefix,parts=[]){
+  return `${prefix}_${crypto.createHash('sha256').update(parts.map(value=>String(value||'')).join('|')).digest('hex').slice(0,40)}`;
+}
 function iso(value){if(!value)return null;if(value instanceof Date)return value.toISOString();const d=new Date(value);return Number.isNaN(d.getTime())?null:d.toISOString();}
 function personRef(value={}){
   if(typeof value==='string')return {name:'',email:normalizeEmail(value)};
@@ -12,6 +17,8 @@ function messageDate(message={}){
   return iso(message.receivedAt||message.date||message.sentAt||message.internalDate||message.createdAt)||new Date().toISOString();
 }
 function messageDirection(message={},ownerEmails=[]){
+  const labels=safeArray(message.labels||message.labelIds).map(label=>String(label||'').toUpperCase());
+  if(String(message.direction||'').toLowerCase()==='outbound'||labels.includes('SENT')||message.sentByUser)return 'outbound';
   const from=normalizeEmail(message.from?.email||message.sender?.email);
   const owners=new Set(ownerEmails.map(normalizeEmail).filter(Boolean));
   if(from&&owners.has(from))return 'outbound';
@@ -89,7 +96,7 @@ function createValConversationIdentityService({
   async function upsertUnifiedConversationForMessage(message){
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     const participantKeys=[...new Set(participants.map(p=>p.email||normalizeName(p.name)).filter(Boolean))];
-    const id='uc_'+Buffer.from(`${tenantId()}|${userId()}|${message.conversationKey}`).toString('base64url').slice(0,48);
+    const id=durableId('uc',[tenantId(),userId(),message.conversationKey]);
     if(hasPg()){
       const r=await dbQuery(`
         insert into unified_conversations (id,tenant_id,user_id,conversation_key,primary_provider,primary_thread_id,subject,participant_keys_json,participants_json,latest_message_at,latest_inbound_at,latest_outbound_at,message_count,metadata_json,updated_at)
@@ -124,7 +131,7 @@ function createValConversationIdentityService({
     return row;
   }
   async function upsertThread(message,unifiedId){
-    const id='eth_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.threadId}`).toString('base64url').slice(0,48);
+    const id=durableId('eth',[tenantId(),userId(),message.provider,message.threadId]);
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     if(hasPg()){
       await dbQuery(`
@@ -150,7 +157,7 @@ function createValConversationIdentityService({
     if(!message.messageId)return {saved:false,reason:'missing_message_id',message};
     const unified=await upsertUnifiedConversationForMessage(message);
     await upsertThread(message,unified.id);
-    const id='em_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.messageId}`).toString('base64url').slice(0,48);
+    const id=durableId('em',[tenantId(),userId(),message.provider,message.messageId]);
     if(hasPg()){
       const r=await dbQuery(`
         insert into email_messages (id,tenant_id,user_id,provider,message_id,thread_id,unified_conversation_id,direction,sender_json,recipients_json,cc_json,bcc_json,subject,body_preview,body_text,snippet,labels_json,has_attachments,web_link,received_at,sent_at,raw_json,updated_at)
@@ -186,7 +193,7 @@ function createValConversationIdentityService({
         for(const email of outlook.emails||[])saved.push(await upsertEmailMessage(email));
       }else unknowns.push({source:'outlook',reason:'Outlook fetch helper unavailable.'});
     }
-    return {ok:true,saved:saved.filter(r=>r.saved).length,skipped:saved.filter(r=>!r.saved).length,providers:results,unknowns};
+    return {ok:true,saved:saved.filter(r=>r.saved).length,skipped:saved.filter(r=>!r.saved).length,providers:results,unknowns,savedMessages:saved.filter(r=>r.saved).map(r=>r.message).filter(Boolean)};
   }
   async function messagesForConversation({conversationId='',provider='',threadId='',messageId='',limit=80}={}){
     const lim=Math.max(1,Math.min(Number(limit)||80,200));
@@ -283,6 +290,20 @@ function createValConversationIdentityService({
       threadId:current?.threadId||input.threadId||'',
       current_message:current,
       currentMessage:current,
+      evidence_messages:messages.map(message=>({
+        id:message.id||'',
+        messageId:message.messageId||'',
+        provider:message.provider||'',
+        threadId:message.threadId||'',
+        direction:message.direction||'',
+        from:message.from||{},
+        to:message.to||[],
+        subject:message.subject||'',
+        bodyText:message.bodyText||'',
+        bodyPreview:message.bodyPreview||'',
+        receivedAt:message.receivedAt||'',
+        sentAt:message.sentAt||''
+      })),
       thread_summary:messages.length?`${messages.length} message${messages.length===1?'':'s'} about ${current?.subject||messages[0]?.subject||'this conversation'}.`:'No durable messages found for this conversation.',
       latest_inbound:inbound,
       latest_outbound:outbound,

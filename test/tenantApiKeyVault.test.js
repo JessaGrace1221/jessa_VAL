@@ -41,7 +41,7 @@ test('tenant API key routes support list save delete test requirements and appro
   assert.match(server,/This connection requires approval before it can be added to your VAL/);
 });
 
-test('runtime resolver prefers tenant vault and blocks silent platform fallback',()=>{
+test('runtime resolver prefers tenant vault and permits an explicit platform fallback',()=>{
   assert.match(server,/function platformKeyFallbackAllowed/);
   assert.match(server,/VAL_ALLOW_PLATFORM_KEY_FALLBACK/);
   assert.match(server,/async function resolveTenantApiKey/);
@@ -53,6 +53,20 @@ test('runtime resolver prefers tenant vault and blocks silent platform fallback'
   assert.match(server,/platformKeyFallbackAllowed\(\) \? \(fallback \|\| ''\) : ''/);
   assert.match(server,/async function resolveOpenAIKey\(\)\{ return RUNTIME_OPENAI_KEY \|\| resolveIntegrationSecret\('openai','api_key',OPENAI_KEY\); \}/);
   assert.match(server,/async function resolveAnthropicKey\(\)\{ return resolveIntegrationSecret\('anthropic','api_key',ANTHROPIC_KEY\); \}/);
+  assert.match(server,/Tenant OpenAI key could not generate a response; using the approved platform fallback/);
+  assert.match(server,/platformKeyFallbackAllowed\('openai'\)/);
+});
+
+test('OpenAI tenant key validation proves that the key can generate a response',()=>{
+  const testBlock=server.match(/async function testTenantApiKey[\s\S]*?\n}\nfunction platformKeyFallbackAllowed/)?.[0]||'';
+  assert.match(testBlock,/https:\/\/api\.openai\.com\/v1\/responses/);
+  assert.match(testBlock,/could not generate a response/);
+  assert.match(testBlock,/Reply with OK\./);
+  assert.match(testBlock,/OPENAI_EXTRACTION_MODEL/);
+  assert.match(testBlock,/fetchWithTimeout/);
+  assert.match(testBlock,/has no available credits/);
+  assert.doesNotMatch(testBlock,/json_object/);
+  assert.doesNotMatch(testBlock,/https:\/\/api\.openai\.com\/v1\/models/);
 });
 
 test('API Keys & Connections UI is exposed under settings navigation',()=>{
@@ -69,6 +83,24 @@ test('API Keys & Connections UI is exposed under settings navigation',()=>{
   assert.match(dashboard,/Client-owned provider keys live here, encrypted per tenant/);
   assert.match(dashboard,/No silent platform-key fallback/);
   assert.doesNotMatch(dashboard,/Full keys never show after save[\s\S]*value="\$\{/);
+});
+
+test('missing user-owned OpenAI key gates the authenticated Hearth before any other route',()=>{
+  assert.match(server,/const approvedServiceKey=!!\(OPENAI_KEY&&platformKeyFallbackAllowed\('openai'\)\)/);
+  assert.match(server,/requiresOpenAIKey:!openai\.connected/);
+  assert.doesNotMatch(server,/requiresOpenAIKey:!openai\.connected&&!continuationAllowed/);
+  assert.match(hearthJs,/async function enforceOpenAIConnectionOnDashboardEntry\(\)/);
+  assert.match(hearthJs,/openValOpenAISetup\('dashboard',\{mandatory:true,afterConnect:'dashboard'\}\)/);
+  assert.match(hearthJs,/if\(openAiSetupRequired\) return;/);
+  assert.match(hearthJs,/window\.setTimeout\(initializeAuthenticatedDashboardEntry,120\)/);
+  assert.match(hearthJs,/No Jessa or shared client AI key will be used for your work/);
+  assert.match(hearthJs,/https:\/\/platform\.openai\.com\/api-keys/);
+  assert.match(hearthJs,/Testing your connection\.\.\./);
+  assert.match(hearthJs,/Connected\. Entering VAL\.\.\./);
+  assert.match(hearthJs,/OpenAI needs API credits/);
+  assert.match(hearthJs,/timeoutMs:20000/);
+  assert.match(hearthJs,/setupForm\?\.addEventListener\('submit'/);
+  assert.match(hearthJs,/async function completeValOpenAISetup/);
 });
 
 test('clean dashboard exposes Google connection as a first-run user action',()=>{
