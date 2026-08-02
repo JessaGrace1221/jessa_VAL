@@ -2602,6 +2602,22 @@ function isValidTranscriptWebhookReq(req){
   try{return crypto.timingSafeEqual(Buffer.from(token),Buffer.from(expected));}
   catch(e){return false;}
 }
+function goallRepUploadToken(){
+  return String(process.env.GOALL_REP_UPLOAD_TOKEN || process.env.VAL_GOALL_REP_UPLOAD_TOKEN || '').trim();
+}
+function isValidGoallRepUploadReq(req){
+  if(DEMO_MODE) return true;
+  const expected=goallRepUploadToken();
+  const auth=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();
+  const token=String(req.query.key||req.query.token||req.headers['x-goall-rep-upload-token']||req.headers['x-val-upload-token']||auth||'').trim();
+  if(!token||!expected||token.length!==expected.length) return false;
+  try{return crypto.timingSafeEqual(Buffer.from(token),Buffer.from(expected));}
+  catch(e){return false;}
+}
+function requireGoallRepUploadAccess(req,res,next){
+  if(isValidGoallRepUploadReq(req)) return next();
+  return res.status(401).json({ok:false,error:'This GOALL upload link needs a valid access key.'});
+}
 function requestBaseUrl(req){
   return (CLIENT_CONFIG.publicBaseUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/,'');
 }
@@ -8545,6 +8561,22 @@ app.get('/hearth-prototype.js',(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
   res.sendFile(path.join(__dirname,'hearth-prototype.js'));
 });
+app.get('/goall-rep-upload',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'goall-rep-upload.html'));
+});
+app.get('/goall-rep-upload.html',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'goall-rep-upload.html'));
+});
+app.get('/goall-rep-upload.css',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'goall-rep-upload.css'));
+});
+app.get('/goall-rep-upload.js',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'goall-rep-upload.js'));
+});
 app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
   res.set('Cache-Control','public, max-age=300');
   res.sendFile(path.join(__dirname,'assets',`hearth-${req.params.time}.png`));
@@ -8552,6 +8584,59 @@ app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
 app.get('/assets/goall-employer-upload-sample.csv',(req,res)=>{
   res.set('Cache-Control','public, max-age=300');
   res.download(path.join(__dirname,'assets','goall-employer-upload-sample.csv'),'goall-employer-upload-sample.csv');
+});
+app.post('/api/public/goall/rep-upload/staged-runs',requireGoallRepUploadAccess,upload.single('file'),async(req,res)=>{
+  try{
+    cleanupGoallStagedRuns();
+    const file=req.file;
+    if(!file) return res.status(400).json({ok:false,error:'Choose a CSV file of GOALL employer leads to enrich.'});
+    if(!/\.csv$/i.test(file.originalname||'')&&!/csv|plain|spreadsheet/i.test(file.mimetype||'')){
+      return res.status(400).json({ok:false,error:'Choose a .csv file with company and location columns.'});
+    }
+    const rows=parseGoallLeadCsv(file.buffer.toString('utf8'));
+    if(!rows.length) return res.status(400).json({ok:false,error:'VAL could not find any business rows in that CSV.'});
+    const payload={...(req.body||{}),leadProfile:'goall',sourceType:'csv_upload',csvFileName:file.originalname||'uploaded leads.csv'};
+    const leads=rows.map((row,index)=>goallCsvLeadFromRow(row,index,payload)).filter((lead)=>lead.organizationName||lead.name);
+    if(!leads.length) return res.status(400).json({ok:false,error:'VAL needs at least one company or business name column to enrich uploaded leads.'});
+    const run=createGoallCsvStagedLeadRun(payload,leads);
+    res.json(publicLeadRunView(run));
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/public/goall/rep-upload/staged-runs/:runId',requireGoallRepUploadAccess,async(req,res)=>{
+  cleanupGoallStagedRuns();
+  const run=goallStagedLeadRuns.get(String(req.params.runId||''));
+  if(!run) return res.status(404).json({ok:false,error:'Staged GOALL run was not found. Start a new upload.'});
+  res.json(publicLeadRunView(run));
+});
+app.post('/api/public/goall/rep-upload/import-approved',requireGoallRepUploadAccess,async(req,res)=>{
+  try{
+    const body=req.body||{};
+    if(DEMO_MODE){
+      const leads=Array.isArray(body.leads)?body.leads:[];
+      return res.json({ok:true,created:leads,failed:[],skipped:[],content:withDemoCta(`Imported ${leads.length} demo GOALL CSV lead${leads.length===1?'':'s'} to the demo CRM.`)});
+    }
+    const discovered={
+      market:String(body.market||body.searchPlan?.market||'Uploaded CSV'),
+      criteria:String(body.criteria||'Approved GOALL rep CSV upload'),
+      organizationType:String(body.organizationType||'GOALL uploaded employer leads'),
+      employeeMinimum:donorValue(body.employeeMinimum)||0,
+      tag:normalizeLeadTag(body.tag||body.organizationType||'employer'),
+      importTag:String(body.importTag||body.sourceTag||body.csvSourceTag||'').trim(),
+      sourceTag:String(body.sourceTag||body.importTag||body.csvSourceTag||'').trim(),
+      scraped:body.scraped||{configured:true,sourceType:'csv_upload'},
+      leads:Array.isArray(body.leads)?body.leads:[],
+      leadProfile:'goall',
+      searchPlan:body.searchPlan||null,
+      report:body.report||null
+    };
+    if(!discovered.leads.length) throw new Error('No addable enriched leads were provided for import.');
+    const imported=await importApprovedHbsLeads(discovered);
+    res.json({...discovered,...imported});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
 });
 app.get('/api/public-config',(req,res)=>{
   res.json({

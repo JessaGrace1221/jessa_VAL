@@ -7,6 +7,9 @@ const root = path.join(__dirname, '..');
 const hearthJs = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
 const hearthHtml = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 const hearthCss = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
+const goallRepUploadHtml = fs.readFileSync(path.join(root, 'goall-rep-upload.html'), 'utf8');
+const goallRepUploadJs = fs.readFileSync(path.join(root, 'goall-rep-upload.js'), 'utf8');
+const goallRepUploadCss = fs.readFileSync(path.join(root, 'goall-rep-upload.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const meetingPrepService = fs.readFileSync(path.join(root, 'services', 'valMeetingPrep.js'), 'utf8');
 const relationshipActionService = fs.readFileSync(path.join(root, 'services', 'valRelationshipActionIntelligence.js'), 'utf8');
@@ -206,6 +209,36 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /AbortController/);
   assert.match(hearthJs, /timeoutMs: 180000/);
   assert.match(hearthJs, /The preview source is still working after 3 minutes/);
+});
+
+test('GOALL rep CSV upload page exposes sample, source tag, staged enrichment, and import', () => {
+  assert.match(server, /app\.get\('\/goall-rep-upload'/);
+  assert.match(server, /app\.get\('\/goall-rep-upload\.html'/);
+  assert.match(server, /app\.get\('\/goall-rep-upload\.js'/);
+  assert.match(server, /GOALL_REP_UPLOAD_TOKEN/);
+  assert.match(server, /app\.post\('\/api\/public\/goall\/rep-upload\/staged-runs'/);
+  assert.match(server, /app\.get\('\/api\/public\/goall\/rep-upload\/staged-runs\/:runId'/);
+  assert.match(server, /app\.post\('\/api\/public\/goall\/rep-upload\/import-approved'/);
+  assert.match(server, /requireGoallRepUploadAccess/);
+  assert.match(goallRepUploadHtml, /GOALL Lead Intake/);
+  assert.match(goallRepUploadHtml, /data-source-tag/);
+  assert.match(goallRepUploadHtml, /data-csv-file/);
+  assert.match(goallRepUploadHtml, /goall-employer-upload-sample\.csv/);
+  assert.match(goallRepUploadHtml, /Upload and enrich/);
+  assert.match(goallRepUploadHtml, /Import addable leads/);
+  assert.match(goallRepUploadJs, /\/api\/val\/leads\/upload-csv-staged-runs/);
+  assert.match(goallRepUploadJs, /statusBase:'\/api\/val\/leads\/staged-runs'/);
+  assert.match(goallRepUploadJs, /\/api\/val\/leads\/import-approved/);
+  assert.match(goallRepUploadJs, /\/api\/public\/goall\/rep-upload\/staged-runs/);
+  assert.match(goallRepUploadJs, /\/api\/public\/goall\/rep-upload\/import-approved/);
+  assert.match(goallRepUploadJs, /x-goall-rep-upload-token/);
+  assert.match(goallRepUploadJs, /formData\.append\('importTag', sourceTag\)/);
+  assert.match(goallRepUploadJs, /formData\.append\('sourceTag', sourceTag\)/);
+  assert.match(goallRepUploadJs, /credentials:'same-origin'/);
+  assert.match(goallRepUploadJs, /Open VAL in this browser first/);
+  assert.match(goallRepUploadJs, /addableLeads/);
+  assert.match(goallRepUploadCss, /\.stage-grid/);
+  assert.match(goallRepUploadCss, /\.lead-list/);
 });
 
 test('Hearth scraper QA can run without calling live endpoints', () => {

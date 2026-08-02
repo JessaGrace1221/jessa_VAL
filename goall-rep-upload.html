@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GOALL Lead Upload</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./goall-rep-upload.css?v=20260802a">
+</head>
+<body>
+<main class="rep-upload-shell">
+  <section class="upload-panel" aria-labelledby="upload-title">
+    <div class="upload-heading">
+      <p>GOALL Lead Intake</p>
+      <h1 id="upload-title">Upload employer leads</h1>
+    </div>
+
+    <form class="upload-form" data-upload-form>
+      <label>
+        <span>Source tag</span>
+        <input type="text" name="sourceTag" data-source-tag placeholder="Example: Gabriel referral list" autocomplete="off" required>
+      </label>
+
+      <label>
+        <span>CSV file</span>
+        <input type="file" name="file" data-csv-file accept=".csv,text/csv" required>
+      </label>
+
+      <div class="upload-actions">
+        <a href="./assets/goall-employer-upload-sample.csv" download>Download sample CSV</a>
+        <button type="submit" data-upload-submit>Upload and enrich</button>
+      </div>
+    </form>
+
+    <p class="column-note">Accepted columns: company, city, state, address, zip, website, phone, email, industry, employee count, decision maker, decision maker title, notes, source tag.</p>
+  </section>
+
+  <section class="progress-panel" aria-live="polite">
+    <div class="progress-header">
+      <span data-run-status>Ready</span>
+      <button type="button" data-import-button disabled>Import addable leads</button>
+    </div>
+    <p data-run-message>Choose the CSV and source tag to start the GOALL enrichment system.</p>
+
+    <div class="stage-grid">
+      <article>
+        <span>Step 1</span>
+        <h2>Read businesses</h2>
+        <strong data-count-businesses>0</strong>
+      </article>
+      <article>
+        <span>Step 2</span>
+        <h2>Research people</h2>
+        <strong data-count-decision-makers>0</strong>
+      </article>
+      <article>
+        <span>Step 3</span>
+        <h2>Ready for CRM</h2>
+        <strong data-count-addable>0</strong>
+      </article>
+    </div>
+
+    <div class="lead-list" data-lead-list>
+      <article>
+        <strong>No file running yet</strong>
+        <span>Leads will appear here as they move through enrichment.</span>
+      </article>
+    </div>
+  </section>
+</main>
+<script src="./goall-rep-upload.js?v=20260802a"></script>
+</body>
+</html>
