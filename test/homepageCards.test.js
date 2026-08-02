@@ -165,10 +165,14 @@ test('Leverage prepared-work buttons persist edits and use approval gates',()=>{
   assert.match(hearthPrototype,/async function savePreparedLeverageEdits/);
   assert.match(hearthPrototype,/\/api\/val\/drafts\/' \+ encodeURIComponent\(ids\.draftId\)/);
   assert.match(hearthPrototype,/async function holdPreparedLeverageItem/);
-  assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/' \+ encodeURIComponent\(ids\.readyForYouId\) \+ '\/reject'/);
+  assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/' \+ encodeURIComponent\(ids\.readyForYouId\) \+ '\/snooze'/);
+  assert.match(hearthPrototype,/async function dismissPreparedLeverageItem/);
+  assert.match(hearthPrototype,/\/api\/val\/ready-for-you\/' \+ encodeURIComponent\(ids\.readyForYouId\) \+ '\/dismiss'/);
+  assert.match(hearthPrototype,/data-home-action="dismiss_prepared">Dismiss/);
   assert.match(hearthPrototype,/await approvePreparedLeverageItem\(\)/);
   assert.match(hearthPrototype,/await savePreparedLeverageEdits\(\)/);
   assert.match(hearthPrototype,/await holdPreparedLeverageItem\(\)/);
+  assert.match(hearthPrototype,/await dismissPreparedLeverageItem\(\)/);
 });
 
 test('Home Leverage is fed by canonical Ready For You prepared work',()=>{

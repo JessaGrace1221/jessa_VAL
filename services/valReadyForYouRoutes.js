@@ -72,6 +72,17 @@ function registerValReadyForYouRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.post('/api/val/ready-for-you/:id/dismiss',async(req,res)=>{
+    try{
+      await waitForDb();
+      const reason=req.body?.reason||'Dismissed as not needed.';
+      const item=await service.reject(req.params.id,{...(req.body||{}),reason,disposition:'dismissed'});
+      if(!item)return res.status(404).json({ok:false,error:'Ready For You item not found'});
+      await auditLog({req,action:'ready_for_you_item_dismissed',resourceType:'ready_for_you_item',resourceId:req.params.id,metadata:{reason,sourceEvidencePreserved:true,externalAction:false},success:true}).catch(()=>{});
+      res.json({ok:true,item,source_evidence_preserved:true,no_external_action:true});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.post('/api/val/ready-for-you/:id/snooze',async(req,res)=>{
     try{
       await waitForDb();

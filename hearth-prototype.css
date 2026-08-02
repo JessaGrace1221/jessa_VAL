@@ -3859,6 +3859,10 @@ button.observer-node:focus-visible{
   -webkit-backdrop-filter:blur(12px) saturate(1.04);
   backdrop-filter:blur(12px) saturate(1.04);
 }
+.observer-cowork-overlay .chat-window-close{
+  top:14px;
+  right:14px;
+}
 .observer-cowork-overlay .observer-cowork-window .home-cowork-main{
   grid-template-rows:auto minmax(0,1fr) auto;
 }
@@ -4860,6 +4864,42 @@ button.observer-node:focus-visible{
   height:min(620px,calc(100vh - 178px));
   min-height:0;
   overflow:hidden;
+}
+.chat-window-close{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:8;
+  width:38px;
+  height:38px;
+  padding:0;
+  border:1px solid rgba(77,89,70,.16);
+  border-radius:8px!important;
+  background:rgba(255,255,255,.76);
+  box-shadow:0 8px 22px rgba(38,29,24,.08);
+  color:transparent;
+  cursor:pointer;
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+}
+.chat-window-close::before,
+.chat-window-close::after{
+  content:"";
+  position:absolute;
+  top:50%;
+  left:50%;
+  width:14px;
+  height:1.5px;
+  border-radius:2px;
+  background:rgba(43,53,40,.72);
+}
+.chat-window-close::before{transform:translate(-50%,-50%) rotate(45deg)}
+.chat-window-close::after{transform:translate(-50%,-50%) rotate(-45deg)}
+.chat-window-close:hover,
+.chat-window-close:focus-visible{
+  border-color:rgba(97,122,88,.34);
+  background:rgba(255,255,255,.94);
+  box-shadow:0 10px 26px rgba(38,29,24,.12);
 }
 .home-cowork-context-gathering{
   position:absolute;
@@ -14948,6 +14988,7 @@ button.timeline-overview-receipt:focus-visible{
   display:flex;
   align-items:center;
   justify-content:flex-end;
+  flex-wrap:wrap;
   gap:9px;
 }
 .leverage-draft-actions button{

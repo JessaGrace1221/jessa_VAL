@@ -23,6 +23,7 @@ test('ready for you routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/ready-for-you\/build/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/approve/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/reject/);
+  assert.match(routes,/\/api\/val\/ready-for-you\/:id\/dismiss/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/snooze/);
   assert.match(routes,/\/api\/val\/ready-for-you\/:id\/draft/);
   assert.match(routes,/function parseLimit\(value,defaultValue=3,max=25\)/);
@@ -227,6 +228,11 @@ test('approve, reject, and snooze remain local actions and notify the canonical 
   assert.equal(snoozed.status,'snoozed');
   assert.ok(snoozed.snoozedUntil);
   assert.equal(snoozed.decisionJson.external_action,false);
+  const held=await service.listItems({limit:20});
+  assert.equal(held.items.some(item=>item.id===snoozed.id),false);
+  store.readyForYouItems.find(item=>item.id===snoozed.id).snoozedUntil='2020-01-01T00:00:00.000Z';
+  const returned=await service.listItems({limit:20});
+  assert.equal(returned.items.some(item=>item.id===snoozed.id),true);
   assert.deepEqual(decisions.map(event=>event.status),['approved','rejected','snoozed']);
   assert.ok(decisions.every(event=>event.item&&event.reviewedAt));
 });
