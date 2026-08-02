@@ -2569,6 +2569,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.doesNotMatch(hearthHtml, />The Hearth</);
   assert.match(hearthHtml, /class="executive-compass-core"[^>]*aria-label="Open Witnessing Session and Connections"[^>]*aria-controls="val-detail"/);
   assert.match(hearthHtml, /class="drawer-link studio-drawer-link"[^>]*aria-label="Open VAL Studio"/);
+  assert.match(hearthHtml, /class="teach-pen"[^>]*hidden[^>]*aria-hidden="true"[^>]*tabindex="-1"/);
   assert.match(hearthJs, /const valDrawerLink = executiveCompassCore/);
   assert.match(hearthJs, /studioDrawerLink\?\.addEventListener\('click'/);
   assert.doesNotMatch(hearthJs, /executiveCompassCore\?\.addEventListener\('click', closeExecutiveCompassFromCore\)/);
@@ -2694,6 +2695,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /microsoft: \{keyLabel:'Outlook'/);
   assert.match(hearthJs, /Google, Outlook, and Krisp open their own secure connection page/);
   assert.match(hearthJs, /Krisp transcripts/);
+  assert.match(hearthJs, /data-connection-id=/);
+  assert.match(hearthJs, /const hasKrisp = connections\.some/);
   assert.match(hearthJs, /Optional: what should VAL look for first\?/);
   assert.match(hearthJs, /meetings that need follow-up/);
   assert.match(hearthJs, /function openValWitnessingOAuthConnection/);
