@@ -1036,6 +1036,27 @@ button,a{font:inherit}
   font-size:.86rem;
   font-weight:640;
 }
+.val-studio-network-note{
+  display:grid;
+  grid-template-columns:150px minmax(0,1fr);
+  gap:18px;
+  align-items:center;
+  padding:13px 0;
+  border-bottom:1px solid rgba(50,70,55,.1);
+}
+.val-studio-network-note span,
+.val-studio-communications-heading span{
+  color:#7d6469;
+  font:650 .54rem/1.2 var(--mono);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.val-studio-network-note strong{
+  color:#35463a;
+  font-size:.68rem;
+  font-weight:610;
+  line-height:1.45;
+}
 .val-studio-environment-list{
   display:grid;
   align-content:start;
@@ -1800,6 +1821,51 @@ button,a{font:inherit}
   font-size:.64rem;
   line-height:1.45;
 }
+.val-studio-communications{
+  display:grid;
+  gap:10px;
+  padding-top:2px;
+}
+.val-studio-communications-heading{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:baseline;
+}
+.val-studio-communications-heading strong{
+  color:#415244;
+  font-size:.61rem;
+  font-weight:620;
+}
+.val-studio-communication-list{
+  display:grid;
+  gap:7px;
+}
+.val-studio-communication-list article{
+  display:grid;
+  gap:4px;
+  border-left:2px solid rgba(122,145,114,.55);
+  background:linear-gradient(90deg,rgba(225,235,219,.42),rgba(255,255,255,.18),rgba(244,220,223,.2));
+  padding:10px 12px;
+}
+.val-studio-communication-list span{
+  color:#7d6469;
+  font:650 .49rem/1.2 var(--mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.val-studio-communication-list strong{
+  color:#2e3e33;
+  font-size:.66rem;
+  font-weight:630;
+}
+.val-studio-communication-list p,
+.val-studio-communications-empty{
+  margin:0;
+  color:rgba(46,62,51,.6);
+  font-size:.6rem;
+  line-height:1.45;
+}
 .val-studio-live-footer{
   display:flex;
   align-items:center;
@@ -1855,6 +1921,8 @@ button,a{font:inherit}
   .val-studio-environment-copy{grid-column:1}
   .val-studio-environment-arrow{grid-column:2;grid-row:1 / span 3}
   .val-studio-library-footer{align-items:flex-start;flex-direction:column}
+  .val-studio-network-note{grid-template-columns:1fr;gap:6px}
+  .val-studio-communications-heading{align-items:flex-start;flex-direction:column}
   .val-studio-live-layout{grid-template-columns:1fr}
   .val-studio-live-overview{padding:24px 0;border-right:0;border-bottom:1px solid rgba(50,70,55,.12)}
   .val-studio-live-contract{grid-template-columns:1fr}

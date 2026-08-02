@@ -31,7 +31,7 @@ function validSpec(){
 }
 
 test('Environment schema and routes are mounted as native VAL infrastructure',()=>{
-  for(const table of ['val_environments','val_environment_versions','val_environment_runs']){
+  for(const table of ['val_environments','val_environment_versions','val_environment_runs','val_environment_packets','val_environment_packet_deliveries']){
     assert.match(VAL_ENVIRONMENTS_SQL,new RegExp(`create table if not exists ${table}`));
   }
   assert.match(server,/ensureValEnvironmentTables/);
@@ -40,6 +40,8 @@ test('Environment schema and routes are mounted as native VAL infrastructure',()
   assert.match(routes,/\/api\/val\/environments\/:id\/activate/);
   assert.match(routes,/\/api\/val\/environments\/:id\/export/);
   assert.match(routes,/\/api\/val\/environments\/import/);
+  assert.match(routes,/\/api\/val\/environments\/network/);
+  assert.match(routes,/\/api\/val\/environments\/:id\/communications/);
 });
 
 test('shared Environments keep governance and remove private tenant context',async()=>{
@@ -120,6 +122,8 @@ test('scheduled Observer model lane omits unsupported temperature before request
   assert.match(server,/if\(!omitTemperature&&!reasoningEffort\)body\.temperature=temperature/);
   assert.match(server,/omitTemperature:true,[\s\S]{0,180}model:OPENAI_OBSERVER_MODEL/);
   assert.match(server,/const apiKey=String\(await resolveOpenAIKey\(\)\|\|''\)\.trim\(\)/);
+  assert.match(server,/valEnvironments\.listNetwork\(\{limit\}\)/);
+  assert.match(server,/packetType:'environment_result_packet_v1'/);
 });
 
 test('Environment contract requires confirmed event, observers, sender, and document',()=>{
@@ -214,6 +218,8 @@ test('VAL Studio opens as an Environment library and preserves live detail state
   assert.match(hearth,/The current version remains active until you deliberately replace it with another tested version\./);
   assert.match(hearth,/Make Environment Live/);
   assert.match(hearth,/Live v.*remains active/);
+  assert.match(hearth,/Shared Intelligence Network/);
+  assert.match(hearth,/received · .*used · .*published/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{
@@ -298,4 +304,81 @@ test('live transcript processing creates governed actions once and preserves app
   const second=await service.processTranscript(transcript);
   assert.equal(second.runs[0].deduplicated,true);
   assert.equal(packets.length,2);
+});
+
+test('live Environments publish durable packets and use sibling context without triggering sibling actions',async()=>{
+  let store={};
+  const presentedContext=[];
+  const publishedBoardPackets=[];
+  let actionCount=0;
+  const transcripts={
+    alpha:{
+      id:'alpha',title:'Alpha Meeting',occurredAt:'2026-07-27T14:00:00.000Z',
+      attendees:[{name:'Jessa',email:'jessa@example.com',isExecutive:true},{name:'Alex',email:'alex@example.com'}],
+      actionItems:['Alex will send the brief.'],keyPoints:['Alpha is ready.']
+    },
+    beta:{
+      id:'beta',title:'Beta Meeting',occurredAt:'2026-07-28T14:00:00.000Z',
+      attendees:[{name:'Jessa',email:'jessa@example.com',isExecutive:true},{name:'Blair',email:'blair@example.com'}],
+      actionItems:['Blair will confirm the owner.'],keyPoints:['Beta needs one decision.']
+    }
+  };
+  const packetMap=new Map();
+  const externalActions={
+    async createEmailSendPacket(payload){
+      actionCount+=1;
+      const packet={id:`action_${actionCount}`,status:'draft',payloadPreviewJson:payload};packetMap.set(packet.id,packet);return packet;
+    },
+    async createGoogleDocAppendPacket(payload){
+      actionCount+=1;
+      const packet={id:`action_${actionCount}`,status:'draft',payloadPreviewJson:payload};packetMap.set(packet.id,packet);return packet;
+    },
+    async edit(id,changes){Object.assign(packetMap.get(id),changes);return packetMap.get(id);},
+    async approve(id){return packetMap.get(id);},
+    executor:{async execute(){return {ok:true,executed:false};}}
+  };
+  const service=createValEnvironmentsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    tenantId:()=>'tenant',userId:()=>'jessa',
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`,
+    loadTranscript:async id=>transcripts[id],
+    externalActions,
+    onPacketPublished:async event=>{publishedBoardPackets.push(event.packet);},
+    previewObserver:async({observer,siblingContextPackets=[]})=>{
+      presentedContext.push({observerId:observer.observerId,packetIds:siblingContextPackets.map(packet=>packet.id)});
+      return {type:'observer_receipt_v1',observerId:observer.observerId,observerName:observer.observerName,status:'no_meaningful_signal',observation:'No meaningful signal from my lens.',evidence:[],confidence:.9};
+    }
+  });
+  async function createActive(name,title,transcriptId){
+    const spec=validSpec();spec.name=name;spec.trigger.eventTitlePattern=title;
+    const draft=await service.saveDraft({spec});
+    await service.runHistoricalTest(draft.environment.id,{transcriptId});
+    return (await service.activate(draft.environment.id)).environment;
+  }
+  const alpha=await createActive('Alpha follow-through','Alpha Meeting','alpha');
+  const beta=await createActive('Beta follow-through','Beta Meeting','beta');
+  presentedContext.length=0;
+  const alphaRun=await service.processTranscript(transcripts.alpha);
+  assert.equal(alphaRun.matched,1);
+  assert.equal(actionCount,2);
+  let betaCommunications=await service.listCommunications(beta.id);
+  assert.equal(betaCommunications.incoming.length,1);
+  assert.equal(betaCommunications.incoming[0].delivery.status,'received');
+  const betaRun=await service.processTranscript(transcripts.beta);
+  assert.equal(betaRun.matched,1);
+  assert.equal(actionCount,4);
+  assert.ok(presentedContext.some(item=>item.packetIds.includes(betaCommunications.incoming[0].id)));
+  betaCommunications=await service.listCommunications(beta.id);
+  assert.equal(betaCommunications.incoming[0].delivery.status,'used');
+  assert.equal(betaCommunications.incoming[0].delivery.attachedRunId,betaRun.runs[0].run.id);
+  const network=await service.listNetwork();
+  assert.equal(network.packets.length,2);
+  assert.equal(network.counts.used,1);
+  assert.equal(network.counts.received,1);
+  assert.equal(network.chiefOfStaff.packetCount,2);
+  assert.equal(publishedBoardPackets.length,2);
+  assert.equal(publishedBoardPackets.every(packet=>packet.packetType==='environment_result_packet_v1'),true);
+  assert.ok(alpha.id);
 });

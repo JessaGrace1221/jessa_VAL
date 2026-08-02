@@ -36718,6 +36718,35 @@ const valEnvironments = registerValEnvironmentsRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog,
   externalActions:valExternalActions,
+  onPacketPublished:async({packet,environment})=>{
+    if(!valBoardPackets?.createPackets)return null;
+    const boardPackets=await valBoardPackets.createPackets([{
+      id:packet.id,
+      sourceType:'environment',
+      sourceId:packet.sourceRunId,
+      packetType:'environment_result_packet_v1',
+      title:packet.title,
+      summary:packet.summary,
+      sourceRefs:safeArray(packet.evidenceRefsJson),
+      payload:{
+        sourceEnvironmentId:environment.id,
+        sourceEnvironmentName:environment.name,
+        chiefAdvisory:packet.chiefAdvisoryJson||{},
+        outputSummary:packet.outputSummaryJson||{},
+        lineage:packet.lineageJson||{},
+        noExternalAction:true
+      }
+    }]);
+    if(!boardPackets.some(item=>item.status==='active')){
+      throw new Error('The Environment result did not enter the canonical Board queue.');
+    }
+    queueBoardIntelligenceForPackets(boardPackets,{
+      type:'environment_result_published',
+      sourceType:'environment',
+      sourceId:packet.sourceRunId
+    });
+    return boardPackets;
+  },
   onNeedsAttention:async({environment,source,run,reason})=>{
     if(!valCanonicalWork?.admit)return null;
     const title=`Resolve ${environment.name}`;
@@ -36774,7 +36803,7 @@ const valEnvironments = registerValEnvironmentsRoutes(app,{
       ].filter(Boolean)
     };
   },
-  previewObserver:async({observer,source,exactSections,runId})=>{
+  previewObserver:async({observer,source,exactSections,runId,siblingContextPackets=[]})=>{
     const evidenceQuote=compactText(exactSections.body,2600);
     const packet={
       id:`${runId}_${observer.observerId}_source`,
@@ -36793,12 +36822,30 @@ const valEnvironments = registerValEnvironmentsRoutes(app,{
       }],
       createdAt:source.occurredAt||new Date().toISOString()
     };
+    const environmentPackets=safeArray(siblingContextPackets).map(item=>({
+      id:item.id,
+      sourceType:'environment',
+      sourceId:item.sourceRunId||item.id,
+      packetType:'environment_result_packet_v1',
+      title:item.title||'Sibling Environment result',
+      summary:compactText(item.summary||'',900),
+      payloadJson:{
+        evidenceContent:compactText([
+          item.summary||'',
+          item.chiefAdvisoryJson?.recommendation||''
+        ].filter(Boolean).join(' '),1200),
+        sourceEnvironmentId:item.sourceEnvironmentId||'',
+        outputSummary:item.outputSummaryJson||{}
+      },
+      sourceRefsJson:safeArray(item.evidenceRefsJson),
+      createdAt:item.createdAt||new Date().toISOString()
+    }));
     const output=await reasonBoardEvidenceForObserver({
       observerName:observer.observerName,
       promptKey:observer.promptKey||'event_intelligence_pass',
       contextPacket:{
-        event:{type:'environment_historical_test',sourceType:'transcript',sourceId:source.id,packetIds:[packet.id]},
-        boardPackets:[packet]
+        event:{type:'environment_run',sourceType:'transcript',sourceId:source.id,packetIds:[packet.id,...environmentPackets.map(item=>item.id)]},
+        boardPackets:[packet,...environmentPackets]
       },
       deterministicOutput:{
         observer:observer.observerName,
@@ -36811,6 +36858,7 @@ const valEnvironments = registerValEnvironmentsRoutes(app,{
       }
     });
     const review=output.packetReviews?.[0]||output.packet_reviews?.[0]||{};
+    const packetReviews=safeArray(output.packetReviews||output.packet_reviews);
     return {
       type:'observer_receipt_v1',
       observerId:observer.observerId,
@@ -36822,6 +36870,16 @@ const valEnvironments = registerValEnvironmentsRoutes(app,{
       concern:review.concern||'',
       question:review.question||'',
       evidence:safeArray(review.evidence||output.evidence),
+      environmentContextReviews:environmentPackets.map((contextPacket,index)=>{
+        const contextReview=packetReviews[index+1]||{};
+        return {
+          packetId:contextPacket.id,
+          sourceEnvironmentId:contextPacket.payloadJson?.sourceEnvironmentId||'',
+          status:contextReview.status||'reviewed',
+          observation:contextReview.observation||'',
+          evidence:safeArray(contextReview.evidence)
+        };
+      }),
       confidence:Number(review.confidence??output.confidence??0),
       externalActionPolicy:'never'
     };
@@ -36864,7 +36922,31 @@ valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
     resolveIdentity:valConversationIdentity.resolveIdentity,
     listHighSignalClassifications:valExecutiveInbox.listHighSignalClassifications,
     listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates,
-    listBoardPackets:({limit=60}={})=>valBoardPackets?.listPackets({limit})||[]
+    listBoardPackets:async({limit=60}={})=>{
+      const [boardPackets,environmentNetwork]=await Promise.all([
+        valBoardPackets?.listPackets({limit})||[],
+        valEnvironments.listNetwork({limit}).catch(()=>({packets:[]}))
+      ]);
+      const environmentPackets=safeArray(environmentNetwork?.packets).map(packet=>({
+        id:packet.id,
+        sourceType:'environment',
+        sourceId:packet.sourceRunId||packet.id,
+        packetType:'environment_result_packet_v1',
+        title:packet.title||'Environment result',
+        summary:packet.summary||'',
+        payloadJson:{
+          sourceEnvironmentId:packet.sourceEnvironmentId||'',
+          chiefAdvisory:packet.chiefAdvisoryJson||{},
+          outputSummary:packet.outputSummaryJson||{},
+          lineage:packet.lineageJson||{}
+        },
+        sourceRefsJson:safeArray(packet.evidenceRefsJson),
+        createdAt:packet.createdAt||new Date().toISOString()
+      }));
+      return [...new Map([...safeArray(boardPackets),...environmentPackets].map(packet=>[packet.id,packet])).values()]
+        .sort((a,b)=>String(b.createdAt||b.created_at||'').localeCompare(String(a.createdAt||a.created_at||'')))
+        .slice(0,Math.max(1,Math.min(Number(limit)||60,200)));
+    }
   }
 });
 let valIntelligenceMaintenanceRunning=false;

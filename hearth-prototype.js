@@ -28919,6 +28919,8 @@ let valStudioState = {
   versionNumber:0,
   activeVersionNumber:0,
   environments:[],
+  network:null,
+  communications:null,
   transcripts:[],
   lastTest:null,
   spec:valStudioDefaultSpec()
@@ -29199,6 +29201,7 @@ function valStudioNotice(){
 
 function valStudioLibraryView(){
   const environments=safeArray(valStudioState.environments);
+  const network=valStudioState.network||{};
   const liveCount=environments.filter(item=>item.status==='active').length;
   const draftCount=environments.filter(item=>item.status==='draft'||item.draftVersion).length;
   return [
@@ -29217,7 +29220,9 @@ function valStudioLibraryView(){
           '<span><strong>' + escapeHtml(String(environments.length)) + '</strong> Total</span>',
           '<span><strong>' + escapeHtml(String(liveCount)) + '</strong> Live</span>',
           '<span><strong>' + escapeHtml(String(draftCount)) + '</strong> Draft' + (draftCount===1?'':'s') + '</span>',
+          '<span><strong>' + escapeHtml(String(network.counts?.packets||0)) + '</strong> Shared result packet' + (Number(network.counts?.packets||0)===1?'':'s') + '</span>',
         '</div>',
+        '<div class="val-studio-network-note"><span>Shared Intelligence Network</span><strong>The Chief of Staff sees every Environment result. Active Environments receive that context without triggering one another.</strong></div>',
         '<div class="val-studio-environment-list" aria-label="Your Environments">',
           environments.map(environment=>{
             const version=environment.draftVersion||environment.activeVersion||{};
@@ -29250,6 +29255,10 @@ function valStudioLibraryView(){
 function valStudioLiveView(){
   const spec=valStudioState.spec;
   const observers=valStudioSelectedObserverNames();
+  const communications=valStudioState.communications||{};
+  const incoming=safeArray(communications.incoming);
+  const outgoing=safeArray(communications.outgoing);
+  const used=incoming.filter(item=>item.delivery?.status==='used').length;
   return [
     '<div class="val-studio val-studio-live-home" data-val-studio>',
       '<header class="val-studio-header">',
@@ -29271,6 +29280,10 @@ function valStudioLiveView(){
             '<article><span>Protection</span><strong>Email succeeds first</strong><p>A document retry never resends the email.</p></article>',
           '</div>',
           '<div class="val-studio-live-note"><strong>VAL is listening for the next matching meeting.</strong><span>The current version remains active until you deliberately replace it with another tested version.</span></div>',
+          '<section class="val-studio-communications">',
+            '<div class="val-studio-communications-heading"><span>Shared Intelligence</span><strong>' + escapeHtml(String(incoming.length)) + ' received · ' + escapeHtml(String(used)) + ' used · ' + escapeHtml(String(outgoing.length)) + ' published</strong></div>',
+            incoming.length?'<div class="val-studio-communication-list">' + incoming.slice(0,3).map(packet=>'<article><span>' + escapeHtml(packet.delivery?.status==='used'?'Used in a run':'Available context') + '</span><strong>' + escapeHtml(packet.title||'Environment result') + '</strong><p>' + escapeHtml(packet.summary||'') + '</p></article>').join('') + '</div>':'<p class="val-studio-communications-empty">No sibling Environment has published context yet. The first live result will appear here with its source lineage.</p>',
+          '</section>',
         '</section>',
         '<aside class="val-studio-canvas">',
           '<p class="val-studio-eyebrow">Live Structure</p>',
@@ -29429,6 +29442,7 @@ function wireValStudio(){
     valStudioState.versionNumber=0;
     valStudioState.activeVersionNumber=0;
     valStudioState.lastTest=null;
+    valStudioState.communications=null;
     valStudioState.spec=valStudioDefaultSpec();
     renderValStudio();
   }));
@@ -29461,13 +29475,18 @@ function wireValStudio(){
     valStudioState.activeVersionNumber=environment.activeVersion?.versionNumber||0;
     valStudioState.spec=version?.specJson||valStudioDefaultSpec();
     valStudioState.lastTest=null;
+    valStudioState.communications=null;
     valStudioState.mode=environment.status==='active'&&environment.activeVersion&&!environment.draftVersion?'live':'builder';
     valStudioState.notice='';
     valStudioState.stage=environment.draftVersion?valStudioResumeStage(valStudioState.spec):0;
     renderValStudio();
     try{
-      const runs=await valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/runs?limit=10`);
+      const [runs,communications]=await Promise.all([
+        valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/runs?limit=10`),
+        valStudioRequest(`/api/val/environments/${encodeURIComponent(environment.id)}/communications?limit=50`)
+      ]);
       if(valStudioState.environmentId!==environment.id||valStudioState.mode==='library')return;
+      valStudioState.communications=communications;
       valStudioState.lastTest=safeArray(runs.runs).find(run=>
         run.testMode
         &&run.status==='completed'
@@ -29546,6 +29565,7 @@ function wireValStudio(){
       valStudioState.versionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
       valStudioState.activeVersionNumber=result.environment.activeVersion?.versionNumber||valStudioState.versionNumber;
       valStudioState.spec=result.environment.activeVersion?.specJson||valStudioState.spec;
+      valStudioState.communications=await valStudioRequest(`/api/val/environments/${encodeURIComponent(result.environment.id)}/communications?limit=50`).catch(()=>null);
       valStudioState.mode='live';
       renderValStudio();
     }catch(error){if(status)status.innerHTML='<p class="val-studio-error">'+escapeHtml(error.message)+'</p>';}
@@ -29555,12 +29575,15 @@ function wireValStudio(){
 async function hydrateValStudio(){
   const status=scraperPreviewList.querySelector('[data-val-studio-loading]');
   try{
-    const [environmentPayload,transcriptPayload]=await Promise.all([
+    const [environmentPayload,transcriptPayload,networkPayload]=await Promise.all([
       valStudioRequest('/api/val/environments?limit=20'),
-      valStudioRequest('/api/val/transcripts?days=3650&limit=100')
+      valStudioRequest('/api/val/transcripts?days=3650&limit=100'),
+      valStudioRequest('/api/val/environments/network?limit=100')
     ]);
     valStudioState.environments=safeArray(environmentPayload.environments);
     valStudioState.transcripts=safeArray(transcriptPayload.transcripts);
+    valStudioState.network=networkPayload;
+    valStudioState.communications=null;
     valStudioState.mode='library';
     valStudioState.stage=0;
     renderValStudio();

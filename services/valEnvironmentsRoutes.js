@@ -17,6 +17,18 @@ function registerValEnvironmentsRoutes(app,deps={}){
       res.json({ok:true,blockCatalog:service.blockCatalog()});
     }catch(error){res.status(500).json({ok:false,error:error.message});}
   });
+  app.get('/api/val/environments/network',async(req,res)=>{
+    try{
+      await waitForDb();
+      res.json(await service.listNetwork({limit:req.query.limit}));
+    }catch(error){res.status(500).json({ok:false,error:error.message});}
+  });
+  app.get('/api/val/environments/:id/communications',async(req,res)=>{
+    try{
+      await waitForDb();
+      res.json(await service.listCommunications(req.params.id,{limit:req.query.limit}));
+    }catch(error){res.status(500).json({ok:false,error:error.message});}
+  });
   app.get('/api/val/environments/:id/export',async(req,res)=>{
     try{
       await waitForDb();

@@ -13,7 +13,7 @@ function rowToCamel(row={}){
   for(const [key,value] of Object.entries(row||{})){
     out[key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase())]=value instanceof Date?value.toISOString():value;
   }
-  for(const key of ['specJson','humanContractJson','versionSnapshotJson','inputJson','receiptsJson','outputsJson']){
+  for(const key of ['specJson','humanContractJson','versionSnapshotJson','inputJson','receiptsJson','outputsJson','topicsJson','evidenceRefsJson','observerReceiptsJson','chiefAdvisoryJson','outputSummaryJson','lineageJson']){
     if(Object.hasOwn(out,key))out[key]=jsonValue(out[key],/receipts/i.test(key)?[]:{});
   }
   return out;
@@ -31,7 +31,8 @@ function environmentBlockCatalog(){
       {blockType:'source',blockId:'krisp_transcript',label:'Krisp Transcript',emits:['transcript_packet_v1']},
       {blockType:'source',blockId:'calendar_event',label:'Calendar Event',emits:['calendar_event_packet_v1']},
       {blockType:'source',blockId:'email',label:'Email',emits:['email_packet_v1']},
-      {blockType:'source',blockId:'voice_or_chat',label:'VAL Conversation',emits:['conversation_packet_v1']}
+      {blockType:'source',blockId:'voice_or_chat',label:'VAL Conversation',emits:['conversation_packet_v1']},
+      {blockType:'source',blockId:'environment_network',label:'Environment Network',emits:['environment_result_packet_v1']}
     ],
     observers:publicObserverBlockDefinitions(),
     coordination:[
@@ -45,6 +46,11 @@ function environmentBlockCatalog(){
     actions:[
       {blockType:'external_action',blockId:'send_email',label:'Send Email',accepts:['approved_action_v1'],policy:'recipient_and_action_bounded'},
       {blockType:'external_action',blockId:'append_google_doc',label:'Append to Google Doc',accepts:['approved_action_v1'],policy:'document_id_bounded'}
+    ],
+    communication:[
+      {blockType:'communication',blockId:'publish_result',label:'Publish Result Packet',emits:['environment_result_packet_v1'],policy:'one_per_live_run'},
+      {blockType:'communication',blockId:'receive_context',label:'Receive Environment Context',accepts:['environment_result_packet_v1'],policy:'context_only'},
+      {blockType:'communication',blockId:'explicit_handoff',label:'Explicit Handoff',accepts:['environment_result_packet_v1'],policy:'never_automatic'}
     ]
   };
 }
@@ -69,6 +75,13 @@ function normalizeEnvironmentSpec(input={}){
     observerIds,
     roundTable:{required:true,authority:'observe_only'},
     chiefOfStaff:{required:true,authority:'advise_only'},
+    communication:{
+      publishResult:true,
+      receiveSiblingContext:true,
+      subscription:'all_active_environments',
+      automaticHandoffs:false,
+      maxContextPackets:20
+    },
     instructions:{
       sourceTruth:'Use Krisp Action Items and Key Points exactly as received.',
       formatting:'Basic headings and a short introduction are allowed. Source wording is not rewritten.',
@@ -201,6 +214,7 @@ function humanEnvironmentContract(spec={}){
     listensTo:'Krisp Action Items, Key Points, attendee emails, meeting title, and meeting date.',
     observers,
     observerPurpose:'Each selected Observer reviews the exact meeting packet. The Round Table observes their receipts. The Chief of Staff advises but does not govern execution.',
+    sharedIntelligence:'Every live run publishes one evidence-backed result packet. Other active Environments may use it as context, but cannot act from it without an explicit governed handoff.',
     produces:[
       'One email to all attendees except the executive.',
       'One dated section appended to the selected Google Doc.'
@@ -298,6 +312,34 @@ function meetingOutputs(spec={},source={}){
   };
 }
 
+function environmentPacketTopics({environment={},source={},receipts=[]}={}){
+  const topics=new Set(['environment_result',String(source.sourceType||'transcript')]);
+  for(const receipt of safeArray(receipts)){
+    if(receipt?.type==='observer_receipt_v1'&&receipt.status==='observed')topics.add(`observer:${receipt.observerId}`);
+  }
+  const titleTokens=normalizedTitle(`${environment.name||''} ${source.title||''}`)
+    .split(' ')
+    .filter(token=>token.length>3)
+    .slice(0,8);
+  for(const token of titleTokens)topics.add(`topic:${token}`);
+  return [...topics];
+}
+
+function environmentOutputSummary(outputs={}){
+  const actionReceipts=safeArray(outputs.actionReceipts);
+  return {
+    preparedActions:actionReceipts.map(receipt=>({
+      action:receipt.action||'',
+      status:receipt.status||'',
+      packetId:receipt.packetId||''
+    })),
+    emailPrepared:Boolean(outputs.email?.subject),
+    documentPrepared:Boolean(outputs.googleDoc?.documentId),
+    approvalRequired:actionReceipts.some(receipt=>receipt.status==='awaiting_approval'),
+    completedActions:actionReceipts.filter(receipt=>receipt.status==='executed').length
+  };
+}
+
 function createValEnvironmentsService({
   dbQuery,
   hasPg=()=>false,
@@ -309,6 +351,7 @@ function createValEnvironmentsService({
   loadTranscript=async()=>null,
   externalActions=null,
   onNeedsAttention=async()=>{},
+  onPacketPublished=async()=>{},
   previewObserver=async({observer})=>({
     observerId:observer.observerId,
     observerName:observer.observerName,
@@ -324,6 +367,8 @@ function createValEnvironmentsService({
     if(!Array.isArray(state.valEnvironments))state.valEnvironments=[];
     if(!Array.isArray(state.valEnvironmentVersions))state.valEnvironmentVersions=[];
     if(!Array.isArray(state.valEnvironmentRuns))state.valEnvironmentRuns=[];
+    if(!Array.isArray(state.valEnvironmentPackets))state.valEnvironmentPackets=[];
+    if(!Array.isArray(state.valEnvironmentPacketDeliveries))state.valEnvironmentPacketDeliveries=[];
     return state;
   }
   async function getEnvironment(id){
@@ -432,6 +477,96 @@ function createValEnvironmentsService({
     saveStore(state);
     return index>=0?state.valEnvironmentRuns[index]:row;
   }
+  async function savePacket(row){
+    if(hasPg()){
+      const result=await dbQuery(`
+        insert into val_environment_packets (
+          id,tenant_id,user_id,source_environment_id,source_run_id,source_type,source_id,
+          packet_type,title,summary,topics_json,evidence_refs_json,observer_receipts_json,
+          chief_advisory_json,output_summary_json,lineage_json,status,created_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,$18)
+        on conflict (tenant_id,user_id,source_run_id) do update set
+          title=excluded.title,summary=excluded.summary,topics_json=excluded.topics_json,
+          evidence_refs_json=excluded.evidence_refs_json,observer_receipts_json=excluded.observer_receipts_json,
+          chief_advisory_json=excluded.chief_advisory_json,output_summary_json=excluded.output_summary_json,
+          lineage_json=excluded.lineage_json,status=excluded.status
+        returning *
+      `,[
+        row.id,row.tenantId,row.userId,row.sourceEnvironmentId,row.sourceRunId,row.sourceType||null,
+        row.sourceId||null,row.packetType,row.title,row.summary,JSON.stringify(row.topicsJson||[]),
+        JSON.stringify(row.evidenceRefsJson||[]),JSON.stringify(row.observerReceiptsJson||[]),
+        JSON.stringify(row.chiefAdvisoryJson||{}),JSON.stringify(row.outputSummaryJson||{}),
+        JSON.stringify(row.lineageJson||{}),row.status,row.createdAt
+      ]);
+      return rowToCamel(result.rows?.[0]||row);
+    }
+    const state=store();
+    const index=state.valEnvironmentPackets.findIndex(item=>item.sourceRunId===row.sourceRunId&&item.tenantId===row.tenantId&&item.userId===row.userId);
+    if(index>=0)state.valEnvironmentPackets[index]={...state.valEnvironmentPackets[index],...row,id:state.valEnvironmentPackets[index].id};
+    else state.valEnvironmentPackets.unshift(row);
+    saveStore(state);
+    return index>=0?state.valEnvironmentPackets[index]:row;
+  }
+  async function saveDelivery(row){
+    if(hasPg()){
+      const result=await dbQuery(`
+        insert into val_environment_packet_deliveries (
+          id,tenant_id,user_id,packet_id,target_environment_id,status,reason,attached_run_id,created_at,updated_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        on conflict (tenant_id,user_id,packet_id,target_environment_id) do update set
+          status=excluded.status,reason=excluded.reason,attached_run_id=excluded.attached_run_id,updated_at=excluded.updated_at
+        returning *
+      `,[row.id,row.tenantId,row.userId,row.packetId,row.targetEnvironmentId,row.status,row.reason||null,row.attachedRunId||null,row.createdAt,row.updatedAt]);
+      return rowToCamel(result.rows?.[0]||row);
+    }
+    const state=store();
+    const index=state.valEnvironmentPacketDeliveries.findIndex(item=>item.packetId===row.packetId&&item.targetEnvironmentId===row.targetEnvironmentId&&item.tenantId===row.tenantId&&item.userId===row.userId);
+    if(index>=0)state.valEnvironmentPacketDeliveries[index]={...state.valEnvironmentPacketDeliveries[index],...row,id:state.valEnvironmentPacketDeliveries[index].id,createdAt:state.valEnvironmentPacketDeliveries[index].createdAt};
+    else state.valEnvironmentPacketDeliveries.unshift(row);
+    saveStore(state);
+    return index>=0?state.valEnvironmentPacketDeliveries[index]:row;
+  }
+  async function incomingContext(environmentId,{limit=20}={}){
+    const current=scope();
+    const boundedLimit=Math.max(1,Math.min(Number(limit)||20,50));
+    if(hasPg()){
+      const result=await dbQuery(`
+        select p.*,d.id as delivery_id,d.status as delivery_status,d.reason as delivery_reason,
+          d.attached_run_id as delivery_attached_run_id,d.updated_at as delivery_updated_at
+        from val_environment_packet_deliveries d
+        join val_environment_packets p on p.id=d.packet_id and p.tenant_id=d.tenant_id and p.user_id=d.user_id
+        where d.tenant_id=$1 and d.user_id=$2 and d.target_environment_id=$3 and p.status='published'
+        order by p.created_at desc limit $4
+      `,[current.tenantId,current.userId,environmentId,boundedLimit]);
+      return (result.rows||[]).map(rowToCamel);
+    }
+    const state=store();
+    return state.valEnvironmentPacketDeliveries
+      .filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId&&item.targetEnvironmentId===environmentId)
+      .map(delivery=>{
+        const packet=state.valEnvironmentPackets.find(item=>item.id===delivery.packetId&&item.tenantId===current.tenantId&&item.userId===current.userId);
+        return packet?{...packet,deliveryId:delivery.id,deliveryStatus:delivery.status,deliveryReason:delivery.reason||'',deliveryAttachedRunId:delivery.attachedRunId||'',deliveryUpdatedAt:delivery.updatedAt}:null;
+      })
+      .filter(Boolean)
+      .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0,boundedLimit);
+  }
+  async function markContextUsed(environmentId,packets,runId){
+    const current=scope();
+    const now=new Date().toISOString();
+    await Promise.all(safeArray(packets).map(packet=>saveDelivery({
+      id:packet.deliveryId||uuid('environment_delivery'),
+      tenantId:current.tenantId,
+      userId:current.userId,
+      packetId:packet.id,
+      targetEnvironmentId:environmentId,
+      status:'used',
+      reason:'Included in this run and presented to the selected Observers as sibling Environment context.',
+      attachedRunId:runId,
+      createdAt:packet.createdAt||now,
+      updatedAt:now
+    })));
+  }
   async function saveDraft(input={}){
     const current=scope();
     const existing=input.id?await getEnvironment(input.id):null;
@@ -513,7 +648,9 @@ function createValEnvironmentsService({
       state.valEnvironmentVersions=state.valEnvironmentVersions.filter(version=>version.environmentId!==id||version.id===activeVersion.id);
       saveStore(state);
     }
-    return {ok:true,environment:await hydrateEnvironment(saved),activated:true};
+    const hydrated=await hydrateEnvironment(saved);
+    await backfillEnvironmentDeliveries(hydrated);
+    return {ok:true,environment:hydrated,activated:true};
   }
   async function pause(id){
     const environment=await getEnvironment(id);
@@ -541,6 +678,9 @@ function createValEnvironmentsService({
     const current=scope();
     const startedAt=new Date().toISOString();
     const runId=uuid('environment_run');
+    const siblingContext=version.specJson.communication?.receiveSiblingContext===false
+      ? []
+      : await incomingContext(id,{limit:version.specJson.communication?.maxContextPackets||20});
     const runBase={
       id:runId,
       environmentId:id,
@@ -560,7 +700,8 @@ function createValEnvironmentsService({
         occurredAt:source.occurredAt||source.createdAt||'',
         attendees:externalRecipients(source),
         sourceUrl:source.sourceUrl||'',
-        exactSourceSections:exact
+        exactSourceSections:exact,
+        environmentContextPackets:siblingContext
       },
       receiptsJson:[],
       outputsJson:{},
@@ -574,7 +715,7 @@ function createValEnvironmentsService({
       const definitions=publicObserverBlockDefinitions().filter(block=>safeArray(version.specJson.observerIds).includes(block.observerId));
       const observerReceipts=[];
       for(const observer of definitions){
-        observerReceipts.push(await previewObserver({observer,source,exactSections:exact,environment:version.specJson,runId}));
+        observerReceipts.push(await previewObserver({observer,source,exactSections:exact,environment:version.specJson,runId,siblingContextPackets:siblingContext}));
       }
       const observed=observerReceipts.filter(receipt=>receipt.status==='observed');
       const roundTable={
@@ -599,6 +740,8 @@ function createValEnvironmentsService({
         recommendation:observed.length
           ? 'The source is complete enough to prepare the configured outputs. Review the exact recipients and actions before activation.'
           : 'The source is complete enough for the configured mechanical follow-through. No Observer claim should be added.',
+        environmentContextPacketIds:siblingContext.map(packet=>packet.id),
+        environmentContextCount:siblingContext.length,
         observerSuggestions:[],
         governsExecution:false
       };
@@ -664,6 +807,172 @@ function createValEnvironmentsService({
       .filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId&&item.status==='active'&&item.activeVersionId)
       .map(hydrateEnvironment));
   }
+  async function publishRunPacket({environment,run,source}={}){
+    if(!environment||!run||run.testMode||environment.activeVersion?.specJson?.communication?.publishResult===false)return null;
+    const current=scope();
+    const receipts=safeArray(run.receiptsJson);
+    const observerReceipts=receipts.filter(receipt=>receipt.type==='observer_receipt_v1');
+    const chief=receipts.find(receipt=>receipt.type==='chief_advisory_receipt_v1')||{};
+    const sourceEvidence={
+      source_type:run.sourceType||'transcript',
+      source_id:run.sourceId||source?.id||'',
+      quote_or_summary:compactText(run.inputJson?.exactSourceSections?.body||source?.title||run.inputJson?.title||'Environment source',900),
+      confidence:1,
+      created_at:source?.occurredAt||source?.createdAt||run.completedAt||new Date().toISOString()
+    };
+    const evidenceRefs=[sourceEvidence,...observerReceipts.flatMap(receipt=>safeArray(receipt.evidence)).filter(Boolean)];
+    const observedCount=observerReceipts.filter(receipt=>receipt.status==='observed').length;
+    const sourceContextPackets=safeArray(run.inputJson?.environmentContextPackets);
+    let packet=await savePacket({
+      id:uuid('environment_packet'),
+      tenantId:current.tenantId,
+      userId:current.userId,
+      sourceEnvironmentId:environment.id,
+      sourceRunId:run.id,
+      sourceType:run.sourceType||'transcript',
+      sourceId:run.sourceId||source?.id||'',
+      packetType:'environment_result_packet_v1',
+      title:`${environment.name}: ${compactText(source?.title||run.inputJson?.title||'Completed run',180)}`,
+      summary:`${environment.name} completed a governed run. ${observedCount} selected Observer${observedCount===1?' found':'s found'} a source-backed signal; ${environmentOutputSummary(run.outputsJson).preparedActions.length} configured action${environmentOutputSummary(run.outputsJson).preparedActions.length===1?' was':'s were'} prepared or completed.`,
+      topicsJson:environmentPacketTopics({environment,source:{...source,sourceType:run.sourceType},receipts}),
+      evidenceRefsJson:evidenceRefs,
+      observerReceiptsJson:observerReceipts,
+      chiefAdvisoryJson:chief,
+      outputSummaryJson:environmentOutputSummary(run.outputsJson),
+      lineageJson:{
+        sourceEnvironmentId:environment.id,
+        sourceRunId:run.id,
+        parentPacketIds:sourceContextPackets.map(item=>item.id).filter(Boolean),
+        sourceEnvironmentIds:[...new Set(sourceContextPackets.map(item=>item.sourceEnvironmentId).filter(Boolean))],
+        boardDeliveryStatus:'pending'
+      },
+      status:'published',
+      createdAt:run.completedAt||new Date().toISOString()
+    });
+    const siblings=(await activeEnvironments()).filter(item=>item.id!==environment.id&&item.activeVersion?.specJson?.communication?.receiveSiblingContext!==false);
+    const now=new Date().toISOString();
+    const deliveries=[];
+    for(const sibling of siblings){
+      deliveries.push(await saveDelivery({
+        id:uuid('environment_delivery'),
+        tenantId:current.tenantId,
+        userId:current.userId,
+        packetId:packet.id,
+        targetEnvironmentId:sibling.id,
+        status:'received',
+        reason:'Published by an active sibling Environment and available for the next governed run.',
+        attachedRunId:null,
+        createdAt:now,
+        updatedAt:now
+      }));
+    }
+    try{
+      await onPacketPublished({packet,environment,run,source,deliveries});
+      packet=await savePacket({...packet,lineageJson:{...packet.lineageJson,boardDeliveryStatus:'queued_for_briefing'}});
+    }catch(error){
+      packet=await savePacket({...packet,lineageJson:{...packet.lineageJson,boardDeliveryStatus:'needs_attention',boardDeliveryError:compactText(error.message,240)}});
+    }
+    return {...packet,deliveries};
+  }
+  async function listNetwork({limit=50}={}){
+    const current=scope();
+    const boundedLimit=Math.max(1,Math.min(Number(limit)||50,200));
+    const environments=(await list({limit:200})).environments;
+    let packets=[];
+    let deliveries=[];
+    let packetCount=0;
+    let deliveryCounts={received:0,used:0,deferred:0,not_relevant:0};
+    if(hasPg()){
+      const [packetResult,packetCountResult,deliveryCountResult]=await Promise.all([
+        dbQuery('select * from val_environment_packets where tenant_id=$1 and user_id=$2 order by created_at desc limit $3',[current.tenantId,current.userId,boundedLimit]),
+        dbQuery('select count(*)::int as count from val_environment_packets where tenant_id=$1 and user_id=$2',[current.tenantId,current.userId]),
+        dbQuery('select status,count(*)::int as count from val_environment_packet_deliveries where tenant_id=$1 and user_id=$2 group by status',[current.tenantId,current.userId])
+      ]);
+      packets=(packetResult.rows||[]).map(rowToCamel);
+      packetCount=Number(packetCountResult.rows?.[0]?.count||0);
+      deliveryCounts=Object.fromEntries((deliveryCountResult.rows||[]).map(row=>[row.status,Number(row.count)||0]));
+      if(packets.length){
+        const deliveryResult=await dbQuery('select * from val_environment_packet_deliveries where tenant_id=$1 and user_id=$2 and packet_id=any($3::text[]) order by updated_at desc',[current.tenantId,current.userId,packets.map(packet=>packet.id)]);
+        deliveries=(deliveryResult.rows||[]).map(rowToCamel);
+      }
+    }else{
+      const state=store();
+      const allPackets=state.valEnvironmentPackets.filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId);
+      const allDeliveries=state.valEnvironmentPacketDeliveries.filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId);
+      packets=allPackets.slice(0,boundedLimit);
+      packetCount=allPackets.length;
+      deliveryCounts=allDeliveries.reduce((counts,item)=>({...counts,[item.status]:(counts[item.status]||0)+1}),deliveryCounts);
+      const packetIds=new Set(packets.map(packet=>packet.id));
+      deliveries=allDeliveries.filter(item=>packetIds.has(item.packetId));
+    }
+    return {
+      ok:true,
+      environments,
+      packets,
+      deliveries,
+      chiefOfStaff:{
+        packetCount,
+        latestPacketAt:packets[0]?.createdAt||null,
+        role:'Receives and indexes every Environment result packet.'
+      },
+      counts:{
+        environments:environments.length,
+        active:environments.filter(item=>item.status==='active').length,
+        packets:packetCount,
+        received:deliveryCounts.received||0,
+        used:deliveryCounts.used||0,
+        deferred:deliveryCounts.deferred||0,
+        notRelevant:deliveryCounts.not_relevant||0
+      }
+    };
+  }
+  async function listCommunications(environmentId,{limit=50}={}){
+    const network=await listNetwork({limit});
+    const incomingDeliveries=network.deliveries.filter(item=>item.targetEnvironmentId===environmentId);
+    const incomingIds=new Set(incomingDeliveries.map(item=>item.packetId));
+    const outgoing=network.packets.filter(item=>item.sourceEnvironmentId===environmentId);
+    const incoming=network.packets.filter(item=>incomingIds.has(item.id)).map(packet=>({
+      ...packet,
+      delivery:incomingDeliveries.find(item=>item.packetId===packet.id)||null
+    }));
+    return {ok:true,environmentId,incoming,outgoing,chiefOfStaff:network.chiefOfStaff};
+  }
+  async function backfillEnvironmentDeliveries(environment){
+    if(!environment?.id||environment.activeVersion?.specJson?.communication?.receiveSiblingContext===false)return [];
+    const current=scope();
+    let packets=[];
+    let existingPacketIds=new Set();
+    if(hasPg()){
+      const [packetResult,deliveryResult]=await Promise.all([
+        dbQuery(`select * from val_environment_packets where tenant_id=$1 and user_id=$2 and source_environment_id<>$3 and status='published' order by created_at desc limit 1000`,[current.tenantId,current.userId,environment.id]),
+        dbQuery('select packet_id from val_environment_packet_deliveries where tenant_id=$1 and user_id=$2 and target_environment_id=$3',[current.tenantId,current.userId,environment.id])
+      ]);
+      packets=(packetResult.rows||[]).map(rowToCamel);
+      existingPacketIds=new Set((deliveryResult.rows||[]).map(row=>row.packet_id));
+    }else{
+      const state=store();
+      packets=state.valEnvironmentPackets.filter(packet=>packet.tenantId===current.tenantId&&packet.userId===current.userId&&packet.sourceEnvironmentId!==environment.id&&packet.status==='published');
+      existingPacketIds=new Set(state.valEnvironmentPacketDeliveries.filter(delivery=>delivery.tenantId===current.tenantId&&delivery.userId===current.userId&&delivery.targetEnvironmentId===environment.id).map(delivery=>delivery.packetId));
+    }
+    const now=new Date().toISOString();
+    const created=[];
+    for(const packet of packets){
+      if(existingPacketIds.has(packet.id))continue;
+      created.push(await saveDelivery({
+        id:uuid('environment_delivery'),
+        tenantId:current.tenantId,
+        userId:current.userId,
+        packetId:packet.id,
+        targetEnvironmentId:environment.id,
+        status:'received',
+        reason:'Existing shared intelligence was made available when this Environment became active.',
+        attachedRunId:null,
+        createdAt:now,
+        updatedAt:now
+      }));
+    }
+    return created;
+  }
   async function existingRun(environmentId,sourceHash){
     const current=scope();
     if(hasPg()){
@@ -684,7 +993,7 @@ function createValEnvironmentsService({
       &&run.testMode===false
     )||null;
   }
-  async function observerReceiptsFor({version,source,exact,runId}){
+  async function observerReceiptsFor({version,source,exact,runId,siblingContextPackets=[]}){
     const definitions=publicObserverBlockDefinitions()
       .filter(block=>safeArray(version.specJson.observerIds).includes(block.observerId));
     const observerReceipts=[];
@@ -694,7 +1003,8 @@ function createValEnvironmentsService({
         source,
         exactSections:exact,
         environment:version.specJson,
-        runId
+        runId,
+        siblingContextPackets
       }));
     }
     const observed=observerReceipts.filter(receipt=>receipt.status==='observed');
@@ -720,6 +1030,8 @@ function createValEnvironmentsService({
       recommendation:observed.length
         ? 'The source is complete enough to prepare the configured outputs. Keep the source language intact and preserve the configured approval boundaries.'
         : 'The source is complete enough for mechanical follow-through. Add no Observer claim.',
+      environmentContextPacketIds:safeArray(siblingContextPackets).map(packet=>packet.id),
+      environmentContextCount:safeArray(siblingContextPackets).length,
       observerSuggestions:[],
       governsExecution:false
     };
@@ -830,6 +1142,9 @@ function createValEnvironmentsService({
       }
       const current=scope();
       const startedAt=new Date().toISOString();
+      const siblingContext=version.specJson.communication?.receiveSiblingContext===false
+        ? []
+        : await incomingContext(environment.id,{limit:version.specJson.communication?.maxContextPackets||20});
       const run={
         id:uuid('environment_run'),
         environmentId:environment.id,
@@ -849,7 +1164,8 @@ function createValEnvironmentsService({
           occurredAt:source.occurredAt||source.createdAt||'',
           attendees:externalRecipients(source),
           sourceUrl:source.sourceUrl||'',
-          exactSourceSections:exact
+          exactSourceSections:exact,
+          environmentContextPackets:siblingContext
         },
         receiptsJson:[],
         outputsJson:{},
@@ -861,17 +1177,24 @@ function createValEnvironmentsService({
       try{
         if(!exact.ready)throw new Error('The matching transcript did not include inspectable Krisp Key Points or Action Items.');
         if(!externalRecipients(source).length)throw new Error('The matching transcript did not include a valid attendee email address.');
-        const receipts=await observerReceiptsFor({version,source,exact,runId:run.id});
+        const receipts=await observerReceiptsFor({version,source,exact,runId:run.id,siblingContextPackets:siblingContext});
+        await markContextUsed(environment.id,siblingContext,run.id);
         const outputs=meetingOutputs(version.specJson,source);
         const actions=await prepareEnvironmentActions({environment,version,source,run,outputs});
         const completedAt=new Date().toISOString();
-        const saved=await saveRun({
+        let saved=await saveRun({
           ...run,
           status:actions.status,
           receiptsJson:receipts,
           outputsJson:{...outputs,actionReceipts:actions.actionReceipts,packetIds:actions.packetIds},
           completedAt
         });
+        if(actions.status!=='needs_attention'){
+          const networkPacket=await publishRunPacket({environment:{...environment,activeVersion:version},run:saved,source});
+          if(networkPacket){
+            saved=await saveRun({...saved,outputsJson:{...saved.outputsJson,environmentPacketId:networkPacket.id}});
+          }
+        }
         if(actions.status==='needs_attention'){
           await saveEnvironment({...environment,status:'needs_attention',updatedAt:completedAt});
           await onNeedsAttention({environment,version,source,run:saved,reason:'One or more Environment actions failed.'});
@@ -897,6 +1220,8 @@ function createValEnvironmentsService({
     pause,
     runHistoricalTest,
     listRuns,
+    listNetwork,
+    listCommunications,
     latestSuccessfulTest,
     processTranscript,
     blockCatalog:environmentBlockCatalog,

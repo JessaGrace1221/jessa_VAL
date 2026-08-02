@@ -42,7 +42,8 @@ const PRIMARY_ROUTES = Object.freeze({
   cowork_packet:['Meaning','Momentum','Commitment','Witnessing'],
   document_packet:['Meaning','Project','Commitment','Witnessing'],
   relationship_packet:['Relationship','Delight','Commitment','Meaning'],
-  project_packet:['Project','Momentum','Capacity','Commitment']
+  project_packet:['Project','Momentum','Capacity','Commitment'],
+  environment_result_packet_v1:['Meaning','Momentum','Commitment','Synchronicity','Opportunity']
 });
 
 const BOARD_SOURCE_REGISTRY = Object.freeze([
@@ -173,6 +174,14 @@ const BOARD_SOURCE_REGISTRY = Object.freeze([
     hook:'POST /api/val/chat channel=ghl_text',
     packetTypes:['cowork_packet','relationship_packet','sent_action_packet'],
     claim:'GHL text/chat turns become Board packets automatically when the GHL workflow calls VAL with channel=ghl_text.'
+  },
+  {
+    sourceType:'environment',
+    label:'VAL Studio Environments',
+    status:'live',
+    hook:'successful live Environment runs publish one environment_result_packet_v1',
+    packetTypes:['environment_result_packet_v1'],
+    claim:'Every successful live Environment run publishes its evidence lineage, Observer receipts, and bounded output result for all 14 Observers and the Chief of Staff.'
   }
 ]);
 

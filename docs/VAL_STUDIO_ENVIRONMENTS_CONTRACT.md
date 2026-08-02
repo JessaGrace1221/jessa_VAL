@@ -26,6 +26,32 @@ learning candidate still requires review before it changes future judgment.
 - The Chief of Staff advises. It does not override the Environment contract.
 - External actions execute only through governed action packets and receipts.
 
+## Shared Intelligence Network
+
+Environments are bounded, but they are not isolated. Every successful live run
+publishes one durable `environment_result_packet_v1` into the executive's VAL.
+The packet contains the source lineage, Observer receipts, Chief of Staff
+advisory, and a bounded summary of what the Environment prepared or completed.
+
+Communication follows these rules:
+
+1. The Chief of Staff receives and indexes every published Environment packet.
+2. Every other active Environment records the packet as received. A later run
+   records whether it was used, deferred, or not relevant. Silence is a recorded
+   state, not missing processing.
+3. A future Environment run may use relevant sibling packets as context. The
+   original source remains authoritative for that Environment's configured
+   external actions.
+4. Receiving a packet never starts another Environment or external action by
+   itself. Cross-Environment handoffs require an explicit governed instruction.
+5. Packet lineage, delivery state, and use remain inspectable in VAL Studio.
+6. Historical tests may preview shared context but never publish into the live
+   network.
+
+The network does not add another Observer model pass. A completed run publishes
+the receipts it already created, and sibling delivery is a database operation.
+This keeps the shared intelligence durable without multiplying model cost.
+
 ## First Environment
 
 The first prefilled Environment is `MGSH meeting follow-through`.
