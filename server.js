@@ -33200,10 +33200,50 @@ app.post('/api/homepage-cards/action',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+function valEndpointContract({status='complete',speak='',functionRan='chat',requiresApproval=false,approvalToken=null}={}){
+  const normalizedStatus=['complete','needs_approval','needs_information','failed'].includes(status)?status:'complete';
+  const approvalRequired=normalizedStatus==='needs_approval'||requiresApproval===true;
+  return {
+    status:normalizedStatus,
+    speak:String(speak||'').trim()||(normalizedStatus==='failed'?'I could not complete that, so nothing changed.':'I could not process that.'),
+    functionRan:String(functionRan||'chat').trim()||'chat',
+    requiresApproval:approvalRequired,
+    approvalToken:approvalRequired?(approvalToken||null):null
+  };
+}
+
+function valChatFunctionRan(extra={}){
+  if(extra.functionRan)return extra.functionRan;
+  if(extra.presenceIntent?.action)return extra.presenceIntent.action;
+  if(extra.externalActionPacket)return extra.externalActionPacket.actionType||extra.externalActionPacket.capability||'prepare_external_action';
+  if(extra.inboxCommand)return 'executive_inbox';
+  if(extra.openLoops)return 'open_loops';
+  if(extra.taskScheduling)return 'task_scheduling';
+  if(extra.ghlContact)return 'ghl_contact';
+  if(extra.googleDocRewrite)return 'google_doc_rewrite';
+  if(extra.createdTasks?.length)return 'task_capture';
+  if(extra.fastHearthChat)return 'hearth_fast_chat';
+  return 'chat';
+}
+
+function valChatStatus(extra={}){
+  if(extra.status)return extra.status;
+  if(extra.presenceIntent?.requiresConfirmation||extra.externalActionPacket)return 'needs_approval';
+  if(extra.inboxCommand?.needsChoice||extra.needsInformation)return 'needs_information';
+  return 'complete';
+}
+
+function valApprovalToken(extra={}){
+  return extra.approvalToken||extra.externalActionPacket?.id||extra.presenceIntent?.approvalToken||null;
+}
+
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
-    if(DEMO_MODE){const s=demoState(req,res);return res.json({ok:true,action,content:demoIntelligenceResponse(action,query,s),demo:true});}
+    if(DEMO_MODE){
+      const s=demoState(req,res),content=demoIntelligenceResponse(action,query,s);
+      return res.json({ok:true,action,content,demo:true,...valEndpointContract({speak:content,functionRan:action})});
+    }
     const uploadedDocs=await uploadedValDocumentContextForQuery(`${action} ${query}`).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
     const [memory,ghlContext,googleDocs]=await Promise.all([
       recentMemoryContext(`${action} ${query}`),
@@ -33215,8 +33255,11 @@ app.post('/api/val/intelligence',async(req,res)=>{
     const actionMaxTokens=/^(book_next_steps|editorial_next_steps)$/i.test(action)?650:1800;
     const content=await callValModel({system,user,maxTokens:actionMaxTokens,temperature:0.35});
     const createdTasks=await persistAutoTasksFromValResponse({content,userQuery:query||action,action,source:'val_intelligence'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
-    res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext});
-  }catch(e){res.status(500).json({error:e.message});}
+    res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext,...valEndpointContract({speak:content,functionRan:action})});
+  }catch(e){
+    const speak=`I could not run ${String(req.body?.action||'that request').replace(/_/g,' ')}, so nothing changed.`;
+    res.status(500).json({ok:false,error:e.message,...valEndpointContract({status:'failed',speak,functionRan:req.body?.action||'val_intelligence'})});
+  }
 });
 function hearthFastNeedsFullValContext(text=''){
   if(/\bwitnessing\b/i.test(String(text||'')))return false;
@@ -33768,7 +33811,7 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
       const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
-      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance'});
+      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance',...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})});
     }
     const messages=[...priorMessages,{role:'user',content:lastUser}].slice(-12);
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
@@ -33801,6 +33844,7 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       messages:savedMessages,
       metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,voiceActorKey,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
     }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
+    const extra=prepared?.extra||{};
     return res.json({
       ok:true,
       speak:content,
@@ -33811,12 +33855,19 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       saved:false,
       saveDeferred:true,
       functionRan,
-      ...(prepared?.extra||{})
+      ...extra,
+      ...valEndpointContract({
+        status:valChatStatus(extra),
+        speak:content,
+        functionRan:functionRan||valChatFunctionRan(extra)||'voice_turn',
+        requiresApproval:!!extra.externalActionPacket,
+        approvalToken:valApprovalToken(extra)
+      })
     });
   }catch(error){
     console.warn('GHL voice turn failed:',error.message);
     const speak='I heard you, but VAL could not complete that voice turn. Try that one more time in a shorter sentence.';
-    res.status(200).json({ok:true,speak,val_response:speak,reply:speak,error:error.message});
+    res.status(200).json({ok:false,speak,val_response:speak,reply:speak,error:error.message,...valEndpointContract({status:'failed',speak,functionRan:'voice_turn'})});
   }
 });
 app.post('/api/val/chat',async(req,res)=>{
@@ -33853,7 +33904,14 @@ app.post('/api/val/chat',async(req,res)=>{
       }catch(saveError){
         saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
       }
-      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
+      const contract=valEndpointContract({
+        status:valChatStatus(extra),
+        speak:extra.speak||content,
+        functionRan:valChatFunctionRan(extra),
+        requiresApproval:extra.requiresApproval===true||!!extra.presenceIntent?.requiresConfirmation||!!extra.externalActionPacket,
+        approvalToken:valApprovalToken(extra)
+      });
+      return res.json({message:{role:'assistant',content},content,conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra,...contract});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
@@ -33981,7 +34039,7 @@ app.post('/api/val/chat',async(req,res)=>{
     const message=/OPENAI_KEY not configured|OPENAI_API_KEY|api key/i.test(raw)
       ? 'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'
       : raw;
-    res.status(500).json({error:message});
+    res.status(500).json({ok:false,error:message,...valEndpointContract({status:'failed',speak:message,functionRan:'chat'})});
   }
 });
 
