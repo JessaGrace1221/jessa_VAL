@@ -11305,6 +11305,30 @@ button.timeline-overview-receipt:focus-visible{
   min-height:380px;
 }
 .lead-sourcing-drawer-workbench[hidden]{display:none}
+.lead-import-receipt{
+  display:grid;
+  gap:6px;
+  padding:14px 16px;
+  border:1px solid rgba(94,114,88,.24);
+  border-radius:10px;
+  background:rgba(247,250,244,.82);
+  box-shadow:0 14px 34px rgba(52,59,45,.08), inset 0 1px 0 rgba(255,255,255,.82);
+}
+.lead-import-receipt strong{
+  color:rgba(42,67,39,.96);
+  font:700 .95rem/1.2 var(--body);
+}
+.lead-import-receipt span{
+  color:rgba(29,29,31,.82);
+  font:700 .72rem/1.25 var(--mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.lead-import-receipt small{
+  color:rgba(29,29,31,.68);
+  font:.74rem/1.45 var(--body);
+  overflow-wrap:anywhere;
+}
 .lead-sourcing-board{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -11376,6 +11400,10 @@ button.timeline-overview-receipt:focus-visible{
 }
 .lead-stage-row.empty{
   opacity:.72;
+}
+.lead-stage-row.pending{
+  background:rgba(247,247,242,.62);
+  color:rgba(45,43,38,.66);
 }
 .lead-sourcing-actions{
   display:flex;
@@ -13960,6 +13988,10 @@ button.timeline-overview-receipt:focus-visible{
   background:rgba(125,141,111,.1);
   color:#27372d;
   font:760 .68rem/1 var(--body);
+}
+.drawer-tray.source-open .lead-stage-row.pending{
+  border-style:dashed;
+  background:rgba(247,247,242,.7);
 }
 .drawer-tray.source-open .preview-controls{
   justify-content:flex-start;

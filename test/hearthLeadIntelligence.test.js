@@ -59,14 +59,27 @@ function extractObjectLiteral(source, marker){
 
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
   assert.match(hearthJs, /const leadScraperDefinitions = \{/);
-  assert.match(hearthJs, /scraperId: 'frisson_organizations'/);
-  assert.match(hearthJs, /scraperId: 'frisson_partners'/);
-  assert.match(hearthJs, /routeBase: '\/api\/frisson\/organizations'/);
-  assert.match(hearthJs, /routeBase: '\/api\/frisson\/partners'/);
-  assert.match(hearthJs, /previewUrl:\s*'\/api\/frisson\/organizations\/discover-preview'/);
-  assert.match(hearthJs, /importUrl:\s*'\/api\/frisson\/organizations\/import-approved'/);
-  assert.match(hearthJs, /previewUrl:\s*'\/api\/frisson\/partners\/discover-preview'/);
-  assert.match(hearthJs, /importUrl:\s*'\/api\/frisson\/partners\/import-approved'/);
+  assert.match(hearthJs, /scraperId: 'goall_employers'/);
+  assert.match(hearthJs, /scraperId: 'goall_partners'/);
+  assert.match(hearthJs, /routeBase: '\/api\/val\/leads'/);
+  assert.match(hearthJs, /routeBase: '\/api\/val\/partners'/);
+  assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
+  assert.match(hearthJs, /importUrl:\s*'\/api\/val\/leads\/import-approved'/);
+  assert.match(hearthJs, /stagedStartUrl:\s*'\/api\/val\/leads\/staged-runs'/);
+  assert.match(hearthJs, /stagedStatusBaseUrl:\s*'\/api\/val\/leads\/staged-runs'/);
+  assert.match(hearthJs, /csvUploadUrl:\s*'\/api\/val\/leads\/upload-csv-staged-runs'/);
+  assert.match(server, /app\.post\('\/api\/val\/leads\/staged-runs'/);
+  assert.match(server, /app\.post\('\/api\/val\/leads\/upload-csv-staged-runs'/);
+  assert.match(server, /app\.get\('\/api\/val\/leads\/staged-runs\/:runId'/);
+  assert.match(server, /runGoallStagedLeadPipeline/);
+  assert.match(server, /Step 1: Outscraper is finding enough new businesses/);
+  assert.match(server, /Step 2: Gemini is researching until/);
+  assert.match(server, /addable leads ready/);
+  assert.match(hearthJs, /Target new GHL leads/);
+  assert.match(hearthJs, /addable leads/);
+  assert.doesNotMatch(server, /OpenAI web research timed out after 12 seconds/);
+  assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/partners\/discover-preview'/);
+  assert.match(hearthJs, /importUrl:\s*'\/api\/val\/partners\/import-approved'/);
   assert.match(hearthJs, /leadScraperPayloadFromDefinition/);
   assert.match(hearthJs, /saveLeadScraperCriteria/);
   assert.match(hearthJs, /function activeLeadIntelligenceSource/);
@@ -137,15 +150,34 @@ test('Stewardship makes confirmed card updates visible immediately and offers de
 
 test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthHtml, /Lead Sourcing/);
-  assert.match(hearthHtml, /Two starter scraper definitions are ready/);
-  assert.match(hearthHtml, /Run organization scraper/);
+  assert.match(hearthHtml, /GOALL employer and partner scrapers are ready/);
+  assert.match(hearthHtml, /Run employer scraper/);
   assert.match(hearthHtml, /Run partner scraper/);
   assert.match(hearthHtml, /Train this scraper/);
   assert.match(hearthJs, /lead-sourcing-board/);
-  assert.match(hearthJs, /<span>Step 1<\/span><h4>Find organizations<\/h4><small>Source discovery<\/small>/);
-  assert.match(hearthJs, /<span>Step 2<\/span><h4>Find decision makers<\/h4><small>Contact evidence<\/small>/);
+  assert.match(hearthJs, /stagedStartUrl: '\/api\/val\/leads\/staged-runs'/);
+  assert.match(hearthJs, /async function runStagedScraperPreview/);
+  assert.match(hearthJs, /async function pollStagedScraperRun/);
+  assert.match(hearthJs, /function renderStagedRunBoard/);
+  assert.match(hearthJs, /<span>Step 1<\/span><h4>Find businesses<\/h4><small>Source discovery<\/small>/);
+  assert.match(hearthJs, /Outscraper discovery/);
+  assert.match(hearthJs, /CSV upload/);
+  assert.match(hearthJs, /CSV import tag/);
+  assert.match(hearthJs, /payload\.importTag/);
+  assert.match(hearthJs, /data-lead-drawer-action="upload-csv"/);
+  assert.match(hearthJs, /function uploadLeadCsv/);
+  assert.match(hearthJs, /Add a GHL source tag for this uploaded list/);
+  assert.match(hearthJs, /No fallback model is filling this column/);
+  assert.match(hearthJs, /<span>Step 2<\/span><h4>Research decision makers<\/h4><small>Gemini, then Apollo\/RocketReach if needed<\/small>/);
+  assert.match(hearthJs, /Gemini, then Apollo\/RocketReach if needed/);
+  assert.match(hearthJs, /No verified decision-maker name/);
+  assert.match(hearthJs, /Business contact only/);
+  assert.match(hearthJs, /decisionMakerStatus/);
+  assert.match(hearthJs, /named decision maker/);
+  assert.doesNotMatch(hearthJs, /Candidate attached/);
   assert.match(hearthJs, /<span>Step 3<\/span><h4>Confirm before CRM<\/h4><small>Dedupe and approval<\/small>/);
-  assert.match(hearthJs, /Live preview - not imported/);
+  assert.match(hearthJs, /Live preview - ' \+ countLabel/);
+  assert.match(hearthJs, /leads\.length \+ ' of ' \+ requestedCount \+ ' found/);
   assert.match(hearthJs, /Live scraper preview/);
   assert.match(hearthJs, /Not in CRM yet\. Duplicate check is enforced again at import\./);
   assert.match(hearthCss, /\.lead-sourcing-column \.preview-lead\{/);
@@ -155,7 +187,7 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /data-lead-drawer-action="approve-all"/);
   assert.match(hearthJs, /function approveAllPreviewLeads/);
   assert.match(hearthJs, /if\(action === 'approve-all'\)/);
-  assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held - not imported until you click Import\.'/);
+  assert.match(hearthJs, /rows\.length \+ ' of ' \+ requested \+ ' found/);
   assert.match(hearthJs, /Import ' \+ approved \+ ' approved lead/);
   assert.match(hearthJs, /importAction\.disabled = approved === 0/);
   assert.match(hearthJs, /drawerImportAction\.disabled = approved === 0/);
@@ -168,8 +200,8 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
   assert.match(hearthJs, /AbortController/);
-  assert.match(hearthJs, /timeoutMs: 20000/);
-  assert.match(hearthJs, /The preview source did not answer within 20 seconds/);
+  assert.match(hearthJs, /timeoutMs: 180000/);
+  assert.match(hearthJs, /The preview source is still working after 3 minutes/);
 });
 
 test('Hearth scraper QA can run without calling live endpoints', () => {
