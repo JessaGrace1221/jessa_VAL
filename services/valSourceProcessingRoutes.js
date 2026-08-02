@@ -9,6 +9,27 @@ function registerValSourceProcessingRoutes(app,deps={}){
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
   const allowRelationshipDocumentEmailPost=typeof deps.allowRelationshipDocumentEmailPost==='function'?deps.allowRelationshipDocumentEmailPost:()=>true;
+  const allowKnowledgeDocumentPost=typeof deps.allowKnowledgeDocumentPost==='function'?deps.allowKnowledgeDocumentPost:allowRelationshipDocumentEmailPost;
+  const afterKnowledgeDocument=typeof deps.afterKnowledgeDocument==='function'?deps.afterKnowledgeDocument:async()=>null;
+
+  app.post('/api/val/source-processing/knowledge-document',async(req,res)=>{
+    try{
+      if(!allowKnowledgeDocumentPost(req)){
+        return res.status(401).json({ok:false,error:'Authentication required',no_external_action:true});
+      }
+      await waitForDb();
+      const result=await service.processKnowledgeDocument(req.body||{});
+      const observerDelivery=await afterKnowledgeDocument({input:req.body||{},result}).catch(error=>({
+        status:'failed',
+        error:error.message
+      }));
+      await auditLog({req,action:'source_processing_knowledge_document',resourceType:'source_processing_record',resourceId:result.sourceProcessingRecord?.id||'',metadata:{documentRead:result.documentRead===true,witnessingContextAvailable:result.witnessingContextAvailable===true,noExternalAction:true},success:true}).catch(()=>{});
+      res.json({...result,observerDelivery});
+    }catch(e){
+      await auditLog({req,action:'source_processing_knowledge_document_failed',resourceType:'source_processing_record',metadata:{error:e.message,noExternalAction:true},success:false}).catch(()=>{});
+      res.status(400).json({ok:false,error:e.message,no_external_action:true});
+    }
+  });
 
   app.post('/api/val/source-processing/relationship-document-email',async(req,res)=>{
     try{

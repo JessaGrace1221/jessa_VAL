@@ -36,6 +36,246 @@ function sourceRef(input={}){
     confidence:Math.max(0,Math.min(1,Number(input.confidence) || 0.8))
   };
 }
+function observerConversationReviewLine(review={}){
+  const evidence=review.evidence || {};
+  const title=compactText(evidence.packetTitle || evidence.packetType || review.title || review.packetType || 'Board packet',180);
+  const sourceType=compactText(evidence.sourceType || review.sourceType || 'source',80).replace(/_/g,' ');
+  const sourceId=compactText(evidence.sourceId || review.sourceId || '',120);
+  const names=safeArray(review.people).filter(Boolean).slice(0,4);
+  const projects=safeArray(review.projects).filter(Boolean).slice(0,3);
+  const objects=safeArray(review.decisionObjects).filter(Boolean).slice(0,3);
+  const named=[names.length?'People: '+names.join(', '):'',projects.length?'Projects: '+projects.join(', '):'',objects.length?'Work: '+objects.join(', '):''].filter(Boolean).join(' | ');
+  const observation=compactText(review.lensFinding || review.observation || review.seeing || review.concern || evidence.quoteOrSummary || evidence.quote_or_summary || review.summary || '',420);
+  return [named,title,sourceType + (sourceId ? ' #' + sourceId : ''),observation].filter(Boolean).join(': ');
+}
+const OBSERVER_ENTITY_STOPWORDS=new Set([
+  'VAL','Board','Observer','Observers','Chief','Staff','Relationship','Relationships','Project','Projects','Capacity','Courage','Delight',
+  'Meaning','Momentum','Commitment','Calendar','Environment','Witnessing','Executive','Inbox','Currently','Seeing','Watching','Evidence',
+  'Concern','Question','Source','Trail','Home','GHL','CRM','HTML','CSS','SMS','Tone','Transcript','Calendar','The',
+  'Which','Signal','Changes','Current','Project Context','Work',
+  'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'
+]);
+function observerConversationEntityText(...values){
+  return values.flat().map((value)=>typeof value === 'string' ? value : JSON.stringify(value||'')).join(' ');
+}
+function observerConversationNamedPeople(text=''){
+  const raw=String(text||'');
+  const matches=raw.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g)||[];
+  const seen=new Set();
+  return matches
+    .map((name)=>compactText(name,80))
+    .filter((name)=>name&&!OBSERVER_ENTITY_STOPWORDS.has(name.split(/\s+/)[0])&&!OBSERVER_ENTITY_STOPWORDS.has(name))
+    .filter((name)=>{
+      const key=name.toLowerCase();
+      if(seen.has(key))return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0,5);
+}
+function observerConversationProjects(text=''){
+  const raw=String(text||'');
+  const projects=[];
+  if(/\bGOALL\b/i.test(raw))projects.push('GOALL');
+  if(/\bdashboard|handoff|projection/i.test(raw))projects.push('dashboard handoff');
+  if(/\bproposal|payment|pricing/i.test(raw))projects.push('proposal or payment decision');
+  const seen=new Set();
+  return projects.filter((item)=>{
+    const key=item.toLowerCase();
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,4);
+}
+function observerConversationReviewFromCard(observer={},sourceTrail=[]){
+  const text=observerConversationEntityText(
+    observer.currentlySeeing,
+    observer.watching,
+    safeArray(observer.evidenceItems).join(' '),
+    observer.evidence,
+    observer.concern,
+    observer.explore,
+    observer.incomingObservation,
+    safeArray(sourceTrail).map(item=>item.line||item.title||item.summary||'')
+  );
+  const line=compactText([
+    observer.currentlySeeing,
+    observer.concern,
+    observer.explore
+  ].filter(Boolean).join(' '),700);
+  const evidenceLine=compactText([
+    safeArray(observer.evidenceItems).join('; '),
+    observer.evidence,
+    safeArray(sourceTrail).map(item=>item.line||item.title||item.summary||'').filter(Boolean).join(' | ')
+  ].filter(Boolean).join(' | '),900);
+  if(!line&&!evidenceLine)return null;
+  return {
+    status:'observed',
+    observerName:observer.name||'Observer',
+    people:observerConversationNamedPeople(text),
+    projects:observerConversationProjects(text),
+    decisionObjects:observerConversationProjects(text),
+    lensFinding:line||evidenceLine,
+    observation:line||evidenceLine,
+    evidence:{quoteOrSummary:evidenceLine||line}
+  };
+}
+function observerConversationReviewIsGrounded(review={},observerName=''){
+  if(review.status!=='observed')return false;
+  const evidence=review.evidence||{};
+  const sourceType=String(evidence.sourceType||review.sourceType||'').toLowerCase();
+  if(!/calendar/.test(sourceType)||observerName==='Calendar')return true;
+  const quote=String(evidence.quoteOrSummary||evidence.quote_or_summary||review.evidenceLine||review.line||'');
+  const calendarProofPatterns={
+    'Executive Inbox':/\b(reply|respond|email|message|introduction|follow[- ]?up)\b/i,
+    Relationship:/\b(frustrat|tension|repair|distance|trust|warmth|tone|relationship|attendee|with\s+[A-Z])\b/i,
+    Project:/\b(project|GOALL|dashboard|handoff|deliver|milestone|workstream|owner)\b/i,
+    Capacity:/\b(back[- ]to[- ]back|overload|overwhelmed|capacity|recovery|competing|too many|decision load)\b/i,
+    Courage:/\b(avoid|hesitat|pushback|hard choice|directness|not saying)\b/i,
+    Delight:/\b(joy|delight|curiosity|relief|restore|grounding|play|alive|energized)\b/i,
+    Opportunity:/\b(opportunity|revenue|proposal|pricing|sale|lead|opening|introduction)\b/i,
+    Momentum:/\b(stuck|blocked|finished|completed|handoff|next step|moved forward|lost momentum)\b/i,
+    Meaning:/\b(value|purpose|meaning|larger story|matters|vision|mission)\b/i,
+    Synchronicity:/\b(repeated|again|echo|recurring pattern|convergence|coincidence|timing cluster)\b/i,
+    Commitment:/\b(commitment|promise|follow[- ]?up|action item|owed|due|owner|open loop)\b/i,
+    Environment:/\b(environment|room|travel|location|weather|physical space|interruption|external condition)\b/i,
+    Witnessing:/\b(witnessing|onboarding|revealed preference|asked VAL to remember|protect this)\b/i
+  };
+  return Boolean(calendarProofPatterns[observerName]?.test(quote));
+}
+function observerConversationHumanReply({observerName='Observer',answer='',meaningful=[],sourceTrail=[]}={}){
+  const text=compactText(answer,900);
+  const lower=text.toLowerCase();
+  const first=meaningful[0] || {};
+  const people=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.people)).filter(Boolean))).slice(0,4);
+  const projects=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.projects)).filter(Boolean))).slice(0,3);
+  const objects=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.decisionObjects)).filter(Boolean))).slice(0,3);
+  const observation=compactText(first.lensFinding || first.observation || first.seeing || first.concern || observerConversationReviewLine(first),520);
+  const evidence=compactText(first.evidenceLine || first.line || first.evidence?.quoteOrSummary || first.evidence?.quote_or_summary || sourceTrail[0] || '',520);
+  const wantsRepair=observerName==='Relationship' && /\b(repair|which relationship|who|person|tone|warmth|trust|distance|friction)\b/i.test(lower);
+  const observerQuestions={
+    'Executive Inbox':'Does this need your judgment, or can I help you close the loop without giving it more attention?',
+    Relationship:'What would repair or strengthen this relationship without making the interaction heavier than it needs to be?',
+    Project:'What is the smallest project decision that would make the next move unambiguous?',
+    Capacity:'What can come off your plate before we ask you to carry one more thing?',
+    Courage:'What are you avoiding saying because the honest version may create friction?',
+    Delight:'What would put some life back into this without reducing effectiveness?',
+    Opportunity:'Is this a real opening worth pursuing now, or merely an interesting possibility?',
+    Momentum:'What can move today without waiting for the entire answer?',
+    Meaning:'What larger commitment is this serving, and is that still true?',
+    Synchronicity:'What else has appeared recently that may be part of the same pattern?',
+    Commitment:'Which promise needs to be kept, renegotiated, or released?',
+    Calendar:'Does your calendar protect this priority, or quietly contradict it?',
+    Environment:'What in the surrounding system is making the right action easier or harder?',
+    Witnessing:'What do you notice in yourself when you read that back?'
+  };
+  const lead=wantsRepair
+    ? (people.length ? `I would start with ${people[0]}.` : 'I do not have enough evidence to name the relationship yet.')
+    : (observation || evidence || `I do not have enough signal to make a ${observerName} claim yet.`);
+  const contextParts=[
+    people.length>1 ? `The same signal also names ${people.slice(1).join(', ')}.` : '',
+    projects.length ? `It is connected to ${projects.join(', ')}.` : '',
+    objects.length ? `The work in question is ${objects.join(', ')}.` : ''
+  ].filter(Boolean);
+  const nextQuestion=wantsRepair
+    ? 'What would make this feel clear, respectful, and no longer dragged out?'
+    : (observerQuestions[observerName] || 'What changed here, and what would move this forward without adding noise?');
+  return [
+    lead,
+    observation && observation!==lead ? observation : '',
+    contextParts.length ? contextParts.join(' ') : '',
+    evidence && evidence!==lead ? `I am saying that because ${evidence}` : '',
+    sourceTrail.length>1 ? `I can also trace it to ${sourceTrail.slice(1,3).join(' ')}` : '',
+    '',
+    nextQuestion
+  ].filter(Boolean).join('\n');
+}
+function observerConversationDirectReply({entrypointId='',workingBrief={},answer=''}={}){
+  const text=compactText(answer,900).toLowerCase();
+  if(!text)return '';
+  const asksLoadedContext=/\b(evidence|proof|source|where.*come from|context|card|currently seeing|watching|concern|explore|why|what changed|how.*changed|tone changed|repair|which relationship|who|which person|which project)\b/i.test(text);
+  if(!asksLoadedContext)return '';
+  const isChief=entrypointId==='board.chief_of_staff';
+  const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const observer=context.selectedObserver || {};
+  const chiefRead=context.chiefOfStaffRead || {};
+  const sourceTrail=safeArray(context.sourceTrail).map(item=>compactText(item.line || item.title || item.summary || '',320)).filter(Boolean);
+  const proofReviews=safeArray(context.observerProofReviews).map(review=>({
+    ...review,
+    status:review.status || 'observed',
+    lensFinding:review.lensFinding || review.observation || review.line || '',
+    observation:review.observation || review.lensFinding || review.line || '',
+    evidence:{quoteOrSummary:review.evidenceLine || review.line || review.observation || review.lensFinding || ''}
+  }));
+  const sourceTrailReviews=safeArray(context.sourceTrail).map(item=>compactText(item.line || item.title || item.summary || '',320)).filter(Boolean);
+  const cardReview=observerConversationReviewFromCard(observer,context.sourceTrail);
+  const rawMeaningful=(safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews)
+    .filter(review=>review.status==='observed');
+  const meaningful=rawMeaningful
+    .filter(review=>observerConversationReviewIsGrounded(review,compactText(observer.name || workingBrief.title || 'Observer',80).replace(/\s+Observer$/i,'')))
+    .slice(0,5);
+  const fallbackMeaningful=meaningful.length ? meaningful : (cardReview ? [cardReview] : []);
+  const checked=(safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : proofReviews).slice(0,6);
+  if(isChief){
+    const lines=[
+      chiefRead.witness ? 'Chief of Staff read: ' + chiefRead.witness : '',
+      chiefRead.orientation ? 'Board lens in front: ' + chiefRead.orientation : '',
+      sourceTrail.length ? 'Evidence I can show:\n' + sourceTrail.map(line=>'- '+line).join('\n') : ''
+    ].filter(Boolean);
+    if(!lines.length)return '';
+    return [
+      'Here is the inspectable basis for this Chief of Staff read:',
+      '',
+      ...lines,
+      '',
+      'If the source trail is too thin, the right fix is to attach the originating packet, not ask you to trust a vague summary.'
+    ].join('\n');
+  }
+	  const observerName=compactText(observer.name || workingBrief.title || 'this Observer',80).replace(/\s+Observer$/i,'');
+  if(rawMeaningful.length&&!meaningful.length){
+    return [
+      `I checked ${rawMeaningful.length} ${observerName} review${rawMeaningful.length===1?'':'s'}, but the source evidence does not support the claim those reviews made.`,
+      '',
+      'I am not going to name a person, risk, or pattern from routing language alone.',
+      'The next useful step is to wait for a source that contains the actual signal, or inspect the original source directly.'
+    ].join('\n');
+  }
+		  if(fallbackMeaningful.length){
+		    return observerConversationHumanReply({observerName,answer,meaningful:fallbackMeaningful,sourceTrail:sourceTrailReviews.length?sourceTrailReviews:sourceTrail});
+		  }
+  const cardLines=[
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'Watching: ' + observer.watching : '',
+    safeArray(observer.evidenceItems).length ? 'Evidence: ' + safeArray(observer.evidenceItems).join('; ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    observer.concern ? 'Concern: ' + observer.concern : '',
+    observer.explore ? 'Question: ' + observer.explore : '',
+    sourceTrail.length ? 'Source trail:\n' + sourceTrail.slice(0,4).map(line=>'- '+line).join('\n') : ''
+  ].filter(Boolean);
+  if(!cardLines.length&&checked.length){
+    return [
+      observerName + ' checked the current Board packets and is not claiming a meaningful signal yet.',
+      '',
+      ...checked.slice(0,5).map(review=>'- '+observerConversationReviewLine(review)),
+      '',
+      'That is a real answer: this lens checked the packet and did not find enough signal to make a claim.'
+    ].join('\n');
+  }
+  if(!cardLines.length){
+    return [
+      `${observerName} does not have a source-backed signal to claim from the currently loaded packets.`,
+      '',
+      'That is not a dead end. It means this lens checked the available evidence and found nothing strong enough to put in front of you.',
+      'If there is a specific person, project, or source you are worried about, name it and I will stay inside this lens while we examine it.'
+    ].join('\n');
+  }
+  return [
+    observerName + ' is answering from the loaded Observer card, not a fresh search:',
+    '',
+    ...cardLines.map(line=>line.includes('\n')?line:'- '+line),
+    '',
+    sourceTrail.length ? 'If you want a sharper answer, ask me to inspect one source from that trail.' : 'The missing piece is the named source trail. I should not invent names without it.'
+  ].join('\n');
+}
 function simpleWorkstreamName(value=''){
   return compactText(value,160).replace(/^[-*\d.\s]+/,'').replace(/\s*[\-:]+\s*(owner|first move|milestone|dependency|monitor)\s*:.*/i,'').trim();
 }
@@ -58,6 +298,61 @@ function parseWorkstreamNames(answer=''){
 }
 function answerAcceptsProposal(answer=''){
   return /^(yes|yep|yeah|use (?:those|them|the suggestions)|looks right|that works|go ahead)\b/i.test(String(answer || '').trim());
+}
+function coworkTurnLooksConversational(answer=''){
+  const text=String(answer || '').trim();
+  if(!text)return false;
+  if(/[?]\s*$/.test(text))return true;
+  return /^(?:what|why|how|who|which|where|when|can|could|would|should|do you|are you|is there|tell me|show me|help me(?: understand)?|walk me through|talk me through|point out|explain|let'?s think|i (?:do not|don't) understand|i(?:'m| am) (?:not sure|unsure)|this feels wrong|that (?:does not|doesn't) seem right|give me your (?:read|take|thoughts?))\b/i.test(text);
+}
+function scopedConversationFallbackReply({workingBrief={},answer='',question=null}={}){
+  const text=String(answer||'').toLowerCase();
+  const title=compactText(
+    workingBrief.projectName || workingBrief.relationshipName ||
+    workingBrief.transcriptTitle || workingBrief.subject ||
+    workingBrief.title || 'this work',
+    180
+  );
+  const sourceLines=safeArray(workingBrief.sourceRefs)
+    .map((ref)=>compactText(ref?.quote_or_summary || ref?.quoteOrSummary || ref?.summary || ref,420))
+    .filter(Boolean)
+    .slice(0,3);
+  const objective=compactText(workingBrief.objective||'',420);
+  const completion=compactText(workingBrief.completionCondition||'',420);
+  const nextQuestion=compactText(question?.question||'',500);
+  const asksEvidence=/\b(evidence|source|proof|where.*come from|what do you know)\b/i.test(text);
+  const asksWhy=/\b(why|matter|important|point)\b/i.test(text);
+  const asksWhat=/\b(what|clarify|missing|first|next|see|notice|understand)\b/i.test(text);
+  if(asksEvidence){
+    return [
+      `Here is what I can actually point to for ${title}:`,
+      sourceLines.length ? sourceLines.map((line)=>'- '+line).join('\n') : '- This folder does not have a readable source receipt attached yet.',
+      '',
+      nextQuestion || 'Which part of that evidence do you want to examine more closely?'
+    ].join('\n');
+  }
+  if(asksWhy){
+    return [
+      objective || `The point of this conversation is to make ${title} clear enough to move.`,
+      completion ? `We will know it is ready when ${completion.charAt(0).toLowerCase()+completion.slice(1)}` : '',
+      sourceLines[0] ? `The source I am using is: ${sourceLines[0]}` : '',
+      '',
+      nextQuestion || 'What feels most consequential about this to you?'
+    ].filter(Boolean).join('\n');
+  }
+  if(asksWhat){
+    return [
+      `For ${title}, I would clarify this first:`,
+      nextQuestion || objective || 'the one missing fact that determines the next move.',
+      sourceLines[0] ? `What I already have: ${sourceLines[0]}` : '',
+      sourceLines[1] ? `I also have: ${sourceLines[1]}` : ''
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    `I have ${title} open and I did not change it.`,
+    objective ? `The work in front of us is ${objective.charAt(0).toLowerCase()+objective.slice(1)}` : '',
+    nextQuestion || 'What do you want to understand or move forward first?'
+  ].filter(Boolean).join('\n');
 }
 function workstreamTemplate(name='',brief={}){
   return {
@@ -2078,13 +2373,17 @@ function transcriptInvitees(transcript={}){
   ];
   const seen=new Set();
   return buckets.flatMap((bucket)=>safeArray(bucket)).map((person)=>{
-    if(typeof person === 'string') return {name:person,email:''};
-    return {
+    if(typeof person === 'string'){
+      const email=compactText(person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '',220);
+      return email ? {name:compactText(person.replace(email,'').replace(/[<>]/g,' '),180),email} : null;
+    }
+    const normalized={
       name:compactText(person?.name || person?.displayName || person?.emailAddress?.name || '',180),
       email:compactText(person?.email || person?.address || person?.emailAddress?.address || '',220)
     };
-  }).filter((person)=>person.name || person.email).filter((person)=>{
-    const key=(person.email || person.name).toLowerCase();
+    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(normalized.email) ? normalized : null;
+  }).filter(Boolean).filter((person)=>{
+    const key=person.email.toLowerCase();
     if(seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2138,9 +2437,9 @@ function buildTranscriptWorkingBrief(transcript={},input={}){
     relatedRelationships,
     existingDrafts:safeArray(transcript.drafts).map((draft)=>({id:compactText(draft?.id || '',220),type:compactText(draft?.draftType || '',100),status:compactText(draft?.status || '',100)})),
     sourceRefs:references,
-    objective:'Prepare one reviewable, source-preserving result from the selected transcript.',
-    completionCondition:'The result is tied to the exact Krisp receipt, uses the selected meeting context, and has an explicit review or apply route.',
-    approvalBoundary:'Applying the first Transcript Working Brief result creates only an internal meeting-overview draft. It does not send email, create provider drafts, alter Krisp text, create a task, update CRM, or modify a calendar event.'
+    objective:'Hold a useful conversation grounded in one complete selected transcript.',
+    completionCondition:'VAL answers the executive\'s actual question using the selected meeting evidence and clearly separates source fact from inference.',
+    approvalBoundary:'Conversation does not create or display a draft automatically. Existing prepared work remains in Leverage, and no external action occurs without explicit approval.'
   };
 }
 function transcriptActionItemIndex(input={}){
@@ -2170,18 +2469,11 @@ function buildTranscriptActionItemBrief(transcript={},input={}){
   };
 }
 function transcriptWorkingBriefQuestion(state={},brief={}){
-  if(state.stage === 'ready_to_apply'){
-    return {
-      targetField:'prepared_artifact.email_draft',
-      question:'Review the exact meeting overview, then apply it to Leverage as an internal draft.',
-      detail:'Applying creates an internal draft for review only. Nothing sends and the Krisp source receipt stays unchanged.'
-    };
-  }
   const receipt=brief.sourceReceipt || {};
   return {
-    targetField:'transcript_working_brief.prepared_artifact_kind',
-    question:`Krisp's exact receipt for ${brief.transcriptTitle || 'this transcript'} is loaded unchanged (${exactTranscriptLines(receipt.actionItems).length} Action Items and ${exactTranscriptLines(receipt.keyPoints).length} Key Points). Should I prepare that attendee meeting overview for review?`,
-    detail:'Reply "yes" or "prepare" to create the source-preserving internal email draft. Nothing sends from this conversation.'
+    targetField:'transcript_working_brief.conversation',
+    question:`I have the complete context for ${brief.transcriptTitle || 'this transcript'} loaded (${exactTranscriptLines(receipt.actionItems).length} Action Items and ${exactTranscriptLines(receipt.keyPoints).length} Key Points). What would you like to understand, pressure-test, or create from it?`,
+    detail:'This is a conversation about the selected meeting. Prepared work remains in Leverage and nothing external happens from opening chat.'
   };
 }
 function transcriptActionItemQuestion(brief={}){
@@ -2969,14 +3261,20 @@ function createValCoworkService({
   async function respondObserverConversation(session,answer){
     const state={...(session.stateJson || {}),stage:'conversation',messages:safeArray(session.stateJson?.messages)};
     state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
-    let reply='';
+    let reply=observerConversationDirectReply({
+      entrypointId:session.entrypointId,
+      workingBrief:session.workingBriefJson || {},
+      answer
+    });
     try{
-      reply=multilineText(await generateConversationReply({
-        entrypointId:session.entrypointId,
-        scopeId:session.scopeId,
-        workingBrief:session.workingBriefJson || {},
-        messages:state.messages
-      }),6000);
+      if(!reply){
+        reply=multilineText(await generateConversationReply({
+          entrypointId:session.entrypointId,
+          scopeId:session.scopeId,
+          workingBrief:session.workingBriefJson || {},
+          messages:state.messages
+        }),6000);
+      }
     }catch(error){
       reply='I have saved what you said with this conversation, but I could not finish a thoughtful response yet. Nothing was lost.';
     }
@@ -2987,6 +3285,36 @@ function createValCoworkService({
     session.updatedAt=new Date().toISOString();
     const saved=await saveSession(session);
     return publicResult(saved,null,reply,null);
+  }
+  async function respondScopedConversation(session,workItem,answer){
+    const state={...(session.stateJson || {}),messages:safeArray(session.stateJson?.messages)};
+    state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
+    const currentQuestion=safeArray(session.questionPlanJson).slice(-1)[0] || null;
+    let reply='';
+    try{
+      reply=multilineText(await generateConversationReply({
+        entrypointId:session.entrypointId,
+        scopeId:session.scopeId,
+        workingBrief:session.workingBriefJson || {},
+        messages:state.messages
+      }),6000);
+    }catch(_){
+      reply=scopedConversationFallbackReply({
+        workingBrief:session.workingBriefJson || {},
+        answer,
+        question:currentQuestion
+      });
+    }
+    if(!reply)reply=scopedConversationFallbackReply({
+      workingBrief:session.workingBriefJson || {},
+      answer,
+      question:currentQuestion
+    });
+    state.messages.push({role:'assistant',content:reply,at:new Date().toISOString()});
+    session.stateJson=state;
+    session.updatedAt=new Date().toISOString();
+    const saved=await saveSession(session);
+    return publicResult(saved,workItem,reply,currentQuestion);
   }
   async function openProjectNextMoveEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.next_move'];
@@ -3667,16 +3995,16 @@ function createValCoworkService({
     const brief=buildTranscriptWorkingBrief(transcript,input);
     if(!brief.entityId) throw new Error('The selected transcript has no durable identifier yet.');
     if(!brief.sourceReceipt.ready) throw new Error('This transcript has no exact Krisp Action Items and Key Points receipt yet. VAL will not invent one.');
-    const state={stage:'ready_to_apply',draftTranscriptArtifact:{kind:'email_draft',source:'exact_krisp_receipt',body:brief.sourceReceipt.body || '',actionItems:exactTranscriptLines(brief.sourceReceipt.actionItems),keyPoints:exactTranscriptLines(brief.sourceReceipt.keyPoints),invitees:safeArray(brief.invitees)},answers:[]};
+    const state={stage:'conversation',answers:[]};
     const question=transcriptWorkingBriefQuestion(state,brief);
     const now=new Date().toISOString();
     const sc=scope();
     const session=await saveSession({
-      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_review',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
     });
     const workItem=await saveWorkItem({
-      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_meeting_overview',title:`Meeting overview for ${brief.transcriptTitle}`,status:'needs_review',
-      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,preparedArtifact:state.draftTranscriptArtifact,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_conversation',title:`Conversation about ${brief.transcriptTitle}`,status:'needs_input',
+      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
   }
@@ -3956,6 +4284,10 @@ function createValCoworkService({
     if(session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff') return respondObserverConversation(session,answer);
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    // A Transcript Working Brief is an active source-scoped conversation, not a
+    // one-shot form. Every turn must retain the exact selected transcript.
+    if(session.entrypointId === 'transcript.working_brief') return respondScopedConversation(session,workItem,answer);
+    if(coworkTurnLooksConversational(answer)) return respondScopedConversation(session,workItem,answer);
     if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.onboarding') return respondProjectOnboarding(session,workItem,answer);
@@ -3972,7 +4304,6 @@ function createValCoworkService({
     if(session.entrypointId === 'project.phase') return respondProjectPhase(session,workItem,answer);
     if(session.entrypointId === 'project.prepared_work') return respondProjectPreparedWork(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
-    if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
     if(session.entrypointId === 'email.thread') return respondEmailThread(session,workItem,answer);
     if(session.entrypointId === 'relationship.overview') return respondRelationshipOverview(session,workItem,answer);

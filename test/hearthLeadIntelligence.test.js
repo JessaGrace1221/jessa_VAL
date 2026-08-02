@@ -326,7 +326,7 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthJs, /project_manager_judgment_packet/);
   assert.match(hearthJs, /project_next_action_packet/);
   assert.match(hearthJs, /project_prepared_work_packets/);
-  assert.match(hearthJs, /projectIndexItems\(\)\{[\s\S]{0,160}\.filter\(projectIsDrawerAdmitted\)/);
+  assert.match(hearthJs, /function projectIndexItems\(\)\{[\s\S]{0,260}canUseApi[\s\S]{0,160}\.filter\(projectIsDrawerAdmitted\)/);
   assert.match(hearthJs, /function projectSource/);
   assert.match(hearthJs, /function projectProfileReceiptPacket/);
   assert.match(hearthJs, /function ensureProjectProfileReceipt/);
@@ -447,6 +447,33 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthCss, /\.project-actions/);
 });
 
+test('Project Managers opens as an executive brief with one primary Co-Work action', () => {
+  const renderStart = hearthJs.indexOf('function renderProjectManagerProfile');
+  const renderEnd = hearthJs.indexOf('function renderProjectManagerEmptyState', renderStart);
+  const renderProfile = hearthJs.slice(renderStart, renderEnd);
+  assert.match(renderProfile, /Chat w\/ VAL about this project/);
+  assert.match(renderProfile, /project-manager-exec-grid/);
+  assert.match(renderProfile, />Next move</);
+  assert.match(renderProfile, />Why it matters</);
+  assert.match(renderProfile, />Risk \/ blocker</);
+  assert.match(renderProfile, />People</);
+  assert.match(renderProfile, />Evidence</);
+  assert.match(renderProfile, />Prepared work</);
+  assert.match(renderProfile, /data-project-edit-open/);
+  assert.match(renderProfile, /data-project-pin-open/);
+  assert.doesNotMatch(renderProfile, /projectCoworkChip\(\)/);
+  assert.doesNotMatch(renderProfile, /project-manager-operating-system/);
+});
+
+test('Project Managers opens as a list and shows only the selected project after a click', () => {
+  assert.match(hearthJs, /function setProjectDetailMode/);
+  assert.match(hearthJs, /projectDetail\.classList\.toggle\('project-profile-open', profileOpen\)/);
+  assert.match(hearthJs, /function openProjectIndex\(\)\{\s*if\(projectDrawerLink\?\.disabled\) return;\s*setProjectDetailMode\('index'\)/);
+  assert.match(hearthJs, /async function openProjectProfileFromDrawer[\s\S]{0,260}setProjectDetailMode\('profile'\)/);
+  assert.match(hearthJs, /data-project-show-index/);
+  assert.match(hearthCss, /\.project-detail\.project-profile-open :is\([\s\S]{0,220}\.project-rolodex/);
+});
+
 test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /app\.get\('\/api\/projects\/index'/);
   assert.match(server, /app\.get\('\/api\/projects\/dossier'/);
@@ -512,6 +539,16 @@ test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /Calendar event linked to project locally and queued for project-source review/);
 });
 
+test('Transcript Action Items flow directly into Tasks without a duplicate create-task control', () => {
+  const sourceSection = hearthJs.slice(
+    hearthJs.indexOf('function renderTimelineTranscriptSourceSections'),
+    hearthJs.indexOf('function renderTimelineMeetingOverviewDraft')
+  );
+  assert.match(sourceSection, /data-transcript-section/);
+  assert.doesNotMatch(sourceSection, /Create task/);
+  assert.doesNotMatch(sourceSection, /data-transcript-task-create/);
+});
+
 test('Drawer buttons use distinct rose and green tones so retrieval choices stay legible', () => {
   for(const tone of ['rose-sage', 'sage-rose', 'olive-blush', 'blush-sage', 'sage-clay', 'clay-green']){
     assert.match(hearthHtml, new RegExp(`data-drawer-tone="${tone}"`));
@@ -547,7 +584,7 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
   assert.match(hearthJs, /function renderTimelineTranscriptList/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
   assert.match(hearthJs, /function renderTimelineTranscriptMappingControls/);
-  assert.match(hearthJs, /Send Action Items to Attendees/);
+  assert.match(hearthJs, /Prepare email draft/);
   assert.match(hearthJs, /data-transcript-project-search/);
   assert.match(hearthJs, /data-transcript-relationship-search/);
   assert.match(hearthJs, /data-transcript-full-toggle/);
@@ -562,8 +599,7 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
     ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
     ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
-    ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence'],
-    ['VAL OS', 'val-drawer-link', 'val-open', 'val-detail', 'val_os_packet', 'drawer.val_os']
+    ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence']
   ];
   for(const [label, buttonClass, openClass, detailId, packetName, clickContract] of drawerContracts){
     assert.match(hearthHtml, new RegExp(`class="drawer-link ${buttonClass}"`), label + ' drawer button missing');
@@ -574,8 +610,10 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
   }
   const drawerLabels = Array.from(hearthHtml.matchAll(/class="drawer-link [^"]+"[\s\S]*?<span>([^<]+)<\/span>/g)).map((match) => match[1]);
-  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL Studio']);
   assert.match(hearthHtml, /class="drawer-link project-drawer-link"[\s\S]*?aria-controls="project-detail"/);
+  assert.match(hearthHtml, /class="executive-compass-core"[^>]*aria-label="Open Witnessing Session and Connections"[^>]*aria-controls="val-detail"/);
+  assert.match(hearthJs, /selector:'\.executive-compass-core,[^']*', contract:'drawer\.val_os', packet:'val_os_packet'/);
   assert.match(hearthHtml, /id="project-detail"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
@@ -650,10 +688,24 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /Prepare email draft/);
   assert.match(hearthJs, /Open email draft/);
   assert.match(hearthJs, /function resetTimelineTranscriptDetailScroll/);
+  const loadTimelineTranscriptsBody = hearthJs.match(/async function loadTimelineTranscripts[\s\S]*?\n}\n\nasync function deleteTimelineTranscript/)?.[0] || '';
+  assert.ok(loadTimelineTranscriptsBody);
+  assert.doesNotMatch(loadTimelineTranscriptsBody, /await hydrateRelationshipIndex/);
+  assert.doesNotMatch(loadTimelineTranscriptsBody, /await hydrateProjectIndex/);
+  assert.match(loadTimelineTranscriptsBody, /void hydrateRelationshipIndex\(\)/);
+  assert.match(loadTimelineTranscriptsBody, /void hydrateProjectIndex\(\)/);
+  const deleteTimelineTranscriptBody = hearthJs.match(/async function deleteTimelineTranscript[\s\S]*?\n}\n\nfunction focusTimelineTranscriptSection/)?.[0] || '';
+  assert.ok(deleteTimelineTranscriptBody);
+  assert.doesNotMatch(deleteTimelineTranscriptBody, /loadTimelineTranscripts/);
+  assert.match(deleteTimelineTranscriptBody, /currentTimelineTranscriptItems=currentTimelineTranscriptItems\.filter/);
+  assert.match(deleteTimelineTranscriptBody, /Transcript deleted\./);
+  assert.doesNotMatch(deleteTimelineTranscriptBody, /window\.prompt/);
+  assert.match(hearthJs, /data-transcript-delete-confirm/);
+  assert.match(hearthJs, /Confirm delete/);
   const openTimelineTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
   assert.ok(openTimelineTranscriptBody);
   assert.doesNotMatch(openTimelineTranscriptBody, /scrollIntoView/);
-  assert.match(hearthJs, /drawerTray\?\.scrollTo\?\.\(\{top:0, left:0\}\)/);
+  assert.match(hearthJs, /node\.scrollTop = 0/);
   assert.match(openTimelineTranscriptBody, /timelineTranscriptOpenRequest/);
   assert.doesNotMatch(openTimelineTranscriptBody, /renderTimelineTranscriptDetail\(\{\.\.\.cached/);
   assert.doesNotMatch(hearthJs, /VAL Action Items/);
@@ -664,7 +716,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /function openTranscriptWorkingBriefCowork/);
   assert.match(hearthJs, /entrypointId:'transcript\.working_brief'/);
   assert.match(hearthJs, /data-transcript-action/);
-  assert.match(hearthJs, /data-transcript-task-create/);
+  assert.doesNotMatch(hearthJs, /data-transcript-task-create/);
   assert.match(hearthJs, /data-transcript-action-index/);
   assert.doesNotMatch(hearthJs, /data-transcript-chat/);
   assert.doesNotMatch(hearthJs, /timelineTranscriptAsk/);
@@ -800,6 +852,16 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
     hearthHtml.indexOf('id="correspondence-detail"'),
     hearthHtml.indexOf('id="commitment-detail"')
   );
+  assert.match(hearthHtml, /data-correspondence-trust-receipt/);
+  assert.match(hearthJs, /function renderCorrespondenceTrustReceipt/);
+  assert.match(hearthJs, /VAL checked \$\{checked\} candidate conversation/);
+  assert.match(hearthHtml, />Executive contacts</);
+  assert.match(hearthJs, /with no sent-mail history/);
+  assert.match(server, /outboxContacts:timed\.outboundRecipients\?\.size\|\|0/);
+  assert.match(server, /executiveContacts:safeContacts\.length/);
+  assert.match(server, /executiveContactCount:executiveInboxSafeContactRows\(\)\.length/);
+  assert.match(hearthJs, /diagnostics\.executiveContacts = Number\(result\.executiveContactCount\)/);
+  assert.match(hearthCss, /\.correspondence-trust-receipt/);
   assert.match(hearthHtml, /class="drawer-link correspondence-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="correspondence-detail"/);
   assert.match(hearthHtml, /id="correspondence-detail"/);
@@ -859,7 +921,12 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-drawer-cowork-icon/);
   assert.match(hearthHtml, /onclick="runCorrespondenceActionClick\(this,event\);return false;"/);
   assert.match(hearthHtml, /data-correspondence-action="not_executive_contact"/);
-  assert.match(hearthHtml, />Not executive contact</);
+  assert.match(hearthHtml, />Not an executive contact</);
+  assert.match(hearthHtml, /class="correspondence-decision-actions"/);
+  assert.match(hearthHtml, /data-correspondence-action="create_rule"[^>]*>Create Rule</);
+  assert.match(hearthJs, /Unsubscribe stays out/);
+  assert.match(hearthJs, /Reciprocity earns attention/);
+  assert.doesNotMatch(hearthJs, /html\.innerHTML = message\.bodyHtml/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Review Boundary/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Relationship Context/);
   assert.doesNotMatch(correspondenceDrawerHtml, /Prepared Judgment/);
@@ -886,11 +953,20 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceChooseRelationship/);
   assert.match(hearthJs, /const correspondenceProjectSelect/);
   assert.match(hearthJs, /function hydrateCorrespondenceDrawer/);
-  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?days=90&limit=150/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?limit=200/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/archive\?limit=200/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/queue\?refresh=1&days=/);
   assert.doesNotMatch(hearthJs, /\/api\/val\/email\/review-drafts\?limit=20/);
   assert.doesNotMatch(hearthJs, /\/api\/email\/intelligence\?days=30&limit=75/);
   assert.match(hearthJs, /correspondenceItemsFromEmailIntelligence\(inbox\)/);
-  assert.match(hearthJs, /Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox/);
+  assert.match(hearthJs, /Opening saved Executive Inbox context\. Use Scan only when you want a fresh Gmail or Outlook pass/);
+  const hydrateCorrespondenceDrawer = hearthJs.slice(
+    hearthJs.indexOf('async function hydrateCorrespondenceDrawer'),
+    hearthJs.indexOf('async function scanCorrespondenceWindow')
+  );
+  assert.match(hydrateCorrespondenceDrawer, /void Promise\.all\(\[/);
+  assert.doesNotMatch(hydrateCorrespondenceDrawer, /await Promise\.all\(\[\s*hydrateRelationshipIndex/);
+  assert.match(hydrateCorrespondenceDrawer, /getJson\('\/api\/val\/executive-inbox\/queue\?limit=200'/);
   assert.match(hearthJs, /const actionable = \['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'\]/);
   assert.match(hearthJs, /\.concat\(result\.waitingOnResponse \|\| \[\]\)/);
   assert.match(hearthHtml, /data-correspondence-action="resolve_thread"/);
@@ -900,6 +976,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, />Executive contact</);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/resolve-thread/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/safe-contact/);
+  assert.match(hearthJs, /applyCorrespondenceSafeListResult/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/link-context/);
   assert.match(hearthJs, /\/api\/email\/inbox-command/);
   assert.match(hearthJs, /\/api\/email\/inbox-command\/action/);
@@ -913,7 +990,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /data-correspondence-loading-veil/);
   assert.match(hearthJs, /function setCorrespondenceLoadingState/);
   assert.match(hearthJs, /correspondence-is-loading/);
-  assert.match(hearthJs, /Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox/);
+  assert.match(hearthJs, /No saved conversations currently cross the Executive Inbox judgment gate\. Use Scan to refresh Gmail or Outlook/);
   assert.match(hearthJs, /Scanned the last ' \+ scanDays \+ ' days\. No unresolved Gmail threads crossed the Executive Inbox judgment gate\./);
   assert.match(hearthJs, /const isDraftSend = action === 'send' && button\.closest\('\.correspondence-actions'\)/);
   assert.match(hearthJs, /No private draft is waiting for review/);
@@ -943,7 +1020,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceFallbackMessage/);
   assert.match(hearthJs, /function sanitizeCorrespondenceEmailHtml/);
   assert.match(hearthJs, /bodyHtml: sanitizeCorrespondenceEmailHtml/);
-  assert.match(hearthJs, /correspondence-email-html/);
+  assert.match(hearthJs, /correspondenceReadableEmailBody\(message\.body, message\.bodyHtml\)/);
   assert.match(hearthJs, /No readable email body is attached yet/);
   assert.match(hearthJs, /Latest email/);
   assert.match(hearthJs, /Previous emails in this thread/);
@@ -989,6 +1066,12 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /email: senderEmail \|\| item\.recipientEmail/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/not-executive-contact/);
   assert.match(hearthJs, /action === 'not_executive_contact'/);
+  assert.match(hearthJs, /const dateLabel = correspondenceHumanContactTime\(item\.receivedAt \|\| item\.latestAt \|\| item\.lastContact \|\| item\.date \|\| ''\)/);
+  assert.match(hearthJs, /const senderLabel = item\.senderName \|\| item\.senderEmail \|\| ''/);
+  assert.match(hearthJs, /senderLabel \? 'From ' \+ senderLabel : ''/);
+  assert.match(hearthJs, /\]\.filter\(Boolean\)\.join\(' · '\)/);
+  assert.match(hearthJs, /if\(correspondenceActionId === 'not_executive_contact'\)\{[\s\S]{0,500}await handleCorrespondenceAction\(correspondenceActionId\)/);
+  assert.match(hearthJs, /timeoutMs:6000/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /action:'email:select'/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:\{email:selected/);
@@ -1005,8 +1088,6 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.drawer-grid/);
   assert.match(hearthCss, /\.correspondence-workbench/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-loading-veil/);
-  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-filterbar/);
-  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-rulebar/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-workbench/);
   assert.match(hearthCss, /display:none!important/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-loading-orbit/);
@@ -1026,6 +1107,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.correspondence-intelligence/);
   assert.match(hearthCss, /\.correspondence-list/);
   assert.match(hearthCss, /\.correspondence-brief/);
+  assert.match(hearthCss, /Executive Function usability contract: one smooth scroll owner, stable controls, readable rails/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-queue\{[\s\S]{0,180}max-height:none;[\s\S]{0,120}overflow:visible;/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-list\{[\s\S]{0,120}max-height:none;[\s\S]{0,120}overflow:visible;/);
 });
 
 test('Commitments remain internal evidence-backed follow-through, not a Hearth drawer', () => {
@@ -1570,9 +1654,9 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function appendHomeCoworkMessage/);
   assert.match(hearthJs, /function showCoworkContextGathering/);
   assert.match(hearthJs, /coworkContextGatheringTimeoutId/);
-  assert.match(hearthJs, /VAL could not finish gathering this context in time/);
+  assert.match(hearthJs, /I took too long to answer this chat turn\. Try one narrower question\./);
   assert.match(hearthJs, /const workspaceVisible = deskWorkspace\?\.getAttribute\('aria-hidden'\) !== 'true'/);
-  assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*hideCoworkContextGathering\(\);/);
+  assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*stopValCoworkVoiceMode\(\);\s*hideCoworkContextGathering\(\);/);
   assert.match(hearthJs, /Gathering Context/);
   assert.match(hearthJs, /data-cowork-context-gathering/);
   assert.match(hearthJs, /function coworkScopeForEntry/);
@@ -1586,15 +1670,17 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function orientHomeCoworkFromInput/);
   assert.match(hearthJs, /VAL is finding the right context/);
   assert.match(hearthJs, /data-home-cowork-submit/);
-  assert.match(hearthJs, /runCowork\('think'\)/);
+  assert.match(hearthJs, /runCowork\(/);
+  assert.match(hearthJs, /selectedSourceContext/);
   assert.match(hearthJs, /const observerBoardState/);
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);
   assert.match(hearthJs, /No live Board packet is loaded for this session yet/);
-  assert.match(hearthJs, /Board readiness/);
+  assert.match(hearthJs, /Packet Field Active/);
+  assert.match(hearthJs, /Holding Space/);
   assert.match(hearthJs, /if\(workspaceGrid\) workspaceGrid\.hidden = true/);
   assert.match(hearthJs, /observer-truth-card/);
-  assert.match(hearthJs, /If this view claims certainty without a packet, that is a bug/);
+  assert.match(hearthJs, /Holding space for Analytical and Relational Context/);
   assert.match(hearthJs, /if\(command === 'cancel'\)\{/);
   assert.doesNotMatch(hearthJs, /larger morning intact/);
   assert.doesNotMatch(hearthJs, /protecting the morning/);
@@ -1614,7 +1700,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.workspace-input-tools/);
   assert.match(hearthCss, /\.observer-board-button/);
   assert.match(hearthCss, /\.observer-board-button img/);
-  assert.match(hearthCss, /observer-board-pulse/);
+  assert.match(hearthCss, /observer-board-glow/);
+  assert.match(hearthCss, /observer-board-flicker/);
   assert.match(hearthCss, /\.observer-board-mode \.workspace-panel/);
   assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode/);
   assert.match(hearthCss, /\.home-cowork-workspace/);
@@ -1625,13 +1712,15 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.home-cowork-chatbar textarea/);
   assert.match(hearthCss, /\.home-cowork-context-gathering/);
   assert.match(hearthCss, /context-gathering-pulse/);
-  assert.match(hearthJs, /const linkedinVisibilityItems/);
+  assert.match(hearthJs, /let linkedinVisibilityItems = \[\]/);
+  assert.match(hearthJs, /\/api\/val\/linkedin\/visibility/);
+  assert.match(hearthJs, /No placeholder posts are being shown while live context loads/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
   assert.match(hearthJs, /openWorkspaceShell\('LinkedIn visibility workspace', \{returnTarget:'home'\}\)/);
   assert.match(hearthJs, /data-linkedin-copy/);
   assert.match(hearthJs, /data-linkedin-link/);
-  assert.match(hearthJs, /VAL never auto-publishes LinkedIn posts, comments, or DMs/);
+  assert.match(hearthJs, /Every item shown here comes from live relationship or draft context\. Publishing remains manual\./);
   assert.match(hearthCss, /\.linkedin-widget/);
   assert.match(hearthCss, /\.linkedin-engagement-list/);
   assert.match(hearthCss, /\.linkedin-engagement-actions button,\n\.linkedin-engagement-actions a/);
@@ -1749,7 +1838,8 @@ test('Hearth source actions open the most specific executive surface available',
   assert.match(hearthJs, /Open prepared draft/);
   assert.match(hearthJs, /Open relationship file/);
   assert.match(hearthJs, /Open project dossier/);
-  assert.match(hearthJs, /Open the thing needing attention/);
+  assert.match(hearthJs, /Open source behind this judgment/);
+  assert.match(hearthJs, /Do this action/);
   assert.match(hearthJs, /pipeline record where the next decision lives/);
   assert.match(hearthJs, /prepared language is ready for human judgment/);
   assert.match(hearthJs, /relationship context explains why this person is appearing on Home/);
@@ -1789,10 +1879,18 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
 
   assert.match(listRoute, /Cache-Control','no-store, max-age=0/);
   assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
-  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'\} = \{\}\)/);
+  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default', timeoutMs = 0, timeoutMessage = ''\} = \{\}\)/);
   assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
-  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=50', \{cache: 'no-store'\}\)/);
+  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=100&offset='/);
+  assert.match(hearthJs, /data-transcript-load-more/);
   assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);
+  assert.match(server, /async function transcriptDrawerFastPayload/);
+  assert.match(listRoute, /transcriptDrawerFastPayload\(\{days,limit,offset\}\)/);
+  assert.match(server, /async function transcriptRecordById/);
+  const deleteTranscriptBody = server.match(/async function deleteTranscriptForUser[\s\S]*?\n}\nasync function clearAllTranscriptDataForTenant/)?.[0] || '';
+  assert.ok(deleteTranscriptBody);
+  assert.match(deleteTranscriptBody, /transcriptRecordById\(id\)/);
+  assert.doesNotMatch(deleteTranscriptBody, /transcriptArchiveRecords/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -2197,19 +2295,27 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /missing_why_now_packet/,
     /missing_prepared_work_or_action_status/,
     /homeAdmissionFilter\('velocity', velocityItems\)/,
-    /homeAdmissionFilter\('alignment', highest \? \[highest\] : \[\]\)/,
+    /const chiefAlignmentQueue = briefingItems\(briefing\.chiefAlignmentQueue\)/,
+    /const alignmentCandidates = chiefAlignmentQueue/,
+    /homeAdmissionFilter\('alignment', alignmentCandidates\)/,
     /homeAdmissionFilter\('leverage', leverageItems\)/,
     /setHomeRoomQueue\('velocity', admittedVelocityItems\)/,
-    /setHomeRoomQueue\('alignment', admittedHighest \? \[admittedHighest\] : \[\]\)/,
+    /setHomeRoomQueue\('alignment', admittedAlignmentItems\)/,
     /setHomeRoomQueue\('leverage', admittedLeverageItems\)/,
     /if\(!changed\) clearHomeRoomForAdmission\('velocity'\)/,
     /if\(!admittedHighest\) clearHomeRoomForAdmission\('alignment'\)/,
     /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
+    /const roomHasAction = name !== 'alignment' \|\| queue\.length > 0/,
+    /actionButton\.hidden = !roomHasAction/,
+    /actionButton\.disabled = !roomHasAction/,
+    /actionButton\.style\.display = roomHasAction \? '' : 'none'/,
+    /if\(name === 'alignment' && roomHasAction\)/,
     /No meaningful movement earned Home/,
-    /No priority needs your judgment first/,
+    /No action needs you right now/,
     /No prepared work is waiting right now/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
+  assert.doesNotMatch(hearthJs, /chiefAlignmentQueue\.length \? chiefAlignmentQueue : \[highest\]/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
@@ -2234,10 +2340,10 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     primaryActionBody.indexOf("if(roomName === 'velocity')") < primaryActionBody.indexOf('ensureHearthClickPacket({'),
     'Home executive modes must open before server packet preflight'
   );
-  assert.doesNotMatch(hearthJs, /data-home-action="cowork_card_context"/);
+  assert.match(hearthJs, /data-home-action="cowork_card_context">Co-work with VAL/);
   assert.match(hearthJs, /mode === 'workspace'/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
-  assert.match(hearthJs, /How can I help with /);
+  assert.match(hearthJs, /How can I help you finish/);
   assert.match(hearthJs, /Approved and ' \+ verb/);
   assert.match(hearthJs, /data-home-room-source/);
   assert.doesNotMatch(hearthJs, /Co-Work with VAL about/);
@@ -2414,7 +2520,10 @@ test('Hearth keeps the Home greeting direct instead of adding an explainer panel
   assert.match(hearthJs, /const freshDeskButton/);
   assert.match(hearthJs, /function clearRoomAttendance/);
   assert.match(hearthJs, /freshDeskButton\?\.addEventListener\('click', clearRoomAttendance\)/);
-  assert.match(hearthJs, /function renderWhyTodayPanel\(briefing = null, status = 'loaded'\)\{\n  return;/);
+  assert.match(hearthJs, /function renderWhyTodayPanel\(briefing = null, status = 'loaded'\)/);
+  assert.match(hearthJs, /data-home-evidence-action="board">Full Context/);
+  assert.match(hearthJs, /data-home-evidence-action="alignment">Open Action/);
+  assert.match(hearthJs, /data-home-evidence-action="leverage">Open Prepared Work/);
 });
 
 test('Hearth Home removes static architecture filler from the welcome area', () => {
@@ -2422,7 +2531,8 @@ test('Hearth Home removes static architecture filler from the welcome area', () 
   assert.doesNotMatch(hearthHtml, /Generic risk language should not drive Home/);
   assert.doesNotMatch(hearthHtml, /Today stands here/);
   assert.doesNotMatch(hearthHtml, /Supporting drawers stay available without owning Home/);
-  assert.match(hearthHtml, /Home should update from Velocity, Alignment, and Leverage packets/);
+  assert.match(hearthHtml, /The Chief of Staff is listening across the Board of Observers/);
+  assert.match(hearthHtml, /If one Observer has the signal that matters most, it will enter Home/);
   assert.match(hearthJs, /function hydrateGreetingFromBriefing/);
 });
 
@@ -2443,8 +2553,8 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
-  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,220}grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:132px/);
+  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,220}width:min\(350px,calc\(100vw - 660px\)\)/);
+  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:220px/);
   assert.doesNotMatch(hearthHtml, /Prototype states/);
   assert.doesNotMatch(hearthHtml, /data-state-option/);
   assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:90\}/);
@@ -2457,32 +2567,36 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /<title>VAL - Home<\/title>/);
   assert.match(hearthHtml, /VAL Home/);
   assert.doesNotMatch(hearthHtml, />The Hearth</);
-  assert.match(hearthHtml, /class="drawer-link val-drawer-link"/);
-  assert.match(hearthHtml, /aria-controls="val-detail"/);
+  assert.match(hearthHtml, /class="executive-compass-core"[^>]*aria-label="Open Witnessing Session and Connections"[^>]*aria-controls="val-detail"/);
+  assert.match(hearthHtml, /class="drawer-link studio-drawer-link"[^>]*aria-label="Open VAL Studio"/);
+  assert.match(hearthJs, /const valDrawerLink = executiveCompassCore/);
+  assert.match(hearthJs, /studioDrawerLink\?\.addEventListener\('click'/);
+  assert.doesNotMatch(hearthJs, /executiveCompassCore\?\.addEventListener\('click', closeExecutiveCompassFromCore\)/);
   assert.match(hearthHtml, /id="val-detail"/);
   assert.match(hearthHtml, /Witnessing Session/);
-  assert.match(hearthHtml, /Begin Witnessing Session/);
+  assert.match(hearthHtml, /Continue Witnessing/);
   assert.match(hearthHtml, /data-calendar-source-status/);
-  assert.match(hearthHtml, /One thoughtful question at a time/);
-  assert.match(hearthHtml, /Nothing leaves this session/);
+  assert.match(hearthHtml, /Restoring your saved Witnessing Session/);
+  assert.match(hearthHtml, /Your saved answers remain intact/);
   assert.match(hearthHtml, /data-val-live-status/);
-  assert.match(hearthHtml, /data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session/);
+  assert.match(hearthHtml, /data-val-witnessing-action="true" data-workflow-action="valWitnessingResume" data-val-variable-packet="val_os_packet">Continue Witnessing/);
   assert.doesNotMatch(hearthHtml, /Pick Up Where We Left Off/);
   assert.doesNotMatch(hearthHtml, />Start Fresh</);
   assert.match(hearthJs, /const valDetail = document\.querySelector\('#val-detail'\)/);
   assert.match(hearthJs, /function handleValDetailWorkflowClick\(event\)/);
   assert.match(hearthJs, /document\.addEventListener\('click', \(event\) =>/);
-  assert.match(hearthJs, /action === 'valWitnessingBegin'/);
+  assert.match(hearthJs, /action === 'valWitnessingResume'/);
   const valDetailWorkflowStart = hearthJs.indexOf('async function handleValDetailWorkflowClick(event)');
   const valDetailWorkflowEnd = hearthJs.indexOf("valDetail?.addEventListener('click', handleValDetailWorkflowClick);", valDetailWorkflowStart);
   const valDetailWorkflowHandler = hearthJs.slice(valDetailWorkflowStart, valDetailWorkflowEnd);
-  assert.ok(valDetailWorkflowHandler.indexOf("action === 'valWitnessingBegin'") < valDetailWorkflowHandler.indexOf('const preflight = await ensureHearthClickPacket'), 'Witnessing must open before generic packet preflight');
+  assert.ok(valDetailWorkflowHandler.indexOf("action === 'valWitnessingResume'") < valDetailWorkflowHandler.indexOf('const preflight = await ensureHearthClickPacket'), 'Witnessing must resume before generic packet preflight');
   assert.doesNotMatch(hearthHtml, /val-status-panel/);
   assert.doesNotMatch(hearthHtml, /val-routing-panel/);
   assert.doesNotMatch(hearthHtml, /val-action-grid/);
   assert.doesNotMatch(hearthHtml, /<a href="\.\/dashboard\.html" class="drawer-link" data-drawer-tone="clay-green">/);
   assert.match(hearthJs, /const valDrawerLink/);
   assert.match(hearthJs, /function restoreValWindow/);
+  assert.match(hearthJs, /function restoreValWindow\(\)\{\s*retrievalSystem\.classList\.add\('open'\);\s*retrievalSystem\.dataset\.activeDrawer = 'val';/);
   assert.match(hearthJs, /function handleValAction/);
   assert.match(hearthJs, /function refreshGoogleConnectionStatus/);
   assert.match(hearthJs, /function refreshCalendarSourceStatus/);
@@ -2493,11 +2607,21 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /\/api\/val\/witnessing\/connections/);
   assert.match(hearthJs, /\/api\/val\/witnessing\/readiness/);
   assert.match(hearthJs, /function openValOpenAISetup/);
-  assert.match(hearthJs, /Connect OpenAI to start VAL\./);
+  assert.match(hearthJs, /Your VAL is ready for its intelligence connection\./);
   assert.match(hearthJs, /data-val-openai-setup-form/);
+  assert.match(hearthJs, /<button type="button" data-val-openai-setup-submit>/);
+  assert.match(hearthJs, /const connectionSelector = '\[data-val-witnessing-connection-list\], \[data-val-openai-setup-form\]'/);
+  assert.match(hearthJs, /setupButton\?\.addEventListener\('click',submitSetup\)/);
+  assert.match(hearthJs, /setupForm\?\.addEventListener\('submit',submitSetup\)/);
   assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);
   assert.match(hearthJs, /async function openValWitnessingSession/);
+  assert.match(hearthHtml, /data-val-drawer-connections/);
+  assert.match(hearthJs, /function renderValDrawerConnections/);
+  assert.match(hearthJs, /function valWitnessingConnectionSurface/);
+  assert.match(hearthJs, /Start Witnessing/);
+  assert.match(hearthJs, /Resume Witnessing/);
+  assert.match(hearthJs, /Update Witnessing/);
   assert.match(hearthJs, /if\(options\.fresh\)\{\s*await startFreshValWitnessingSession\(\);/);
   assert.doesNotMatch(hearthJs, /if\(options\.fresh\)\{\s*if\(!\(await ensureRuntimeOpenAIForWitnessing/);
   assert.doesNotMatch(hearthJs, /document\.addEventListener\('click', \(event\) => \{\s*if\(event\.target\.closest\('#val-detail \[data-workflow-action\^="val"\]'/);
@@ -2511,6 +2635,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /witness_never_compromised/);
   assert.match(hearthJs, /witness_support_style/);
   assert.match(hearthJs, /witness_partnership_useful/);
+  assert.match(hearthJs, /witness_chief_priorities/);
+  assert.match(hearthJs, /Chief priorities/);
   assert.match(hearthJs, /witness_connect_sources/);
   assert.match(hearthJs, /witness_source_review/);
   assert.match(hearthJs, /witness_key_relationships/);
@@ -2559,7 +2685,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.doesNotMatch(hearthJs, /Next question/);
   assert.match(hearthJs, /witnessing-mode/);
   assert.match(hearthJs, /document\.querySelector\('\.val-witnessing-entry'\)/);
-  assert.match(hearthJs, /Nothing leaves this session\. VAL will show what it notices before anything becomes memory\./);
+  assert.match(hearthJs, /Your previous answers are already saved\. Continue from the next unfinished step\./);
   assert.match(hearthJs, /async function openValOnboardingWorkspace/);
   assert.match(hearthJs, /async function saveValOnboardingContext/);
   assert.match(hearthJs, /function openValConnectionsWorkspace/);
@@ -2597,7 +2723,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(server, /app\.get\('\/auth\/krisp'/);
   assert.match(server, /app\.get\('\/auth\/krisp\/callback'/);
   assert.match(server, /const isSourceConnectionStep=card\.id==='connect_sources'/);
-  assert.match(server, /advance:isSourceConnectionStep/);
+  assert.match(server, /advance:!updatingCompletedSession&&\(isSourceConnectionStep\|\|isDocumentStep\)/);
   assert.match(server, /code_challenge_method:'S256'/);
   assert.match(server, /code_verifier:pending\.verifier/);
   assert.match(server, /saveOAuthTokens\('krisp'/);
@@ -2660,7 +2786,9 @@ test('Witnessing Session questions dispatch before shared workflow packet valida
   assert.ok(witnessingDispatch > workflowStart, 'Witnessing dispatch must be inside the shared workflow handler');
   assert.ok(sharedPacketPreflight > witnessingDispatch, 'Witnessing dispatch must happen before generic packet validation');
   assert.match(hearthJs, /const valWitnessingWorkflowCommands = new Set/);
+  assert.match(hearthJs, /'valWitnessingUpdate'/);
   assert.match(witnessingDispatcher, /openValWitnessingQuestion\(type \|\| 'meeting_val'\)/);
+  assert.match(witnessingDispatcher, /reopenValWitnessingCard\(type \|\| 'meeting_val'\)/);
   assert.match(witnessingDispatcher, /saveValWitnessingCard\(type \|\| 'witness_meeting_val'\)/);
   assert.match(witnessingDispatcher, /continueValWitnessingWithSources\(type \|\| 'witness_connect_sources'\)/);
   assert.doesNotMatch(witnessingDispatcher, /ensureHearthClickPacket/);
@@ -2807,7 +2935,8 @@ test('Retired relationship dossier helpers remain available behind the V1 introd
   assert.match(hearthJs, /function relationshipBackLabel/);
   assert.match(hearthJs, /relationshipAllPeople/);
   assert.match(hearthJs, /updateWorkspaceReturnButton/);
-  assert.match(hearthJs, /returnButton\.textContent = label/);
+  assert.match(hearthJs, /returnButton\.textContent = '×'/);
+  assert.match(hearthJs, /returnButton\.setAttribute\('aria-label', label \+ ' relationship brief'\)/);
   assert.match(hearthJs, /openWorkspaceShell\('Stewardship move review', \{returnTarget:'relationship'\}\)/);
   assert.match(hearthJs, /Who needs this person/);
   assert.match(hearthJs, /Who this person needs/);
@@ -2841,7 +2970,7 @@ test('Retired relationship dossier helpers remain available behind the V1 introd
   assert.match(hearthJs, /Review what I taught VAL/);
   assert.match(hearthJs, /relationshipTeachCandidate/);
   assert.match(hearthJs, /Teaching is ready for review/);
-  assert.match(hearthCss, /\.return-button\{[\s\S]{0,80}position:sticky/);
+  assert.match(hearthCss, /\.return-button\{[\s\S]{0,80}position:fixed/);
   assert.match(hearthJs, /workflow:'relationship:teach_wisdom'/);
   assert.match(hearthJs, /relationshipFolderButtons\.forEach/);
   assert.match(hearthJs, /async function openRelationshipProfileFromFolder/);
@@ -3003,6 +3132,13 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(hearthCss, /\.val-first-look-source-grid/);
 });
 
+test('Witnessing About Me receipts only count evidence-backed Observer completions',()=>{
+  assert.match(hearthJs,/run\?\.status==='completed'&&\['observed','no_signal'\]\.includes\(review\.status\)/);
+  assert.match(hearthJs,/failedByName/);
+  assert.match(hearthJs,/Reading queued\./);
+  assert.match(hearthJs,/card\.id !== 'documents_templates' && !\(await ensureOpenAIConnectionBeforeWitnessing/);
+});
+
 test('VAL completion cue is user-gesture gated and quiet for background work', () => {
   assert.match(hearthHtml, /data-completion-sound-toggle/);
   assert.match(hearthCss, /\.completion-sound-toggle/);
@@ -3046,8 +3182,9 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(hearthJs, /Projects for Project Managers/);
   assert.match(hearthJs, /Witnessing coverage:/);
   assert.match(hearthJs, /Deliver approved items/);
-  assert.match(hearthJs, /Open Stewardship/);
-  assert.match(hearthJs, /Open Project Managers/);
+  assert.match(hearthJs, /Continue Witnessing to Confirm Relationships and the Partnership Promise/);
+  assert.doesNotMatch(hearthJs, /data-workflow-action="valFirstLookOpen:stewardship"/);
+  assert.doesNotMatch(hearthJs, /data-workflow-action="valFirstLookOpen:projects"/);
   assert.match(hearthJs, /Identity is supported by the cited source evidence/);
   assert.match(hearthJs, /Keep it only if it belongs in your network/);
   const receipt = hearthJs.slice(hearthJs.indexOf('function renderValFirstLookReceipt'), hearthJs.indexOf('function renderValFirstLookConversation'));
@@ -3057,4 +3194,19 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(valFirstLookCandidateReview, /First Look never creates, changes, or admits an Executive Inbox conversation/);
   assert.match(valFirstLookCandidateReview, /Phone numbers, email addresses, generic mailboxes, automated senders, and unnamed participants cannot become candidates/);
   assert.match(valFirstLookCandidateReview, /cannot save a proposed map until every completed Witnessing answer has a coverage receipt/i);
+});
+
+test('Alignment stays action-only while Leverage creates reviewable draft surfaces', () => {
+  assert.match(hearthJs, /function alignmentDraftFromWorkspace/);
+  assert.match(hearthJs, /VAL has created a review packet from the current Alignment context/);
+  assert.match(hearthJs, /Review the source, decide the next move, then approve, revise, or hold/);
+  assert.match(hearthJs, /home\.alignment_card/);
+  assert.match(hearthJs, /Do not draft, send, create tasks, or expose Leverage prepared work from Alignment/);
+  assert.match(hearthJs, /data-home-action="alignment_done">Done/);
+  assert.match(hearthJs, /data-home-action="cowork_card_context">Co-work with VAL/);
+  assert.match(hearthJs, /data-home-action="approve_prepared"/);
+  assert.match(hearthJs, /data-home-action="save_prepared_edits"/);
+  assert.match(hearthJs, /data-home-action="hold_prepared"/);
+  assert.doesNotMatch(hearthJs, /preparedDraftCount/);
+  assert.doesNotMatch(hearthJs, /\(draft \? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft/);
 });

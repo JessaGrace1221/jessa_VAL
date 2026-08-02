@@ -17,6 +17,15 @@ test('conversation identity schema creates durable conversation tables',()=>{
   assert.match(server,/ensureValConversationIdentityTables/);
 });
 
+test('conversation identity hashes the complete source key instead of truncating a shared prefix',()=>{
+  const identitySource=fs.readFileSync(path.join(root,'services','valConversationIdentity.js'),'utf8');
+  assert.match(identitySource,/createHash\('sha256'\)/);
+  assert.match(identitySource,/durableId\('uc'/);
+  assert.match(identitySource,/durableId\('eth'/);
+  assert.match(identitySource,/durableId\('em'/);
+  assert.doesNotMatch(identitySource,/toString\('base64url'\)\.slice\(0,48\)/);
+});
+
 test('conversation identity routes are backend-only and mounted from server',()=>{
   assert.match(server,/registerValConversationIdentityRoutes/);
   assert.match(routes,/\/api\/val\/email\/sync/);
@@ -52,6 +61,8 @@ test('email sync stores messages, threads, unified conversations, and context',a
   const synced=await service.syncEmail({providers:['gmail','outlook'],limit:10});
   assert.equal(synced.ok,true);
   assert.equal(synced.saved,2);
+  assert.equal(synced.savedMessages.length,2);
+  assert.equal(synced.savedMessages[0].subject,'Partner workflow');
   assert.equal(store.emailMessages.length,2);
   assert.equal(store.emailThreads.length,2);
   assert.equal(store.unifiedConversations.length,2);
@@ -78,4 +89,36 @@ test('CRM identity resolver recommends use_existing for exact email and does not
   assert.equal(result.match_status,'matched');
   assert.equal(result.recommended_action,'use_existing');
   assert.equal(result.crm_contact_id,'crm_1');
+});
+
+test('sent labels and explicit direction persist as outbound without owner-email inference',async()=>{
+  let store={};
+  const service=createValConversationIdentityService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    ownerEmails:[]
+  });
+  await service.upsertEmailMessage({
+    provider:'gmail',
+    messageId:'sent_label',
+    threadId:'sent_thread',
+    labelIds:['SENT'],
+    from:{email:'jessa@example.com'},
+    to:[{email:'michele@example.com'}],
+    subject:'Introduction'
+  });
+  await service.upsertEmailMessage({
+    provider:'outlook',
+    messageId:'explicit_outbound',
+    threadId:'outlook_thread',
+    direction:'outbound',
+    from:{email:'jessa@example.com'},
+    to:[{email:'mike@example.com'}],
+    subject:'Dashboard handoff'
+  });
+  assert.deepEqual(store.emailMessages.map(message=>message.direction),['outbound','outbound']);
+  assert.equal(store.unifiedConversations.every(conversation=>conversation.latestOutboundAt),true);
 });

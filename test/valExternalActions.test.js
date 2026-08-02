@@ -40,6 +40,11 @@ test('external action routes are backend-only and mounted',()=>{
   assert.match(server,/async function executeEmailSendPacket/);
   assert.match(server,/send_email:executeEmailSendPacket/);
   assert.match(server,/https:\/\/www\.googleapis\.com\/gmail\/v1\/users\/me\/messages\/send/);
+  assert.match(server,/async function executeSmsPacket/);
+  assert.match(server,/send_sms:executeSmsPacket/);
+  assert.match(server,/\/conversations\/messages/);
+  assert.match(routes,/\/api\/val\/external-actions\/sms-send-packet/);
+  assert.match(routes,/\/api\/val\/external-actions\/sms-send-now/);
 });
 
 test('risk classifier keeps financial and representation actions high risk',()=>{
@@ -192,14 +197,17 @@ test('fresh risk check blocks expired, unsupported, ambiguous, and never-auto pa
   const sendPacket={...base,actionType:'send_email',payloadPreviewJson:{subject:'Hi',body:'Body',to:'aric@example.com'}};
   assert.ok(freshRiskCheck(sendPacket).errors.includes('final_send_confirmation_required'));
   assert.equal(freshRiskCheck(sendPacket,{finalConfirmation:true}).ok,true);
+  const smsPacket={...base,actionType:'send_sms',targetSystem:'GHL',targetId:'contact_1',payloadPreviewJson:{message:'Hi Michele'}};
+  assert.ok(freshRiskCheck(smsPacket).errors.includes('final_send_confirmation_required'));
+  assert.equal(freshRiskCheck(smsPacket,{finalConfirmation:true}).ok,true);
   assert.ok(freshRiskCheck({...base,approvalPolicy:'never_auto'}).errors.includes('blocked_action'));
   assert.ok(freshRiskCheck({...base,sourceContextJson:{authorization:{ambiguity:['target_identity_unresolved']}}}).errors.includes('ambiguous_packet'));
 });
 
 test('executor runs one supported adapter once, creates receipt, and reconciles source objects',async()=>{
   let store={valExternalActionPackets:[
-    {id:'exec_1',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'create_gmail_draft',targetSystem:'gmail',targetId:'thread_1',payloadPreviewJson:{subject:'Re: Workflow',body:'Hi Aric'},sourceRefsJson:[{source_type:'draft',source_id:'d1',quote_or_summary:'Draft',confidence:0.8}],whyThisActionExists:'Create Gmail draft for review.',whatWillHappen:'Create provider draft.',whatWillNotHappen:'Nothing will be sent.',riskLevel:'low',approvalPolicy:'approval_required',representationRisk:'medium',financialOrLegalRisk:'low',relationshipRisk:'low',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{draftId:'draft_1'},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
-  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[],drafts:[{id:'draft_1',tenantId:'tenant',userId:'user',status:'ready_for_review',subject:'Re: Workflow',sourceContext:{}}]};
+    {id:'exec_1',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'create_gmail_draft',targetSystem:'gmail',targetId:'thread_1',payloadPreviewJson:{subject:'Re: Workflow',body:'Hi Aric'},sourceRefsJson:[{source_type:'draft',source_id:'d1',quote_or_summary:'Draft',confidence:0.8}],whyThisActionExists:'Create Gmail draft for review.',whatWillHappen:'Create provider draft.',whatWillNotHappen:'Nothing will be sent.',riskLevel:'low',approvalPolicy:'approval_required',representationRisk:'medium',financialOrLegalRisk:'low',relationshipRisk:'low',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{draftId:'draft_1',readyForYouId:'ready_1'},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
+  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[],drafts:[{id:'draft_1',tenantId:'tenant',userId:'user',status:'ready_for_review',subject:'Re: Workflow',sourceContext:{}}],readyForYouItems:[{id:'ready_1',tenantId:'tenant',userId:'user',status:'ready_for_review'}]};
   const packetService=createValExternalActionsService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -236,7 +244,10 @@ test('executor runs one supported adapter once, creates receipt, and reconciles 
   assert.equal(result.reconciliation.receipt.reconciliationStatus,'reconciled');
   assert.equal(store.drafts[0].status,'executed');
   assert.equal(store.drafts[0].executionReceiptId,'receipt_exec_1');
+  assert.equal(store.readyForYouItems[0].status,'executed');
+  assert.equal(store.readyForYouItems[0].executionReceiptId,'receipt_exec_1');
   assert.equal(store.valExecutionReconciliationEvents.some(e=>e.targetTable==='drafts'),true);
+  assert.equal(store.valExecutionReconciliationEvents.some(e=>e.targetTable==='ready_for_you_items'),true);
   assert.equal(store.valExternalActionAudit.some(a=>a.action==='executed'&&a.externalActionTaken===true),true);
   const duplicate=await executor.execute('exec_1');
   assert.equal(duplicate.ok,false);
@@ -287,6 +298,110 @@ test('global email send gate creates one approved packet and requires final conf
   assert.equal(sent.packet.providerResponseId,'gmail_msg_1');
   assert.equal(adapterCalls,1);
   assert.equal(store.valExecutionReceipts[0].status,'succeeded');
+});
+
+test('global SMS send gate creates one approved packet and requires final confirmation',async()=>{
+  let store={valExternalActionPackets:[],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
+  const packetService=createValExternalActionsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_sms_gate`
+  });
+  const receiptService=createValExecutionReceiptService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_sms_gate`
+  });
+  const packet=await packetService.createSmsSendPacket({
+    contactId:'contact_michele',
+    recipientName:'Michele',
+    message:'This is a test from VAL. Please reply if you received it.',
+    sourceContext:{source:'voice_test'}
+  });
+  assert.equal(packet.actionType,'send_sms');
+  assert.equal(packet.targetSystem,'GHL');
+  assert.equal(packet.payloadPreviewJson.message,'This is a test from VAL. Please reply if you received it.');
+  assert.equal(packet.status,'draft');
+  const approved=await packetService.approve(packet.id,{note:'Approved SMS.'});
+  assert.equal(approved.status,'approved_local_only');
+  let adapterCalls=0;
+  const executor=createValExternalActionExecutor({
+    packetService,
+    receiptService,
+    executedBy:()=>'user',
+    adapters:{send_sms:async({payload})=>{adapterCalls++;return {providerResponseId:'ghl_sms_1',providerResponseSummary:`Sent SMS to ${payload.contactId}`};}}
+  });
+  const blocked=await executor.execute(packet.id);
+  assert.equal(blocked.ok,false);
+  assert.ok(blocked.risk_check.errors.includes('final_send_confirmation_required'));
+  assert.equal(adapterCalls,0);
+  await packetService.updatePacket(packet.id,{status:'approved_local_only',failureReason:''});
+  const sent=await executor.execute(packet.id,{finalConfirmation:true});
+  assert.equal(sent.ok,true);
+  assert.equal(sent.executed,true);
+  assert.equal(sent.packet.status,'executed');
+  assert.equal(sent.packet.providerResponseId,'ghl_sms_1');
+  assert.equal(adapterCalls,1);
+  assert.equal(store.valExecutionReceipts[0].status,'succeeded');
+});
+
+test('Google Doc append cannot run before its Environment email dependency',async()=>{
+  let store={valExternalActionPackets:[
+    {
+      id:'environment_email',
+      tenantId:'tenant',
+      userId:'user',
+      status:'approved_local_only',
+      actionType:'send_email',
+      targetSystem:'gmail',
+      targetId:'meeting',
+      payloadPreviewJson:{to:'team@example.com',subject:'Meeting overview',body:'Overview'},
+      sourceRefsJson:[{source_type:'transcript',source_id:'t1',quote_or_summary:'Overview',confidence:1}],
+      approvalPolicy:'approval_required',
+      representationRisk:'high',
+      financialOrLegalRisk:'low',
+      relationshipRisk:'low',
+      sourceContextJson:{source:'val_environment'}
+    },
+    {
+      id:'environment_doc',
+      tenantId:'tenant',
+      userId:'user',
+      status:'approved_local_only',
+      actionType:'append_google_doc',
+      targetSystem:'google_docs',
+      targetId:'doc_1',
+      payloadPreviewJson:{documentId:'doc_1',content:'Overview'},
+      sourceRefsJson:[{source_type:'transcript',source_id:'t1',quote_or_summary:'Overview',confidence:1}],
+      approvalPolicy:'approval_required',
+      representationRisk:'medium',
+      financialOrLegalRisk:'low',
+      relationshipRisk:'low',
+      sourceContextJson:{source:'val_environment',dependsOnPacketId:'environment_email'}
+    }
+  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
+  const packetService=createValExternalActionsService({hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},tenantId:()=>'tenant',userId:()=>'user',uuid:prefix=>`${prefix}_dependency`});
+  let docCalls=0;
+  const executor=createValExternalActionExecutor({
+    packetService,
+    adapters:{append_google_doc:async()=>{docCalls++;return {providerResponseId:'doc_1',providerResponseSummary:'Appended'};}}
+  });
+  const blocked=await executor.execute('environment_doc',{finalConfirmation:true});
+  assert.equal(blocked.ok,false);
+  assert.deepEqual(blocked.risk_check.errors,['prior_action_not_completed']);
+  assert.equal(docCalls,0);
+  await packetService.updatePacket('environment_email',{status:'executed',executedAt:new Date().toISOString()});
+  await packetService.updatePacket('environment_doc',{status:'approved_local_only',failureReason:''});
+  const completed=await executor.execute('environment_doc',{finalConfirmation:true});
+  assert.equal(completed.ok,true);
+  assert.equal(completed.executed,true);
+  assert.equal(docCalls,1);
 });
 
 test('executor safely fails with receipt, then retries with same idempotency key',async()=>{

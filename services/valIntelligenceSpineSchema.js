@@ -16,6 +16,22 @@ create table if not exists event_intelligence_runs (
   completed_at timestamptz
 );
 
+create table if not exists val_board_briefing_runs (
+  id text primary key,
+  tenant_id text not null default 'default',
+  user_id text not null default 'default',
+  local_date date not null,
+  briefing_slot text not null,
+  timezone text not null,
+  status text not null default 'running',
+  packet_ids_json jsonb not null default '[]',
+  event_run_id text,
+  error_message text,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  unique (tenant_id,user_id,local_date,briefing_slot)
+);
+
 create table if not exists observer_runs (
   id text primary key,
   tenant_id text not null default 'default',
@@ -140,6 +156,7 @@ alter table ready_for_you_items add column if not exists snoozed_until timestamp
 create index if not exists event_intelligence_runs_lookup_idx on event_intelligence_runs(tenant_id,user_id,created_at desc);
 create index if not exists observer_runs_lookup_idx on observer_runs(tenant_id,user_id,observer_name,created_at desc);
 create index if not exists observer_runs_event_idx on observer_runs(tenant_id,user_id,event_run_id,created_at desc);
+create index if not exists val_board_briefing_runs_lookup_idx on val_board_briefing_runs(tenant_id,user_id,local_date desc,briefing_slot);
 create index if not exists round_table_runs_lookup_idx on round_table_runs(tenant_id,user_id,created_at desc);
 create index if not exists chief_recommendations_lookup_idx on chief_of_staff_recommendations(tenant_id,user_id,status,created_at desc);
 create index if not exists momentum_snapshots_lookup_idx on momentum_snapshots(tenant_id,user_id,created_at desc);

@@ -45,6 +45,23 @@ test('saves raw transcripts before legacy storage and stages tasks before promot
   assert.ok(stage>processStart&&promote>stage,'task must be staged before promotion');
 });
 
+test('transcript action item generation uses layered gates instead of snippet extraction',()=>{
+  assert.match(server,/Use this layered transcript process internally before producing JSON/);
+  assert.match(server,/function transcriptActionItemPassesGate/);
+  assert.match(server,/function normalizeTranscriptActionItems/);
+  assert.match(server,/function normalizeTranscriptDecisions/);
+  assert.match(server,/A transcript snippet is not an action item|Do not create tasks from jokes/);
+  const fallbackStart=server.indexOf('function fallbackTranscriptSummary');
+  const fallbackEnd=server.indexOf('async function processTranscriptPayload',fallbackStart);
+  const fallbackBody=server.slice(fallbackStart,fallbackEnd);
+  assert.match(fallbackBody,/extractFallbackTranscriptActionItems/);
+  assert.doesNotMatch(fallbackBody,/\\b\\(I\\|we\\)\\s\\+\\(will\\|need to\\|can\\|should\\)/);
+  const processStart=server.indexOf('async function processTranscriptPayload(payload)');
+  const processEnd=server.indexOf('function transcriptUiRecord',processStart);
+  const processBody=server.slice(processStart,processEnd);
+  assert.match(processBody,/parsed=normalizeTranscriptAnalysis\(parsed,transcript\)/);
+});
+
 test('requires evidence, confidence, review state, and action traceability',()=>{
   assert.match(server,/source_quote text not null/);
   assert.match(server,/match_confidence numeric not null/);
@@ -245,7 +262,7 @@ test('transcript inbox supports direct upload and clearing broken transcript arc
 test('fallback summaries are not counted as hard processing failures',()=>{
   assert.match(server,/function isHardTranscriptProcessingFailure/);
   assert.match(server,/summary==='fallback_complete'&&processing==='complete'/);
-  assert.match(server,/failedProcessing:mapped\.filter\(isHardTranscriptProcessingFailure\)\.length/);
+  assert.match(server,/failedProcessing:allMapped\.filter\(isHardTranscriptProcessingFailure\)\.length/);
 });
 
 test('transcript detail uses a typed transcript Working Brief instead of freeform transcript chat',()=>{
@@ -325,6 +342,15 @@ test('creates transcript tasks from the exact Krisp action line',()=>{
   assert.match(server,/sourceQuote:exactActionItem/);
   assert.match(server,/preserveSourceTitle:true/);
   assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
+});
+
+test('Home task projection uses the canonical transcript owner and consolidates repeated Action Items',()=>{
+  assert.match(server,/async function canonicalTranscriptTaskProjection/);
+  assert.match(server,/\[tenantId\(\),VAL_USER_ID,bounded\]/);
+  assert.match(server,/function executiveTranscriptTaskTitle/);
+  assert.match(server,/function mergeTranscriptTaskProjection/);
+  assert.match(server,/related_task_ids/);
+  assert.match(server,/tt\.task_id=any\(\$1::text\[\]\)/);
 });
 
 test('exposes drafts and settings templates navigation',()=>{

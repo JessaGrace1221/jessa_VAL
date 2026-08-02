@@ -1,4 +1,6 @@
 const {createValIntelligenceSpine} = require('./valIntelligenceSpine');
+const {buildObserverEvidenceLedger} = require('./valObserverEvidence');
+const {publicObserverDefinitions,publicObserverBlockDefinitions} = require('./valObserverRegistry');
 
 function parseLimit(value,defaultValue=30,max=200){
   return Math.max(1,Math.min(Number(value)||defaultValue,max));
@@ -8,10 +10,17 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
   const spine = deps.spine || createValIntelligenceSpine(deps);
   const waitForDb = typeof deps.valDbReady === 'function' ? deps.valDbReady : async()=>{};
   const auditLog = typeof deps.auditLog === 'function' ? deps.auditLog : async()=>{};
+  const completeCanonicalWorkItem = typeof deps.completeCanonicalWorkItem === 'function' ? deps.completeCanonicalWorkItem : null;
+  const scheduledOnly = deps.scheduledOnly === true;
 
   app.post('/api/val/events/intelligence-pass',async(req,res)=>{
     try{
       await waitForDb();
+      if(scheduledOnly)return res.status(409).json({
+        ok:false,
+        scheduled:true,
+        error:'The Board of Observers runs at the morning, midday, and end-of-day briefings.'
+      });
       const result=await spine.runIntelligencePass({
         event:req.body?.event||{type:req.body?.eventType||'manual',sourceType:req.body?.sourceType||'api',sourceId:req.body?.sourceId||''},
         req,
@@ -32,6 +41,23 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.get('/api/val/observers/evidence',async(req,res)=>{
+    try{
+      await waitForDb();
+      const observerName=String(req.query.observerName||'');
+      const runs=await spine.listObserverRuns({
+        limit:parseLimit(req.query.limit,200),
+        observerName
+      });
+      res.json({
+        ok:true,
+        definitions:publicObserverDefinitions(),
+        blockDefinitions:publicObserverBlockDefinitions(),
+        ...buildObserverEvidenceLedger(runs,{observerName})
+      });
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.get('/api/val/round-table/runs',async(req,res)=>{
     try{
       await waitForDb();
@@ -46,6 +72,11 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
       if(req.body?.roundTableRunId||req.body?.eventRunId){
         result=await spine.recommendChiefOfStaff({roundTableRunId:String(req.body.roundTableRunId||''),eventRunId:String(req.body.eventRunId||'')});
       }else{
+        if(scheduledOnly)return res.status(409).json({
+          ok:false,
+          scheduled:true,
+          error:'The Chief of Staff receives a new Board synthesis at the morning, midday, and end-of-day briefings.'
+        });
         const pass=await spine.runIntelligencePass({event:{type:'chief_recommendation_request',sourceType:'api'},req,includeExternal:!!req.body?.includeExternal});
         result=pass.recommendation;
       }
@@ -60,12 +91,42 @@ function registerValIntelligenceSpineRoutes(app,deps={}){
   app.post('/api/val/chief-of-staff/:id/complete',async(req,res)=>{
     try{
       await waitForDb();
+      const canonicalWorkItemId=String(req.body?.canonicalWorkItemId||req.body?.canonical_work_item_id||req.body?.feedback?.canonicalWorkItemId||req.body?.feedback?.canonical_work_item_id||'').trim();
+      let canonicalWork=null;
+      if(canonicalWorkItemId&&completeCanonicalWorkItem){
+        canonicalWork=await completeCanonicalWorkItem(canonicalWorkItemId,{
+          status:'complete',
+          eventType:'alignment_marked_done',
+          payload:{
+            surface:'home_alignment',
+            chiefRecommendationId:req.params.id,
+            chiefQueuePacketId:req.body?.feedback?.packetId||req.body?.feedback?.chiefQueuePacketId||''
+          }
+        });
+      }
       const recommendation=await spine.completeChiefRecommendation(req.params.id,{feedback:req.body?.feedback||{},completionNote:req.body?.completionNote||req.body?.note||'',outcome:req.body?.outcome||'completed'});
       if(!recommendation)return res.status(404).json({ok:false,error:'Recommendation not found'});
       await auditLog({req,action:'chief_of_staff_recommendation_completed',resourceType:'chief_of_staff_recommendation',resourceId:req.params.id,metadata:{outcome:recommendation.status||'completed'},success:true}).catch(()=>{});
-      res.json({ok:true,recommendation});
+      res.json({ok:true,recommendation,canonicalWork});
     }catch(e){
       await auditLog({req,action:'chief_of_staff_recommendation_complete_failed',resourceType:'chief_of_staff_recommendation',resourceId:req.params.id,metadata:{error:e.message},success:false}).catch(()=>{});
+      res.status(500).json({ok:false,error:e.message});
+    }
+  });
+
+  app.post('/api/val/events/intelligence-retry',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(scheduledOnly)return res.status(409).json({
+        ok:false,
+        scheduled:true,
+        error:'Automatic and manual Board retries are disabled. Unreviewed packets remain available for the next scheduled briefing.'
+      });
+      const result=await spine.retryFailedIntelligenceRuns({limit:req.body?.limit||10});
+      await auditLog({req,action:'val_intelligence_delivery_retry',resourceType:'event_intelligence_run',metadata:result,success:result.ok}).catch(()=>{});
+      res.status(result.ok?200:207).json(result);
+    }catch(e){
+      await auditLog({req,action:'val_intelligence_delivery_retry_failed',resourceType:'event_intelligence_run',metadata:{error:e.message},success:false}).catch(()=>{});
       res.status(500).json({ok:false,error:e.message});
     }
   });

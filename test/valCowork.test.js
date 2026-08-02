@@ -307,12 +307,139 @@ test('Observer and Chief of Staff conversations resume their own durable message
   assert.equal(replies.length,2);
 });
 
-test('Hearth exposes unresolved tasks with source and prepared-work continuation paths',()=>{
+test('all 14 Observer conversations answer from their own evidence-backed lens',async()=>{
+  const observers=[
+    'Executive Inbox','Relationship','Project','Capacity','Courage','Delight','Opportunity',
+    'Momentum','Meaning','Synchronicity','Commitment','Calendar','Environment','Witnessing'
+  ];
+  for(const observerName of observers){
+    let modelCalls=0;
+    const {service}=serviceFor({generateConversationReply:async()=>{modelCalls+=1;return 'Model fallback should not be needed.';}});
+    const opened=await service.openEntry({
+      entrypointId:'observer.discussion',
+      scope:{entityType:'observer',entityId:observerName.toLowerCase().replace(/\s+/g,'-'),sectionId:'observer'},
+      title:`Talk with the ${observerName} Observer`,
+      context:{
+        selectedObserver:{
+          name:observerName,
+          meaningfulReviews:[{
+            status:'observed',
+            observerName,
+            people:['Mike Nonhof'],
+            projects:['GOALL'],
+            decisionObjects:['dashboard handoff'],
+            lensFinding:`${observerName} noticed that the GOALL dashboard handoff still needs a clear decision.`,
+            evidenceLine:'GOALL transcript: Mike asked for a clear dashboard handoff and owner.'
+          }]
+        },
+        sourceTrail:[{line:'Source: GOALL transcript. Signal: Mike asked for a clear dashboard handoff and owner.'}]
+      }
+    });
+    const answered=await service.respond(opened.session.id,{answer:'What are you seeing here, and why does it matter?'});
+    assert.equal(modelCalls,0,observerName);
+    assert.match(answered.message,new RegExp(observerName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),observerName);
+    assert.match(answered.message,/Mike Nonhof|GOALL/i,observerName);
+    assert.match(answered.message,/I am saying that because/i,observerName);
+  }
+});
+
+test('every structured Co-Work entry can answer a scoped question without losing its unfinished work',async()=>{
+  const richProject={
+    ...project(),
+    desiredOutcome:'A ready partnership launch.',
+    nextStepOwner:'Aric',
+    projectOwner:'Aric',
+    relationships:['Aric'],
+    projectDocuments:[{id:'doc_mou',title:'Forever Freedom MOU',intendedUse:'Define the partnership terms.'}],
+    workstreams:[{
+      id:'launch',
+      name:'Partnership launch',
+      purpose:'Launch the partnership.',
+      accountableOwner:'Aric',
+      currentState:'active',
+      firstConcreteMove:'Confirm the MOU.',
+      milestone:'MOU approved.',
+      dependencies:'Final commercial terms.',
+      monitoringSignal:'Approval received.',
+      linkedPeople:['Aric']
+    }],
+    sopId:'frisson_partner_onboarding',
+    sopName:'Frisson Partner Onboarding',
+    projectOperatingSystem:{sopId:'frisson_partner_onboarding',sopName:'Frisson Partner Onboarding'},
+    projectPhase:'Discovery',
+    metadataJson:{projectOnboarding:{status:'needs_interview'}}
+  };
+  const cases=[
+    ['project.overview',{entityType:'project_section',entityId:richProject.id,sectionId:'project_overview'}],
+    ['project.identity',{entityType:'project_section',entityId:richProject.id,sectionId:'identity'}],
+    ['project.onboarding',{entityType:'project_section',entityId:richProject.id,sectionId:'project_interview'}],
+    ['project.people',{entityType:'project_section',entityId:richProject.id,sectionId:'people'}],
+    ['project.documents',{entityType:'project_section',entityId:richProject.id,sectionId:'documents'}],
+    ['project.milestones',{entityType:'project_section',entityId:richProject.id,sectionId:'milestones'}],
+    ['project.monitoring',{entityType:'project_section',entityId:richProject.id,sectionId:'monitoring_rules'}],
+    ['project.relationship_nurture',{entityType:'project_section',entityId:richProject.id,sectionId:'relationship_nurture'}],
+    ['project.why_it_matters',{entityType:'project_section',entityId:richProject.id,sectionId:'why_it_matters'}],
+    ['project.risk',{entityType:'project_section',entityId:richProject.id,sectionId:'risk_blocker'}],
+    ['project.narrative',{entityType:'project_section',entityId:richProject.id,sectionId:'working_narrative'}],
+    ['project.needs_next',{entityType:'project_section',entityId:richProject.id,sectionId:'what_val_needs_next'}],
+    ['project.sop',{entityType:'project_section',entityId:richProject.id,sectionId:'sop_fit'}],
+    ['project.phase',{entityType:'project_section',entityId:richProject.id,sectionId:'project_phase'}],
+    ['project.prepared_work',{entityType:'project_section',entityId:richProject.id,sectionId:'prepared_work'}],
+    ['project.workstreams',{entityType:'project_section',entityId:richProject.id,sectionId:'workstreams'}],
+    ['project.next_move',{entityType:'project_section',entityId:richProject.id,sectionId:'next_move'}],
+    ['transcript.working_brief',{entityType:'transcript',entityId:'transcript_forever_freedom',sectionId:'working_brief'}],
+    ['transcript.action_item',{entityType:'transcript',entityId:'transcript_forever_freedom',sectionId:'action_item',actionItemIndex:0}],
+    ['email.thread',{entityType:'email_thread',entityId:'email_mou',messageId:'email_mou',threadId:'thread_mou',conversationId:'conversation_mou',sectionId:'reply_draft'}],
+    ['relationship.overview',{entityType:'relationship',entityId:'rel_aric',sectionId:'overview'}],
+    ['relationship.section',{entityType:'relationship_section',entityId:'rel_aric',sectionId:'needs'}]
+  ];
+  for(const [entrypointId,scope] of cases){
+    const calls=[];
+    const {service}=serviceFor({
+      loadedProject:richProject,
+      generateConversationReply:async input=>{
+        calls.push(input);
+        return 'Here is my read from the context already open. The MOU is the decision-bearing source, and the next useful question is whether the final terms are ready to approve.';
+      }
+    });
+    const opened=await service.openEntry({entrypointId,scope});
+    const originalStatus=opened.workItem.status;
+    const originalQuestion=opened.question?.question || '';
+    const answered=await service.respond(opened.session.id,{answer:'What do you see here, and what should I think about next?'});
+    assert.equal(calls.length,1,entrypointId);
+    assert.equal(calls[0].entrypointId,entrypointId);
+    assert.equal(calls[0].scopeId,opened.session.scope.entityId);
+    assert.equal(answered.workItem.status,originalStatus,entrypointId);
+    assert.equal(answered.session.state.messages.length,2,entrypointId);
+    assert.match(answered.message,/MOU is the decision-bearing source/i,entrypointId);
+    assert.equal(answered.question?.question || '',originalQuestion,entrypointId);
+  }
+});
+
+test('structured Co-Work remains source-grounded when the reasoning provider is unavailable',async()=>{
+  const {service}=serviceFor({generateConversationReply:async()=>{throw new Error('provider quota exceeded');}});
+  const opened=await service.openEntry({
+    entrypointId:'project.identity',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'identity'}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What should I clarify first?'});
+  assert.match(answered.message,/For Forever Freedom onboarding, I would clarify this first/);
+  assert.match(answered.message,/confirm or correct its name/i);
+  assert.match(answered.message,/What I already have:/);
+  assert.equal(answered.session.status,opened.session.status);
+  assert.equal(answered.workItem.status,opened.workItem.status);
+  assert.doesNotMatch(answered.message,/provider|quota|backend|shorter sentence/i);
+});
+
+test('Hearth exposes all unresolved tasks with source and prepared-work continuation paths',()=>{
   assert.match(hearthHtml,/class="task-companion-button"/);
   assert.match(hearth,/function openTaskWorkspace/);
-  assert.match(hearth,/getJson\('\/api\/val\/tasks'/);
+  assert.match(hearth,/getJson\('\/api\/val\/work-items\/tasks\?limit=500'/);
+  assert.match(hearth,/Open your tasks/);
+  assert.match(hearth,/Every transcript Action Item stays here until it is done/);
   assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
-  assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=5&includeSnoozed=true'/);
+  assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=25'/);
+  assert.match(hearth,/function refreshPreparedWorkIncrementally/);
   assert.match(hearth,/function openTaskSourceTranscript/);
   assert.match(hearth,/function openTaskPreparedWork/);
   assert.match(hearth,/taskCompanionButton\?\.addEventListener\('click', openTaskWorkspace\)/);
@@ -323,8 +450,206 @@ test('Hearth opens Observer and Chief cards as resumable scoped Co-Work conversa
   assert.match(hearth,/function openObserverCowork/);
   assert.match(hearth,/const entrypointId = isChief \? 'board\.chief_of_staff' : 'observer\.discussion'/);
   assert.match(hearth,/data-observer-cowork="chief-of-staff"/);
-  assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:true,suppressMessage:true\}\)/);
-  assert.match(hearth,/observerButton\.dataset\.observerCowork/);
+  assert.match(hearth,/const preserveInitialContext = Boolean\(options\.initialMessage \|\| options\.contextPatch\?\.openingAnswer \|\| options\.contextPatch\?\.homeFullContext\)/);
+  assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:!userAlreadyStarted && !preserveInitialContext,suppressMessage:true\}\)/);
+  assert.match(hearth,/function handleObserverBoardNodeActivation/);
+  assert.match(hearth,/if\(node\.classList\.contains\('observer-node'\)\)\{\s*updateObserverSelectedCard\(observerId\);/);
+  assert.match(hearth,/void openObserverCowork\(observerId,node\.dataset\?\.observerRole \|\| 'observer'\)/);
+});
+
+test('Observer chat prioritizes live packet evidence over static card fallback',()=>{
+  assert.match(hearth,/const livePackets = safeArray\(context\.board\?\.livePackets \|\| context\.board\?\.packets \|\| observerBoardState\.livePackets\)/);
+  assert.match(hearth,/const proofReviews = normalizedObserverProofReviews\(context\)/);
+  assert.match(hearth,/proofReviews\.length \? proofReviews : observerMeaningfulLiveReviews\(observer\.name, 6\)/);
+  assert.match(hearth,/tone\|changed\?\|shifts\?\|friction/);
+  assert.match(hearth,/what changed\|how\.\*changed/);
+  assert.match(hearth,/is answering from packet reviews, not from a generic guess/);
+  assert.match(hearth,/I found a repair signal, but the packet does not attach a reliable person name yet/);
+  assert.match(hearth,/observerReviewNamedLine/);
+  assert.match(hearth,/I would rather say “not enough signal yet” than make up a relationship, risk, or pattern/);
+  assert.match(server,/Answer the user like a specific Board member, not like a generic assistant/);
+  assert.match(server,/First answer the exact question in plain language/);
+  assert.match(server,/Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review/);
+  assert.match(server,/timeoutMs:isBoardConversation\?20000:12000/);
+});
+
+test('Observer Co-Work evidence questions answer from the loaded brief before model lookup',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        currentlySeeing:'Mike sounded frustrated after the dashboard handoff stayed vague.',
+        watching:'Tone, repair opportunities, mutual value, and signs of distance.',
+        evidenceItems:['Transcript: GOALL dashboard handoff','Calendar: Monday GOALL touch point'],
+        concern:'The relationship may need repair before strategy moves forward.',
+        explore:'Which relationship needs presence before strategy?'
+      },
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What evidence do you have? How has tone changed?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would start with Mike|loaded Observer card|live packet reviews/i);
+  assert.match(answered.message,/Mike sounded frustrated|GOALL dashboard handoff/i);
+  assert.match(answered.message,/Source: GOALL transcript/i);
+});
+
+test('Observer Co-Work can answer from Home proof packet reviews without model lookup',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{name:'Relationship'},
+      observerProofReviews:[{
+        status:'observed',
+        observerName:'Relationship',
+        people:['Mike'],
+        projects:['GOALL'],
+        decisionObjects:['dashboard handoff'],
+        line:'People: Mike | Projects: GOALL | Work: dashboard handoff - Mike may need relational attention.',
+        evidenceLine:'GOALL dashboard handoff - transcript #krisp-goall: Mike asked twice for a cleaner dashboard handoff.'
+      }],
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would start with Mike/);
+  assert.match(answered.message,/I am saying that because/);
+  assert.match(answered.message,/GOALL/);
+  assert.match(answered.message,/dashboard handoff/);
+  assert.match(answered.message,/What would make this feel clear, respectful/);
+});
+
+test('Observer Co-Work can answer from loaded card text when proof reviews are missing',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        currentlySeeing:'Mike sounded frustrated because the GOALL dashboard handoff stayed vague.',
+        watching:'Changes in tone, repair opportunities, mutual value, and signs of distance.',
+        evidenceItems:['Transcript: GOALL dashboard handoff'],
+        concern:'The relationship may need repair before strategy moves forward.',
+        explore:'Which relationship needs presence before strategy?'
+      },
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would start with Mike/);
+  assert.match(answered.message,/connected to GOALL/);
+  assert.match(answered.message,/dashboard handoff/);
+  assert.match(answered.message,/Source: GOALL transcript/);
+});
+
+test('Observer Co-Work answers tone questions from proof packet reviews immediately',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async ()=>{
+    modelCalls += 1;
+    return 'model should not be needed';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{name:'Relationship'},
+      observerProofReviews:[{
+        status:'observed',
+        observerName:'Relationship',
+        people:['Mike'],
+        projects:['GOALL'],
+        decisionObjects:['dashboard handoff'],
+        line:'People: Mike | Projects: GOALL | Work: dashboard handoff - Mike sounded frustrated when the dashboard handoff stayed vague.',
+        evidenceLine:'GOALL dashboard handoff - transcript #krisp-goall: Mike asked twice for a cleaner dashboard handoff.'
+      }],
+      sourceTrail:[
+        {line:'Source: GOALL transcript. Signal: Mike asked twice for a cleaner dashboard handoff.'}
+      ]
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'How has tone changed?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/I would start with Mike/);
+  assert.match(answered.message,/Mike sounded frustrated/);
+  assert.match(answered.message,/GOALL dashboard handoff - transcript/);
+});
+
+test('Observer Co-Work rejects a legacy calendar review manufactured from routing language',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async()=>{modelCalls+=1;return 'model should not be needed';}});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationship',sectionId:'observer'},
+    title:'Talk with the Relationship Observer',
+    context:{
+      selectedObserver:{
+        name:'Relationship',
+        meaningfulReviews:[{
+          status:'observed',
+          observerName:'Relationship',
+          people:['Fix'],
+          lensFinding:'Fix has a relationship signal worth inspecting.',
+          evidence:{
+            sourceType:'calendar_event',
+            sourceId:'calendar_fix',
+            packetTitle:'Fix the calculator',
+            quoteOrSummary:'Provider: google. Title: Fix the calculator. Starts at 9:30 AM.'
+          }
+        }]
+      }
+    }
+  });
+  const answered=await service.respond(opened.session.id,{answer:'Which relationship needs repair?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/source evidence does not support the claim/i);
+  assert.match(answered.message,/not going to name a person/i);
+  assert.doesNotMatch(answered.message,/I would start with Fix/i);
+});
+
+test('Observer Co-Work gives an immediate human no-signal answer without a model call',async()=>{
+  let modelCalls=0;
+  const {service}=serviceFor({generateConversationReply:async()=>{modelCalls+=1;return 'model should not be needed';}});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'capacity',sectionId:'observer'},
+    title:'Talk with the Capacity Observer',
+    context:{selectedObserver:{name:'Capacity'}}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'What are you seeing, and why?'});
+  assert.equal(modelCalls,0);
+  assert.match(answered.message,/does not have a source-backed signal to claim/i);
+  assert.match(answered.message,/found nothing strong enough/i);
+  assert.match(answered.message,/specific person, project, or source/i);
 });
 
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
@@ -914,7 +1239,7 @@ test('next move interview is scoped, field-targeted, review-gated, and applied w
   assert.equal(appliedNextMoves[0].timingOrTrigger,'Before the Friday review');
 });
 
-test('Transcript Working Brief remains scoped to the selected Krisp receipt and produces an exact internal draft',async()=>{
+test('Transcript conversation remains scoped to the selected Krisp receipt without creating a draft',async()=>{
   const {service,preparedTranscriptOverviews}=serviceFor();
   const opened=await service.openEntry({
     entrypointId:'transcript.working_brief',
@@ -922,20 +1247,34 @@ test('Transcript Working Brief remains scoped to the selected Krisp receipt and 
   });
   assert.equal(opened.session.scope.entityId,'transcript_forever_freedom');
   assert.equal(opened.session.workingBrief.transcriptTitle,'Forever Freedom follow-up');
-  assert.equal(opened.question.targetField,'prepared_artifact.email_draft');
+  assert.equal(opened.question.targetField,'transcript_working_brief.conversation');
   assert.equal(opened.session.workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
   assert.equal(opened.session.workingBrief.sourceReceipt.keyPoints[0],'Purpose of the call: follow up on Forever Freedom.');
-  assert.equal(opened.workItem.status,'needs_review');
-  assert.equal(opened.workItem.type,'transcript_meeting_overview');
-  assert.equal(opened.workItem.payload.preparedArtifact.body,opened.session.workingBrief.sourceReceipt.body);
+  assert.equal(opened.session.status,'needs_input');
+  assert.equal(opened.workItem.status,'needs_input');
+  assert.equal(opened.workItem.type,'transcript_conversation');
+  assert.equal(opened.workItem.payload.preparedArtifact,undefined);
+  assert.equal(preparedTranscriptOverviews.length,0);
+});
 
-  const applied=await service.applyWorkItem(opened.workItem.id);
-  assert.equal(applied.workItem.status,'applied');
-  assert.equal(applied.receipt.action,'prepare_transcript_meeting_overview');
-  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
-  assert.equal(preparedTranscriptOverviews.length,1);
-  assert.equal(preparedTranscriptOverviews[0].transcriptId,'transcript_forever_freedom');
-  assert.equal(applied.draft.body,opened.session.workingBrief.sourceReceipt.body);
+test('Transcript Working Brief answers every typed turn from the selected transcript context',async()=>{
+  const turns=[];
+  const {service}=serviceFor({generateConversationReply:async input=>{
+    turns.push(input);
+    return 'Anthony owns the website-link follow-up. The meeting purpose was to follow up on Forever Freedom.';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'transcript.working_brief',
+    scope:{entityType:'transcript',entityId:'transcript_forever_freedom',sectionId:'working_brief'}
+  });
+  const answered=await service.respond(opened.session.id,{answer:'Outline the follow-up and who owns it.'});
+  assert.equal(turns.length,1);
+  assert.equal(turns[0].entrypointId,'transcript.working_brief');
+  assert.equal(turns[0].scopeId,'transcript_forever_freedom');
+  assert.equal(turns[0].workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
+  assert.equal(answered.session.state.messages[0].content,'Outline the follow-up and who owns it.');
+  assert.match(answered.message,/Anthony owns/i);
+  assert.equal(answered.workItem.status,'needs_input');
 });
 
 test('Transcript Action Item remains word for word, creates only one internal Commitment, and rejects an unselected line',async()=>{
@@ -1137,7 +1476,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
-  assert.match(hearth,/if\(await submitActiveCoworkEntry\(\)\) return;/);
+  assert.match(hearth,/await submitActiveCoworkEntry\(spoken\)/);
   assert.match(hearth,/data-cowork-apply-workstreams/);
   assert.match(hearth,/data-cowork-apply-project-onboarding/);
   assert.match(hearth,/data-cowork-apply-project-identity/);
@@ -1172,6 +1511,10 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
+  assert.match(hearth,/timeoutMessage:'Project Managers took too long to open the live index\.'/);
+  assert.match(hearth,/const knownItems = Object\.values\(projectIndexProfiles\)\.filter\(projectIsDrawerAdmitted\);/);
+  assert.doesNotMatch(hearth,/if\(canUseApi && !projectIndexLoaded\)\{[\s\S]{0,240}const knownItems = projectIndexItems\(\);/);
+  assert.match(hearth,/void hydrateProjectIndex\(\);/);
   assert.match(hearth,/const selectedProject = selectedProjectId && projectIndexItems\(\)\.find/);
 });
 

@@ -1,0 +1,115 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
+const js = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
+
+test('all eight Executive Functions keep their existing names and entry points', () => {
+  [
+    'Alignment',
+    'Leverage',
+    'Executive Inbox',
+    'Project Managers',
+    'Stewardship',
+    'Transcripts',
+    'Lead Intelligence',
+    'VAL'
+  ].forEach((label) => assert.match(html, new RegExp(`>${label}<`)));
+});
+
+test('opened Executive Functions use the shared VAL Studio shell', () => {
+  assert.match(css, /Executive Functions inherit VAL Studio's calm operating grammar/);
+  assert.match(css, /width:min\(1180px,92vw\)!important/);
+  assert.match(css, /height:min\(880px,90vh\)!important/);
+  assert.match(css, /linear-gradient\(120deg,rgba\(241,247,236,.3\),rgba\(255,255,255,.76\) 46%,rgba\(252,235,237,.28\)\)/);
+});
+
+test('function headers remain visible and close controls remain crisp', () => {
+  assert.match(css, /\.source-detail-header > div:first-child\{\s*display:grid!important/);
+  assert.match(css, /\.source-detail-header h3\{/);
+  assert.match(css, /border-radius:6px!important/);
+  assert.match(html, /class="close-(?:correspondence|project|relationship|timeline|source|val)-detail"/);
+});
+
+test('dense functions preserve distinct executive layouts', () => {
+  assert.match(css, /Executive Inbox opens as a calm queue and selected conversation/);
+  assert.match(css, /Transcripts keeps one quiet index beside one readable source brief/);
+  assert.match(css, /Lead Intelligence follows Studio's three-step contract without extra framing/);
+  assert.match(css, /Project Managers reads like an executive project index/);
+});
+
+test('dense functions share a generous interior spacing contract', () => {
+  assert.match(css, /Executive Function interior contract: one generous gutter at every depth/);
+  assert.match(css, /--function-inner-gutter:clamp\(24px,2\.4vw,32px\)/);
+  assert.match(css, /\.drawer-tray\.project-open \.project-rolodex\{\s*display:grid!important;\s*flex:1 1 auto!important/);
+  assert.match(css, /\.drawer-tray\.relationship-open \.relationship-v1-panel\.active\{/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index,\s*\.drawer-tray\.timeline-open \.transcript-detail-panel\{\s*padding:var\(--function-inner-gutter\)!important/);
+  assert.match(css, /\.drawer-tray\.correspondence-open \.correspondence-queue,\s*\.drawer-tray\.correspondence-open \.correspondence-thread/);
+});
+
+test('Executive Inbox converts HTML found in either email body field to readable text', () => {
+  assert.match(js, /function correspondenceReadableEmailBody\(body = '', bodyHtml = ''\)/);
+  assert.match(js, /bodyContainsMarkup/);
+  assert.match(js, /p\.textContent = correspondenceReadableEmailBody\(message\.body, message\.bodyHtml\)/);
+  assert.doesNotMatch(js, /p\.textContent = message\.body \|\| correspondenceReadableTextFromHtml/);
+});
+
+test('Transcripts reset selected details to the top and keep title counts in stable rows', () => {
+  assert.match(js, /function resetTimelineTranscriptDetailScroll\(\)/);
+  assert.match(js, /node\.scrollTop = 0/);
+  assert.match(js, /window\.requestAnimationFrame\(resetTimelineTranscriptDetailScroll\)/);
+  assert.match(css, /Transcript reading position and Network index clarity/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel,[\s\S]*overflow-anchor:none!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-empty\[hidden\],[\s\S]*display:none!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-index > \.timeline-status-header\{[\s\S]*grid-template-columns:minmax\(0,1fr\)!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*padding:clamp\(34px,3\.2vw,46px\)!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.transcript-detail-panel\{[\s\S]*align-content:start!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-source-receipt\[data-transcript-section="action-items"\],[\s\S]*padding:26px 28px 28px!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-source-receipt\[data-transcript-section="action-items"\] \.timeline-source-lines > div,[\s\S]*box-sizing:border-box!important;[\s\S]*padding:14px 16px!important/);
+});
+
+test('open surfaces use one predictable vertical scroll owner', () => {
+  assert.match(css, /System-wide scroll ownership: every open surface has one predictable vertical path/);
+  assert.match(css, /The function detail owns vertical scrolling; its content should not trap the wheel/);
+  assert.match(css, /\.drawer-tray\.timeline-open :is\([\s\S]*\.transcript-detail-panel[\s\S]*overflow-y:visible!important/);
+  assert.match(css, /\.drawer-tray\.correspondence-open :is\([\s\S]*\.correspondence-thread-body[\s\S]*overflow-y:visible!important/);
+  assert.match(css, /\.desk-workspace:not\(\.observer-board-mode\):not\(\.home-cowork-mode\) > \.workspace-panel\{[\s\S]*overflow-y:auto/);
+  assert.match(css, /body:has\(\.desk-workspace\[aria-hidden="false"\]\)[\s\S]*overflow:hidden/);
+  assert.match(js, /function resetOpenSurfaceScroll\(surface, nestedSelectors = \[\]\)/);
+  assert.match(js, /function finishOpeningExecutiveFunction\(\)/);
+  assert.match(js, /resetOpenSurfaceScroll\(fullCalendarPanel, \['\.calendar-panel-inner'\]\)/);
+  assert.match(js, /resetOpenSurfaceScroll\(deskWorkspace, \['\.workspace-panel', '\.observer-selected-card'\]\)/);
+});
+
+test('Stewardship Network index contains only names and context refresh actions', () => {
+  const rowRenderer = js.slice(
+    js.indexOf('function appendRelationshipRolodexRow'),
+    js.indexOf('function stewardshipRelationshipPhone')
+  );
+  assert.ok(rowRenderer);
+  assert.match(rowRenderer, /button\.append\(name\)/);
+  assert.match(rowRenderer, /enrich\.textContent = 'Refresh context'/);
+  assert.doesNotMatch(rowRenderer, /rolodex-(?:status|why|open|next|evidence)/);
+  assert.doesNotMatch(rowRenderer, /relationship-enrichment-receipt/);
+  assert.match(css, /\.drawer-tray\.relationship-open \.relationship-rolodex-row\{[\s\S]*grid-template-columns:minmax\(0,1fr\) auto!important/);
+});
+
+test('Executive Function dismissal returns to the compass and VAL Studio owns the top layer', () => {
+  const executiveFunctionDismissal = js.slice(
+    js.indexOf("const closeButton = event.target.closest('.close-val-detail"),
+    js.indexOf('function openCompassAxisWorkspace')
+  );
+  const studioOpen = js.slice(
+    js.indexOf('function openTeachValSession'),
+    js.indexOf('function openWorkspace(roomName)')
+  );
+  assert.match(executiveFunctionDismissal, /clickedOutsideExecutiveFunction = activeExecutiveFunction && !event\.target\.closest\('#drawer-tray'\)/);
+  assert.match(executiveFunctionDismissal, /event\.stopImmediatePropagation\(\)/);
+  assert.match(executiveFunctionDismissal, /returnToExecutiveCompass\(\)/);
+  assert.match(studioOpen, /closeDrawer\(\)/);
+  assert.match(css, /\.hearth-shell \.desk-workspace:has\(\.val-studio-surface\)\[aria-hidden="false"\]\{[\s\S]*z-index:5400!important/);
+});
