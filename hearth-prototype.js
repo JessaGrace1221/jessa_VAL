@@ -9215,6 +9215,8 @@ function normalizeCorrespondenceReadyItem(item = {}){
     provider: metadata.provider || item.provider || 'gmail',
     googleProvider: metadata.googleProvider || metadata.google_provider || item.googleProvider || item.google_provider || 'google',
     accountEmail: metadata.accountEmail || metadata.account_email || item.accountEmail || item.account_email || '',
+    sourceAccount: metadata.sourceAccount || metadata.source_account || metadata.accountEmail || metadata.account_email || item.sourceAccount || item.source_account || item.accountEmail || item.account_email || '',
+    sourceAccounts: Array.isArray(metadata.sourceAccounts) ? metadata.sourceAccounts.filter(Boolean) : (Array.isArray(item.sourceAccounts) ? item.sourceAccounts.filter(Boolean) : []),
     senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || metadata.fromEmail || metadata.senderEmail || '',
     senderName: sender.name || latestInbound.fromName || latestInbound.from_name || metadata.fromName || metadata.senderName || metadata.contactName || '',
     receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || item.createdAt || '',
@@ -9261,6 +9263,8 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     provider: email.provider || 'gmail',
     googleProvider: email.googleProvider || email.google_provider || 'google',
     accountEmail: email.accountEmail || email.account_email || '',
+    sourceAccount: email.sourceAccount || email.source_account || email.accountEmail || email.account_email || '',
+    sourceAccounts: Array.isArray(email.sourceAccounts) ? email.sourceAccounts.filter(Boolean) : [],
     senderEmail: sender.email || '',
     senderName: sender.name || sender.email || 'Gmail sender',
     receivedAt: email.date || email.receivedAt || email.internalDate || '',
@@ -9268,7 +9272,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     status: waitingForResponse ? 'waiting_for_response' : (needsContext ? 'needs_context' : 'ready_for_review'),
     summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
     whyNow: admission.reason || email.recommendedAction || email.reason || 'This thread matched the Executive Inbox rule gate.',
-    context: [sender.name || sender.email, email.accountEmail, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
+    context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
     prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.'),
     needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.'),
     draftBody: staleDraft ? '' : (draft.body || ''),
@@ -9284,6 +9288,12 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     noExternalAction: true,
     raw: email
   };
+}
+
+function googleConnectionLabel(item = {}){
+  const accounts = Array.isArray(item.sourceAccounts) ? item.sourceAccounts.filter(Boolean) : [];
+  const value = accounts.join(', ') || item.sourceAccount || item.accountEmail || item.account_email || '';
+  return String(value || '').trim();
 }
 
 function correspondenceItemsFromEmailIntelligence(result = {}){
@@ -9979,9 +9989,11 @@ function renderCorrespondenceList(){
     const small = document.createElement('small');
     const dateLabel = correspondenceHumanContactTime(item.receivedAt || item.latestAt || item.lastContact || item.date || '');
     const senderLabel = item.senderName || item.senderEmail || '';
+    const connectionLabel = googleConnectionLabel(item);
     small.textContent = [
       senderLabel ? 'From ' + senderLabel : '',
       dateLabel,
+      connectionLabel ? 'Received by ' + connectionLabel : '',
       item.context || item.source || ''
     ].filter(Boolean).join(' · ');
     const priority = document.createElement('em');
@@ -10806,7 +10818,9 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('summary', selected?.summary || 'Nothing needs your attention right now.');
   const selectedPriority = selected?.priority || (selected?.status === 'needs_context' ? 'Medium' : selected ? 'High' : 'Clear');
   const lastContact = selected?.receivedAt || selected?.lastContact || selected?.date || '—';
-  const sourceLabel = selected?.provider === 'gmail' || selected?.source === 'gmail' || selected?.source === 'local_preview' ? 'Gmail' : (selected?.provider || selected?.source || 'Gmail');
+  const connectionLabel = googleConnectionLabel(selected || {});
+  const providerLabel = selected?.provider === 'gmail' || selected?.source === 'gmail' || selected?.source === 'local_preview' ? 'Gmail' : (selected?.provider || selected?.source || 'Gmail');
+  const sourceLabel = connectionLabel ? providerLabel + ' · ' + connectionLabel : providerLabel;
   const relationshipState = (selected?.relationships || []).length ? 'Active' : 'Unlinked';
   setCorrespondenceField('priority', selectedPriority.charAt(0).toUpperCase() + selectedPriority.slice(1));
   setCorrespondenceField('last-contact', correspondenceHumanContactTime(lastContact) || '—');
@@ -20242,7 +20256,7 @@ function hydrateRoomsFromBriefing(briefing){
       card: {
         observation: preparedTotal + ' waiting for approval.',
         implication: cardTitle + '. Nothing has been sent.',
-        invitation: 'Review, edit, send, or hold.',
+        invitation: 'Review, edit, send, hold, or dismiss.',
         title: preparedTotal + ' waiting for approval.',
         summary: cardTitle + '. Nothing has been sent.',
         action: artifactCopy?.action || 'Open draft'
@@ -22203,7 +22217,7 @@ function valWitnessingConnectionCard(connection = {}){
     ? '<a class="val-witnessing-source-action" href="' + escapeConnectionHtml(connection.actionHref) + '" target="_blank" rel="noopener">' + escapeConnectionHtml(copy.actionLabel) + '</a>'
     : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
   return [
-    '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeConnectionHtml(id) + '" data-connected="' + String(connected) + '">',
+    '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeConnectionHtml(id) + '" data-connection-id="' + escapeConnectionHtml(id) + '" data-connected="' + String(connected) + '">',
       '<div class="val-witnessing-source-head">',
         '<strong>' + escapeConnectionHtml(connection.label || copy.keyLabel) + '</strong>',
         '<span>' + escapeConnectionHtml(status) + '</span>',
@@ -22360,6 +22374,19 @@ function renderValWitnessingConnections(payload = {}){
   const target = root?.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
   const connections = Array.isArray(payload.connections) ? payload.connections : [];
+  const hasKrisp = connections.some((connection) => connection?.id === 'krisp');
+  if(!hasKrisp){
+    connections.splice(2, 0, {
+      id:'krisp',
+      label:'Krisp transcripts',
+      status:'needs_attention',
+      connected:false,
+      action:'oauth',
+      actionHref:'/auth/krisp',
+      learns:'Meeting transcripts, exact Action Items, and Key Points from Krisp.',
+      limits:'Krisp status could not be read. Reconnect it here; VAL will not invent meeting evidence.'
+    });
+  }
   valWitnessingConnectionState = {...payload,connections};
   target.innerHTML = connections.length
     ? connections.map(valWitnessingConnectionCard).join('')
@@ -23914,7 +23941,8 @@ function formatCalendarTime(value = ''){
 
 function calendarEventSubtitle(event = {}){
   const attendees = calendarEventExternalAttendees(event).length;
-  const source = event.source ? String(event.source).replace(/^\w/, (c) => c.toUpperCase()) : 'Calendar';
+  const connection = googleConnectionLabel(event);
+  const source = connection || (event.source ? String(event.source).replace(/^\w/, (c) => c.toUpperCase()) : 'Calendar');
   const bits = [
     source,
     attendees ? attendees + ' attendee' + (attendees === 1 ? '' : 's') : '',
@@ -23943,7 +23971,7 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
     '<button class="agenda-item' + (calendarEventIsFutureMeeting(event) && event === currentMeetingEvents[0] ? ' active' : '') + (calendarEventIsMeeting(event) ? '' : ' calendar-note') + (calendarEventIsPast(event) ? ' calendar-past' : '') + '" type="button" data-calendar-event-index="' + index + '" data-calendar-meeting="' + (calendarEventIsMeeting(event) ? 'true' : 'false') + '" data-calendar-past="' + (calendarEventIsPast(event) ? 'true' : 'false') + '">' +
       '<span>' + escapeHtml(formatCalendarTime(event.start)) + '</span>' +
       '<strong>' + escapeHtml(event.title || event.summary || '(No title)') + '</strong>' +
-      '<small>' + escapeHtml(calendarEventIsPast(event) ? 'Past event - open matching transcript' : (calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note - no attendee meeting prep')) + '</small>' +
+      '<small>' + escapeHtml(calendarEventIsPast(event) ? 'Past event · ' + calendarEventSubtitle(event) : (calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note · ' + calendarEventSubtitle(event))) + '</small>' +
       renderCalendarAttendeeList(event) +
     '</button>'
   )).join('');
@@ -25895,7 +25923,7 @@ function alignmentDraftFromWorkspace(workspace = {}){
     if(!uniqueLines.length){
       uniqueLines.push(
         'VAL has created a review packet from the current Alignment context.',
-        'Review the source, decide the next move, then approve, revise, or hold.'
+        'Review the source, decide the next move, then approve, revise, hold, or dismiss.'
       );
     }
     return {
@@ -25968,7 +25996,7 @@ function leverageExecutiveFacts(workspace = {}, draft = null){
   const identity = sourceIdentityForItem(source);
   const verb = preparedApprovalVerb(source);
   const prepared = compactSentence(draft?.title || artifact.subject || artifact.title || fields.what_changed || active.title, 'Prepared work');
-  const decision = compactSentence(artifact.reviewBoundary || artifact.review_boundary || active.recommendation || fields.recommended_next_step, 'Review, edit, approve, or hold.');
+  const decision = compactSentence(artifact.reviewBoundary || artifact.review_boundary || active.recommendation || fields.recommended_next_step, 'Review, edit, approve, hold, or dismiss.');
   const consequenceMap = {
     sent:'The message leaves VAL.',
     scheduled:'The calendar changes.',
@@ -26130,14 +26158,37 @@ async function holdPreparedLeverageItem(){
   const item = workspace.sourceItem || {};
   const ids = leveragePreparedIdentifiers(item);
   if(canUseApi && ids.readyForYouId){
-    await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
-  }else if(canUseApi && ids.externalActionPacketId){
-    await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/reject', {reason:'Held from Hearth Leverage.'}).catch(() => null);
+    const result = await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/snooze', {minutes:1440, reason:'Held from Hearth Leverage until tomorrow.'}).catch(() => null);
+    if(!result?.ok){
+      renderHomeActionResult('hold_prepared', {status:'hold_failed', message:'VAL could not hold this item yet. It remains in Leverage.'});
+      return;
+    }
   }
   removeCurrentLeverageItem();
   renderHomeActionResult('hold_prepared', {
     status:'held',
-    message:'VAL held this prepared work. Nothing was sent, scheduled, or changed.'
+    message:'VAL held this prepared work until tomorrow. Nothing was sent, scheduled, or changed.'
+  });
+}
+
+async function dismissPreparedLeverageItem(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const ids = leveragePreparedIdentifiers(item);
+  let result = {ok:true};
+  if(canUseApi && ids.readyForYouId){
+    result = await postJson('/api/val/ready-for-you/' + encodeURIComponent(ids.readyForYouId) + '/dismiss', {reason:'Dismissed from Hearth Leverage as not needed.'}).catch(() => null);
+  }else if(canUseApi && ids.externalActionPacketId){
+    result = await postJson('/api/val/external-actions/' + encodeURIComponent(ids.externalActionPacketId) + '/reject', {reason:'Dismissed from Hearth Leverage as not needed.'}).catch(() => null);
+  }
+  if(!result?.ok){
+    renderHomeActionResult('dismiss_prepared', {status:'dismiss_failed', message:'VAL could not dismiss this item yet. It remains in Leverage.'});
+    return;
+  }
+  removeCurrentLeverageItem();
+  renderHomeActionResult('dismiss_prepared', {
+    status:'dismissed',
+    message:'Dismissed. This item left Leverage, while its source evidence remains available to VAL.'
   });
 }
 
@@ -26234,7 +26285,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
     'Leverage review'
   );
   const meaning = fields.why_it_matters || active.meaning || (count ? 'Review prepared work before anything leaves VAL.' : 'Leverage opens only real prepared work, not loose possibilities.');
-  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Review the prepared work, edit what needs editing, then approve or hold.' : 'Nothing needs approval from Leverage.');
+  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Review the prepared work, edit what needs editing, then approve, hold, or dismiss it.' : 'Nothing needs approval from Leverage.');
   const visibleMeaning = compactSentence(
     meaning
       .replace(/^VAL has counted prepared work,\s*but\s*/i, '')
@@ -26293,7 +26344,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
             return '<button type="button" data-leverage-select-index="' + queueIndex + '" aria-pressed="' + String(selected) + '"' + (selected ? ' class="is-selected"' : '') + '><span>' + (position + 1) + '</span><strong>' + escapeHtml(queueTitle) + '</strong><small>' + escapeHtml(kind ? kind.replace(/_/g, ' ') : 'Ready to review') + '</small></button>';
           }).join('') + '</div></nav>' : '',
           '<div class="leverage-review-facts">' + executiveFacts.map((fact) => '<article><span>' + escapeHtml(fact.label) + '</span><p>' + escapeHtml(fact.value) + '</p></article>').join('') + '</div>',
-          draft ? '<section class="alignment-room-draft leverage-draft-review" data-alignment-draft-preview tabindex="-1"><label><span>' + escapeHtml(draft.title) + '</span><textarea data-leverage-draft-editor aria-label="Edit prepared work">' + escapeHtml(draft.body) + '</textarea></label><div class="leverage-draft-actions"><button type="button" data-home-action="approve_prepared">' + escapeHtml(approvalLabel) + '</button><button type="button" data-home-action="save_prepared_edits">Save edits</button><button type="button" data-home-action="hold_prepared">Hold</button></div></section>' : '',
+          draft ? '<section class="alignment-room-draft leverage-draft-review" data-alignment-draft-preview tabindex="-1"><label><span>' + escapeHtml(draft.title) + '</span><textarea data-leverage-draft-editor aria-label="Edit prepared work">' + escapeHtml(draft.body) + '</textarea></label><div class="leverage-draft-actions"><button type="button" data-home-action="approve_prepared">' + escapeHtml(approvalLabel) + '</button><button type="button" data-home-action="save_prepared_edits">Save edits</button><button type="button" data-home-action="hold_prepared">Hold</button><button type="button" data-home-action="dismiss_prepared">Dismiss</button></div></section>' : '',
         '</section>',
       '</div>',
       '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
@@ -26303,7 +26354,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
   workspaceInputPanel.innerHTML = [
     '<form class="home-cowork-chatbar alignment-room-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
-      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this prepared work" placeholder="Review the draft, refine it, approve it, or hold..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this prepared work" placeholder="Review the draft, refine it, approve it, hold it, or dismiss it..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
       '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
@@ -26720,6 +26771,10 @@ async function handleHomeRoomAction(action, node = null){
     await holdPreparedLeverageItem();
     return;
   }
+  if(action === 'dismiss_prepared'){
+    await dismissPreparedLeverageItem();
+    return;
+  }
   if(action === 'complete_project_pin'){
     await completeProjectPinFromAlignment();
     return;
@@ -26895,6 +26950,7 @@ function renderHomeCoworkPreview(options = {}){
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief', 'observer-cowork-overlay-panel');
   scraperPreviewList.innerHTML = [
     '<div class="home-cowork-workspace" aria-label="VAL workspace">',
+      '<button type="button" class="chat-window-close" data-chat-window-close aria-label="Close chat"></button>',
       '<aside class="home-cowork-sidebar">',
         '<div class="home-cowork-context" data-home-cowork-context>',
           '<span>Context</span>',
@@ -27615,7 +27671,7 @@ async function openTaskPreparedWork(taskId = ''){
     lens:'Leverage',
     title:prepared.title || task.title || 'Prepared work',
     meaning:task.notes || 'VAL prepared work for this commitment.',
-    recommendation:'Review the prepared work, edit it if needed, then approve or hold.',
+    recommendation:'Review the prepared work, edit it if needed, then approve, hold, or dismiss it.',
     draftTitle:prepared.title || 'Prepared draft',
     draftBody:prepared.body || '',
     sourceItem:{
@@ -27629,7 +27685,7 @@ async function openTaskPreparedWork(taskId = ''){
     packetFields:{
       what_changed:prepared.title || task.title || 'Prepared work',
       why_it_matters:task.notes || 'This prepared work is attached to a commitment.',
-      recommended_next_step:'Review, edit, approve, or hold.',
+      recommended_next_step:'Review, edit, approve, hold, or dismiss.',
       evidence_summary:'Commitment: ' + (task.title || 'Untitled commitment')
     },
     cardType:'prepared_work'
@@ -28503,6 +28559,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
   scraperPreviewList.innerHTML = [
     '<section class="observer-cowork-overlay" aria-label="' + escapeHtml(title || 'Observer co-work') + '">',
       '<div class="home-cowork-workspace observer-cowork-window" aria-label="VAL observer workspace">',
+        '<button type="button" class="chat-window-close" data-chat-window-close aria-label="Close Observer chat"></button>',
         '<aside class="home-cowork-sidebar">',
           '<div class="home-cowork-context" data-home-cowork-context>',
             '<span>Board of Observers</span>',
@@ -31163,6 +31220,10 @@ document.addEventListener('click', (event) => {
     '[data-val-ghl-voice-widget]'
   ].join(','));
   if(launchTarget) return;
+  if(deskWorkspace?.classList.contains('home-cowork-mode') && !event.target.closest('.home-cowork-workspace, .home-cowork-chatbar, [data-val-cowork-voice-widget], .val-cowork-voice-room')){
+    closeWorkspace();
+    return;
+  }
   if(hearth.classList.contains('calendar-open') && !event.target.closest('.full-calendar-panel')){
     closeCalendarPanel();
   }
@@ -31524,6 +31585,13 @@ scraperPreviewList?.addEventListener('change', (event) => {
   void handleWorkspaceFileChange(event);
 });
 scraperPreviewList?.addEventListener('click', (event) => {
+  const chatCloseButton = event.target.closest('[data-chat-window-close]');
+  if(chatCloseButton){
+    event.preventDefault();
+    event.stopPropagation();
+    closeWorkspace();
+    return;
+  }
   const voiceEndButton = event.target.closest('[data-val-cowork-voice-end]');
   if(voiceEndButton){
     event.preventDefault();

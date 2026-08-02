@@ -978,7 +978,7 @@ function createValReadyForYouService({
   }
   async function listItems({limit=3,status='',includeSnoozed=false}={}){
     const lim=Math.max(1,Math.min(Number(limit)||3,25));
-    const activeStatuses=status?[status]:['ready','ready_for_review','needs_context'];
+    const activeStatuses=status?[status]:['ready','ready_for_review','needs_context','snoozed'];
     let rows=[];
     if(hasPg()){
       const params=[tenantId(),userId(),activeStatuses];
