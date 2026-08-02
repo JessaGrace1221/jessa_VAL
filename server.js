@@ -27837,6 +27837,178 @@ async function transcriptArchiveRecords(days=3650,limit=500){
   }
   return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
 }
+function homeValTranscriptDateRange(query=''){
+  const text=String(query||'');
+  const monthNumbers={jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11};
+  const dates=[];
+  const pattern=/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d{2}))?/gi;
+  let match;
+  while((match=pattern.exec(text))){
+    const year=Number(match[3]||new Date().getFullYear());
+    const value=new Date(year,monthNumbers[match[1].toLowerCase()],Number(match[2]));
+    if(!Number.isNaN(value.getTime()))dates.push(value);
+  }
+  if(dates.length>=2){
+    const sorted=dates.sort((a,b)=>a-b),start=new Date(sorted[0]),end=new Date(sorted[sorted.length-1]);
+    start.setHours(0,0,0,0);end.setHours(23,59,59,999);
+    return {start,end,label:`${start.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} through ${end.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`};
+  }
+  if(/\blast six months\b/i.test(text)){
+    const end=new Date(),start=new Date(end);start.setMonth(start.getMonth()-6);start.setHours(0,0,0,0);end.setHours(23,59,59,999);
+    return {start,end,label:`${start.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} through ${end.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`};
+  }
+  return null;
+}
+function homeValTranscriptParticipantNames(query='',records=[],index={}){
+  const text=normalizeContextName(query),names=new Set();
+  const add=value=>{
+    const name=String(value||'').trim();
+    if(name&&name.includes(' ')&&name.length<=100&&!/^(speaker|unknown|jessa grace)$/i.test(name))names.add(name);
+  };
+  safeArray(index.participants).forEach(participant=>add(participant.matchedContactName||participant.speakerNameRaw));
+  safeArray(records).forEach(record=>{
+    safeArray(record.attendees||record.metadata?.attendees||record.metadata?.participants).forEach(person=>add(person?.name||person?.displayName||person));
+  });
+  const matched=[...names].filter(name=>text.includes(normalizeContextName(name))).sort((a,b)=>b.length-a.length);
+  if(matched.length)return matched;
+  const explicit=String(query||'').match(/\b(?:with|participant(?:s)?(?: named)?|involving)\s+([A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){1,3})/);
+  return explicit?.[1]?[explicit[1].trim()]:[];
+}
+function homeValTranscriptRecordDate(record={}){
+  const detail=record.detail||{},metadata=record.metadata||{};
+  const value=detail.meetingDatetime||detail.meeting_datetime||record.meetingDatetime||record.meeting_datetime||metadata.meetingDatetime||metadata.meeting_datetime||metadata.timestamp||record.createdAt||record.created_at||'';
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?null:date;
+}
+function homeValTranscriptParticipantEvidence(record={},participantName=''){
+  const target=normalizeContextName(participantName);
+  if(!target)return '';
+  const detail=record.detail||{},metadata=record.metadata||{};
+  const participants=[...safeArray(detail.participants),...safeArray(record.participants),...safeArray(record.attendees),...safeArray(metadata.attendees),...safeArray(metadata.participants)];
+  for(const person of participants){
+    const label=String(person?.matchedContactName||person?.speakerNameRaw||person?.name||person?.displayName||person?.email||person||'').trim();
+    const normalizedLabel=normalizeContextName(label);
+    if(normalizedLabel&&(normalizedLabel.includes(target)||target.includes(normalizedLabel)))return label;
+  }
+  const title=String(record.title||record.meetingTitle||detail.title||detail.meetingTitle||'');
+  if(normalizeContextName(title).includes(target))return `meeting title: ${title}`;
+  return '';
+}
+function homeValTranscriptTopicScore(record={},query=''){
+  const requested=[...new Set((normalizeContextName(query).match(/\b(book|chapter|editor|editing|manuscript|rewrite|writing|restart|restarting)\b/g)||[]))];
+  if(!requested.length)return 0;
+  const hay=normalizeContextName([record.title,record.rawText,record.detail?.summary?.executiveSummary].filter(Boolean).join(' '));
+  return requested.reduce((score,term)=>score+(hay.includes(term)?1:0),0);
+}
+async function homeValTranscriptArchiveContext(query=''){
+  if(!/\b(transcripts?|meeting history|call history)\b/i.test(query))return null;
+  const [archive,index]=await Promise.all([
+    transcriptArchiveRecords(3650,1000),
+    transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))
+  ]);
+  const records=mergeTranscriptMigrationRecords(archive,index).map(record=>{
+    if(record.detail)return record;
+    const indexed=safeArray(index.transcripts).find(row=>String(row.transcriptId)===String(record.id));
+    return indexed?{...record,detail:transcriptDetailFromIndex(index,indexed)}:record;
+  });
+  const range=homeValTranscriptDateRange(query);
+  const participantNames=homeValTranscriptParticipantNames(query,records,index);
+  const matches=records.map(record=>{
+    const date=homeValTranscriptRecordDate(record);
+    const participantEvidence=participantNames.map(name=>homeValTranscriptParticipantEvidence(record,name)).filter(Boolean);
+    return {...record,_date:date,_participantEvidence:participantEvidence,_topicScore:homeValTranscriptTopicScore(record,query)};
+  }).filter(record=>{
+    if(range&&(!record._date||record._date<range.start||record._date>range.end))return false;
+    if(participantNames.length&&record._participantEvidence.length!==participantNames.length)return false;
+    return true;
+  }).sort((left,right)=>(right._topicScore-left._topicScore)||((left._date?.getTime?.()||0)-(right._date?.getTime?.()||0)));
+  const promptMatches=matches.slice(0,12).map((record,index)=>[
+    `Transcript ${index+1}: ${record.title||record.detail?.title||'Untitled transcript'}`,
+    `Meeting date: ${record._date?record._date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'not recorded'}`,
+    `Participant evidence: ${record._participantEvidence.join(' | ')||'no requested participant filter'}`,
+    `Transcript ID: ${record.id}`,
+    `Full transcript:\n${String(record.rawText||record.detail?.transcriptText||'').slice(0,14000)}`
+  ].join('\n')).join('\n\n---\n\n');
+  return {range,participantNames,matches,prompt:[
+    'Direct transcript archive search results. These are canonical stored transcript records, not the Hearth sidebar.',
+    range?`Requested date range: ${range.label}`:'No explicit date range was resolved.',
+    participantNames.length?`Required participants: ${participantNames.join(', ')}`:'No participant was resolved from the request.',
+    `Verified matches: ${matches.length}`,
+    promptMatches||'No matching transcript records were found.'
+  ].join('\n\n')};
+}
+function homeValTranscriptCompilationRequested(lastUser='',query=''){
+  return /\b(document|compile|compilation|collect|gather)\b/i.test(query)&&/\b(start|go ahead|do it|compile|create (?:the|that|it)|make (?:the|that|it))\b/i.test(lastUser);
+}
+async function prepareHomeValTranscriptCompilation(context={},query=''){
+  const matches=safeArray(context.matches);
+  const participantLabel=context.participantNames?.join(', ')||'selected participant';
+  const dateLabel=context.range?.label||'the requested period';
+  const subject=`${participantLabel} transcripts — ${dateLabel}`;
+  const body=[
+    `# ${subject}`,
+    '',
+    `Compiled from ${matches.length} source transcript${matches.length===1?'':'s'} where ${participantLabel} was identified as a participant.`,
+    '',
+    ...matches.sort((a,b)=>(a._date?.getTime?.()||0)-(b._date?.getTime?.()||0)).flatMap((record,index)=>[
+      '---','',
+      `## ${index+1}. ${record.title||record.detail?.title||'Untitled transcript'}`,
+      '',
+      `Date: ${record._date?record._date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'Not recorded'}`,
+      `Participant evidence: ${record._participantEvidence.join(' | ')}`,
+      `Source transcript ID: ${record.id}`,
+      '',
+      String(record.rawText||record.detail?.transcriptText||'').trim(),
+      ''
+    ])
+  ].join('\n');
+  return saveInternalDraft({
+    id:`transcript-compilation-${stableKey([participantLabel,dateLabel].join(' ')).slice(0,80)}`,
+    draftType:'document_compilation',
+    provider:'internal',
+    subject,
+    body,
+    status:'draft',
+    sourceContext:{source:'home_val_transcript_archive',query,transcriptIds:matches.map(record=>record.id),participantNames:context.participantNames||[],dateRange:context.range?{start:context.range.start.toISOString(),end:context.range.end.toISOString(),label:context.range.label}:null,noExternalAction:true}
+  });
+}
+function homeValContextTerms(query=''){
+  const ignored=new Set(['about','after','again','also','been','before','between','could','document','everything','from','have','into','last','need','only','please','should','that','their','there','these','they','this','those','through','transcript','transcripts','until','what','when','where','which','with','would','your']);
+  return [...new Set(normalizeContextName(query).split(/\s+/).filter(term=>term.length>2&&!ignored.has(term)))].slice(0,20);
+}
+function homeValContextRowScore(row={},terms=[]){
+  const text=normalizeContextName(JSON.stringify(row));
+  return safeArray(terms).reduce((score,term)=>score+(text.includes(term)?1:0),0);
+}
+function homeValContextRank(rows=[],terms=[],limit=12){
+  return safeArray(rows).map(row=>({row,score:homeValContextRowScore(row,terms)}))
+    .filter(item=>!terms.length||item.score>0)
+    .sort((left,right)=>right.score-left.score)
+    .slice(0,limit)
+    .map(item=>item.row);
+}
+async function homeValCanonicalWorkspaceContext(query=''){
+  const terms=homeValContextTerms(query);
+  const wantsCalendar=/\b(calendar|appointment|appointments|schedule|meeting|meetings)\b/i.test(query);
+  const [profiles,taskProjection,readyForYou,calendarResult]=await Promise.all([
+    listRelationshipProfiles({limit:200}).catch(()=>[]),
+    valCanonicalWork?.taskProjection?valCanonicalWork.taskProjection({limit:500}).catch(()=>null):Promise.resolve(null),
+    valReadyForYou?.listItems?valReadyForYou.listItems({limit:100,includeSnoozed:false}).catch(()=>null):Promise.resolve(null),
+    wantsCalendar?(()=>{
+      const range=homeValTranscriptDateRange(query),start=range?.start||new Date(Date.now()-30*24*60*60*1000),end=range?.end||new Date(Date.now()+180*24*60*60*1000);
+      return loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
+    })():Promise.resolve({events:[]})
+  ]);
+  const relationships=homeValContextRank(profiles.filter(profile=>profile.profileType!=='project'),terms,10).map(profile=>({id:profile.id,name:profile.displayName,email:profile.email||'',status:profile.relationshipStatus||'',openLoops:profile.openLoops||[],risks:profile.risks||[],opportunities:profile.opportunities||[],lastObservedAt:profile.lastObservedAt||profile.updatedAt||''}));
+  const projects=homeValContextRank(profiles.filter(profile=>profile.profileType==='project'),terms,10).map(profile=>({id:profile.id,name:profile.displayName,status:profile.relationshipStatus||profile.status||'',openLoops:profile.openLoops||[],risks:profile.risks||[],opportunities:profile.opportunities||[],metadata:profile.metadata||{}}));
+  const taskRows=safeArray(taskProjection?.tasks||taskProjection?.items||taskProjection);
+  const tasks=homeValContextRank(taskRows,terms,15).map(task=>({id:task.id||task.canonical_work_item_id||'',title:task.title||task.task_title||'',status:task.status||'',dueDate:task.due_date||task.dueDate||'',project:task.project_name||task.projectName||'',relationship:task.relationship_name||task.relationshipName||'',sourceType:task.source_type||task.sourceType||'',sourceId:task.source_id||task.sourceId||''}));
+  const preparedRows=safeArray(readyForYou?.preparedItems||readyForYou?.prepared_items||readyForYou?.items||readyForYou);
+  const preparedWork=homeValContextRank(preparedRows,terms,12).map(item=>({id:item.id||item.ready_for_you_id||'',title:item.title||item.subject||'',status:item.status||'',artifactType:item.artifact_type||item.artifactType||item.draft_type||item.draftType||'',sourceType:item.source_type||item.sourceType||'',sourceId:item.source_id||item.sourceId||''}));
+  const calendar=homeValContextRank(safeArray(calendarResult?.events),terms,20).map(event=>({id:event.id||'',title:event.title||event.summary||'',start:event.startTime||event.start||'',end:event.endTime||event.end||'',calendarName:event.calendarName||event.accountLabel||event.sourceLabel||'',attendees:safeArray(event.attendees).map(attendee=>({name:attendee?.name||attendee?.displayName||'',email:attendee?.email||attendee?.address||''})).filter(attendee=>attendee.name||attendee.email)}));
+  if(!relationships.length&&!projects.length&&!tasks.length&&!preparedWork.length&&!calendar.length)return '';
+  return JSON.stringify({relationships,projects,tasks,preparedWork,calendar},null,2).slice(0,24000);
+}
 function stableRecoveredTranscriptId(sourceType='',sourceId='',rawText=''){
   const raw=[tenantId(),sourceType,sourceId,rawText.slice(0,2000)].join('|');
   return 'recovered_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
@@ -28251,6 +28423,18 @@ async function conversationMessagesForContext(conversationId='',limit=10){
     console.warn('Conversation context lookup failed:',error.message);
     return [];
   }
+}
+function mergeConversationMessages(priorMessages=[],incomingMessages=[],limit=16){
+  const merged=[];
+  for(const message of [...safeArray(priorMessages),...safeArray(incomingMessages)]){
+    const role=String(message?.role||'').trim();
+    const content=String(message?.content||'').trim();
+    if(!role||!content)continue;
+    const previous=merged[merged.length-1];
+    if(previous?.role===role&&previous?.content===content)continue;
+    merged.push({role,content});
+  }
+  return merged.slice(-Math.max(4,Number(limit)||16));
 }
 function ghlVoiceLooksLikeEphemeralConversationId(value=''){
   const id=String(value||'').trim();
@@ -41431,7 +41615,11 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
 });
 app.post('/api/val/chat',async(req,res)=>{
   try{
-    const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
+    const incomingMessages=Array.isArray(req.body.messages)?req.body.messages:[];
+    const requestedConversationId=String(req.body.conversationId||'').trim();
+    const priorMessages=requestedConversationId?await conversationMessagesForContext(requestedConversationId,14):[];
+    const messages=mergeConversationMessages(priorMessages,incomingMessages,18);
+    const lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-14).map(m=>m.content||'').join('\n').slice(-12000),dashboard=req.body.dashboard||{};
     const projectContext=req.body.projectContext&&typeof req.body.projectContext==='object'?req.body.projectContext:null;
     const hasSelectedSourceContext=!!(req.body.selectedSourceContext&&typeof req.body.selectedSourceContext==='object'&&Object.keys(req.body.selectedSourceContext).length);
     const cheapSelectedSourceAnswer=hasSelectedSourceContext?selectedSourceObserverDirectAnswer({
@@ -41448,7 +41636,7 @@ app.post('/api/val/chat',async(req,res)=>{
     const selectedSourceGuard=hasSelectedSourceContext
       ? 'Current Co-Work focus: use the selected card/function source as the object of the user request. If the user says "this dashboard", "this email", "this transcript", "this project", or "this", they mean the selected source, not the visible Hearth dashboard shell. Do not describe the Hearth page, calendar sidebar, witness, orientation, or permission boundary unless the user explicitly asks about the VAL interface itself.'
       : '';
-    const conversationId=String(req.body.conversationId||'').trim()||uuid('chat');
+    const conversationId=requestedConversationId||uuid('chat');
     const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
     async function sendChat(content,extra={}){
       let saved=null,saveWarning='';
@@ -41508,6 +41696,30 @@ app.post('/api/val/chat',async(req,res)=>{
     if(intent?.type==='memory'){
       await saveMemoryItem({kind:'user_requested_memory',summary:'User asked VAL to remember context.',rawText:intent.content,importance:4,metadata:{source:'home_val_chat',explicitUserMemory:true}});
       return sendChat('I will hold that in VAL context and use it going forward.',{chatContextIntent:intent,noExternalAction:true});
+    }
+    const transcriptArchiveContext=await homeValTranscriptArchiveContext(memoryQuery).catch(error=>{
+      console.warn('[home-val] transcript archive lookup failed:',error.message);
+      return null;
+    });
+    if(transcriptArchiveContext&&homeValTranscriptCompilationRequested(lastUser,memoryQuery)){
+      if(!transcriptArchiveContext.range){
+        return sendChat('I have the transcript archive available. What exact start and end dates should I use?',{transcriptArchiveSearch:true,needs:'date_range',noExternalAction:true});
+      }
+      if(!transcriptArchiveContext.participantNames.length){
+        return sendChat('I have the transcript archive available. Whose participation should I use as the required filter?',{transcriptArchiveSearch:true,needs:'participant',noExternalAction:true});
+      }
+      if(!transcriptArchiveContext.matches.length){
+        return sendChat(`I searched the stored transcript archive for ${transcriptArchiveContext.participantNames.join(', ')} from ${transcriptArchiveContext.range.label}. I found no transcript with participant evidence that met both filters, so I did not create an empty or fabricated document.`,{transcriptArchiveSearch:true,matchCount:0,noExternalAction:true});
+      }
+      const draft=await prepareHomeValTranscriptCompilation(transcriptArchiveContext,memoryQuery);
+      const matchLines=transcriptArchiveContext.matches.slice(0,12).map((record,index)=>`${index+1}. ${record._date?record._date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'Date not recorded'} — ${record.title||record.detail?.title||'Untitled transcript'}`);
+      return sendChat([
+        `I found ${transcriptArchiveContext.matches.length} transcript${transcriptArchiveContext.matches.length===1?'':'s'} with verified participant evidence for ${transcriptArchiveContext.participantNames.join(', ')} in that date range.`,
+        '',
+        ...matchLines,
+        '',
+        `I compiled the full transcript text into “${draft.subject}” and placed it in Leverage for review. Nothing was sent or shared externally.`
+      ].join('\n'),{transcriptArchiveSearch:true,matchCount:transcriptArchiveContext.matches.length,preparedDraft:draft,noExternalAction:true});
     }
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
     if(presenceIntent?.requiresConfirmation){
@@ -41677,7 +41889,7 @@ app.post('/api/val/chat',async(req,res)=>{
       })
     ]);
     const dashboardForExternalContext=hasSelectedSourceContext?{calendar:safeArray(dashboard.calendar)}:dashboard;
-    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext,latestObserverRuns]=await Promise.all([
+    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext,latestObserverRuns,canonicalWorkspaceContext]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboardForExternalContext),
       uploadedDocs||linkedAttachmentDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
@@ -41689,6 +41901,10 @@ app.post('/api/val/chat',async(req,res)=>{
       valIntelligenceSpine?.listObserverRuns({limit:42}).catch(error=>{
         console.warn('[val-board] home chat observer reflection lookup failed:',error.message);
         return [];
+      }),
+      homeValCanonicalWorkspaceContext(lastUser+'\n'+memoryQuery).catch(error=>{
+        console.warn('[home-val] canonical workspace context lookup failed:',error.message);
+        return '';
       })
     ]);
     const observerEvidence=buildObserverEvidenceLedger(latestObserverRuns,{limitPerObserver:8});
@@ -41713,7 +41929,8 @@ app.post('/api/val/chat',async(req,res)=>{
       }
     } : null;
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'',selectedSourceGuard,'You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use selected Hearth source context first, then live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Use visible dashboard context only for ambient state, never as the selected work object when selected source context exists. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Selected Hearth source context is present, treat it as the exact source behind the card the user clicked. If the user says "this", use that selected source context. Do not ask the user to send a screenshot, link, layout, or description when the selected source already contains the needed transcript/spec. If selected source context is present but insufficient, say exactly which selected source field is missing.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',selectedSourcePrompt?'Selected Hearth source context:\n'+selectedSourcePrompt:'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const currentTenantDate=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:CLIENT_CONFIG.timezone||'America/New_York'});
+    const system=[VAL_SYSTEM_PROMPT,`Current date in the executive's timezone (${CLIENT_CONFIG.timezone||'America/New_York'}): ${currentTenantDate}.`,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'',selectedSourceGuard,'You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use selected Hearth source context first, then direct canonical source retrieval, live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Use visible dashboard context only for ambient state, never as the selected work object when a canonical source result exists. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Direct transcript archive search results are present, answer from those records. They are the inspectable source of truth. Respect requested date and participant filters; never substitute meetings where the person was merely discussed.','When Canonical VAL workspace records are present, use their source IDs and actual fields. Do not replace them with the visible Hearth cards or say the lane cannot access the underlying function.','When Selected Hearth source context is present, treat it as the exact source behind the card the user clicked. If the user says "this", use that selected source context. Do not ask the user to send a screenshot, link, layout, or description when the selected source already contains the needed transcript/spec. If selected source context is present but insufficient, say exactly which selected source field is missing.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',selectedSourcePrompt?'Selected Hearth source context:\n'+selectedSourcePrompt:'',transcriptArchiveContext?.prompt?'Direct transcript archive search results:\n'+transcriptArchiveContext.prompt:'',canonicalWorkspaceContext?'Canonical VAL workspace records:\n'+canonicalWorkspaceContext:'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed)\b/i.test(lastUser);
     const content=await callOpenAIResponses({system,messages,maxTokens:artifactRequest?3600:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';

@@ -327,6 +327,7 @@ let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
 let activeCoworkSelectedSourceContext = null;
+let homeCoworkConversationId = '';
 let activeMeetingPrepAutoPrompt = false;
 let valCoworkVoiceState = {
   active:false,
@@ -476,7 +477,7 @@ function homeCoworkNeedsFullValContext(text = ''){
   if(/\b(next|upcoming)\b[\s\S]{0,30}\b(appointment|calendar|meeting|schedule)\b/i.test(value)) return false;
   if(homeCoworkNeedsActionPrep(value)) return false;
   if(/\bwitnessing\b/i.test(value)) return false;
-  return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(value);
+  return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcripts?|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(value);
 }
 
 function homeCoworkNeedsActionPrep(text = ''){
@@ -496,7 +497,7 @@ function homeCoworkFullContextDetail(text = ''){
   if(/\b(book|schedule|appointment|meeting|calendar|event|call)\b/i.test(value)) return 'Give me one moment. I’m checking the right calendar path.';
   if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Give me one moment. I’m finding the right relationship record.';
   if(/\b(project)\b/i.test(value)) return 'Just a sec. I’m checking Project Managers, source packets, and relevant relationship context.';
-  if(/\b(transcript)\b/i.test(value)) return 'Just a sec. I’m checking transcript intelligence and related memory.';
+  if(/\btranscripts?\b/i.test(value)) return 'Just a sec. I’m checking transcript intelligence and related memory.';
   if(/\b(linkedin)\b/i.test(value)) return 'Just a sec. I’m checking LinkedIn context and relationship signals.';
   if(/\b(board|observer|director)\b/i.test(value)) return 'Just a sec. I’m checking the Board of Observers and current system context.';
   return 'Just a sec. I’m checking the wider system context.';
@@ -12158,6 +12159,7 @@ function selectedSourceContextHasLoadedPacket(selectedSourceContext = null){
 
 function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = '', selectedSourceContext = null}){
   const safeTitle = title || 'VAL workspace';
+  homeCoworkConversationId = '';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   activeCoworkContextLocked = Boolean(lockContext);
   activeCoworkSelectedSourceContext = selectedSourceContext || null;
@@ -21197,6 +21199,7 @@ async function runCowork(mode, messageOverride = ''){
       timeoutMessage: 'I’m still gathering that context. Ask me one narrower version and I’ll stay with you.'
     } : {});
     const result = await postJson('/api/val/chat', {
+      conversationId: homeCoworkConversationId || undefined,
       channel: 'hearth_cowork',
       title: observerCoworkLane ? (activeCoworkEntry?.title || 'Observer Co-Work') : 'Co-Work from Hearth',
       latencyMode: observerCoworkLane ? 'observer_card' : (actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context'))),
@@ -21217,6 +21220,7 @@ async function runCowork(mode, messageOverride = ''){
       }
     }, requestOptions);
     const content = result.message?.content || 'VAL prepared a response.';
+    homeCoworkConversationId = result.conversationId || homeCoworkConversationId;
     clearProgressTimers();
     if(result.externalActionPacket){
       pendingHomeCoworkActionPacket = result.externalActionPacket;
@@ -27206,6 +27210,7 @@ async function openMeetingPrep(){
 
 function openCoworkSession(){
   closeCalendarPanel();
+  homeCoworkConversationId = '';
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
   activeCoworkSelectedSourceContext = null;
@@ -30257,6 +30262,7 @@ function closeWorkspace(){
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
+  homeCoworkConversationId = '';
   hearth.dataset.distance = 'presence';
   hearth.classList.add('desk-settling');
   hearth.classList.remove('calendar-prep-open');
@@ -30288,6 +30294,7 @@ function hideWorkspaceForDrawerNavigation(){
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
+  homeCoworkConversationId = '';
   activeProjectCoworkTarget = null;
   activeCoworkEntry = null;
   hearth.dataset.distance = 'presence';
