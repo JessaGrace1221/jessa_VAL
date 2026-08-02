@@ -258,6 +258,22 @@ const clientFeatureLocks = {
   linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
 };
 let clientDisplayName = '';
+function clientFirstName(fallback = ''){
+  return String(clientDisplayName || fallback || '').trim().split(/\s+/)[0] || '';
+}
+function valTimeGreeting(name = clientFirstName()){
+  const hour = new Date().getHours();
+  const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  return 'Good ' + daypart + (name ? ', ' + name : '') + '.';
+}
+function personalizeTenantGreeting(value = ''){
+  const name = clientFirstName();
+  const text = String(value || '');
+  if(!name || /^Jessa$/i.test(name)) return text;
+  return text
+    .replace(/^(Good\s+(?:morning|afternoon|evening))\s*,?\s*Jessa\b/i, '$1, ' + name)
+    .replace(/^Jessa\b/i, name);
+}
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
@@ -1784,7 +1800,7 @@ function roomContent(card, workspace = {}){
 
 const states = {
   quiet: {
-    title: 'Good morning, Jessa.',
+    title: valTimeGreeting(),
     witness: 'Today has room to think.',
     orientation: 'VAL is sorting what changed, what deserves attention, and what is already prepared.',
     permission: 'Start with judgment, not noise.',
@@ -1858,7 +1874,7 @@ const states = {
     }
   },
   protective: {
-    title: 'Good morning, Jessa.',
+    title: valTimeGreeting(),
     witness: 'Yesterday asked more of your attention than it should have.',
     orientation: 'Today has enough room to recover the thread before anyone else gets your best thinking.',
     permission: 'Do not let small requests take the morning.',
@@ -12530,7 +12546,7 @@ function introDraftCandidates(profile = {}){
 }
 
 function introDraftBody(profile = {}, candidate = {}){
-  const userName = 'Jessa';
+  const userName = clientDisplayName || clientFirstName() || 'VAL user';
   const person = introCandidateName(candidate) || 'there';
   const firstName = person.split(/\s+/)[0] || person;
   const why = introCandidateReason(candidate) || 'I thought there may be useful overlap in what you are each carrying right now.';
@@ -16415,7 +16431,8 @@ function appendToWorkspaceInput(text){
 function valCoworkGreeting(){
   const hour = new Date().getHours();
   const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-  return 'Good ' + daypart + ' Jessa, what would you like to discuss this ' + daypart + '?';
+  const name = clientFirstName();
+  return 'Good ' + daypart + (name ? ' ' + name : '') + ', what would you like to discuss this ' + daypart + '?';
 }
 
 function valCoworkVoiceShell(){
@@ -17570,11 +17587,14 @@ async function hydrateClientConfig(){
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
     clientDisplayName = String(config?.clientName||'').trim();
+    states.quiet.title = valTimeGreeting();
+    states.protective.title = valTimeGreeting();
   }catch(error){
     console.warn('[hearth] client config unavailable', error.message);
   }
   applyClientFeatureLocks();
   if(executiveBriefingState) applyVelocityPerspective(executiveBriefingState);
+  else if(title) title.textContent = currentState?.title || valTimeGreeting();
 }
 
 const hearthServerPacketNames = new Set([
@@ -18369,6 +18389,7 @@ function velocityPerspectiveFromBriefing(briefing = {}){
     daily.permission_line
   ].filter(Boolean);
   const lines = [...headlineLines, ...supportLines]
+    .map((line, index) => index === 0 ? personalizeTenantGreeting(line) : line)
     .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
     .filter(Boolean)
     .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
@@ -18955,7 +18976,7 @@ function prototypeBriefing(){
   return {
     dailyWitness: {
       greeting_lines: [
-        'Good morning, Jessa.',
+        valTimeGreeting(),
         'Yesterday carried more decisions than meetings.',
         'Today has room to think.'
       ],
@@ -19715,7 +19736,7 @@ async function runTeachVal(mode){
     text: prompt,
     sourceType: 'hearth_teach_val',
     sourceId: 'hearth_teach_val',
-    authenticatedUserNames: ['Jessa'],
+    authenticatedUserNames: [clientDisplayName].filter(Boolean),
     trustedAuthenticatedUser: true
   });
   const instructions = result.executive_instructions || [];
