@@ -11090,6 +11090,39 @@ button.timeline-overview-receipt:focus-visible{
   display:-webkit-box;
   -webkit-box-orient:vertical;
   -webkit-line-clamp:2;
+}
+.lead-sourcing-drawer-workbench[hidden]{display:none}
+.lead-import-receipt{
+  display:grid;
+  gap:6px;
+  padding:14px 16px;
+  border:1px solid rgba(94,114,88,.24);
+  border-radius:10px;
+  background:rgba(247,250,244,.82);
+  box-shadow:0 14px 34px rgba(52,59,45,.08), inset 0 1px 0 rgba(255,255,255,.82);
+}
+.lead-import-receipt strong{
+  color:rgba(42,67,39,.96);
+  font:700 .95rem/1.2 var(--body);
+}
+.lead-import-receipt span{
+  color:rgba(29,29,31,.82);
+  font:700 .72rem/1.25 var(--mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.lead-import-receipt small{
+  color:rgba(29,29,31,.68);
+  font:.74rem/1.45 var(--body);
+  overflow-wrap:anywhere;
+}
+.lead-sourcing-board{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:0;
+  min-height:360px;
+  border:1px solid rgba(29,29,31,.1);
+  border-radius:12px;
   overflow:hidden;
 }
 .project-row-status{
@@ -11213,6 +11246,12 @@ button.timeline-overview-receipt:focus-visible{
   min-height:180px;
 }
 .project-manager-tags{
+}
+.lead-stage-row.pending{
+  background:rgba(247,247,242,.62);
+  color:rgba(45,43,38,.66);
+}
+.lead-sourcing-actions{
   display:flex;
   flex-wrap:wrap;
   gap:7px;
@@ -13255,6 +13294,15 @@ button.timeline-overview-receipt:focus-visible{
   background:var(--frost-open-card-strong);
   color:rgba(29,25,22,.94);
 }
+.drawer-tray.source-open .lead-stage-row.pending{
+  border-style:dashed;
+  background:rgba(247,247,242,.7);
+}
+.drawer-tray.source-open .preview-controls{
+  justify-content:flex-start;
+  gap:8px;
+  min-width:0;
+}
 .relationship-detail .relationship-rolodex button[data-relationship-open-profile]{
   border-color:rgba(91,105,79,.13);
   background:var(--frost-open-card);
@@ -13294,7 +13342,8 @@ button.timeline-overview-receipt:focus-visible{
   backdrop-filter:blur(18px);
 }
 .lead-sourcing-control-bar button,
-.lead-sourcing-actions button{
+.lead-sourcing-actions button,
+.lead-sourcing-sample-link{
   min-height:40px;
   border:1px solid rgba(29,29,31,.12);
   border-radius:999px;
@@ -13305,6 +13354,10 @@ button.timeline-overview-receipt:focus-visible{
   box-shadow:0 8px 18px rgba(29,29,31,.07);
   cursor:pointer;
   transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
 }
 .lead-sourcing-control-bar button:first-child,
 .lead-sourcing-actions button:first-child{
@@ -13312,7 +13365,8 @@ button.timeline-overview-receipt:focus-visible{
   color:rgba(255,255,255,.96);
 }
 .lead-sourcing-control-bar button:hover,
-.lead-sourcing-actions button:hover{
+.lead-sourcing-actions button:hover,
+.lead-sourcing-sample-link:hover{
   transform:translateY(-1px);
   box-shadow:0 12px 24px rgba(29,29,31,.1);
 }
@@ -13325,6 +13379,11 @@ button.timeline-overview-receipt:focus-visible{
   display:grid;
   gap:12px;
   min-height:380px;
+}
+.lead-csv-template-note{
+  margin:10px 0 0;
+  color:rgba(29,29,31,.58);
+  font:600 .78rem/1.45 var(--sans);
 }
 .lead-sourcing-drawer-workbench[hidden]{display:none}
 .lead-sourcing-board{
@@ -16285,7 +16344,8 @@ button.timeline-overview-receipt:focus-visible{
   backdrop-filter:blur(14px) saturate(1.04);
 }
 .drawer-tray.source-open .lead-sourcing-control-bar button,
-.drawer-tray.source-open .lead-sourcing-actions button{
+.drawer-tray.source-open .lead-sourcing-actions button,
+.drawer-tray.source-open .lead-sourcing-sample-link{
   min-height:42px;
   border:1px solid rgba(42,45,39,.12);
   border-radius:999px;
@@ -16294,6 +16354,10 @@ button.timeline-overview-receipt:focus-visible{
   padding:0 18px;
   font:760 .78rem/1 var(--body);
   box-shadow:0 10px 24px rgba(40,42,38,.06),inset 0 1px 0 rgba(255,255,255,.78);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
 }
 .drawer-tray.source-open .lead-sourcing-control-bar button:first-child,
 .drawer-tray.source-open .lead-sourcing-actions button:first-child{
@@ -16310,6 +16374,11 @@ button.timeline-overview-receipt:focus-visible{
   border-color:rgba(138,47,55,.2);
   color:#7b1f2c;
   background:linear-gradient(180deg,rgba(255,249,249,.95),rgba(255,243,240,.82));
+}
+.drawer-tray.source-open .lead-sourcing-sample-link{
+  border-color:rgba(90,126,146,.22);
+  background:linear-gradient(180deg,rgba(247,252,255,.94),rgba(238,247,250,.82));
+  color:#264656;
 }
 .drawer-tray.source-open .lead-sourcing-actions button[data-lead-drawer-action="approve-all"]{
   border-color:rgba(125,141,111,.26);

@@ -1,0 +1,3 @@
+company,city,state,address,zip,website,phone,email,industry,employee count,decision maker,decision maker title,notes,source tag
+Bulldog Electrical Contractors Inc,Marietta,GA,51 Chert Rd,30062,https://bulldogelectricalinc.com,(770) 419-1280,sales@bulldogelectricalinc.com,electrical contractors,25+,Kyle Crump,President and Founder,Example row. GOALL should verify the decision maker and enrich painpoint before CRM import,Referral List - August
+Shippers Preferred Express Inc,Phoenix,AZ,2224 Grand Ave,85009,https://spxinc.com,(602) 233-3713,,trucking companies,50+,,,Example row. Company name and address are enough for Gemini research when contact data is missing,Referral List - August

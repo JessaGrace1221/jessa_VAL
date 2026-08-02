@@ -153,9 +153,13 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthHtml, /GOALL employer and partner scrapers are ready/);
   assert.match(hearthHtml, /Run employer scraper/);
   assert.match(hearthHtml, /Run partner scraper/);
+  assert.match(hearthHtml, /Upload employer CSV/);
+  assert.match(hearthHtml, /goall-employer-upload-sample\.csv/);
   assert.match(hearthHtml, /Train this scraper/);
   assert.match(hearthJs, /lead-sourcing-board/);
   assert.match(hearthJs, /stagedStartUrl: '\/api\/val\/leads\/staged-runs'/);
+  assert.match(hearthJs, /csvUploadUrl: '\/api\/val\/leads\/upload-csv-staged-runs'/);
+  assert.match(hearthJs, /const uploadedRowCount = Math\.max\(0, csvRows\.length - 1\)/);
   assert.match(hearthJs, /async function runStagedScraperPreview/);
   assert.match(hearthJs, /async function pollStagedScraperRun/);
   assert.match(hearthJs, /function renderStagedRunBoard/);

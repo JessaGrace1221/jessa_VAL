@@ -241,6 +241,9 @@ const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/ap
 const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
 const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
 const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),50);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
+const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-2.5-flash-lite').split(',').map(v=>v.trim()).filter(Boolean);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -279,7 +282,15 @@ const GOALL_LEAD_DISCOVERY_TIMEOUT_MS = Number(process.env.GOALL_LEAD_DISCOVERY_
 const GOALL_LEAD_IMPORT_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_IMPORT_CONCURRENCY)||2,1),10);
 const GOALL_LEAD_INDUSTRIES_PER_RUN = Math.min(Math.max(Number(process.env.GOALL_LEAD_INDUSTRIES_PER_RUN)||20,5),GOALL_LEAD_SEARCH_CALLS_MAX);
 const GOALL_LEAD_MIXED_JOB_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_MIXED_JOB_CONCURRENCY)||20,1),20);
-const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 12000;
+const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 60000;
+const GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW = Math.max(Number(process.env.GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW)||40,1);
+const GOALL_ALLOW_OPENAI_FALLBACK = /^(1|true|yes)$/i.test(String(process.env.GOALL_ALLOW_OPENAI_FALLBACK || ''));
+const GOALL_ALLOW_WEB_FALLBACK = /^(1|true|yes)$/i.test(String(process.env.GOALL_ALLOW_WEB_FALLBACK || ''));
+const GOALL_STAGED_GEMINI_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_STAGED_GEMINI_CONCURRENCY)||4,1),8);
+const GOALL_STAGED_RUN_TTL_MS = Math.max(Number(process.env.GOALL_STAGED_RUN_TTL_MS)||3600000,300000);
+const GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS = Math.min(Math.max(Number(process.env.GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS)||300,0),1500);
+const GOALL_STAGED_RESEARCH_ROW_DELAY_MS = Math.min(Math.max(Number(process.env.GOALL_STAGED_RESEARCH_ROW_DELAY_MS)||650,0),2500);
+const GOALL_STAGED_RAW_TARGET_MULTIPLIER = Math.min(Math.max(Number(process.env.GOALL_STAGED_RAW_TARGET_MULTIPLIER)||4,1),8);
 const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_OBSERVATION_TIMEOUT_MS)||22000,8000),60000);
 const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_RESPONSE_TIMEOUT_MS)||16000,8000),60000);
 const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
@@ -534,6 +545,12 @@ const GHL_LEAD_FIELD_IDS = {
   lead_scored_at: process.env.GHL_FIELD_LEAD_SCORED_AT || '',
   lead_rejected_reason: process.env.GHL_FIELD_LEAD_REJECTED_REASON || '',
   lead_scoring_version: process.env.GHL_FIELD_LEAD_SCORING_VERSION || '',
+  decision_maker_first_name: process.env.GHL_FIELD_DECISION_MAKER_FIRST_NAME || process.env.GHL_FIELD_DECISION_MAKER_FIRST || '',
+  decision_maker_last_name: process.env.GHL_FIELD_DECISION_MAKER_LAST_NAME || process.env.GHL_FIELD_DECISION_MAKER_LAST || '',
+  decision_maker_name: process.env.GHL_FIELD_DECISION_MAKER_NAME || '',
+  decision_maker_title: process.env.GHL_FIELD_DECISION_MAKER_TITLE || '',
+  decision_maker_email: process.env.GHL_FIELD_DECISION_MAKER_EMAIL || '',
+  decision_maker_phone: process.env.GHL_FIELD_DECISION_MAKER_PHONE || process.env.GHL_FIELD_DECISION_MAKERS_PHONE_NUMBER || '',
   scraped_annual_revenue: process.env.GHL_FIELD_SCRAPED_ANNUAL_REVENUE || (WESTWOOD_LEAD_PROFILE_ENABLED?'A8VvWiqnOUL2qCf2SqoF':''),
   scraped_number_of_employees: process.env.GHL_FIELD_SCRAPED_NUMBER_OF_EMPLOYEES || (WESTWOOD_LEAD_PROFILE_ENABLED?'WBP8IVZg9ktkreh6fjI7':''),
   industry: process.env.GHL_FIELD_INDUSTRY || '',
@@ -683,6 +700,12 @@ const GHL_LEAD_FIELD_KEYS = {
   lead_scored_at:'contact.lead_scored_at',
   lead_rejected_reason:'contact.lead_rejected_reason',
   lead_scoring_version:'contact.lead_scoring_version',
+  decision_maker_first_name:'contact.decision_maker_first_name',
+  decision_maker_last_name:'contact.decision_maker_last_name',
+  decision_maker_name:'contact.decision_maker_name',
+  decision_maker_title:'contact.decision_maker_title',
+  decision_maker_email:'contact.decision_maker_email',
+  decision_maker_phone:'contact.decision_maker_phone',
   scraped_annual_revenue:'contact.scraped_annual_revenue',
   scraped_number_of_employees:'contact.scraped_number_of_employees',
   industry:'contact.industry',
@@ -786,6 +809,12 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_scored_at:['lead scored at','lead_scored_at'],
   lead_rejected_reason:['lead rejected reason','lead_rejected_reason','rejected reason'],
   lead_scoring_version:['lead scoring version','lead_scoring_version'],
+  decision_maker_first_name:['decision maker first name','decision maker s first name','decision makers first name','decision_maker_first_name','decision_makers_first_name','decision maker first','decisionmakerfirstname'],
+  decision_maker_last_name:['decision maker last name','decision maker s last name','decision makers last name','decision_maker_last_name','decision_makers_last_name','decision maker last','decisionmakerlastname'],
+  decision_maker_name:['decision maker name','decision_maker_name','decision maker','decisionmakername'],
+  decision_maker_title:['decision maker title','decision_maker_title','decision maker s title','decision makers title','decisionmakertitle'],
+  decision_maker_email:['decision maker email','decision_maker_email','decision maker s email address','decision makers email address','decision_makers_email_address','decision maker email address'],
+  decision_maker_phone:['decision maker phone','decision_maker_phone','decision maker s phone number','decision makers phone number','decision_makers_phone_number','decision maker phone number'],
   linkedin_personal:['linkedin personal','linkedin personal url','linkedin profile url','linkedin_profile_url'],
   linkedin_company:['linkedin company','linkedin company url','linkedin_company_url'],
   linkedin_company_id:['linkedin company id','linkedin_company_id'],
@@ -2777,6 +2806,9 @@ async function getIntegrationCredential(provider,credentialType,userId=currentVa
     [0] || null;
 }
 async function resolveIntegrationSecret(provider,credentialType,fallback=''){
+  if(String(provider||'').toLowerCase()==='ghl' && fallback){
+    return fallback || '';
+  }
   if(String(credentialType||'')==='api_key'&&tenantApiKeyProvider(provider)){
     return resolveTenantApiKey(provider,{fallback,allowPlatformFallback:platformKeyFallbackAllowed(provider),sourceLabel:'resolveIntegrationSecret'});
   }
@@ -8516,6 +8548,10 @@ app.get('/hearth-prototype.js',(req,res)=>{
 app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
   res.set('Cache-Control','public, max-age=300');
   res.sendFile(path.join(__dirname,'assets',`hearth-${req.params.time}.png`));
+});
+app.get('/assets/goall-employer-upload-sample.csv',(req,res)=>{
+  res.set('Cache-Control','public, max-age=300');
+  res.download(path.join(__dirname,'assets','goall-employer-upload-sample.csv'),'goall-employer-upload-sample.csv');
 });
 app.get('/api/public-config',(req,res)=>{
   res.json({
@@ -15476,6 +15512,9 @@ function apolloPersonTitles(){
 function normalizeApolloPerson(person,lead={}){
   const org=person.organization || person.account || person.current_organization || {};
   const name=person.name || person.full_name || [person.first_name,person.last_name].filter(Boolean).join(' ');
+  const emails=extractEmailsFromValue(person);
+  const personEmail=normalizeEmailAddress(person.email || person.email_address || person.work_email || person.personal_email || person.primary_email || emails.find(isLikelyPersonEmail) || emails[0] || '');
+  const rawPhone=person.phone || person.phone_number || person.mobile_phone || person.mobile_phone_number || person.work_phone || person.primary_phone || person.sanitized_phone || '';
   return {
     found:!!(name || person.linkedin_url || person.title),
     id:person.id || person.person_id || '',
@@ -15487,14 +15526,32 @@ function normalizeApolloPerson(person,lead={}){
     city:person.city || '',
     state:person.state || '',
     country:person.country || '',
+    email:personEmail,
+    phone:normalizePhoneNumber(rawPhone),
     emailStatus:person.email_status || person.contact_email_status || '',
     rawPreview:JSON.stringify(person).slice(0,1400)
   };
 }
 
+function normalizedPersonName(value){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+function personNameMatches(a,b){
+  const left=normalizedPersonName(a);
+  const right=normalizedPersonName(b);
+  if(!left || !right) return false;
+  if(left===right) return true;
+  const leftParts=left.split(' ').filter(Boolean);
+  const rightParts=right.split(' ').filter(Boolean);
+  if(leftParts.length<2 || rightParts.length<2) return false;
+  return leftParts[0]===rightParts[0] && leftParts[leftParts.length-1]===rightParts[rightParts.length-1];
+}
+
 function scoreApolloPerson(person,lead){
   let score=0;
   const title=String(person.title||'').toLowerCase();
+  if(personNameMatches(person.name,lead.decisionMakerName)) score+=180;
   if(/\b(owner|founder|ceo|chief executive|president)\b/.test(title)) score+=100;
   else if(/\b(managing partner|partner|principal|practice owner|executive director)\b/.test(title)) score+=85;
   else if(/\b(operations|general manager|office manager|human resources|hr director)\b/.test(title)) score+=60;
@@ -15509,6 +15566,8 @@ function scoreApolloPerson(person,lead){
     else if(targetCompany.includes(personCompany) || personCompany.includes(targetCompany)) score+=55;
   }
   if(person.linkedinUrl) score+=12;
+  if(isLikelyPersonEmail(person.email)) score+=20;
+  if(validPhone(person.phone)) score+=12;
   if(person.name) score+=10;
   return score;
 }
@@ -15530,11 +15589,13 @@ async function lookupApolloDecisionMaker(lead={}){
       const params=new URLSearchParams();
       apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
       ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
+      if(lead.decisionMakerName) params.append('person_names[]',lead.decisionMakerName);
       if(domain) params.append('q_organization_domains_list[]',domain);
       if(!domain && company) params.set('q_keywords',company);
+      if(lead.state) params.append('organization_locations[]',lead.state);
+      else if(lead.location) params.append('organization_locations[]',lead.location);
       Object.entries(extraParams||{}).forEach(([key,value])=>{
         safeArray(value).forEach(item=>params.append(key,item));
-        if(!Array.isArray(value)&&value!==undefined&&value!==null&&String(value).trim())params.append(key,value);
       });
       params.set('include_similar_titles','true');
       params.set('page',String(page));
@@ -15548,15 +15609,22 @@ async function lookupApolloDecisionMaker(lead={}){
       }
       const raw=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
       rows.push(...raw);
-      if(raw.length<APOLLO_PEOPLE_SEARCH_PER_PAGE)break;
+      if(raw.length<APOLLO_PEOPLE_SEARCH_PER_PAGE) break;
     }
     return rows;
   };
+  const targetName=String(lead.decisionMakerName||'').trim();
+  const targetLinkedIn=String(lead.linkedinPersonalUrl||'').trim().toLowerCase();
   const rankPeople=(rawPeople=[])=>rawPeople
     .map(p=>normalizeApolloPerson(p,lead))
     .filter(p=>p.found)
     .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
-    .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain))
+    .filter(p=>{
+      if(targetName){
+        return personNameMatches(p.name,targetName) || (targetLinkedIn && String(p.linkedinUrl||'').toLowerCase()===targetLinkedIn);
+      }
+      return p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain);
+    })
     .sort((a,b)=>b.matchScore-a.matchScore);
   let rawPeople=[];
   let companySearchError='';
@@ -15597,25 +15665,35 @@ async function lookupApolloDecisionMaker(lead={}){
 }
 
 async function enrichProspectWithApollo(p){
-  if(p.decisionMakerName || p.linkedinPersonalUrl) return p;
+  const alreadyHasPersonEmail=isLikelyPersonEmail(p.decisionMakerEmail||p.personEmail||p.email);
+  const alreadyHasPersonPhone=validPhone(p.decisionMakerPhone||p.personPhone||'');
+  if(alreadyHasPersonEmail && alreadyHasPersonPhone) return {...p,apolloStatus:p.apolloStatus||'skipped because decision-maker email and phone already exist'};
   const apollo=await lookupApolloDecisionMaker(p).catch(e=>({configured:!!APOLLO_API_KEY,error:e.message}));
   const data=apollo?.data||{};
-  if(!data.name && !data.linkedinUrl){
+  if(!data.name && !data.linkedinUrl && !data.email && !data.phone){
     return {
       ...p,
       apollo,
       apolloStatus:apollo?.error||'Apollo did not return a decision-maker'
     };
   }
+  const personEmail=isLikelyPersonEmail(data.email)?data.email:'';
+  const personPhone=validPhone(data.phone)?data.phone:'';
   return {
     ...p,
     decisionMakerName:p.decisionMakerName||data.name||'',
     decisionMakerTitle:p.decisionMakerTitle||data.title||'',
+    decisionMakerEmail:p.decisionMakerEmail||personEmail,
+    decisionMakerPhone:p.decisionMakerPhone||personPhone,
+    personEmail:p.personEmail||personEmail,
+    personPhone:p.personPhone||personPhone,
+    email:personEmail||p.email||'',
+    phone:p.phone||personPhone||'',
     linkedinPersonalUrl:p.linkedinPersonalUrl||data.linkedinUrl||'',
     linkedinMatchConfidence:data.matchScore>=160?'high':'medium',
-    linkedinMatchNotes:`Apollo matched ${data.name||'a likely contact'}${data.title?' - '+data.title:''}${data.company?' at '+data.company:''}`,
+    linkedinMatchNotes:`Apollo matched ${data.name||p.decisionMakerName||'a likely contact'}${data.title?' - '+data.title:''}${data.company?' at '+data.company:''}`,
     apollo,
-    apolloStatus:`matched ${data.name||'likely decision-maker'}${data.title?' - '+data.title:''}`
+    apolloStatus:`matched ${data.name||p.decisionMakerName||'likely decision-maker'}${data.title?' - '+data.title:''}${personEmail?' with email':''}${personPhone?' with phone':''}`
   };
 }
 
@@ -17167,6 +17245,47 @@ app.post('/api/val/leads/discover-preview',async(req,res)=>{
   }
 });
 
+app.post('/api/val/leads/staged-runs',async(req,res)=>{
+  try{
+    cleanupGoallStagedRuns();
+    if(DEMO_MODE){
+      const run=createGoallStagedLeadRun({...req.body,limit:Math.min(Number(req.body?.limit)||12,12)});
+      return res.json(publicLeadRunView(run));
+    }
+    const run=createGoallStagedLeadRun(req.body||{});
+    res.json(publicLeadRunView(run));
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
+app.post('/api/val/leads/upload-csv-staged-runs',upload.single('file'),async(req,res)=>{
+  try{
+    cleanupGoallStagedRuns();
+    const file=req.file;
+    if(!file) return res.status(400).json({ok:false,error:'Choose a CSV file of GOALL employer leads to enrich.'});
+    if(!/\.csv$/i.test(file.originalname||'')&&!/csv|plain|spreadsheet/i.test(file.mimetype||'')){
+      return res.status(400).json({ok:false,error:'Choose a .csv file with company and location columns.'});
+    }
+    const rows=parseGoallLeadCsv(file.buffer.toString('utf8'));
+    if(!rows.length) return res.status(400).json({ok:false,error:'VAL could not find any business rows in that CSV.'});
+    const payload={...(req.body||{}),leadProfile:'goall',sourceType:'csv_upload',csvFileName:file.originalname||'uploaded leads.csv'};
+    const leads=rows.map((row,index)=>goallCsvLeadFromRow(row,index,payload)).filter((lead)=>lead.organizationName||lead.name);
+    if(!leads.length) return res.status(400).json({ok:false,error:'VAL needs at least one company or business name column to enrich uploaded leads.'});
+    const run=createGoallCsvStagedLeadRun(payload,leads);
+    res.json(publicLeadRunView(run));
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
+app.get('/api/val/leads/staged-runs/:runId',async(req,res)=>{
+  cleanupGoallStagedRuns();
+  const run=goallStagedLeadRuns.get(String(req.params.runId||''));
+  if(!run) return res.status(404).json({ok:false,error:'Staged GOALL run was not found. Start a new scraper run.'});
+  res.json(publicLeadRunView(run));
+});
+
 app.post('/api/val/leads/import-approved',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -17180,8 +17299,10 @@ app.post('/api/val/leads/import-approved',async(req,res)=>{
       criteria:String(body.criteria||'Approved GOALL lead import'),
       organizationType:String(body.organizationType||'businesses'),
       employeeMinimum:donorValue(body.employeeMinimum)||300,
-      tag:normalizeLeadTag(body.tag||body.organizationType),
-      scraped:body.scraped||body.outscraper||{},
+	      tag:normalizeLeadTag(body.tag||body.organizationType),
+	      importTag:String(body.importTag||body.sourceTag||body.csvSourceTag||'').trim(),
+	      sourceTag:String(body.sourceTag||body.importTag||body.csvSourceTag||'').trim(),
+	      scraped:body.scraped||body.outscraper||{},
       leads:Array.isArray(body.leads)?body.leads:[],
       leadProfile:body.leadProfile||body.searchPlan?.leadProfile||'',
       searchPlan:body.searchPlan||null,
@@ -29254,6 +29375,301 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
   return responseText(d);
 }
 
+function geminiInteractionText(data={}){
+  return (data.candidates||[])
+    .flatMap(candidate => candidate.content?.parts || [])
+    .map(part => part.text || '')
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function geminiInteractionSourceUrls(data={}){
+  const urls=[];
+  for(const candidate of data.candidates||[]){
+    for(const chunk of candidate.groundingMetadata?.groundingChunks||[]){
+      if(chunk.web?.uri) urls.push(chunk.web.uri);
+    }
+    for(const support of candidate.groundingMetadata?.groundingSupports||[]){
+      for(const chunkIndex of support.groundingChunkIndices||[]){
+        const chunk=candidate.groundingMetadata?.groundingChunks?.[chunkIndex];
+        if(chunk?.web?.uri) urls.push(chunk.web.uri);
+      }
+    }
+  }
+  return [...new Set(urls.filter(Boolean))];
+}
+
+function geminiModelCandidates(primary){
+  return [...new Set([primary,GEMINI_GROUNDED_MODEL,...GEMINI_FALLBACK_MODELS].map(v=>String(v||'').trim()).filter(Boolean))];
+}
+
+function geminiErrorIsRetryable(status,message=''){
+  return [404,429,500,502,503,504].includes(Number(status)) || /(high demand|quota|rate|unavailable|not found|try again|temporar)/i.test(String(message||''));
+}
+
+async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1}){
+  if(!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
+  const errors=[];
+  for(const candidateModel of geminiModelCandidates(model)){
+    const body={
+      contents:[{role:'user',parts:[{text:String(input||'')}]}],
+      generationConfig:{temperature,maxOutputTokens:maxTokens},
+      tools:[{google_search:{}}]
+    };
+    const response=await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    },60000,'Gemini grounded search').catch(e=>({ok:false,status:0,_timeoutError:e}));
+    if(response._timeoutError){
+      errors.push(`${candidateModel}: ${response._timeoutError.message}`);
+      continue;
+    }
+    const data=await readJsonResponse(response);
+    if(response.ok){
+      const text=geminiInteractionText(data);
+      if(text) return {raw:data,text,sourceUrls:geminiInteractionSourceUrls(data),model:candidateModel};
+      const finish=(data.candidates||[]).map(candidate=>candidate.finishReason).filter(Boolean).join(',')||'no finish reason';
+      const usage=data.usageMetadata ? ` usage=${JSON.stringify(data.usageMetadata).slice(0,260)}` : '';
+      errors.push(`${candidateModel}: empty grounded response (${finish})${usage}`);
+      continue;
+    }
+    const message=data.error?.message||data.raw||'upstream error';
+    errors.push(`${candidateModel}: ${response.status} ${message}`);
+    if(!geminiErrorIsRetryable(response.status,message)) break;
+  }
+  throw new Error(`Gemini grounded search failed: ${errors.join(' | ')}`);
+}
+
+function jsonArrayValue(value){
+  if(Array.isArray(value)) return value.filter(Boolean);
+  if(value && typeof value==='object') return Object.values(value).filter(Boolean);
+  if(!value) return [];
+  return [String(value)];
+}
+
+function goallLeadResearchFacts(p={}){
+  return [
+    `Company: ${p.organizationName||p.name||''}`,
+    `Address: ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ') || p.location || ''}`,
+    `Website: ${p.website||''}`,
+    `Industry: ${p.aiExactIndustry||p.industry||p.organizationType||''}`,
+    `Phone: ${p.phone||''}`,
+    `Business email: ${p.email||''}`,
+    `Public signals: ${jsonArrayValue(p.evidenceSignals).join('; ')}`,
+    `Google/raw context: ${String(p.googleRaw||p.googleData||'').slice(0,900)}`
+  ].filter(line=>!/:\s*$/.test(line)).join('\n');
+}
+
+function goallDecisionPerson(decision={}){
+  const best=decision.bestPersonToSpeakTo||{};
+  const primary=decision.primaryDecisionMaker||{};
+  const first=String(decision.decisionMakerFirstName||'').trim();
+  const last=String(decision.decisionMakerLastName||'').trim();
+  const joined=[first,last].filter(v=>v && !/^unverified$/i.test(v)).join(' ').trim();
+  return {
+    name:String(decision.decisionMakerName||primary.name||best.name||joined||'').trim(),
+    title:String(decision.decisionMakerTitle||primary.title||best.title||'').trim(),
+    confidence:String(decision.decisionMakerConfidence||primary.confidence||best.confidence||'').trim().toLowerCase(),
+    evidence:String(decision.decisionMakerEvidence||primary.evidence||primary.reason||best.reason||decision.notes||'').trim(),
+    linkedinUrl:String(decision.personalLinkedInUrl||primary.linkedinUrl||best.linkedinUrl||'').trim()
+  };
+}
+
+function decisionArrayValue(value){
+  if(Array.isArray(value)) return value.filter(Boolean);
+  if(value && typeof value==='object') return Object.values(value).filter(Boolean);
+  if(!value) return [];
+  return [String(value)];
+}
+
+function goallPainpointForMessaging(value=''){
+  let text=String(value||'')
+    .replace(/\s+/g,' ')
+    .trim()
+    .replace(/[.!?]+$/,'');
+  if(!text) return '';
+  text=text
+    .replace(/^a\s+(?:challenge|pain point|painpoint|problem|issue)\s+(?:of|with)\s+/i,'')
+    .replace(/^the\s+(?:challenge|pain point|painpoint|problem|issue)\s+(?:of|with)\s+/i,'')
+    .replace(/^challenge\s+(?:of|with)\s+/i,'')
+    .replace(/^struggling\s+with\s+/i,'')
+    .replace(/^operational\s+strain\s+and\s+/i,'')
+    .replace(/^recruitment\s+pressure\s+for\s+/i,'recruiting ')
+    .replace(/^hiring\s+pressure\s+for\s+/i,'hiring ')
+    .replace(/^retention\s+problems\s+for\s+/i,'retaining ')
+    .replace(/^customer\s+acquisition\s+pressure\s+for\s+/i,'acquiring ')
+    .replace(/^multi-location\s+scaling\s+pressure\s+for\s+/i,'scaling ');
+  text=text.replace(/\s+/g,' ').trim().replace(/[.!?]+$/,'');
+  if(!text) return '';
+  text=text.charAt(0).toLowerCase()+text.slice(1);
+  const words=text.split(/\s+/);
+  if(words.length>12){
+    text=words.slice(0,12).join(' ');
+    text=text.replace(/\s+(?:to|for|with|and|or|of|the|a|an)$/i,'').trim();
+  }
+  return text;
+}
+
+function explicitGoallPainpoint(decision={},p={}){
+  return goallPainpointForMessaging(
+    decision.explicitPainpoint ||
+    decision.painpoint ||
+    decision.painPoint ||
+    decision.goallPainpoint ||
+    p.painpoint ||
+    p.painPoint ||
+    ''
+  );
+}
+
+async function researchGoallDecisionMakerWithGemini(p={}){
+  const prompt=[
+    'Act as an expert B2B sales researcher for GOALL (Growth Only Automated Life & Legacy), an employee benefits program.',
+    'Use Google Search grounding to answer the same question a human operator would ask Gemini/Google AI, but return only the exact JSON object the scraper needs.',
+    '',
+    `Primary search query: ${[p.organizationName||p.name||'this company',p.city||'',p.state||'', 'owner'].filter(Boolean).join(' ')}`,
+    `Leadership fallback query: ${[p.organizationName||p.name||'this company',p.city||'',p.state||'', 'CEO president executive leadership founder'].filter(Boolean).join(' ')}`,
+    `Direct question: Who owns ${p.organizationName||p.name||'this company'} at ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ') || p.location || p.website || 'the known location'}?`,
+    `Executive fallback question: If no individual owner is currently named, who leads ${p.organizationName||p.name||'this company'} as CEO, president, founder, managing member, general manager, executive leader, HR/benefits leader, or operations leader?`,
+    `Follow-up question: Where would ${p.organizationName||p.name||'this company'} likely see turnover, hiring pressure, recruiting friction, retention problems, operational strain, or expansion needs based only on public evidence?`,
+    '',
+    'Research the exact business and produce the same content the team liked from Gemini, but in structured fields: decision makers, best contact method, business size context, customized GOALL value propositions, hiring/turnover, and GOALL-aligned business needs/pain points.',
+    '',
+    'Business facts:',
+    goallLeadResearchFacts(p),
+    '',
+    'Requirements:',
+    '- Match the exact company name and exact address/location. Do not confuse similarly named businesses.',
+    '- exactLocationMatched must be false when the best verified company appears to be in a different city or state than the searched business/location.',
+    '- If the verified company is in a different state than the searched market, return explicitState as the verified state and explain the mismatch in possibleConfusionWarnings.',
+    '- If the exact legal name is not active or public results reveal a likely DBA, operating company, parent/umbrella company, or similarly named regional entity, do not discard the row. Return the closest verified match in alternativeBusinessMatches and explain the ambiguity in possibleConfusionWarnings.',
+    '- Only return a decisionMakerName when the person belongs to the exact company or a clearly connected operating/umbrella entity. Use medium or low confidence when the match is an operating/umbrella entity rather than the exact legal name.',
+    '- Decision-maker search ladder: first owner/co-owner; then founder; then president/CEO/managing member; then general manager/operator; then HR/benefits/operations leader; then another senior executive who would plausibly decide on GOALL.',
+    '- Employee-owned, ESOP, trust-owned, private equity-owned, family-owned without a named current owner, or ownership-transfer situations are not "no decision maker" cases. In those cases, return the CEO, president, chair, founder, or strongest current executive leader when public evidence supports the person.',
+    '- Do not set Unverified solely because ownership is diffuse, employee-owned, or held by an ESOP/trust. Only set Unverified after checking executive leadership and finding no reliable named leader.',
+    '- If you find a person, return first name and last name separately.',
+    '- If you find no reliable person, set decisionMakerFirstName to "Unverified", leave last name empty, and explain why.',
+    '- If you find a person but no direct person contact info, leave email and phone empty. Do not use generic company emails as person emails.',
+    '- explicitCity and explicitState must be the verified business city and state from the matched location. Do not infer city or state from a broad market if the business location does not support it.',
+	    '- explicitPainpoint must be a short, sentence-ready phrase that works inside these exact templates: "You identified a challenge of {{contact.painpoint}}" and "Other employers are also struggling with {{contact.painpoint}}".',
+	    '- Write explicitPainpoint in lowercase unless a proper noun is required. Use 3 to 9 words when possible and no more than 12 words.',
+	    '- Good explicitPainpoint examples: "finding skilled electricians", "keeping experienced drivers", "hiring reliable HVAC technicians", "retaining project managers", "filling open field roles", "managing rapid team growth".',
+	    '- Bad explicitPainpoint examples: "Operational strain and recruitment pressure for skilled in-house project management and trade staff to support multi-regional renovation projects", "growth and outreach goals", "workforce challenges", "a need for solutions".',
+	    '- Do not put evidence, long explanations, company background, or GOALL positioning in explicitPainpoint. Put the evidence sentence in painpointEvidence and the outreach angle in recommendedGoallPositioning.',
+	    '- Use public evidence such as hiring pages, press releases, reviews, BBB/company descriptions, service-area scale, posted roles, expansion language, or industry-specific labor pressure. Name the concrete evidence in painpointEvidence.',
+    '- Do not use generic phrases like "growth, outreach, or pipeline goals" unless public evidence supports that exact issue.',
+    '- Leave explicitPainpoint empty only when the grounded search finds no public evidence for any concrete GOALL-relevant painpoint.',
+    '- Include source URLs and a short evidence sentence.',
+    '- phoneType must be one of: direct_decision_maker, main_office, likely_gatekeeper, unknown.',
+    '- emailType must be one of: decision_maker, general_inbox, unknown.',
+    '- companyStructure must be one of: local_owner_led, regional_branch, large_corporation, out_of_state_hq_with_local_branch, ambiguous.',
+    '- If it is a larger company, include regional VP, HR Manager, Operations Director, branch manager, or other Arizona/local decision makers in regionalDecisionMakers when public evidence supports them.',
+    '- customizedValueProps must include 3 to 4 GOALL value propositions mapped to this exact company industry/business model, such as zero compliance fees vs. 401ks, tax-bracket protection for owners, key-person protection, trade-technician retention, or regional workforce retention.',
+    '- callerSnapshot must be a compact block a caller can read while the phone is ringing. Include decision maker, phone type, email type, hiring signal, turnover risk, short painpoint, and suggested opener.',
+    '- callOpener must be one or two sentences and must change depending on phoneType. If phoneType is main_office or likely_gatekeeper, write a gatekeeper-friendly opener.',
+    '- emailAngle must be a short personalized angle for future email generation. It must use only explicit evidence, not guesses.',
+    '- Return only valid JSON. No markdown.',
+    '',
+    'Return JSON with this exact shape:',
+    '{"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","primaryDecisionMaker":{"name":"","title":"","roleType":"owner|president|ceo|founder|regional|hr|operations|admin|unknown","linkedinUrl":"","confidence":"high|medium|low|none","evidence":""},"secondaryDecisionMakers":[{"name":"","title":"","roleType":"vp|hr|operations|admin|regional|other","linkedinUrl":"","reason":"","sourceUrl":""}],"regionalDecisionMakers":[{"name":"","title":"","region":"","linkedinUrl":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"bestContactMethod":{"email":"","emailType":"decision_maker|general_inbox|unknown","phone":"","phoneType":"direct_decision_maker|main_office|likely_gatekeeper|unknown","address":"","contactNotes":""},"explicitCity":"","explicitState":"","explicitPainpoint":"","painpointEvidence":"","businessNeedsAndPainPoints":[""],"hiringAndTurnover":{"activelyHiring":"yes|no|unclear","highestTurnoverArea":"","turnoverRisk":"","evidence":""},"businessSizeContext":"","companyStructure":"local_owner_led|regional_branch|large_corporation|out_of_state_hq_with_local_branch|ambiguous","customizedValueProps":[""],"recommendedGoallPositioning":"","callerSnapshot":"","callOpener":"","emailAngle":"","operatingEntityName":"","exactEntityStatus":"","alternativeBusinessMatches":[{"entityName":"","location":"","relationshipToSearch":"","ownersOrExecutives":[{"name":"","title":""}],"sourceUrl":""}],"personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"peopleToAvoid":[{"nameOrRole":"","reason":""}],"sourceUrls":[],"notes":"","exactLocationMatched":true,"possibleConfusionWarnings":[]}'
+  ].join('\n');
+  const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:3200,temperature:0.1});
+  const parsed=extractJsonObject(gemini.text);
+  return {...parsed,sourceUrls:[...new Set([...jsonArrayValue(parsed.sourceUrls),...gemini.sourceUrls])],geminiGrounded:true,geminiModel:gemini.model};
+}
+
+async function enrichProspectWithGoallGeminiDecisionMaker(p={},opts={}){
+  if(String(p.leadProfile||'goall').toLowerCase()!=='goall' || opts.decisionMakerResearch===false || p.decisionMakerName || !GEMINI_API_KEY) return p;
+  if(!(p.organizationName||p.name) || !(p.address1||p.city||p.location||p.website)) return p;
+  try{
+    const decision=await researchGoallDecisionMakerWithGemini(p);
+    const person=goallDecisionPerson(decision);
+    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
+    const contactMethod=decision.bestContactMethod&&typeof decision.bestContactMethod==='object'?decision.bestContactMethod:{};
+    const hiringTurnover=decision.hiringAndTurnover&&typeof decision.hiringAndTurnover==='object'?decision.hiringAndTurnover:{};
+    const next={
+      ...p,
+      aiDecisionMakerResearch:decision,
+      decisionMakerEvidence:person.evidence||decision.decisionMakerEvidence||decision.notes||p.decisionMakerEvidence||'',
+      decisionMakerSourceUrls:jsonArrayValue(decision.sourceUrls),
+      keyDecisionMakers:decision.keyDecisionMakers||[],
+      secondaryDecisionMakers:decisionArrayValue(decision.secondaryDecisionMakers),
+      regionalDecisionMakers:decisionArrayValue(decision.regionalDecisionMakers),
+      peopleToAvoid:decision.peopleToAvoid||[],
+      possibleConfusionWarnings:decisionArrayValue(decision.possibleConfusionWarnings||decision.ambiguity_warnings),
+      alternativeBusinessMatches:decisionArrayValue(decision.alternativeBusinessMatches||decision.related_entities),
+      operatingEntityName:String(decision.operatingEntityName||decision.company_name||'').trim(),
+      exactEntityStatus:String(decision.exactEntityStatus||'').trim(),
+	      exactLocationMatched:decision.exactLocationMatched !== false,
+	      decisionMakerSource:'Gemini grounded search',
+	      city:String(decision.explicitCity||p.city||'').trim(),
+      explicitState:String(decision.explicitState||decision.verifiedState||'').trim(),
+      verifiedState:String(decision.explicitState||decision.verifiedState||'').trim(),
+      painpoint:explicitGoallPainpoint(decision,p),
+      painpointEvidence:String(decision.painpointEvidence||p.painpointEvidence||'').trim(),
+      businessNeedsAndPainPoints:decisionArrayValue(decision.businessNeedsAndPainPoints),
+      businessSizeContext:String(decision.businessSizeContext||p.businessSizeContext||'').trim(),
+      companyStructure:String(decision.companyStructure||p.companyStructure||'').trim(),
+      customizedValueProps:decisionArrayValue(decision.customizedValueProps),
+      activelyHiring:String(hiringTurnover.activelyHiring||p.activelyHiring||'').trim(),
+      highestTurnoverArea:String(hiringTurnover.highestTurnoverArea||p.highestTurnoverArea||'').trim(),
+      turnoverRisk:String(hiringTurnover.turnoverRisk||p.turnoverRisk||'').trim(),
+      hiringTurnoverEvidence:String(hiringTurnover.evidence||p.hiringTurnoverEvidence||'').trim(),
+      bestContactEmail:String(contactMethod.email||p.bestContactEmail||'').trim(),
+      bestContactEmailType:String(contactMethod.emailType||p.bestContactEmailType||'').trim(),
+      bestContactPhone:String(contactMethod.phone||p.bestContactPhone||'').trim(),
+      bestContactPhoneType:String(contactMethod.phoneType||p.bestContactPhoneType||'').trim(),
+      bestContactAddress:String(contactMethod.address||p.bestContactAddress||'').trim(),
+      bestContactNotes:String(contactMethod.contactNotes||p.bestContactNotes||'').trim(),
+      callerSnapshot:String(decision.callerSnapshot||p.callerSnapshot||'').trim(),
+      callOpener:String(decision.callOpener||p.callOpener||'').trim(),
+      emailAngle:String(decision.emailAngle||p.emailAngle||'').trim(),
+      recommendedOutreachAngle:String(decision.recommendedGoallPositioning||p.recommendedOutreachAngle||'').trim(),
+      nextOutreachAngle:String(decision.recommendedGoallPositioning||p.nextOutreachAngle||'').trim()
+    };
+    if(!next.email && contactMethod.email && validEmail(contactMethod.email)){
+      next.email=normalizeEmailAddress(contactMethod.email);
+      next.emailQuality=String(contactMethod.emailType||'').toLowerCase()==='decision_maker'?'person':'general';
+    }
+    if(!validPhone(next.phone||'') && contactMethod.phone && validPhone(contactMethod.phone)){
+      next.phone=normalizePhoneNumber(contactMethod.phone);
+    }
+    if((confidence==='high'||confidence==='medium') && person.name){
+      const parts=String(person.name).trim().split(/\s+/);
+      next.decisionMakerName=person.name;
+      next.decisionMakerTitle=person.title||next.decisionMakerTitle||'';
+      next.linkedinPersonalUrl=person.linkedinUrl||next.linkedinPersonalUrl||'';
+      next.decisionMakerFirstName=decision.decisionMakerFirstName||parts[0]||'';
+	      next.decisionMakerLastName=decision.decisionMakerLastName||parts.slice(1).join(' ');
+	      next.decisionMakerConfidence=confidence;
+	      next.linkedinMatchConfidence=confidence;
+	      next.linkedinMatchNotes=`Gemini matched ${person.name}${person.title?' - '+person.title:''}. ${person.evidence||decision.notes||''}`.trim();
+	      if(decision.personEmail && isLikelyPersonEmail(decision.personEmail)){
+	        next.email=decision.personEmail;
+	        next.decisionMakerEmail=decision.personEmail;
+	        next.personEmail=decision.personEmail;
+	      }
+	      if(decision.personPhone && validPhone(decision.personPhone)){
+	        const personPhone=normalizePhoneNumber(decision.personPhone);
+	        next.phone=personPhone;
+	        next.decisionMakerPhone=personPhone;
+	        next.personPhone=personPhone;
+	      }
+    }else{
+      next.decisionMakerFirstName='Unverified';
+      next.decisionMakerLastName='';
+      next.decisionMakerConfidence=confidence||'none';
+      next.apolloStatus='skipped because Gemini did not verify a decision maker';
+      next.rocketReachStatus='skipped because Gemini did not verify a decision maker';
+    }
+    return sanitizeDecisionMaker(next);
+  }catch(e){
+    return {...p,geminiDecisionMakerStatus:e.message};
+  }
+}
+
 const GOALL_LEADS_SYSTEM_PROMPT = `
 You are Leads MCP GOALL, a focused lead generation and growth strategy specialist for the GOALL Agency.
 
@@ -29925,6 +30341,36 @@ function normalizeGoallMarket(value,criteria='',profile='goall'){
   return raw || (profile==='westwood'?'Idaho, US':'Arizona');
 }
 
+const US_STATE_CODES = {
+  alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',
+  hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',
+  massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ',
+  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY'
+};
+const US_STATE_NAMES_BY_CODE = Object.fromEntries(Object.entries(US_STATE_CODES).map(([name,code])=>[code,name]));
+
+function normalizeUsStateCode(value=''){
+  const text=String(value||'').toLowerCase().replace(/[^a-z\s]/g,' ').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  const direct=String(value||'').trim().toUpperCase();
+  if(US_STATE_NAMES_BY_CODE[direct]) return direct;
+  if(US_STATE_CODES[text]) return US_STATE_CODES[text];
+  for(const [name,code] of Object.entries(US_STATE_CODES)){
+    if(new RegExp(`\\b${name.replace(/\s+/g,'\\s+')}\\b`,'i').test(String(value||''))) return code;
+  }
+  const codeMatch=String(value||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  return codeMatch?.[1]||'';
+}
+
+function goallTargetStateCode(lead={}){
+  return normalizeUsStateCode(lead.searchMarket||lead.market||lead.state||lead.location||'');
+}
+
+function goallVerifiedStateCode(lead={}){
+  return normalizeUsStateCode(lead.explicitState||lead.verifiedState||lead.stateVerified||lead.aiDecisionMakerResearch?.explicitState||lead.aiDecisionMakerResearch?.verifiedState||'');
+}
+
 function resolveGoallLeadSearchPlan(body={}){
   const leadProfile=isWestwoodLeadProfile(body)?'westwood':'goall';
   const criteria=String(body.criteria||body.query||'').trim();
@@ -30227,14 +30673,28 @@ function leadCompanySummary(p,exactIndustry,contactability){
 }
 
 function leadCallScript(p){
-  const name=p.decisionMakerName||'there';
+  if(p.callOpener) return String(p.callOpener).trim();
+  const contactability=leadContactability(p);
+  const phoneType=String(p.bestContactPhoneType||'').toLowerCase();
+  const gatekeeper=/main_office|gatekeeper/.test(phoneType);
+  const name=gatekeeper?'there':(p.decisionMakerName||'there');
   const company=p.organizationName||p.name||'your company';
-  const angle=p.nextOutreachAngle||p.recommendedOutreachAngle||'growth and employee-base complexity';
-  return `Hi ${name}, this is Mark with GOALL. I was looking at ${company} and noticed a few signs that your team may be dealing with ${angle}. I wanted to ask one quick question: are you currently looking for ways to improve lead flow, follow-up, or revenue consistency without adding more chaos to the team?`;
+  const painpoint=goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'employee retention and benefits pressure';
+  const angle=p.nextOutreachAngle||p.recommendedOutreachAngle||p.emailAngle||`supporting ${painpoint}`;
+  if(gatekeeper || contactability.contactabilityStatus==='phone_only'){
+    return `Hi, this is Mark with GOALL. I was hoping to speak with whoever handles employee benefits, retention, or owner-level planning for ${company}. We help employers address ${painpoint} without the compliance burden of a traditional 401(k) conversation.`;
+  }
+  return `Hi ${name}, this is Mark with GOALL. I was looking at ${company} and noticed public signals around ${painpoint}. I wanted to ask whether you are open to a short conversation about ${angle} through a benefits program built for owners and key employees.`;
 }
 
 function leadCustomFieldsFromProspect(p){
   const name=p.organizationName||p.name||'';
+  const decisionMakerName=String(p.decisionMakerName||'').trim();
+  const decisionMakerParts=decisionMakerName.split(/\s+/).filter(Boolean);
+  const decisionMakerFirstName=String(p.decisionMakerFirstName||'').trim() || decisionMakerParts[0] || (decisionMakerName ? '' : 'Unverified');
+  const decisionMakerLastName=String(p.decisionMakerLastName||'').trim() || decisionMakerParts.slice(1).join(' ');
+  const personEmailForFields=p.decisionMakerEmail||p.decision_maker_email||p.personEmail||(decisionMakerName && isLikelyPersonEmail(p.email) ? p.email : '');
+  const personPhoneForFields=p.decisionMakerPhone||p.decision_maker_phone||p.personPhone||(decisionMakerName && validPhone(p.phone) ? p.phone : '');
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
   const exactIndustry=String(p.aiExactIndustry||p.ai_exact_industry||p.exactIndustry||p.industry||p.cause||p.primaryService||'unclear').trim()||'unclear';
   const automation=(p.leadProfile||'').toLowerCase()==='westwood'?{}:mapGoallAutomationTag(p);
@@ -30314,7 +30774,7 @@ function leadCustomFieldsFromProspect(p){
     lead_ingested_at:ingestedAt,
     lead_ingestion_id:enrichmentRunId,
     lead_processing_status:contactability.importable?'ready_for_import':'rejected',
-    painpoint:p.painpoint||p.painPoint||salesAngle,
+	    painpoint:goallPainpointForMessaging(p.painpoint||p.painPoint||''),
     call_transcript:p.callTranscript||p.call_transcript||'',
     lead_dedupe_key:dedupeKey,
     lead_monitoring_enabled:String(p.leadMonitoringEnabled??true),
@@ -30354,6 +30814,12 @@ function leadCustomFieldsFromProspect(p){
     lead_scored_at:p.leadScoredAt||p.lead_scored_at||processedAt,
     lead_rejected_reason:contactability.importable?'':(contactability.rejectionReason||'missing_email_and_phone'),
     lead_scoring_version:p.leadScoringVersion||p.lead_scoring_version||'goall-v2-contactability-company-person',
+    decision_maker_first_name:decisionMakerFirstName,
+    decision_maker_last_name:decisionMakerLastName,
+    decision_maker_name:decisionMakerName||'Unverified',
+    decision_maker_title:p.decisionMakerTitle||p.title||p.position||'',
+    decision_maker_email:personEmailForFields,
+    decision_maker_phone:personPhoneForFields,
     approximat_donor_count:donorCount?String(donorCount):'unclear',
     linkedin_personal:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
     linkedin_company:p.linkedinCompanyUrl||p.linkedinOrganizationUrl||'',
@@ -31516,6 +31982,21 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
   };
 }
 
+function isOutscraperQueryLikeBusinessName(name='',organizationType='',market=''){
+  const normalized=String(name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  if(!normalized) return true;
+  const industry=String(organizationType||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  const marketText=String(market||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  const marketParts=marketText.split(/\s+/).filter(word=>word.length>2 && !/^(usa?|united|states|businesses?)$/.test(word));
+  const hasMarketWord=marketParts.some(word=>normalized.includes(word));
+  const industryWords=industry.split(/\s+/).filter(word=>word.length>3 && !/^(companies|businesses|contractors?)$/.test(word));
+  const hasIndustryPhrase=industry && normalized.includes(industry);
+  const hasIndustryWords=industryWords.length && industryWords.every(word=>normalized.includes(word));
+  const looksLikeSearchHeading=/\b(in|near|around|serving)\b/.test(normalized) && hasMarketWord && (hasIndustryPhrase||hasIndustryWords);
+  const lacksBusinessIdentity=!/\b(llc|inc|co|company|corp|corporation|services|service|group|solutions|systems|works|electric|plumbing|roofing|hvac|metal|machine|manufacturing|restoration|builders|contracting)\b/.test(normalized);
+  return looksLikeSearchHeading && lacksBusinessIdentity;
+}
+
 const OUTSCRAPER_POLL_INTERVAL_MS = Number(process.env.OUTSCRAPER_POLL_INTERVAL_MS) || 3000;
 const OUTSCRAPER_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_POLL_TIMEOUT_MS) || 90000;
 const OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS) || 45000;
@@ -31575,6 +32056,7 @@ async function discoverOutscraperProspects({organizationType,employeeMinimum,mar
   const leads=rows.map(r=>normalizeOutscraperPlace(r,organizationType,employeeMinimum,market))
     .map(p=>({...p,leadProfile,source:leadProfile==='westwood'?'Grace Intelligence Limitless Leads':'LimitLess Leads'}))
     .filter(p=>p.organizationName)
+    .filter(p=>!isOutscraperQueryLikeBusinessName(p.organizationName,organizationType,market))
     .slice(0,limit||12);
   return {configured:true, leads, rawCount:rows.length};
 }
@@ -31727,11 +32209,12 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   const enrichLimit=Math.min(freshLeads.length,GOALL_LEAD_RAW_SEARCH_MAX);
   const broadPreview=requested>=100;
   const broadGoallPersonLookup=broadPreview && plan.leadProfile==='goall';
-  const enrichmentConcurrency=broadGoallPersonLookup?20:(requested>=25?6:3);
+  const runInlineDecisionResearch=plan.leadProfile==='goall' && requested<=GOALL_AI_DECISION_RESEARCH_MAX_PREVIEW;
+  const enrichmentConcurrency=runInlineDecisionResearch?3:(broadGoallPersonLookup?20:(requested>=25?6:3));
   const enriched=await mapWithConcurrency(freshLeads.slice(0,Math.min(enrichLimit,requested)),enrichmentConcurrency,async prospect=>{
     const next=broadGoallPersonLookup
-      ? await enrichProspectWithApollo(prospect).then(value=>({...value,rocketReachStatus:'deferred until review'})).catch(e=>({...prospect,apolloStatus:e.message,rocketReachStatus:'deferred until review'}))
-      : await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch||broadPreview}).catch(e=>({...prospect,rocketReachStatus:e.message}));
+      ? await enrichProspect(prospect,{rocketReachMode:'defer',fastPreview:false,decisionMakerResearch:runInlineDecisionResearch}).catch(e=>({...prospect,apolloStatus:e.message,rocketReachStatus:'deferred until review'}))
+      : await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch||broadPreview,decisionMakerResearch:runInlineDecisionResearch}).catch(e=>({...prospect,rocketReachStatus:e.message}));
     const exactIndustry=next.aiExactIndustry||next.industry||next.organizationType||prospect.organizationType||'unclear';
     return applyLeadScoring(sanitizeDecisionMaker({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile}));
   });
@@ -31748,6 +32231,484 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
     rejectedReasons,
     jobs
   };
+}
+
+const goallStagedLeadRuns = new Map();
+
+function goallStageLeadKey(p={}){
+  return String(p._stageKey||p.stageKey||goallLeadKey(p));
+}
+
+function buildGoallStageRows(run){
+  const decisionByKey=new Map();
+  const reviewByKey=new Map();
+  run.decisionMakers.forEach((lead,index)=>{
+    decisionByKey.set(goallStageLeadKey(lead),{lead,index});
+  });
+  run.reviewLeads.forEach((lead,index)=>{
+    reviewByKey.set(goallStageLeadKey(lead),{lead,index});
+  });
+  return run.businesses.map((business,index)=>{
+    const key=goallStageLeadKey(business);
+    const decision=decisionByKey.get(key);
+    const review=reviewByKey.get(key);
+    let step2Status='waiting';
+    if(decision?.lead) step2Status=decision.lead.decisionMakerName ? 'named' : 'no_verified_person';
+    else if(run.phase==='gemini') step2Status='queued_for_research';
+    else if(run.status==='complete') step2Status='not_researched_before_target_met';
+    let step3Status='waiting';
+    if(review?.lead) step3Status=isGoallStagedAddableLead(review.lead) ? 'ready' : 'hold';
+    else if(run.phase==='gemini'||run.phase==='review') step3Status='waiting_for_research';
+    else if(run.status==='complete') step3Status='not_reviewed_before_target_met';
+    return {
+      key,
+      index,
+      business,
+      decision:decision?.lead||null,
+      decisionIndex:decision?.index ?? -1,
+      review:review?.lead||null,
+      reviewIndex:review?.index ?? -1,
+      step2Status,
+      step3Status
+    };
+  });
+}
+
+function publicLeadRunView(run){
+  const stageRows=buildGoallStageRows(run);
+  return {
+    ok:true,
+    runId:run.id,
+    status:run.status,
+    phase:run.phase,
+    message:run.message,
+    startedAt:run.startedAt,
+    updatedAt:run.updatedAt,
+    completedAt:run.completedAt||'',
+    error:run.error||'',
+    requested:run.requested,
+    payload:run.payload,
+    searchPlan:run.searchPlan,
+    counts:{
+      requested:run.requested,
+      businesses:run.businesses.length,
+      decisionMakers:run.decisionMakers.length,
+	      reviewReady:run.reviewLeads.length,
+	      addableReady:run.reviewLeads.filter(isGoallStagedAddableLead).length,
+	      rawFound:run.rawCount||0,
+      duplicates:run.rejectedReasons.duplicate||0,
+      alreadyInCrm:run.rejectedReasons.already_in_crm||0,
+      errors:run.errors.length,
+      stageRows:stageRows.length
+    },
+    stageRows,
+    businesses:run.businesses,
+    decisionMakers:run.decisionMakers,
+    reviewLeads:run.reviewLeads,
+    errors:run.errors.slice(-20),
+    rejectedReasons:run.rejectedReasons,
+    report:run.report||null,
+    content:run.content||''
+  };
+}
+
+function touchLeadRun(run,patch={}){
+  Object.assign(run,patch,{updatedAt:new Date().toISOString()});
+  return run;
+}
+
+function goallStagedLeadHoldReason(lead={}){
+  const targetState=goallTargetStateCode(lead);
+  const verifiedState=goallVerifiedStateCode(lead);
+  const mismatchText=[
+    lead.exactEntityStatus,
+    lead.decisionMakerEvidence,
+    lead.aiDecisionMakerResearch?.notes,
+    lead.aiDecisionMakerResearch?.exactEntityStatus,
+    decisionArrayValue(lead.possibleConfusionWarnings).join(' ')
+  ].filter(Boolean).join(' ');
+  return [
+    !String(lead.city||'').trim() ? 'missing explicit city' : '',
+    !String(lead.painpoint||lead.painPoint||'').trim() ? 'missing explicit painpoint' : '',
+    lead.exactLocationMatched===false ? 'verified location does not match searched business/location' : '',
+    targetState && verifiedState && targetState!==verifiedState ? `verified state ${verifiedState} does not match target ${targetState}` : '',
+    targetState && !verifiedState && /\b(rather than|instead of|not in|different state|wrong state|mismatch|confus)/i.test(mismatchText) ? 'possible out-of-market location mismatch needs review' : '',
+    decisionArrayValue(lead.possibleConfusionWarnings).length ? 'business/entity ambiguity needs review' : ''
+  ].filter(Boolean).join('; ');
+}
+
+function isGoallStagedAddableLead(lead={}){
+  return !goallStagedLeadHoldReason(lead);
+}
+
+function goallAdditionalImportTags(p={},opts={}){
+  const raw=[
+    p.importTag,
+    p.sourceTag,
+    p.csvSourceTag,
+    p.uploadTag,
+    opts.importTag,
+    opts.sourceTag
+  ].flatMap((value)=>Array.isArray(value)?value:String(value||'').split(','));
+  return [...new Set(raw.map((tag)=>String(tag||'').replace(/\s+/g,' ').trim()).filter(Boolean).map((tag)=>tag.slice(0,80)))];
+}
+
+function createGoallStagedLeadRun(payload={}){
+  const plan=resolveGoallLeadSearchPlan({...payload,leadProfile:'goall'});
+  const id=crypto.randomUUID();
+  const now=new Date().toISOString();
+  const run={
+    id,
+    status:'running',
+    phase:'queued',
+    message:'Queued GOALL employer sourcing run.',
+    startedAt:now,
+    updatedAt:now,
+    completedAt:'',
+    error:'',
+    requested:plan.requestedViableLeads,
+    payload:{...payload,leadProfile:'goall'},
+    searchPlan:plan,
+    rawLeads:[],
+    businesses:[],
+    decisionMakers:[],
+    reviewLeads:[],
+    errors:[],
+    rejectedReasons:{duplicate:0,already_in_crm:0,missing_email_and_phone:0,bad_fit:0},
+    rawCount:0,
+    report:null,
+    content:''
+  };
+  goallStagedLeadRuns.set(id,run);
+  runGoallStagedLeadPipeline(run).catch(error=>{
+    touchLeadRun(run,{
+      status:'failed',
+      phase:'failed',
+      error:error.message||String(error),
+      message:'The staged GOALL run stopped before completion.'
+    });
+  });
+  return run;
+}
+
+function parseGoallLeadCsv(text=''){
+  const rows=[];
+  let row=[];
+  let value='';
+  let quoted=false;
+  const source=String(text||'').replace(/^\uFEFF/,'');
+  for(let index=0;index<source.length;index+=1){
+    const character=source[index];
+    if(character==='"'){
+      if(quoted&&source[index+1]==='"'){value+='"';index+=1;}
+      else quoted=!quoted;
+      continue;
+    }
+    if(character===','&&!quoted){row.push(value);value='';continue;}
+    if((character==='\n'||character==='\r')&&!quoted){
+      if(character==='\r'&&source[index+1]==='\n')index+=1;
+      row.push(value);
+      if(row.some((cell)=>String(cell||'').trim())) rows.push(row);
+      row=[];
+      value='';
+      continue;
+    }
+    value+=character;
+  }
+  row.push(value);
+  if(row.some((cell)=>String(cell||'').trim())) rows.push(row);
+  if(rows.length<2) return [];
+  const headers=rows[0].map((header)=>String(header||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''));
+  return rows.slice(1,1001).map((cells)=>headers.reduce((record,header,index)=>{
+    if(header) record[header]=String(cells[index]||'').trim();
+    return record;
+  },{}));
+}
+
+function goallCsvField(record={},names=[]){
+  for(const name of names){
+    const key=String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+    const value=String(record[key]||'').trim();
+    if(value) return value;
+  }
+  return '';
+}
+
+function goallCsvLeadFromRow(record={},index=0,payload={}){
+  const company=goallCsvField(record,['company','company name','business','business name','organization','organization name','account','name']);
+  const city=goallCsvField(record,['city','town','municipality']);
+  const state=goallCsvField(record,['state','st','province','region']);
+  const address=goallCsvField(record,['address','address 1','street','street address','location address','business address']);
+  const postalCode=goallCsvField(record,['zip','zip code','postal code','postal']);
+  const website=goallCsvField(record,['website','url','site','domain','company website']);
+  const rawPhone=goallCsvField(record,['phone','business phone','company phone','main phone','telephone']);
+  const rawEmail=goallCsvField(record,['email','business email','company email','main email','primary email']);
+  const industry=goallCsvField(record,['industry','category','type','business type','vertical']) || payload.organizationType || 'GOALL uploaded employer lead';
+  const employees=goallCsvField(record,['employees','employee count','employer count','company size','staff count','number of employees']);
+  const notes=goallCsvField(record,['notes','note','context','source notes','description','details']);
+  const contactName=goallCsvField(record,['decision maker','decision maker name','owner','owner name','contact','contact name','primary contact']);
+  const contactTitle=goallCsvField(record,['decision maker title','owner title','contact title','title','job title']);
+  const sourceTag=goallCsvField(record,['tag','source tag','import tag','list tag','campaign tag']) || payload.importTag || payload.sourceTag || '';
+  const location=[city,state].filter(Boolean).join(', ') || goallCsvField(record,['location','market','city and state']) || payload.market || '';
+  const evidenceSignals=['CSV supplied lead'];
+  if(notes) evidenceSignals.push(notes);
+  if(contactName) evidenceSignals.push(`CSV suggested decision maker: ${contactName}${contactTitle?' - '+contactTitle:''}`);
+  const lead={
+    organizationName:company,
+    name:company,
+    website,
+    address1:address,
+    city,
+    state,
+    postalCode,
+    location,
+    phone:validPhone(rawPhone)?normalizePhoneNumber(rawPhone):rawPhone,
+    email:validEmail(rawEmail)?normalizeEmailAddress(rawEmail):rawEmail,
+    industry,
+    organizationType:industry,
+    aiExactIndustry:industry,
+    employeeCount:employees,
+    scrapedNumberOfEmployees:employees,
+    googleRaw:[company,address,location,website,rawPhone,rawEmail,notes,contactName,contactTitle].filter(Boolean).join(' | '),
+    source:'GOALL CSV upload',
+    sourceRow:index+1,
+    sourceType:'csv_upload',
+    importTag:String(sourceTag||'').trim(),
+    sourceTag:String(sourceTag||'').trim(),
+    searchMarket:payload.market||location||'Uploaded CSV',
+    leadProfile:'goall',
+    evidenceSignals
+  };
+  if(contactName){
+    lead.providedDecisionMakerName=contactName;
+    lead.providedDecisionMakerTitle=contactTitle;
+  }
+  return lead;
+}
+
+function createGoallCsvStagedLeadRun(payload={},uploadedLeads=[]){
+  const requested=leadLimitValue(payload.limit||uploadedLeads.length||12);
+  const plan=resolveGoallLeadSearchPlan({...payload,leadProfile:'goall',limit:requested});
+  const id=crypto.randomUUID();
+  const now=new Date().toISOString();
+  const run={
+    id,
+    status:'running',
+    phase:'queued',
+    message:'Queued GOALL CSV enrichment run.',
+    startedAt:now,
+    updatedAt:now,
+    completedAt:'',
+    error:'',
+    requested:Math.min(requested,uploadedLeads.length||requested),
+    payload:{...payload,leadProfile:'goall',sourceType:'csv_upload'},
+    searchPlan:plan,
+    rawLeads:[],
+    businesses:[],
+    decisionMakers:[],
+    reviewLeads:[],
+    errors:[],
+    rejectedReasons:{duplicate:0,already_in_crm:0,missing_email_and_phone:0,bad_fit:0},
+    rawCount:0,
+    report:null,
+    content:''
+  };
+  goallStagedLeadRuns.set(id,run);
+  runGoallCsvStagedLeadPipeline(run,uploadedLeads).catch(error=>{
+    touchLeadRun(run,{
+      status:'failed',
+      phase:'failed',
+      error:error.message||String(error),
+      message:'The staged GOALL CSV run stopped before completion.'
+    });
+  });
+  return run;
+}
+
+function cleanupGoallStagedRuns(){
+  const cutoff=Date.now()-GOALL_STAGED_RUN_TTL_MS;
+  for(const [id,run] of goallStagedLeadRuns.entries()){
+    const updated=Date.parse(run.updatedAt||run.startedAt||0);
+    if(updated && updated<cutoff) goallStagedLeadRuns.delete(id);
+  }
+}
+
+async function runGoallStagedLeadPipeline(run){
+  const plan=run.searchPlan;
+  const requested=run.requested;
+  const jobs=buildGoallSearchJobs(plan);
+  const rawTarget=Math.min(GOALL_LEAD_RAW_SEARCH_MAX,Math.max(requested,Math.ceil(requested*GOALL_STAGED_RAW_TARGET_MULTIPLIER)));
+  const duplicateKeys=new Set();
+  const perSearchLimit=jobs.length===1
+    ? Math.min(GOALL_LEAD_PER_SEARCH_MAX,rawTarget)
+    : Math.min(GOALL_LEAD_PER_SEARCH_MAX,Math.max(3,Math.ceil(rawTarget/Math.max(1,jobs.length))));
+  touchLeadRun(run,{phase:'outscraper',message:`Step 1: Outscraper is finding enough new businesses to support ${requested} GHL additions.`});
+
+  for(const job of jobs){
+    if(run.rawLeads.length>=rawTarget) break;
+    const scraped=await discoverOutscraperProspects({
+      organizationType:job.industry,
+      employeeMinimum:plan.employeeMinimum,
+      market:job.market,
+      limit:perSearchLimit,
+      leadProfile:'goall'
+    }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+    if(!scraped.configured){
+      throw new Error(scraped.error||'Outscraper is not configured');
+    }
+    if(scraped.error) run.errors.push(`${job.industry} in ${job.market}: ${scraped.error}`);
+    run.rawCount += scraped.rawCount || (scraped.leads||[]).length;
+    for(const lead of scraped.leads||[]){
+      if(run.rawLeads.length>=rawTarget) break;
+      const enrichedIndustry=lead.aiExactIndustry||lead.industry||job.industry;
+      const next={...lead,organizationType:job.industry,industry:enrichedIndustry,aiExactIndustry:enrichedIndustry,searchMarket:job.market,leadProfile:'goall'};
+      const key=goallLeadKey(next);
+      if(duplicateKeys.has(key)){
+        run.rejectedReasons.duplicate+=1;
+        continue;
+      }
+      duplicateKeys.add(key);
+      next._stageKey=key;
+      const crmDuplicate=await checkCrmDuplicate(next);
+      if(crmDuplicate.exists){
+        run.rejectedReasons.already_in_crm+=1;
+        touchLeadRun(run,{message:`Step 1: skipped ${run.rejectedReasons.already_in_crm} already in GHL; found ${run.businesses.length} new candidate businesses for ${requested} target additions.`});
+        continue;
+      }
+      run.rawLeads.push(next);
+      run.businesses.push(applyLeadScoring({...next}));
+      touchLeadRun(run,{message:`Step 1: found ${run.businesses.length} new candidate businesses for ${requested} target GHL additions.`});
+      if(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS) await sleep(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS);
+    }
+  }
+
+  await runGoallStagedResearchAndReview(run,run.rawLeads,'Outscraper returned zero usable businesses.');
+		}
+
+async function runGoallCsvStagedLeadPipeline(run,uploadedLeads=[]){
+  const requested=run.requested;
+  const duplicateKeys=new Set();
+  touchLeadRun(run,{phase:'csv',message:`Step 1: reading uploaded CSV rows until ${requested} new GHL additions can be enriched.`});
+  for(const lead of uploadedLeads){
+    const next={...lead,leadProfile:'goall',sourceType:'csv_upload',importTag:lead.importTag||run.payload?.importTag||run.payload?.sourceTag||''};
+    const key=goallLeadKey(next);
+    if(duplicateKeys.has(key)){
+      run.rejectedReasons.duplicate+=1;
+      continue;
+    }
+    duplicateKeys.add(key);
+    next._stageKey=key;
+    const crmDuplicate=await checkCrmDuplicate(next);
+    if(crmDuplicate.exists){
+      run.rejectedReasons.already_in_crm+=1;
+      touchLeadRun(run,{message:`Step 1: skipped ${run.rejectedReasons.already_in_crm} already in GHL; accepted ${run.businesses.length} uploaded candidate businesses for enrichment.`});
+      continue;
+    }
+    run.rawLeads.push(next);
+    run.businesses.push(applyLeadScoring({...next}));
+    run.rawCount+=1;
+    touchLeadRun(run,{message:`Step 1: accepted ${run.businesses.length} uploaded candidate businesses for ${requested} target GHL additions.`});
+    if(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS) await sleep(GOALL_STAGED_OUTSCRAPER_ROW_DELAY_MS);
+  }
+  await runGoallStagedResearchAndReview(run,run.rawLeads,'The uploaded CSV did not contain any usable new businesses after duplicate checks.');
+}
+
+async function runGoallStagedResearchAndReview(run,candidates=[],emptyError='No usable businesses were available for enrichment.'){
+  const plan=run.searchPlan;
+  const requested=run.requested;
+  if(!candidates.length){
+    touchLeadRun(run,{
+      status:'failed',
+      phase:run.phase||'discovery',
+      error:run.errors.join(' | ')||emptyError,
+      message:'Step 1 finished with no usable businesses.'
+    });
+    return;
+  }
+
+  touchLeadRun(run,{phase:'gemini',message:`Step 2: Gemini is researching until ${requested} addable leads are ready, ${GOALL_STAGED_GEMINI_CONCURRENCY} at a time.`});
+  let nextIndex=0;
+  let addableCount=0;
+  const workers=Array.from({length:Math.min(GOALL_STAGED_GEMINI_CONCURRENCY,candidates.length)},async()=>{
+    while(nextIndex<candidates.length && addableCount<requested){
+      const index=nextIndex++;
+      const prospect=candidates[index];
+		      const enriched=await enrichGoallStagedProspect(prospect)
+		        .catch(e=>({...prospect,geminiDecisionMakerStatus:e.message,apolloStatus:'skipped because enrichment failed',rocketReachStatus:'skipped because enrichment failed'}));
+		      const exactIndustry=enriched.aiExactIndustry||enriched.industry||enriched.organizationType||prospect.organizationType||'unclear';
+		      const scored=applyLeadScoring(sanitizeDecisionMaker({...enriched,aiExactIndustry:exactIndustry,leadProfile:'goall'}));
+		      const holdReason=goallStagedLeadHoldReason(scored);
+		      if(holdReason){
+		        scored._approved=false;
+		        scored.reviewNeeded=true;
+		        scored.reviewNeededReason=holdReason;
+		      }else{
+		        addableCount+=1;
+		      }
+		      run.decisionMakers.push(scored);
+		      run.reviewLeads.push(scored);
+	      touchLeadRun(run,{message:`Step 2: ${addableCount} of ${requested} addable leads ready after researching ${run.decisionMakers.length} businesses.`});
+	      if(GOALL_STAGED_RESEARCH_ROW_DELAY_MS) await sleep(GOALL_STAGED_RESEARCH_ROW_DELAY_MS);
+	    }
+  });
+  await Promise.all(workers);
+
+  run.reviewLeads.sort(sortGoallLeads);
+  run.report=summarizeGoallDiscovery({
+    requested,
+    leads:run.reviewLeads,
+    rawCount:run.rawCount||run.businesses.length,
+    industries:plan.industries,
+    cities:plan.cities,
+    rejectedReasons:run.rejectedReasons
+  });
+  const discovered={
+    ok:true,
+    market:plan.market,
+    criteria:plan.criteria,
+    organizationType:plan.organizationType,
+    employeeMinimum:plan.employeeMinimum,
+    tag:plan.tag,
+    importTag:run.payload?.importTag||run.payload?.sourceTag||'',
+    sourceTag:run.payload?.sourceTag||run.payload?.importTag||'',
+    leads:run.reviewLeads,
+    scraped:{configured:true,rawCount:run.rawCount,errors:run.errors,rejectedReasons:run.rejectedReasons,staged:true,sourceType:run.payload?.sourceType||'outscraper'},
+    raw:'',
+    rocketReachMode:'defer',
+    searchPlan:plan,
+    report:run.report
+  };
+	  run.content=leadPreviewText(discovered);
+	  const finalAddable=run.reviewLeads.filter(isGoallStagedAddableLead).length;
+		  touchLeadRun(run,{status:'complete',phase:'review',completedAt:new Date().toISOString(),message:`Step 3: review is ready with ${finalAddable} addable lead${finalAddable===1?'':'s'} for a target of ${requested}. Nothing has been imported.`});
+		}
+
+async function enrichGoallStagedProspect(prospect={}){
+  let next={...prospect,leadProfile:'goall'};
+  if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
+  next=await enrichProspectWithGoallGeminiDecisionMaker(next,{decisionMakerResearch:true});
+  if(GEMINI_API_KEY && !next.decisionMakerName){
+    next.apolloStatus=next.apolloStatus||'skipped because Gemini did not verify a decision maker';
+    next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini did not verify a decision maker';
+    return sanitizeDecisionMaker(next);
+  }
+  const hasDecisionMakerEmail=isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email);
+  const hasDecisionMakerPhone=validPhone(next.decisionMakerPhone||next.personPhone||'');
+  if(next.decisionMakerName && hasDecisionMakerEmail && hasDecisionMakerPhone){
+    next.apolloStatus=next.apolloStatus||'skipped because Gemini found decision-maker email and phone';
+    next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini found decision-maker email and phone';
+    return sanitizeDecisionMaker(next);
+  }
+  if(next.decisionMakerName){
+    next=await enrichProspectWithApollo(next);
+    if(!isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email) || !validPhone(next.decisionMakerPhone||next.personPhone||'')){
+      next=await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
+    }else{
+      next.rocketReachStatus=next.rocketReachStatus||'skipped because Apollo found decision-maker email and phone';
+    }
+  }
+  if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
+  return sanitizeDecisionMaker(next);
 }
 
 async function fetchTextWithTimeout(url,timeoutMs=3500){
@@ -31907,7 +32868,7 @@ async function discoverHbsLeadProspects(body={}){
   let raw='';
   let webError='';
   if(!leads.length){
-    const allowWebFallback=!plan.fastSearch || /^(1|true|yes)$/i.test(String(body.allowWebFallback||body.allow_web_fallback||''));
+    const allowWebFallback=GOALL_ALLOW_WEB_FALLBACK || /^(1|true|yes)$/i.test(String(body.allowWebFallback||body.allow_web_fallback||''));
     if(!allowWebFallback){
       webError='';
     }else{
@@ -31934,7 +32895,16 @@ async function discoverHbsLeadProspects(body={}){
         '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
       ].join('\n');
       try{
-        raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
+        if(GEMINI_API_KEY){
+          const gemini=await callGeminiGroundedSearch({
+            input:['System instructions:',system,'','User request:',user].join('\n'),
+            maxTokens:6000,
+            temperature:0.15
+          });
+          raw=gemini.text;
+        }else{
+          throw new Error('Outscraper found no usable new leads, and Gemini fallback is not configured.');
+        }
         let candidates=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
         // Same CRM-dedupe as the Outscraper path: skip leads already in GHL before
         // spending enrichment calls (Apollo/RocketReach/website lookups) on them.
@@ -31995,12 +32965,12 @@ function leadDiscoveryFailureText({plan,scraped,webError}={}){
     'What happened:',
     scraped?.error?`- Level 1 map/business search returned: ${cleanLeadLevelText(scraped.error)}`:'',
     Array.isArray(scraped?.errors)&&scraped.errors.length?`- Search notes: ${scraped.errors.slice(0,3).map(cleanLeadLevelText).join(' | ')}`:'',
-    webError?`- Web research fallback returned: ${cleanLeadLevelText(webError)}`:'',
+    webError?`- Gemini fallback returned: ${cleanLeadLevelText(webError)}`:'',
     '',
     'Try this next:',
     '- Run a smaller test batch, like 12 leads.',
     '- Use one specific industry and city, for example "HVAC companies in Phoenix".',
-    '- Open API Keys & Connections and test Outscraper and OpenAI if this happens on every search.'
+    '- Open API Keys & Connections and test Outscraper and Gemini if this happens on every search.'
   ].filter(Boolean).join('\n');
 }
 
@@ -32194,19 +33164,41 @@ async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,aut
   const contactId=duplicate?.id;
   if(!contactId) return {created:false, reason:'duplicate contact id missing'};
   const isGoall=(discovered.searchPlan?.leadBrand==='GOALL'||discovered.leadProfile==='goall');
+  const name=lead.organizationName||lead.name||duplicate.name||'Existing business lead';
   if(isGoall){
     const leadFields=leadCustomFieldsFromProspect({...lead,...automation});
     const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
     await updateGhlLeadFields(contactId,leadFields);
+    const contactability=leadContactability(lead);
+    const decisionName=String(lead.decisionMakerName||'').trim();
+    const nameParts=decisionName.split(/\s+/).filter(Boolean);
+    const contactUpdate={
+      companyName:name,
+      email:contactability.hasEmail?contactability.email:undefined,
+      phone:contactability.hasPhone?contactability.phone:undefined,
+      website:lead.website||undefined,
+      address1:lead.address1||undefined,
+      city:lead.city||undefined,
+      state:lead.state||undefined,
+      country:normalizeCountryCode(lead.country),
+      postalCode:lead.postalCode||lead.postal_code||undefined,
+      firstName:decisionName?(nameParts[0]||undefined):'Unverified',
+      lastName:decisionName?(nameParts.slice(1).join(' ')||undefined):undefined,
+      name:decisionName||'Unverified'
+    };
+    await ghlStrict('PUT',`/contacts/${contactId}`,compactObject(contactUpdate)).catch(()=>{});
+		    const note=goallLeadImportNote({...lead,...automation},automation,contactability,{isWestwood:false});
+		    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+    const callerSnapshotNote=goallLeadCallerSnapshotNote({...lead,...automation},contactability);
+    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:callerSnapshotNote}).catch(()=>{});
   }
   await saveLeadReadinessBrief(contactId,lead,{profile:isGoall?'goall':'westwood'})
-    .catch(e=>console.log('Employer readiness brief not saved',{contactId,name:lead.organizationName||lead.name,error:e.message}));
+    .catch(e=>console.log('Employer readiness brief not saved',{contactId,name,error:e.message}));
   const existing=await findOpenOpportunityForContact(contactId);
   if(existing) return {created:false, existing:true, opportunity:existing, contactId};
   const target=await getOpportunityTarget();
   const donorCount=donorValue(lead.approximateDonors||lead.estimatedDonors||lead.donorCount);
   const source=(lead.leadProfile||'').toLowerCase()==='westwood'?'Grace Intelligence Limitless Leads':'LimitLess Leads';
-  const name=lead.organizationName||lead.name||duplicate.name||'Existing business lead';
   const opportunityPayload={
     locationId:GHL_LOC,
     pipelineId:target.pipelineId,
@@ -32254,7 +33246,7 @@ async function importApprovedHbsLeads(discovered){
         });
         return;
       }
-      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||0},{tag}));
+	      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,importTag:lead.importTag||lead.sourceTag||discovered.importTag||discovered.sourceTag||'',organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||0},{tag,importTag:discovered.importTag||discovered.sourceTag||''}));
     }catch(e){
       failed.push({name:lead.organizationName||lead.name||'Unknown lead',error:e.message});
     }
@@ -32302,12 +33294,18 @@ async function enrichProspectWithRocketReach(p,options={}){
   if(!rocketReachKey) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
   const rocket=await lookupRocketReachDecisionMaker(p.organizationName||p.name||'',p,options).catch(e=>({error:e.message}));
   const data=rocket?.data||{};
-  const nextEmail=isLikelyPersonEmail(data.email) || !p.email ? data.email : p.email;
-  const nextPhone=validPhone(data.phone) && !validPhone(p.phone) ? data.phone : p.phone;
+  const personEmail=isLikelyPersonEmail(data.email)?data.email:'';
+  const personPhone=validPhone(data.phone)?data.phone:'';
+  const nextEmail=personEmail || (!p.email ? data.email : p.email);
+  const nextPhone=validPhone(p.phone) ? p.phone : personPhone || data.phone || p.phone;
   return {
     ...p,
     decisionMakerName:p.decisionMakerName||data.name||'',
     decisionMakerTitle:p.decisionMakerTitle||data.title||'',
+    decisionMakerEmail:p.decisionMakerEmail||personEmail,
+    decisionMakerPhone:p.decisionMakerPhone||personPhone,
+    personEmail:p.personEmail||personEmail,
+    personPhone:p.personPhone||personPhone,
     linkedinPersonalUrl:p.linkedinPersonalUrl||data.linkedinUrl||'',
     linkedinCompanyUrl:p.linkedinCompanyUrl||data.companyLinkedInUrl||'',
     linkedinCompanyId:p.linkedinCompanyId||data.companyId||'',
@@ -32329,6 +33327,7 @@ async function enrichProspectWithRocketReach(p,options={}){
 async function enrichProspect(p,opts={}){
   let next = {...p};
   const mode=opts.rocketReachMode||'auto';
+  const isGoall=String(next.leadProfile||'goall').toLowerCase()==='goall';
   if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
   if(opts.fastPreview){
     return sanitizeDecisionMaker({
@@ -32350,7 +33349,33 @@ async function enrichProspect(p,opts={}){
       next.decisionMakerSource = publicContact.leader.source || '';
     }
   }
-  if(mode==='defer'){
+  if(isGoall){
+    next=await enrichProspectWithGoallGeminiDecisionMaker(next,{decisionMakerResearch:opts.decisionMakerResearch!==false});
+    if(GEMINI_API_KEY && !next.decisionMakerName){
+      next.apolloStatus=next.apolloStatus||'skipped because Gemini did not verify a decision maker';
+      next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini did not verify a decision maker';
+    }else if(next.decisionMakerName){
+      const hasDecisionMakerEmail=isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email);
+      const hasDecisionMakerPhone=validPhone(next.decisionMakerPhone||next.personPhone||'');
+      if(hasDecisionMakerEmail && hasDecisionMakerPhone){
+        next.apolloStatus=next.apolloStatus||'skipped because Gemini found decision-maker email and phone';
+        next.rocketReachStatus=next.rocketReachStatus||'skipped because Gemini found decision-maker email and phone';
+      }else{
+        next = await enrichProspectWithApollo(next);
+        if(!isLikelyPersonEmail(next.decisionMakerEmail||next.personEmail||next.email) || !validPhone(next.decisionMakerPhone||next.personPhone||'')){
+          next = await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
+        }else{
+          next.rocketReachStatus = next.rocketReachStatus || 'skipped because Apollo found decision-maker email and phone';
+        }
+      }
+    }else if(mode==='defer'){
+      next = await enrichProspectWithApollo(next);
+      next.rocketReachStatus = 'deferred until review';
+    }else{
+      next = await enrichProspectWithApollo(next);
+      next = await enrichProspectWithRocketReach(next,{maxTitleLookups:1});
+    }
+  }else if(mode==='defer'){
     next = await enrichProspectWithApollo(next);
     next.rocketReachStatus = 'deferred until review';
   }else{
@@ -32375,6 +33400,97 @@ function enrichmentLevelSummaryLines(p,contactability=leadContactability(p)){
   ];
 }
 
+function goallLeadImportNote(p={},automation={},contactability=leadContactability(p),options={}){
+  const isWestwood=options.isWestwood===true;
+  const name=p.organizationName||p.name||'Unnamed business lead';
+  const exactIndustry=p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear';
+  const location=p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear';
+  const decisionName=String(p.decisionMakerName||'').trim();
+  const script=p.callScript||p.call_script||leadCallScript(p);
+  const valueProps=decisionArrayValue(p.customizedValueProps).map(v=>typeof v==='string'?v:[v.title,v.reason,v.value].filter(Boolean).join(' - ')).filter(Boolean);
+  const businessNeeds=decisionArrayValue(p.businessNeedsAndPainPoints).map(v=>typeof v==='string'?v:[v.need,v.evidence].filter(Boolean).join(' - ')).filter(Boolean);
+  const dataLines=[
+    'Lead Data',
+    `- Company: ${name}`,
+    `- Industry: ${exactIndustry}`,
+    `- Location: ${location}`,
+    `- Website: ${p.website||'unclear'}`,
+    `- Decision maker: ${decisionName?`${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`:'Unverified'}`,
+    `- Decision maker email: ${p.decisionMakerEmail||p.personEmail||(decisionName&&isLikelyPersonEmail(p.email)?p.email:'')||'missing'}`,
+    `- Decision maker phone: ${p.decisionMakerPhone||p.personPhone||(decisionName&&validPhone(p.phone)?p.phone:'')||'missing'}`,
+    `- Business email: ${contactability.email||p.email||'missing'}`,
+    `- Business phone: ${contactability.phone||p.phone||'missing'}`,
+    `- Lead score: ${p.leadScore||p.lead_score||'unclear'}${p.leadScoreReason||p.lead_score_reason?' - '+(p.leadScoreReason||p.lead_score_reason):''}`
+  ].filter(Boolean);
+  const researchLines=[
+    '',
+    'Gemini Research Highlights',
+    p.callerSnapshot?`- Caller snapshot: ${p.callerSnapshot}`:'',
+    p.businessSizeContext?`- Business size context: ${p.businessSizeContext}`:'',
+    p.companyStructure?`- Company structure: ${p.companyStructure}`:'',
+    p.bestContactPhoneType?`- Phone type: ${p.bestContactPhoneType}`:'',
+    p.bestContactEmailType?`- Email type: ${p.bestContactEmailType}`:'',
+    p.activelyHiring?`- Actively hiring: ${p.activelyHiring}`:'',
+    p.highestTurnoverArea?`- Highest turnover area: ${p.highestTurnoverArea}`:'',
+    p.turnoverRisk?`- Turnover risk: ${p.turnoverRisk}`:'',
+    `- Pain point: ${goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'missing'}`,
+    p.painpointEvidence?`- Pain point evidence: ${p.painpointEvidence}`:'',
+    p.hiringTurnoverEvidence?`- Hiring/turnover evidence: ${p.hiringTurnoverEvidence}`:'',
+    businessNeeds.length?`- Business needs: ${businessNeeds.slice(0,4).join(' | ')}`:'',
+    valueProps.length?`- GOALL value props: ${valueProps.slice(0,4).join(' | ')}`:'',
+    p.recommendedOutreachAngle||p.nextOutreachAngle?`- GOALL positioning: ${p.recommendedOutreachAngle||p.nextOutreachAngle}`:'',
+    p.emailAngle?`- Email angle: ${p.emailAngle}`:'',
+    p.callOpener?`- Suggested opener: ${p.callOpener}`:'',
+    p.decisionMakerEvidence?`- Decision-maker evidence: ${p.decisionMakerEvidence}`:'',
+    p.bestContactNotes?`- Contact notes: ${p.bestContactNotes}`:''
+  ].filter(Boolean);
+  const enrichmentLines=[
+    '',
+    'Enrichment',
+    ...enrichmentLevelSummaryLines(p,contactability),
+    decisionName
+      ? `Decision maker verified: ${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
+      : 'Gemini did not return a reliable decision-maker name. Decision Maker First Name was set to Unverified. Review before person-specific outreach.',
+    leadContactabilityNote(contactability),
+    p.linkedinPersonalUrl?`LinkedIn: ${p.linkedinPersonalUrl}`:'',
+    p.apolloStatus?`Apollo: ${cleanLeadLevelText(p.apolloStatus)}`:'',
+    p.rocketReachStatus?`RocketReach: ${cleanLeadLevelText(p.rocketReachStatus)}`:'',
+    !isWestwood && automation.automationTag?`Automation tag: ${automation.automationTag}`:'',
+    !isWestwood && automation.automationTagReason?`Automation reason: ${automation.automationTagReason}`:'',
+    !isWestwood && automation.tagConfidence?`Tag confidence: ${automation.tagConfidence}`:'',
+    !isWestwood && automation.needsNewAutomation?`Suggested new automation: ${automation.suggestedNewAutomationTag||'Manual Review'}`:''
+  ].filter(Boolean);
+  const scriptLines=[
+    '',
+    'Call Script',
+    script
+  ].filter(Boolean);
+  return [...dataLines,...researchLines,...enrichmentLines,...scriptLines].join('\n');
+}
+
+function goallLeadCallerSnapshotNote(p={},contactability=leadContactability(p)){
+  const decisionName=String(p.decisionMakerName||'').trim();
+  const decisionLine=decisionName
+    ? `${decisionName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`
+    : 'Unverified';
+  const bullets=[
+    'CALLER SNAPSHOT',
+    `- Decision maker: ${decisionLine}`,
+    `- Phone type: ${p.bestContactPhoneType||'unknown'}`,
+    `- Email type: ${p.bestContactEmailType||'unknown'}`,
+    `- Business phone: ${contactability.phone||p.phone||'missing'}`,
+    `- Business email: ${contactability.email||p.email||'missing'}`,
+    p.activelyHiring?`- Actively hiring: ${p.activelyHiring}`:'',
+    p.highestTurnoverArea?`- Highest turnover: ${p.highestTurnoverArea}`:'',
+    p.turnoverRisk?`- Turnover risk: ${p.turnoverRisk}`:'',
+    `- Pain point: ${goallPainpointForMessaging(p.painpoint||p.painPoint||'')||'missing'}`,
+    p.recommendedOutreachAngle||p.nextOutreachAngle?`- GOALL angle: ${p.recommendedOutreachAngle||p.nextOutreachAngle}`:'',
+    p.callOpener?`- Suggested opener: ${p.callOpener}`:'',
+    p.callerSnapshot?`- Context: ${p.callerSnapshot}`:''
+  ].filter(Boolean);
+  return bullets.join('\n');
+}
+
 async function createGhlLeadFromProspect(p,opts={}){
   p=applyLeadScoring(p);
   p=sanitizeDecisionMaker({
@@ -32397,7 +33513,7 @@ async function createGhlLeadFromProspect(p,opts={}){
   const leadFields=leadCustomFieldsFromProspect(p);
   const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
-  const tags=isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads'];
+  const tags=[...new Set((isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads']).concat(goallAdditionalImportTags(p,opts)))];
   if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
@@ -32413,18 +33529,17 @@ async function createGhlLeadFromProspect(p,opts={}){
     country,
     postalCode:p.postalCode||p.postal_code||undefined,
     timezone:p.timeZone||p.timezone||undefined,
-    source,
-    tags,
-    customFields:leadCustomFields.length?leadCustomFields:undefined
-  };
+	    source,
+	    tags
+	  };
   if(decisionName){
     contactPayload.firstName=nameParts[0]||undefined;
     contactPayload.lastName=nameParts.slice(1).join(' ')||undefined;
     contactPayload.name=decisionName;
   }else{
-    contactPayload.firstName='unknown';
-    contactPayload.lastName='unknown';
-    contactPayload.name='unknown unknown';
+    contactPayload.firstName='Unverified';
+    contactPayload.lastName=undefined;
+    contactPayload.name='Unverified';
   }
   const contactData=await ghlStrict('POST','/contacts',contactPayload);
   const contact=contactData.contact||contactData;
@@ -32441,19 +33556,12 @@ async function createGhlLeadFromProspect(p,opts={}){
     }
   }
   await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
-  const note=[
-    ...enrichmentLevelSummaryLines(p,contactability),
-    '',
-    p.decisionMakerName
-      ? `Decision maker verified: ${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
-      : 'Public data did not return a reliable name for the decision maker. First and last name were set to unknown. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
-    leadContactabilityNote(contactability),
-    !isWestwood && automation.automationTag?`Automation tag: ${automation.automationTag}`:'',
-    !isWestwood && automation.automationTagReason?`Automation reason: ${automation.automationTagReason}`:'',
-    !isWestwood && automation.tagConfidence?`Tag confidence: ${automation.tagConfidence}`:'',
-    !isWestwood && automation.needsNewAutomation?`Suggested new automation: ${automation.suggestedNewAutomationTag||'Manual Review'}`:''
-  ].filter(Boolean).join('\n');
+  const note=goallLeadImportNote(p,automation,contactability,{isWestwood});
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(e=>console.log('Lead contactability note not saved',{contactId,name,error:e.message}));
+  if(!isWestwood){
+    const callerSnapshotNote=goallLeadCallerSnapshotNote(p,contactability);
+    await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:callerSnapshotNote}).catch(e=>console.log('Lead caller snapshot note not saved',{contactId,name,error:e.message}));
+  }
   const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:isWestwood?'westwood':'goall'}).catch(e=>{
     console.log('Employer readiness brief not saved',{contactId,name,error:e.message});
     return '';
