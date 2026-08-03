@@ -81,6 +81,273 @@ function safeArray(value){
   return Array.isArray(value) ? value : [];
 }
 
+const VAL_GUIDANCE_STORAGE_KEY = 'val.ui.guidance.enabled.v1';
+const VAL_GUIDANCE_INTERACTIVE_SELECTOR = [
+  'button',
+  'a[href]',
+  'input:not([type="hidden"])',
+  'select',
+  'textarea',
+  '[role="button"]',
+  '[tabindex]:not([tabindex="-1"])',
+  '[onclick]',
+  '.living-room',
+  '.observer-node',
+  '.observer-chief-card',
+  '.observer-live-packet',
+  '.relationship-rolodex-row',
+  '.project-suggestion-row',
+  '.project-document-assignment-row',
+  '.project-manager-clickable',
+  '.timeline-transcript-row',
+  '.agenda-item',
+  '[data-home-room-source]',
+  '[data-correspondence-item]',
+  '[data-correspondence-id]',
+  '[data-transcript-open]',
+  '[data-transcript-id]',
+  '[data-project-open-profile]',
+  '[data-relationship-open-profile]',
+  '[data-leverage-select-index]',
+  '[data-calendar-event-index]',
+  '[data-observer-cowork]',
+  '.completion-sound-toggle',
+  '.val-guidance-toggle'
+].join(',');
+
+const VAL_GUIDANCE_RULES = [
+  {selector:'[data-val-guidance-toggle], .val-guidance-toggle',title:'Guidance',body:'Turn these explanations on or off. Your choice stays with this browser.'},
+  {selector:'[data-completion-sound-toggle], .completion-sound-toggle',title:'Completion sound',body:'Play a quiet sound when VAL finishes work that may have taken your attention.'},
+  {selector:'.observer-board-button',title:'Board of Observers',body:'Enter the room where fourteen distinct perspectives show what they noticed, the evidence they used, and what they are watching.'},
+  {selector:'.lean-button',title:'Why this read?',body:'Open the evidence and reasoning behind the Chief of Staff message on Home.'},
+  {selector:'[data-refresh-perspective]',title:'Refresh perspective',body:'Ask the Chief of Staff to rebuild the Home read from the latest available system context.'},
+  {selector:'.task-companion-button',title:'Commitments',body:'Open every unresolved promise and action item, including who owns it, where it came from, and what happens next.'},
+  {selector:'.next-meeting-card',title:'Next meeting',body:'Open the nearest calendar commitment and the context VAL has connected to it.'},
+  {selector:'.calendar-tab',title:'Calendar',body:'Open the full calendar view without leaving Home.'},
+  {selector:'.cowork-notebook, [data-drawer-cowork-icon]',title:'Co-Work with VAL',body:'Open the general Chief of Staff conversation. This VAL can work across every connected function and source in your system.'},
+  {selector:'.linkedin-widget',title:'LinkedIn',body:'Review timely posts and comments VAL prepared from the profiles and topics you asked it to watch.'},
+  {selector:'[data-open-room="alignment"], .living-room.alignment',title:'Alignment',body:'Open the next priority chosen by the Chief of Staff. Mark it done or bring its complete context into Co-Work with VAL.'},
+  {selector:'[data-open-room="leverage"], .living-room.leverage',title:'Leverage',body:'Open work VAL has already prepared and is holding for your review, editing, approval, or dismissal.'},
+  {selector:'.drawer-pull',title:'Executive Functions',body:'Open the compass for Inbox, Projects, Stewardship, Transcripts, Lead Intelligence, Studio, and VAL settings.'},
+  {selector:'.executive-compass-core, .val-drawer-link',title:'Your VAL',body:'Open Witnessing, connections, credentials, and the context VAL uses to understand how to support you.'},
+  {selector:'.studio-drawer-link, .val-studio-library-link, [data-open-val-studio]',title:'VAL Studio',body:'Design, test, and govern environments that combine Observers, context, and connected platforms around a repeatable outcome.'},
+  {selector:'.correspondence-drawer-link, [data-open-correspondence]',title:'Executive Inbox',body:'Review only the email conversations that need judgment, relationship context, or an approved response.'},
+  {selector:'.project-drawer-link, [data-open-projects]',title:'Project Managers',body:'See each project with its source evidence, open decisions, risks, people, and next useful move.'},
+  {selector:'.relationship-drawer-link, [data-open-relationships]',title:'Stewardship',body:'Open the relationship record VAL is preserving, including history, current context, temperature, and thoughtful next steps.'},
+  {selector:'.timeline-drawer-link, [data-open-timeline]',title:'Transcripts',body:'Open meeting evidence, exact Action Items and Key Points, attendee context, and transcript-grounded Co-Work.'},
+  {selector:'.source-drawer-link, .lead-intelligence-drawer-link, [data-open-source-detail]',title:'Lead Intelligence',body:'Run and review the approved lead source, verify its evidence, and import only the records you choose.'},
+  {selector:'.observer-node, .observer-chief-card, .observer-truth-card',title:'Observer perspective',body:'Open this Observer’s current read, evidence, concern, and questions. From there you can invite that perspective into Co-Work.'},
+  {selector:'.observer-live-packet',title:'Live packet',body:'Inspect the real source packet moving through the Board and the short label that identifies what it contains.'},
+  {selector:'.observer-selected-card [data-observer-chat], .observer-selected-card .observer-chat-button',title:'Chat with this Observer',body:'Begin a focused conversation with this perspective and its source-backed context already present.'},
+  {selector:'.correspondence-list button, [data-correspondence-id]',title:'Email conversation',body:'Open the clean message, sender, date, relationship context, and the decision or response VAL believes it needs.'},
+  {selector:'.timeline-transcript-row, [data-transcript-id]',title:'Transcript',body:'Open the exact meeting record, Action Items, Key Points, attendees, evidence, and its working brief.'},
+  {selector:'[data-project-open-profile], .project-manager-clickable',title:'Project',body:'Open this project’s complete working context, current movement, evidence, people, and next decisions.'},
+  {selector:'[data-relationship-open-profile], .relationship-click-card',title:'Relationship',body:'Open what VAL knows about this person, why the relationship matters, and what may need attention.'},
+  {selector:'.leverage-work-queue-items button, [data-leverage-item]',title:'Prepared work',body:'Select this specific prepared item so you can review, edit, approve, send, hold, or dismiss it.'},
+  {selector:'[data-commitment-filter]',title:'Commitment filter',body:'Limit the commitment list to this ownership or status without changing the underlying records.'},
+  {selector:'[data-commitment-action="complete"], .alignment-card-done',title:'Mark complete',body:'Record that this work is finished and let the Chief of Staff bring forward the next priority.'},
+  {selector:'[data-commitment-action]',title:'Commitment action',body:'Move this commitment forward using its existing owner, source, relationship, and project context.'},
+  {selector:'[data-home-cowork-submit]',title:'Send to VAL',body:'Send this message into the current Co-Work conversation with the active context attached.'},
+  {selector:'[data-home-cowork-voice], .home-cowork-voice',title:'Speak with VAL',body:'Begin a voice conversation using the same active context as this Co-Work session.'},
+  {selector:'[data-home-cowork-attach], input[type="file"]',title:'Attach a file',body:'Add a document to the current work so VAL can read and use its contents as source evidence.'},
+  {selector:'[data-home-cowork-image]',title:'Add an image',body:'Add an image to the current conversation for visual review.'},
+  {selector:'.return-button, [aria-label^="Close"], [aria-label^="Return"], [class*="close-"]',title:'Close this view',body:'Close the current layer and return to the function or compass immediately behind it.'},
+  {selector:'.workspace-actions .primary-action, [data-approve], [data-send]',title:'Approve the next step',body:'Confirm the clearly described action. VAL will not send or change an external system without this approval.'},
+  {selector:'[data-copy], .home-cowork-copy-output',title:'Copy',body:'Copy this output exactly as shown so it is ready to use elsewhere.'},
+  {selector:'.calendar-panel button, .full-calendar-panel button, .agenda-item',title:'Calendar action',body:'Open or act on this calendar item while preserving its meeting and attendee context.'},
+  {selector:'.source-action, .lead-source-link',title:'Open source',body:'Open the source record so you can verify the person, business, or evidence yourself.'}
+];
+
+function valGuidanceElement(start){
+  const element = start?.closest?.(VAL_GUIDANCE_INTERACTIVE_SELECTOR);
+  if(!element || element.closest('[data-val-guidance-tooltip]')) return null;
+  return element;
+}
+
+function valGuidanceLabel(element){
+  const labelledBy = String(element.getAttribute?.('aria-labelledby') || '').trim();
+  const labelledText = labelledBy
+    ? labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent || '').join(' ')
+    : '';
+  return String(
+    element.dataset?.valGuideTitle ||
+    element.getAttribute?.('aria-label') ||
+    labelledText ||
+    element.getAttribute?.('title') ||
+    element.getAttribute?.('placeholder') ||
+    element.textContent ||
+    ''
+  ).replace(/\s+/g,' ').replace(/^[×←→]+|[×←→]+$/g,'').trim().slice(0,90);
+}
+
+function valGuidanceFallback(element){
+  const label = valGuidanceLabel(element) || 'This control';
+  const normalized = label.replace(/[.:]+$/,'');
+  if(element.matches('textarea,input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"])')){
+    return {title:normalized,body:'Enter or refine the information VAL should use for this specific step.'};
+  }
+  if(element.matches('select')) return {title:normalized,body:'Choose the option that should govern this view or action.'};
+  if(element.matches('a[href]')) return {title:normalized,body:'Open '+normalized.toLowerCase()+' and keep your current VAL work intact.'};
+  if(/approve|send/i.test(normalized)) return {title:normalized,body:'Review the prepared work, then confirm this action before anything leaves VAL.'};
+  if(/save/i.test(normalized)) return {title:normalized,body:'Save this change to the current VAL record so it is available the next time you return.'};
+  if(/refresh|sync|update/i.test(normalized)) return {title:normalized,body:'Refresh this view from its connected source without changing approved work.'};
+  if(/delete|dismiss|remove|archive/i.test(normalized)) return {title:normalized,body:'Remove this item from the active view after the confirmation shown by VAL.'};
+  if(/filter|sort|all|open|complete|ready|waiting/i.test(normalized)) return {title:normalized,body:'Change what is visible in this list without changing the source records.'};
+  if(/edit|teach|train/i.test(normalized)) return {title:normalized,body:'Adjust the instructions or source context VAL should use going forward.'};
+  return {title:normalized,body:'Open or continue this part of VAL. The current function context will remain attached.'};
+}
+
+function valGuidanceContent(element){
+  const explicitBody = String(element.dataset?.valGuide || '').trim();
+  if(explicitBody){
+    return {title:valGuidanceLabel(element) || 'Guidance',body:explicitBody};
+  }
+  const rule = VAL_GUIDANCE_RULES.find((entry) => element.matches(entry.selector) || element.closest(entry.selector));
+  return rule ? {title:rule.title,body:rule.body} : valGuidanceFallback(element);
+}
+
+function initValGuidanceLayer(){
+  const toggle = document.querySelector('[data-val-guidance-toggle]');
+  const tooltip = document.querySelector('[data-val-guidance-tooltip]');
+  const title = tooltip?.querySelector('[data-val-guidance-title]');
+  const body = tooltip?.querySelector('[data-val-guidance-body]');
+  const touchHint = tooltip?.querySelector('[data-val-guidance-touch-hint]');
+  if(!toggle || !tooltip || !title || !body || !touchHint) return;
+
+  tooltip.id = tooltip.id || 'val-guidance-tooltip';
+  let enabled = true;
+  let activeElement = null;
+  let hoverTimer = null;
+  let blockedTouchTarget = null;
+  let repeatTouchTarget = null;
+  let repeatTouchExpires = 0;
+
+  try{
+    enabled = window.localStorage.getItem(VAL_GUIDANCE_STORAGE_KEY) !== 'false';
+  }catch(_error){}
+
+  function setEnabled(nextEnabled, persist = true){
+    enabled = Boolean(nextEnabled);
+    toggle.checked = enabled;
+    toggle.setAttribute('aria-label',enabled
+      ? 'Guidance on. Explain clickable items when I hover or focus them.'
+      : 'Guidance off. Turn on explanations for clickable items.');
+    document.body.classList.toggle('val-guidance-enabled',enabled);
+    if(!enabled) hide();
+    if(persist){
+      try{ window.localStorage.setItem(VAL_GUIDANCE_STORAGE_KEY,String(enabled)); }catch(_error){}
+    }
+  }
+
+  function position(element){
+    if(!element || tooltip.hidden) return;
+    const rect = element.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+    const margin = 14;
+    const maxLeft = Math.max(margin,window.innerWidth - tipRect.width - margin);
+    let left = rect.left + (rect.width - tipRect.width) / 2;
+    left = Math.min(maxLeft,Math.max(margin,left));
+    let top = rect.bottom + 12;
+    if(top + tipRect.height > window.innerHeight - margin){
+      top = Math.max(margin,rect.top - tipRect.height - 12);
+    }
+    tooltip.style.left = Math.round(left)+'px';
+    tooltip.style.top = Math.round(top)+'px';
+  }
+
+  function show(element,{touch = false} = {}){
+    if(!enabled || !element) return;
+    window.clearTimeout(hoverTimer);
+    const guidance = valGuidanceContent(element);
+    if(!guidance?.body) return;
+    if(activeElement && activeElement !== element && activeElement.getAttribute('aria-describedby') === tooltip.id){
+      activeElement.removeAttribute('aria-describedby');
+    }
+    activeElement = element;
+    title.textContent = guidance.title || 'Guidance';
+    body.textContent = guidance.body;
+    touchHint.hidden = !touch;
+    tooltip.hidden = false;
+    element.setAttribute('aria-describedby',tooltip.id);
+    window.requestAnimationFrame(() => {
+      position(element);
+      tooltip.classList.add('is-visible');
+    });
+  }
+
+  function hide(){
+    window.clearTimeout(hoverTimer);
+    tooltip.classList.remove('is-visible');
+    if(activeElement?.getAttribute('aria-describedby') === tooltip.id){
+      activeElement.removeAttribute('aria-describedby');
+    }
+    activeElement = null;
+    window.setTimeout(() => {
+      if(!tooltip.classList.contains('is-visible')) tooltip.hidden = true;
+    },170);
+  }
+
+  toggle.addEventListener('change',() => setEnabled(toggle.checked));
+  setEnabled(enabled,false);
+
+  document.addEventListener('pointerover',(event) => {
+    if(event.pointerType === 'touch') return;
+    const element = valGuidanceElement(event.target);
+    if(!element || element === activeElement) return;
+    window.clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => show(element),220);
+  });
+
+  document.addEventListener('pointerout',(event) => {
+    if(event.pointerType === 'touch') return;
+    const element = valGuidanceElement(event.target);
+    if(!element || element.contains(event.relatedTarget)) return;
+    hide();
+  });
+
+  document.addEventListener('focusin',(event) => {
+    const element = valGuidanceElement(event.target);
+    if(element) show(element);
+  });
+
+  document.addEventListener('focusout',(event) => {
+    if(activeElement && activeElement.contains(event.relatedTarget)) return;
+    hide();
+  });
+
+  document.addEventListener('pointerdown',(event) => {
+    if(!enabled || event.pointerType !== 'touch') return;
+    const element = valGuidanceElement(event.target);
+    if(!element || element.closest('.val-guidance-toggle')) return;
+    const now = Date.now();
+    if(repeatTouchTarget === element && now < repeatTouchExpires){
+      blockedTouchTarget = null;
+      repeatTouchTarget = null;
+      repeatTouchExpires = 0;
+      hide();
+      return;
+    }
+    blockedTouchTarget = element;
+    repeatTouchTarget = element;
+    repeatTouchExpires = now + 5000;
+    show(element,{touch:true});
+  },true);
+
+  document.addEventListener('click',(event) => {
+    const element = valGuidanceElement(event.target);
+    if(!element || element !== blockedTouchTarget) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    blockedTouchTarget = null;
+  },true);
+
+  document.addEventListener('keydown',(event) => {
+    if(event.key === 'Escape') hide();
+  });
+  window.addEventListener('resize',() => activeElement && position(activeElement));
+  window.addEventListener('scroll',hide,true);
+}
+
 function initCoworkChatbarFocus(){
   document.addEventListener('click', (event) => {
     const chatbar = event.target.closest?.('.home-cowork-chatbar');
@@ -32212,6 +32479,7 @@ returnButton.addEventListener('click', (event) => {
 });
 
 enableValAutocorrect(document);
+initValGuidanceLayer();
 initCoworkChatbarFocus();
 observeHearthClickContracts();
 applyHearthTimePeriod();
