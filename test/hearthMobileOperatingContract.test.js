@@ -8,8 +8,8 @@ const css = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 
 test('production shell fingerprints the mobile operating contract', () => {
-  assert.match(html, /hearth-prototype\.css\?v=mark-goall-guidance-20260803/);
-  assert.match(html, /hearth-prototype\.js\?v=mark-goall-guidance-20260803/);
+  assert.match(html, /hearth-prototype\.css\?v=mark-goall-linkedin-dismiss-20260803/);
+  assert.match(html, /hearth-prototype\.js\?v=mark-goall-linkedin-dismiss-20260803/);
 });
 
 test('mobile functions use one fixed viewport and one vertical scroll owner', () => {

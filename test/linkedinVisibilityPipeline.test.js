@@ -63,3 +63,17 @@ test('Teach LinkedIn owns a durable profile watch list with inspectable refresh 
   assert.match(hearth,/Choose whose work VAL should watch/);
   assert.match(hearth,/workflow: 'linkedin:profiles'/);
 });
+
+test('LinkedIn posts can be durably dismissed without stopping the profile watch',()=>{
+  assert.match(server,/function linkedinVisibilityDismissals/);
+  assert.match(server,/function linkedinVisibilityItemIsDismissed/);
+  assert.match(server,/linkedinVisibilityDismissals:\[\.\.\.prior/);
+  assert.match(server,/app\.post\('\/api\/val\/linkedin\/visibility\/dismiss'/);
+  assert.match(server,/action:'linkedin_visibility_item_dismissed'/);
+  assert.match(server,/status:'dismissed'/);
+  assert.match(server,/!\['dismissed','archived','deleted'\]\.includes/);
+  assert.match(hearth,/data-linkedin-dismiss=/);
+  assert.match(hearth,/async function dismissLinkedInVisibilityItem/);
+  assert.match(hearth,/linkedinVisibilityItems=linkedinVisibilityItems\.filter/);
+  assert.match(hearth,/VAL will keep watching the person for newer activity/);
+});

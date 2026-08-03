@@ -125,6 +125,7 @@ const VAL_GUIDANCE_RULES = [
   {selector:'.next-meeting-card',title:'Next meeting',body:'Open the nearest calendar commitment and the context VAL has connected to it.'},
   {selector:'.calendar-tab',title:'Calendar',body:'Open the full calendar view without leaving Home.'},
   {selector:'.cowork-notebook, [data-drawer-cowork-icon]',title:'Co-Work with VAL',body:'Open the general Chief of Staff conversation. This VAL can work across every connected function and source in your system.'},
+  {selector:'[data-linkedin-dismiss]',title:'Dismiss this post',body:'Remove this post from the active LinkedIn queue. VAL will keep watching the person for newer activity.'},
   {selector:'.linkedin-widget',title:'LinkedIn',body:'Review timely posts and comments VAL prepared from the profiles and topics you asked it to watch.'},
   {selector:'[data-open-room="alignment"], .living-room.alignment',title:'Alignment',body:'Open the next priority chosen by the Chief of Staff. Mark it done or bring its complete context into Co-Work with VAL.'},
   {selector:'[data-open-room="leverage"], .living-room.leverage',title:'Leverage',body:'Open work VAL has already prepared and is holding for your review, editing, approval, or dismissal.'},
@@ -947,7 +948,7 @@ const hearthClickContractRegistry = [
   {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
   {selector:'.teach-pen,.studio-drawer-link', contract:'home.val_studio', packet:'val_os_packet', rule:'VAL Studio governance and reviewed learning prompts', actions:'Shape VAL, review learning, and manage connected context', never:'Do not save durable memory or activate workflows without review'},
-  {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
+  {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link],[data-linkedin-dismiss]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link, dismiss from active queue', never:'Do not post to LinkedIn'},
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
   {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Chief of Staff Alignment action rule', actions:'Co-work with VAL on the current action only', never:'Do not draft, send, create tasks, or expose Leverage prepared work from Alignment'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
@@ -19355,6 +19356,7 @@ function renderLinkedInEngagementList(activePage = 'posts'){
             '<div class="linkedin-engagement-actions">' +
               (item.draftComment ? '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' : '') +
               (item.postUrl ? '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' : '') +
+              '<button type="button" class="linkedin-dismiss-action" data-linkedin-dismiss="' + index + '">Dismiss</button>' +
             '</div>' +
           '</article>'
         )).join('') : '<article class="linkedin-engagement-empty"><strong>No reviewable drafts yet.</strong><p>' + escapeHtml(linkedinRefreshReceiptCopy()) + ' No demo posts are being substituted.</p><button type="button" data-linkedin-page="profiles">Review profiles VAL watches</button></article>',
@@ -19473,6 +19475,35 @@ async function stopLinkedInWatchedProfile(profileId, button){
     button.textContent = 'Stop watching';
     const status = scraperPreviewList?.querySelector('[data-linkedin-watch-status]');
     if(status) status.textContent = error.message || 'VAL could not update that profile.';
+  }
+}
+
+async function dismissLinkedInVisibilityItem(index, button){
+  const item=linkedinVisibilityItems[Number(index)];
+  if(!item||!button)return;
+  const card=button.closest('.linkedin-engagement-item');
+  button.disabled=true;
+  button.textContent='Dismissing';
+  card?.classList.add('is-dismissing');
+  try{
+    await postJson('/api/val/linkedin/visibility/dismiss',{
+      itemId:item.id,
+      contactId:item.contactId,
+      draftId:item.draftId,
+      postUrl:item.postUrl,
+      sourceId:item.sourceId
+    },{
+      timeoutMs:15000,
+      timeoutMessage:'Dismissing this LinkedIn post took longer than expected.'
+    });
+    linkedinVisibilityItems=linkedinVisibilityItems.filter(candidate=>String(candidate.id)!==String(item.id));
+    updateLinkedInWidget();
+    renderLinkedInEngagementList('posts');
+  }catch(error){
+    card?.classList.remove('is-dismissing');
+    button.disabled=false;
+    button.textContent='Dismiss';
+    button.setAttribute('title',error.message||'VAL could not dismiss this post.');
   }
 }
 
@@ -32306,6 +32337,13 @@ async function handleScraperPreviewClick(event){
     event.preventDefault();
     event.stopPropagation();
     await stopLinkedInWatchedProfile(linkedinStopWatch.dataset.linkedinStopWatch, linkedinStopWatch);
+    return;
+  }
+  const linkedinDismiss = event.target.closest('[data-linkedin-dismiss]');
+  if(linkedinDismiss){
+    event.preventDefault();
+    event.stopPropagation();
+    await dismissLinkedInVisibilityItem(linkedinDismiss.dataset.linkedinDismiss,linkedinDismiss);
     return;
   }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');

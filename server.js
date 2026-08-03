@@ -18624,6 +18624,24 @@ function linkedinProfileUrl(profile={}){
 function linkedinProfileIsWatched(profile={}){
   return Boolean(linkedinProfileUrl(profile))&&profile.metadata?.linkedinWatch!==false;
 }
+function linkedinVisibilityDismissals(profile={}){
+  return safeArray(profile.metadata?.linkedinVisibilityDismissals)
+    .filter(record=>record&&typeof record==='object')
+    .slice(-200);
+}
+function linkedinVisibilityItemIsDismissed(profile={},item={}){
+  const itemId=String(item.id||'').trim();
+  const draftId=String(item.draftId||'').trim();
+  const postUrl=String(item.postUrl||'').trim();
+  const sourceId=String(item.sourceId||'').trim();
+  const contactId=String(item.contactId||profile.id||'').trim();
+  return linkedinVisibilityDismissals(profile).some(record=>{
+    if(itemId&&String(record.itemId||'')===itemId)return true;
+    if(draftId&&String(record.draftId||'')===draftId)return true;
+    if(postUrl&&String(record.postUrl||'')===postUrl)return true;
+    return Boolean(sourceId&&contactId&&String(record.sourceId||'')===sourceId&&String(record.contactId||'')===contactId);
+  });
+}
 function linkedInVerifiedCachedPosts(profile={}){
   const metadata=profile.metadata||{};
   const receipts=metadata.relationshipBrief?.sourceReceipts||metadata.sourceReceipts||{};
@@ -18845,7 +18863,10 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
       listRelationshipProfiles({limit:300}),
       listDrafts()
     ]);
-    const linkedinDrafts=drafts.filter(draft=>/linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||'')));
+    const linkedinDrafts=drafts.filter(draft=>
+      /linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||''))&&
+      !['dismissed','archived','deleted'].includes(String(draft.status||'').toLowerCase())
+    );
     const watchedProfiles=profiles.filter(profile=>profile.profileType==='person'&&linkedinProfileIsWatched(profile)).map(publicLinkedInWatchedProfile);
     const items=[];
     const usedDrafts=new Set();
@@ -18874,7 +18895,7 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
           return samePost||sameContact;
         });
         if(draft)usedDrafts.add(draft.id);
-        items.push({
+        const visibilityItem={
           id:`${profile.id}:linkedin:${post.id||post.postId||index}`,
           contact:profile.displayName||profile.email||'Relationship',
           contactId:profile.id,
@@ -18894,14 +18915,15 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
           sourceType:'relationship_linkedin_receipt',
           sourceId:post.id||post.postId||profile.id,
           sourceDate:post.date||post.createdAt||post.publishedAt||profile.lastObservedAt||''
-        });
+        };
+        if(!linkedinVisibilityItemIsDismissed(profile,visibilityItem))items.push(visibilityItem);
       });
     });
     linkedinDrafts.filter(draft=>!usedDrafts.has(draft.id)).forEach(draft=>{
       const context=draft.sourceContext||{};
       const contact=context.contact||{};
       const latest=context.latestLinkedInPost||{};
-      items.push({
+      const visibilityItem={
         id:draft.id,
         contact:contact.name||context.contactName||draft.subject||'LinkedIn draft',
         contactId:draft.contactId||contact.id||contact.contactId||'',
@@ -18913,7 +18935,13 @@ app.get('/api/val/linkedin/visibility',async(req,res)=>{
         sourceType:'linkedin_draft',
         sourceId:draft.id,
         sourceDate:draft.updatedAt||draft.createdAt||''
-      });
+      };
+      const profile=profiles.find(candidate=>
+        [draft.contactId,contact.id,contact.contactId,context.contactId]
+          .filter(Boolean)
+          .some(value=>String(value)===String(candidate.id)||String(value)===String(candidate.personId))
+      );
+      if(!profile||!linkedinVisibilityItemIsDismissed(profile,visibilityItem))items.push(visibilityItem);
     });
     items.sort((a,b)=>new Date(b.sourceDate||0)-new Date(a.sourceDate||0));
     res.json({
@@ -18948,6 +18976,60 @@ app.post('/api/val/linkedin/visibility/refresh',async(req,res)=>{
       success:true
     }).catch(()=>{});
     res.json({...refreshed,profilesChecked:profiles.length,draftsAvailable:drafts.filter(draft=>/linkedin_(comment|post)_draft|social_(comment|post)_draft/i.test(String(draft.draftType||''))).length,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,noExternalAction:true});
+  }
+});
+app.post('/api/val/linkedin/visibility/dismiss',async(req,res)=>{
+  try{
+    const payload=req.body||{};
+    const itemId=String(payload.itemId||payload.id||'').trim();
+    const contactId=String(payload.contactId||'').trim();
+    const draftId=String(payload.draftId||'').trim();
+    const postUrl=String(payload.postUrl||'').trim();
+    const sourceId=String(payload.sourceId||'').trim();
+    if(!itemId&&!draftId&&!postUrl)return res.status(400).json({ok:false,error:'This LinkedIn item is missing its source identity.'});
+    const [profiles,drafts]=await Promise.all([
+      listRelationshipProfiles({limit:800}),
+      listDrafts()
+    ]);
+    const profile=profiles.find(candidate=>
+      [candidate.id,candidate.personId].filter(Boolean).some(value=>String(value)===contactId)
+    )||null;
+    const draft=drafts.find(candidate=>String(candidate.id)===draftId)||null;
+    if(!profile&&!draft)return res.status(404).json({ok:false,error:'This LinkedIn item is no longer in the active visibility queue.'});
+    const dismissedAt=new Date().toISOString();
+    if(profile){
+      const metadata=profile.metadata||{};
+      const prior=linkedinVisibilityDismissals(profile).filter(record=>
+        String(record.itemId||'')!==itemId&&
+        (!draftId||String(record.draftId||'')!==draftId)&&
+        (!postUrl||String(record.postUrl||'')!==postUrl)
+      );
+      await saveRelationshipProfile({
+        ...profile,
+        metadataJson:{
+          ...metadata,
+          linkedinVisibilityDismissals:[...prior,{itemId,contactId:profile.id,draftId,postUrl,sourceId,dismissedAt}].slice(-200)
+        }
+      });
+    }
+    if(draft){
+      await saveInternalDraft({
+        ...draft,
+        status:'dismissed',
+        sourceContext:{...(draft.sourceContext||{}),linkedinVisibilityDismissedAt:dismissedAt,noExternalAction:true}
+      });
+    }
+    await auditLog({
+      req,
+      action:'linkedin_visibility_item_dismissed',
+      resourceType:'linkedin_visibility',
+      resourceId:itemId||draftId||sourceId,
+      metadata:{contactId:profile?.id||contactId,draftId,postUrl,sourceId},
+      success:true
+    }).catch(()=>{});
+    res.json({ok:true,itemId,message:'Post dismissed from LinkedIn visibility.',noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message,noExternalAction:true});
   }
