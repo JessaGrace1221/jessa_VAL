@@ -3457,6 +3457,17 @@ button,a{font:inherit}
   border-color:rgba(201,143,145,.16);
   color:rgba(113,71,70,.84);
 }
+.desk-workspace.linkedin-visibility-mode .linkedin-engagement-actions .linkedin-dismiss-action{
+  margin-left:auto;
+  border-color:rgba(126,79,78,.14);
+  background:rgba(255,250,249,.46);
+  color:rgba(112,72,71,.74);
+}
+.desk-workspace.linkedin-visibility-mode .linkedin-engagement-item.is-dismissing{
+  opacity:.48;
+  transform:translateY(2px);
+  transition:opacity .16s ease,transform .16s ease;
+}
 .desk-workspace.linkedin-visibility-mode .linkedin-engagement-actions button:hover,
 .desk-workspace.linkedin-visibility-mode .linkedin-engagement-actions a:hover{
   transform:translateY(-1px);
