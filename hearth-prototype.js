@@ -43,6 +43,8 @@ let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
 const drawerPullLabel = document.querySelector('.drawer-pull-label');
+const valSystemUpdateButton = document.querySelector('[data-val-system-update]');
+const valSystemUpdateCopy = document.querySelector('[data-val-system-update-copy]');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
 const drawerTray = document.querySelector('#drawer-tray');
 const executiveCompassCore = document.querySelector('.executive-compass-core');
@@ -18818,6 +18820,18 @@ function applyClientFeatureLocks(){
   }
 }
 
+function applySystemUpdateStatus(systemUpdate = {}){
+  if(!valSystemUpdateButton) return;
+  const available = Boolean(systemUpdate?.available);
+  valSystemUpdateButton.hidden = !available;
+  valSystemUpdateButton.dataset.updateUrl = String(systemUpdate?.updateUrl || '');
+  valSystemUpdateButton.setAttribute('aria-hidden', available ? 'false' : 'true');
+  if(!available) return;
+  const label = String(systemUpdate.releaseLabel || systemUpdate.baselineVersion || 'System release ready').trim();
+  if(valSystemUpdateCopy) valSystemUpdateCopy.textContent = label;
+  valSystemUpdateButton.title = label ? `Update available: ${label}` : 'Update available';
+}
+
 async function hydrateClientConfig(){
   if(!canUseApi) {
     applyClientFeatureLocks();
@@ -18829,6 +18843,7 @@ async function hydrateClientConfig(){
     if(config?.voiceWidgetId) VAL_GHL_VOICE_WIDGET_ID = String(config.voiceWidgetId).trim();
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
+    applySystemUpdateStatus(config?.systemUpdate || {});
     clientDisplayName = String(config?.clientName||'').trim();
     clientTimezone = String(config?.timezone||clientTimezone).trim() || clientTimezone;
     applyHearthTimePeriod();
@@ -18841,6 +18856,18 @@ async function hydrateClientConfig(){
   if(executiveBriefingState) applyVelocityPerspective(executiveBriefingState);
   else if(title) title.textContent = currentState?.title || valTimeGreeting();
 }
+
+valSystemUpdateButton?.addEventListener('click', () => {
+  const updateUrl = String(valSystemUpdateButton.dataset.updateUrl || '').trim();
+  if(updateUrl){
+    window.open(updateUrl, '_blank', 'noopener');
+    return;
+  }
+  if(studioDrawerLink){
+    if(drawerPull?.getAttribute('aria-expanded') !== 'true') drawerPull?.click();
+    window.setTimeout(() => studioDrawerLink.click(), 80);
+  }
+});
 
 const hearthServerPacketNames = new Set([
   'relationship_packet',

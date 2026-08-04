@@ -7953,6 +7953,54 @@ button.observer-node:focus-visible{
   border-color:rgba(255,236,202,.48);
   box-shadow:0 14px 34px rgba(9,5,4,.3),0 0 24px rgba(125,141,111,.22),0 0 28px rgba(239,185,173,.22),inset 0 1px 0 rgba(255,249,239,.28),inset 0 -10px 22px rgba(0,0,0,.16);
 }
+.val-system-update-button{
+  position:absolute;
+  z-index:13;
+  left:calc(50% + 250px);
+  bottom:39px;
+  display:inline-grid;
+  align-items:center;
+  gap:1px;
+  min-height:36px;
+  max-width:min(270px,calc(50vw - 165px));
+  padding:7px 14px;
+  border:1px solid rgba(255,236,202,.34);
+  border-radius:8px;
+  background:
+    linear-gradient(135deg,rgba(255,249,239,.94),rgba(246,241,231,.84)),
+    rgba(255,249,239,.9);
+  color:#2f201b;
+  text-align:left;
+  box-shadow:0 14px 32px rgba(9,5,4,.22),inset 0 1px 0 rgba(255,255,255,.64);
+  pointer-events:auto;
+  cursor:pointer;
+}
+.val-system-update-button[hidden]{
+  display:none!important;
+}
+.val-system-update-button span{
+  font-size:.72rem;
+  line-height:1.05;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.val-system-update-button small{
+  display:block;
+  overflow:hidden;
+  color:rgba(47,32,27,.68);
+  font-size:.66rem;
+  line-height:1.1;
+  font-weight:700;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.val-system-update-button:hover,
+.val-system-update-button:focus-visible{
+  outline:none;
+  border-color:rgba(125,141,111,.52);
+  box-shadow:0 16px 36px rgba(9,5,4,.26),0 0 18px rgba(125,141,111,.18),inset 0 1px 0 rgba(255,255,255,.72);
+}
 .close-all-drawers{
   position:absolute;
   z-index:3;
@@ -15847,6 +15895,7 @@ button.timeline-overview-receipt:focus-visible{
   .preview-lead{grid-template-columns:1fr}
   .retrieval-system{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:90}
   .drawer-pull{position:relative;left:auto;bottom:auto;transform:none;width:100%;justify-content:center}
+  .val-system-update-button{position:relative;left:auto;bottom:auto;width:100%;max-width:none;margin:0 0 8px;justify-content:center;text-align:center}
   .drawer-pull:hover,.drawer-pull[aria-expanded="true"]{transform:none}
   .drawer-tray{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden}
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
