@@ -23036,6 +23036,21 @@ async function logTranscriptAction(transcriptId,actionType,targetRecordId,status
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptActionLog');if(rows)rows.push(row);return row;}
   await valDbReady;if(pgPool)await dbQuery('insert into transcript_action_log (action_id,transcript_id,action_type,target_record_id,status,error_message,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.actionId,transcriptId,actionType,row.targetRecordId,status,row.errorMessage||null]);else{const store=valStore();transcriptFileArray(store,'transcriptActionLog').push(row);saveValStore(store);}return row;
 }
+async function transcriptActionAlreadyLogged(transcriptId,actionType,targetRecordId=''){
+  const cleanTranscriptId=String(transcriptId||'').trim();
+  const cleanActionType=String(actionType||'').trim();
+  const cleanTarget=String(targetRecordId||'').trim();
+  if(!cleanTranscriptId||!cleanActionType)return false;
+  if(DEMO_MODE){
+    return (transcriptDemoArray('transcriptActionLog')||[]).some(row=>String(row.transcriptId)===cleanTranscriptId&&String(row.actionType)===cleanActionType&&(!cleanTarget||String(row.targetRecordId||'')===cleanTarget));
+  }
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select 1 from transcript_action_log where transcript_id=$1 and action_type=$2 and ($3::text=\'\' or target_record_id=$3) limit 1',[cleanTranscriptId,cleanActionType,cleanTarget]);
+    return !!result.rows[0];
+  }
+  return transcriptFileArray(valStore(),'transcriptActionLog').some(row=>String(row.transcriptId)===cleanTranscriptId&&String(row.actionType)===cleanActionType&&(!cleanTarget||String(row.targetRecordId||'')===cleanTarget));
+}
 function normalizeEvidenceObservationType(type){
   const clean=String(type||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
   return EVIDENCE_OBSERVATION_TYPES.includes(clean)?clean:'idea';
@@ -27220,6 +27235,76 @@ function transcriptOverviewInvitees(transcript={},calendarEvent={}){
     });
   return structured.concat(transcriptOverviewInviteesFromSource(transcript,seen));
 }
+function transcriptAttendeeNameFromSourceText(label=''){
+  const clean=String(label||'')
+    .replace(/[<>]/g,' ')
+    .replace(/\b(VAL|Krisp|Zoom|Google Meet|Meet|Meeting|Call|Transcript|Recording|Unknown|User|Speaker)\b/gi,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+  if(!clean||clean.length<2||clean.length>90)return '';
+  if(/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(clean))return '';
+  return clean;
+}
+function transcriptOverviewAttendeeCandidates(transcript={},calendarEvent={}){
+  const buckets=[
+    calendarEvent.attendees,
+    transcript.attendees,
+    transcript.participants,
+    transcript.invitees,
+    transcript.calendarEvent?.attendees,
+    transcript.calendar_event?.attendees,
+    transcript.event?.attendees,
+    transcript.meetingContextJson?.attendees,
+    transcript.calendarEventJson?.attendees,
+    transcript.metadata?.attendees,
+    transcript.metadata?.calendarEvent?.attendees,
+    transcript.metadata?.calendar_event?.attendees,
+    transcript.metadata?.meetingMatch?.attendees,
+    transcript.sourcePayloadMetadata?.attendees,
+    transcript.sourcePayloadMetadata?.data?.attendees,
+    transcript.sourcePayloadMetadata?.calendarEvent?.attendees,
+    transcript.sourcePayloadMetadata?.calendar_event?.attendees,
+    transcript.sourcePayloadMetadata?.meetingMatch?.attendees
+  ];
+  const candidates=[];
+  const seen=new Set();
+  const push=(person={},source='attendee_list')=>{
+    const email=normalizeEmailAddress(person.email||person.address||person.mail||person.contactEmail||person.matchedEmail||person.emailAddress?.address||'');
+    const name=transcriptAttendeeNameFromSourceText(person.name||person.displayName||person.contactName||person.matchedContactName||person.speakerNameRaw||person.label||person.emailAddress?.name||'');
+    const key=email||name.toLowerCase();
+    if(!key||seen.has(key))return;
+    if((email&&OWNER_EMAILS.has(email))||isOwnerRelationship({name,email,self:person.self,organizer:person.organizer}))return;
+    seen.add(key);
+    candidates.push({name:name||email,email,source});
+  };
+  for(const person of buckets.flatMap(bucket=>Array.isArray(bucket)?bucket:[])){
+    if(typeof person==='string'){
+      const email=normalizeEmailAddress(person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]||'');
+      push({name:person.replace(email,'').trim(),email},'attendee_text');
+    }else if(person&&typeof person==='object'){
+      push(person,'attendee_object');
+    }
+  }
+  const text=transcriptOverviewInviteesSourceText(transcript);
+  for(const line of text.split(/\r?\n/).slice(0,800)){
+    const match=String(line||'').trim().match(/^\*{0,2}\s*([^*|\n<>:@]{2,90})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/);
+    if(match)push({name:match[1]},'speaker_label');
+  }
+  return candidates;
+}
+function transcriptMissingEmailInvitees(transcript={},calendarEvent={},recipients=[]){
+  const recipientEmails=new Set(safeArray(recipients).map(person=>normalizeEmailAddress(person.email||person)).filter(Boolean));
+  const recipientNames=new Set(safeArray(recipients).map(person=>String(person.name||person.label||'').trim().toLowerCase()).filter(Boolean));
+  return transcriptOverviewAttendeeCandidates(transcript,calendarEvent)
+    .filter(person=>!validEmail(person.email)&&person.name&&!recipientNames.has(person.name.toLowerCase()))
+    .filter((person,index,items)=>items.findIndex(other=>other.name.toLowerCase()===person.name.toLowerCase())===index)
+    .slice(0,20)
+    .concat(
+      transcriptOverviewAttendeeCandidates(transcript,calendarEvent)
+        .filter(person=>person.email&&!validEmail(person.email)&&!recipientEmails.has(person.email))
+        .slice(0,10)
+    );
+}
 function transcriptOverviewInviteesSourceText(transcript={}){
   const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
   const payload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:metadata;
@@ -27427,21 +27512,90 @@ async function renderTranscriptActionItemsEmailTemplate({title='',keyPoints=[],a
     deliveryMode:String(template.settings?.deliveryMode||template.settings?.delivery_mode||'draft')==='auto_send'?'auto_send':'draft'
   };
 }
+function transcriptMissingEmailSmsDestination(){
+  return {
+    contactId:String(process.env.VAL_OWNER_SMS_CONTACT_ID||process.env.VAL_OWNER_GHL_CONTACT_ID||process.env.JESSA_GHL_CONTACT_ID||'').trim(),
+    conversationId:String(process.env.VAL_OWNER_SMS_CONVERSATION_ID||process.env.VAL_OWNER_GHL_CONVERSATION_ID||process.env.JESSA_GHL_CONVERSATION_ID||'').trim()
+  };
+}
+function transcriptMissingEmailSmsMessage({title='',transcriptId='',missingInvitees=[],recipientCount=0}={}){
+  const missing=safeArray(missingInvitees).map(person=>person.name||person.email).filter(Boolean);
+  const shown=missing.slice(0,8).join(', ');
+  const extra=missing.length>8?` +${missing.length-8} more`:'';
+  return [
+    'VAL here. I tried to send transcript follow-up emails, but I am missing attendee email addresses.',
+    `Meeting: ${compactText(title||'Transcript',140)}`,
+    transcriptId?`Transcript ID: ${compactText(transcriptId,80)}`:'',
+    `Missing: ${shown || 'attendee email address'}${extra}`,
+    recipientCount?`I will only send to the ${recipientCount} verified attendee email${recipientCount===1?'':'s'} I have.`:'I did not send the follow-up because no verified attendee emails were available.',
+    'Open Transcripts to link or add the missing attendee emails.'
+  ].filter(Boolean).join('\n');
+}
+async function sendTranscriptMissingEmailSmsAlert({transcript={},title='',missingInvitees=[],recipientCount=0}={}){
+  const transcriptId=String(transcript.id||transcript.transcriptId||'').trim();
+  if(!transcriptId||!safeArray(missingInvitees).length)return {ok:true,skipped:true,reason:'nothing_missing'};
+  const targetRecordId='missing_attendee_emails_sms';
+  if(await transcriptActionAlreadyLogged(transcriptId,'missing_attendee_email_sms_sent',targetRecordId).catch(()=>false)){
+    return {ok:true,skipped:true,reason:'already_sent'};
+  }
+  const destination=transcriptMissingEmailSmsDestination();
+  if(!destination.contactId&&!destination.conversationId){
+    await logTranscriptAction(transcriptId,'missing_attendee_email_sms_failed',targetRecordId,'failed','Configure VAL_OWNER_SMS_CONTACT_ID or VAL_OWNER_SMS_CONVERSATION_ID to text the owner.').catch(()=>{});
+    return {ok:false,skipped:true,error:'Owner SMS destination is not configured.'};
+  }
+  if(!valExternalActions?.createSmsSendPacket||!valExternalActions?.executor?.execute){
+    await logTranscriptAction(transcriptId,'missing_attendee_email_sms_failed',targetRecordId,'failed','SMS execution is not connected.').catch(()=>{});
+    return {ok:false,skipped:true,error:'SMS execution is not connected.'};
+  }
+  const message=transcriptMissingEmailSmsMessage({title,transcriptId,missingInvitees,recipientCount});
+  const packet=await valExternalActions.createSmsSendPacket({
+    ...destination,
+    recipientName:CLIENT_CONFIG.clientName||'Jessa',
+    title:`Missing transcript attendee emails: ${title||transcriptId}`,
+    message,
+    summary:`Text ${CLIENT_CONFIG.clientName||'the owner'} because transcript follow-up email is missing attendee addresses.`,
+    sourceRefs:[{sourceType:'transcript',sourceId:transcriptId,quoteOrSummary:`Missing attendee emails: ${safeArray(missingInvitees).map(person=>person.name||person.email).filter(Boolean).slice(0,8).join(', ')}`,confidence:0.95}],
+    sourceContext:{
+      source:'transcript_action_items_attendee_email_missing_recipients',
+      transcriptId,
+      transcriptTitle:title,
+      missingInvitees:safeArray(missingInvitees),
+      recipientCount,
+      finalApprovalSurface:'transcripts_global_delivery_toggle'
+    },
+    finalApprovalSurface:'transcripts_global_delivery_toggle'
+  });
+  const approved=await valExternalActions.approve(packet.id,{note:'Global transcript attendee follow-up auto-send is enabled; notify owner about missing attendee email addresses.'});
+  const result=await valExternalActions.executor.execute(approved.id,{finalConfirmation:true,executedBy:'transcripts:missing_email_sms_alert'});
+  await processExternalActionBoardEvidence(result.packet||approved).catch(()=>{});
+  if(!result?.executed){
+    const error=result?.error||result?.packet?.failureReason||'SMS alert did not complete.';
+    await logTranscriptAction(transcriptId,'missing_attendee_email_sms_failed',targetRecordId,'failed',error).catch(()=>{});
+    return {ok:false,error,packet:result?.packet||approved};
+  }
+  await logTranscriptAction(transcriptId,'missing_attendee_email_sms_sent',targetRecordId,'completed').catch(()=>{});
+  return {ok:true,executed:true,packet:result.packet||approved,receipt:result.receipt||null};
+}
 async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},tasks=[],{writingRules=''}={}){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
   const overview=transcriptOverviewSections(transcript,tasks);
   const keyPoints=(Array.isArray(overview.keyPoints)?overview.keyPoints:[]).map(String).filter(Boolean);
   const actionItems=(Array.isArray(overview.actionItems)&&overview.actionItems.length?overview.actionItems:tasks.map(task=>task.taskTitle||task.title||task.text||'')).map(String).filter(Boolean);
   const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
+  const missingInvitees=transcriptMissingEmailInvitees(transcript,calendarEvent,recipients);
   if(!actionItems.length)throw Object.assign(new Error('This transcript has no source Action Items to send yet.'),{statusCode:400});
-  if(!recipients.length)throw Object.assign(new Error('VAL could not find attendee email addresses for this transcript yet. Link or add attendees first.'),{statusCode:400});
   const transcriptId=transcript.id||transcript.transcriptId||'';
   const title=transcript.title||transcript.meetingTitle||'Meeting';
   const rendered=await renderTranscriptActionItemsEmailTemplate({title,keyPoints,actionItems});
+  const autoSend=rendered.deliveryMode==='auto_send';
+  let missingEmailSmsAlert=null;
+  if(autoSend&&missingInvitees.length){
+    missingEmailSmsAlert=await sendTranscriptMissingEmailSmsAlert({transcript,title,missingInvitees,recipientCount:recipients.length}).catch(error=>({ok:false,error:error.message}));
+  }
+  if(!recipients.length)throw Object.assign(new Error('VAL could not find attendee email addresses for this transcript yet. Link or add attendees first.'),{statusCode:400,missingEmailSmsAlert});
   const subject=rendered.subject;
   const body=writingRules?`${rendered.body}\n\n${transcriptWritingRuleSignoff(writingRules)}`:rendered.body;
   const existing=(await listDrafts()).find(d=>d.draftType==='transcript_action_items_email'&&d.sourceContext?.transcriptId===transcriptId);
-  const autoSend=rendered.deliveryMode==='auto_send';
   const draft=await saveInternalDraft({
     id:existing?.id,
     draftType:'transcript_action_items_email',
@@ -27459,6 +27613,8 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
       recipients:recipients.map(person=>person.email),
       recipientEmail:recipients.map(person=>person.email).join(', '),
       invitees:recipients,
+      missingInvitees,
+      missingAttendeeEmailAlert:missingEmailSmsAlert,
       keyPoints,
       actionItems,
       sourceReceipt:overview,
@@ -27496,7 +27652,7 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
   }
   const finalDraft=sendResult?.draft||draft;
   await logTranscriptAction(transcriptId,sendResult?.executed?'action_items_attendee_email_auto_sent':'action_items_attendee_email_draft_ready',finalDraft.id||'','completed').catch(()=>{});
-  return {draft:finalDraft,recipientCount:recipients.length,recipients,keyPoints,actionItems,noExternalAction:!sendResult?.executed,autoSendAttempted:autoSend,autoSendResult:sendResult};
+  return {draft:finalDraft,recipientCount:recipients.length,recipients,missingInvitees,missingEmailSmsAlert,keyPoints,actionItems,noExternalAction:!sendResult?.executed,autoSendAttempted:autoSend,autoSendResult:sendResult};
 }
 async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},transcript={},title='',recipients=[],keyPoints=[],actionItems=[]}={}){
   if(!valExternalActions?.createEmailSendPacket||!valExternalActions?.executor?.execute)throw new Error('Email execution is not connected yet.');
