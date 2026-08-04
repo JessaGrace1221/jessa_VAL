@@ -7613,6 +7613,7 @@ async function initValDb(){
       subject_template text not null default '',
       html_template text not null default '',
       text_template text not null default '',
+      settings_json jsonb not null default '{}',
       is_active boolean not null default true,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
@@ -8111,6 +8112,7 @@ async function initValDb(){
   await dbQuery('alter table val_users add column if not exists password_set_at timestamptz');
   await dbQuery('alter table val_users add column if not exists password_reset_token_hash text');
   await dbQuery('alter table val_users add column if not exists password_reset_expires_at timestamptz');
+  await dbQuery('alter table val_templates add column if not exists settings_json jsonb not null default \'{}\'');
   await dbQuery('alter table meeting_transcript_links add column if not exists contact_id text');
   await dbQuery('alter table meeting_transcript_links add column if not exists updated_at timestamptz not null default now()');
   await dbQuery('alter table val_tasks add column if not exists completed_at timestamptz');
@@ -18146,6 +18148,7 @@ app.post('/api/val/tasks/:id/calendarize',async(req,res)=>{try{const result=awai
 app.post('/api/val/tasks/:id/complete',async(req,res)=>{try{const task=await completeCalendarizedTask(req.params.id,req.body||{});await auditLog({req,action:'task_completed',resourceType:'task',resourceId:req.params.id,metadata:{calendarEventId:task.calendarEventId||''},success:true}).catch(()=>{});res.json({ok:true,task});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 
 const MEETING_RECAP_TEMPLATE_KEY='meeting_recap';
+const TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY='transcript_action_items_email';
 const DEFAULT_MEETING_RECAP_TEMPLATE={
   templateKey:MEETING_RECAP_TEMPLATE_KEY,
   name:'Meeting Recap Template',
@@ -18183,11 +18186,31 @@ const DEFAULT_MEETING_RECAP_TEMPLATE={
     'Best,'
   ].join('\n')
 };
+const DEFAULT_TRANSCRIPT_ACTION_ITEMS_TEMPLATE={
+  templateKey:TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY,
+  name:'Transcript Action Items and Key Points Email',
+  subjectTemplate:'Follow-up: {{meeting_title}}',
+  htmlTemplate:'',
+  textTemplate:[
+    'Hello, VAL here. I am {{executive_name}}\'s AI assistant.',
+    'After reading the transcript, {{upbeat_key_point}}',
+    '',
+    'Action Items',
+    '{{action_items_text}}',
+    '',
+    'Key Points',
+    '{{key_points_text}}',
+    '',
+    'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask {{executive_first_name}} about getting you set up.'
+  ].join('\n'),
+  settings:{deliveryMode:'draft'}
+};
 function templatePgRow(row){
-  return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,templateKey:row.template_key,name:row.name,subjectTemplate:row.subject_template||'',htmlTemplate:row.html_template||'',textTemplate:row.text_template||'',isActive:row.is_active!==false,createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
+  return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,templateKey:row.template_key,name:row.name,subjectTemplate:row.subject_template||'',htmlTemplate:row.html_template||'',textTemplate:row.text_template||'',settings:row.settings_json||{},isActive:row.is_active!==false,createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
 }
 function systemTemplate(key){
   if(key===MEETING_RECAP_TEMPLATE_KEY)return {...DEFAULT_MEETING_RECAP_TEMPLATE,id:'system_'+key,userId:currentUserId(),tenantId:tenantId(),isActive:true,systemDefault:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(key===TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY)return {...DEFAULT_TRANSCRIPT_ACTION_ITEMS_TEMPLATE,id:'system_'+key,userId:currentUserId(),tenantId:tenantId(),isActive:true,systemDefault:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   return null;
 }
 async function getActiveTemplate(key){
@@ -18202,14 +18225,15 @@ async function getActiveTemplate(key){
 async function saveTemplate(key,payload={}){
   const base=systemTemplate(key);
   if(!base)throw new Error('Unknown template key');
-  const template={id:payload.id||uuid('tmpl'),userId:currentUserId(),tenantId:tenantId(),templateKey:key,name:payload.name||base.name,subjectTemplate:String(payload.subjectTemplate??payload.subject_template??base.subjectTemplate),htmlTemplate:String(payload.htmlTemplate??payload.html_template??base.htmlTemplate),textTemplate:String(payload.textTemplate??payload.text_template??base.textTemplate),isActive:payload.isActive!==false,createdAt:payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const settings=payload.settings&&typeof payload.settings==='object'?payload.settings:(payload.settings_json&&typeof payload.settings_json==='object'?payload.settings_json:(base.settings||{}));
+  const template={id:payload.id||uuid('tmpl'),userId:currentUserId(),tenantId:tenantId(),templateKey:key,name:payload.name||base.name,subjectTemplate:String(payload.subjectTemplate??payload.subject_template??base.subjectTemplate),htmlTemplate:String(payload.htmlTemplate??payload.html_template??base.htmlTemplate),textTemplate:String(payload.textTemplate??payload.text_template??base.textTemplate),settings,isActive:payload.isActive!==false,createdAt:payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(pgPool){
     const r=await dbQuery(`
-      insert into val_templates (id,user_id,tenant_id,template_key,name,subject_template,html_template,text_template,is_active,created_at,updated_at)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz,now()),now())
-      on conflict (tenant_id,user_id,template_key) do update set name=excluded.name,subject_template=excluded.subject_template,html_template=excluded.html_template,text_template=excluded.text_template,is_active=excluded.is_active,updated_at=now()
+      insert into val_templates (id,user_id,tenant_id,template_key,name,subject_template,html_template,text_template,settings_json,is_active,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,coalesce($11::timestamptz,now()),now())
+      on conflict (tenant_id,user_id,template_key) do update set name=excluded.name,subject_template=excluded.subject_template,html_template=excluded.html_template,text_template=excluded.text_template,settings_json=excluded.settings_json,is_active=excluded.is_active,updated_at=now()
       returning *
-    `,[template.id,template.userId,template.tenantId,template.templateKey,template.name,template.subjectTemplate,template.htmlTemplate,template.textTemplate,template.isActive,template.createdAt]);
+    `,[template.id,template.userId,template.tenantId,template.templateKey,template.name,template.subjectTemplate,template.htmlTemplate,template.textTemplate,JSON.stringify(template.settings),template.isActive,template.createdAt]);
     return templatePgRow(r.rows[0]);
   }
   const store=valStore();store.templates=store.templates||[];
@@ -27352,6 +27376,38 @@ function transcriptActionItemsEmailBody({title='',keyPoints=[],actionItems=[],wr
     transcriptWritingRuleSignoff(writingRules)
   ].join('\n');
 }
+function transcriptNumberedText(items=[]){
+  const list=(Array.isArray(items)?items:[]).map(transcriptCleanDisplayLine).filter(Boolean);
+  return list.length?list.map((item,index)=>`${index+1}. ${item}`).join('\n'):'None captured.';
+}
+function transcriptBulletText(items=[]){
+  const list=(Array.isArray(items)?items:[]).map(transcriptCleanDisplayLine).filter(Boolean);
+  return list.length?list.map(item=>`- ${item}`).join('\n'):'None captured.';
+}
+function transcriptUpbeatPoint(keyPoints=[]){
+  const line=(Array.isArray(keyPoints)?keyPoints:[]).map(transcriptCleanDisplayLine).find(Boolean)||'it feels like momentum is happening.';
+  return /[.!?]$/.test(line)?line:line+'.';
+}
+async function renderTranscriptActionItemsEmailTemplate({title='',keyPoints=[],actionItems=[]}={}){
+  const template=await getActiveTemplate(TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY);
+  const executiveName=CLIENT_CONFIG.clientName||'Jessa';
+  const vars={
+    meeting_title:title||'Meeting',
+    executive_name:executiveName,
+    executive_first_name:firstName(executiveName),
+    upbeat_key_point:transcriptUpbeatPoint(keyPoints),
+    action_items_text:transcriptNumberedText(actionItems),
+    action_items_bullets:transcriptBulletText(actionItems),
+    key_points_text:transcriptNumberedText(keyPoints),
+    key_points_bullets:transcriptBulletText(keyPoints)
+  };
+  return {
+    template,
+    subject:renderTemplateString(template.subjectTemplate,vars).trim()||`Follow-up: ${title||'Meeting'}`,
+    body:renderTemplateString(template.textTemplate,vars).trim()||transcriptActionItemsEmailBody({title,keyPoints,actionItems}),
+    deliveryMode:String(template.settings?.deliveryMode||template.settings?.delivery_mode||'draft')==='auto_send'?'auto_send':'draft'
+  };
+}
 async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},tasks=[],{writingRules=''}={}){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
   const overview=transcriptOverviewSections(transcript,tasks);
@@ -27362,8 +27418,9 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
   if(!recipients.length)throw Object.assign(new Error('VAL could not find attendee email addresses for this transcript yet. Link or add attendees first.'),{statusCode:400});
   const transcriptId=transcript.id||transcript.transcriptId||'';
   const title=transcript.title||transcript.meetingTitle||'Meeting';
-  const subject=`Meeting follow-up: ${title}`;
-  const body=transcriptActionItemsEmailBody({title,keyPoints,actionItems,writingRules});
+  const rendered=await renderTranscriptActionItemsEmailTemplate({title,keyPoints,actionItems});
+  const subject=rendered.subject;
+  const body=writingRules?`${rendered.body}\n\n${transcriptWritingRuleSignoff(writingRules)}`:rendered.body;
   const existing=(await listDrafts()).find(d=>d.draftType==='transcript_action_items_email'&&d.sourceContext?.transcriptId===transcriptId);
   const draft=await saveInternalDraft({
     id:existing?.id,
@@ -27389,11 +27446,13 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
       preparedArtifact:{kind:'email_draft',subject,body,recipients:recipients.map(person=>person.email),keyPoints,actionItems},
       canValAct:'approval_required',
       executionPath:'review_then_send_email',
+      deliveryMode:rendered.deliveryMode,
       noExternalAction:true,
       noExternalSend:true,
       exactKeyPointsFromSystem:true,
       exactActionItemsFromSystem:true,
-      writingRules
+      writingRules,
+      templateKey:TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY
     }
   });
   await logTranscriptAction(transcriptId,'action_items_attendee_email_draft_ready',draft.id||'','completed').catch(()=>{});

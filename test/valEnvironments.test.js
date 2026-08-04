@@ -73,6 +73,7 @@ test('Environment schema and routes are mounted as native VAL infrastructure',()
   assert.match(routes,/\/api\/val\/environments\/import/);
   assert.match(routes,/\/api\/val\/environments\/network/);
   assert.match(routes,/\/api\/val\/environments\/:id\/communications/);
+  assert.match(fs.readFileSync(path.join(root,'services','valEnvironments.js'),'utf8'),/blockId:'send_sms',label:'Send me a Text Message'/);
 });
 
 test('shared Environments keep governance and remove private tenant context',async()=>{
@@ -306,11 +307,20 @@ test('VAL Studio opens as an Environment library and preserves live detail state
   assert.match(hearth,/received · .*used · .*published/);
 });
 
-test('VAL Studio builder starts from a plain-language transcript email workflow',()=>{
+test('VAL Studio builder starts from a trigger and action catalog',()=>{
   assert.match(hearth,/function valStudioStarterView\(\)/);
-  assert.match(hearth,/data-val-studio-start-template="blank"/);
-  assert.match(hearth,/data-val-studio-start-template="transcript_attendee_email"/);
-  assert.match(hearth,/No source or action assumed\./);
+  assert.match(hearth,/function valStudioConnectorCatalog\(\)/);
+  assert.match(hearth,/function valStudioActionCatalog\(\)/);
+  assert.match(hearth,/name="starterTriggerSource"/);
+  assert.match(hearth,/name="starterTriggerEvent"/);
+  assert.match(hearth,/name="starterAction"/);
+  assert.match(hearth,/HubSpot/);
+  assert.match(hearth,/Salesforce/);
+  assert.match(hearth,/Stripe/);
+  assert.match(hearth,/Google Sheets/);
+  assert.match(hearth,/Send me a Text Message/);
+  assert.match(hearth,/data-val-studio-start-template="trigger_action"/);
+  assert.doesNotMatch(hearth,/Transcript attendee email<\/strong>/);
   assert.match(hearth,/function valStudioBlankSpec\(\)/);
   assert.match(hearth,/manual_or_connected_event/);
   assert.match(hearth,/function valStudioSpecFromStarter\(template='blank',workflowText=''\)/);
@@ -320,7 +330,7 @@ test('VAL Studio builder starts from a plain-language transcript email workflow'
   assert.match(hearth,/name="appendGoogleDoc"/);
   assert.match(hearth,/Only required when Google Doc is on/);
   assert.match(hearth,/Every transcript/);
-  assert.match(hearthHtml,/val-studio-delete-simplify-20260804/);
+  assert.match(hearthHtml,/trigger-action-transcript-template-20260804/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{

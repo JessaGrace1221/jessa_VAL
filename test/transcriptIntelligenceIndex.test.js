@@ -6,6 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
 function transcriptSourceHelpersForTest(){
@@ -282,11 +283,17 @@ test('transcript detail uses a typed transcript Working Brief instead of freefor
 test('stores meeting recap templates and creates source-grounded transcript overview drafts',()=>{
   assert.match(server,/create table if not exists val_templates \(/);
   assert.match(server,/DEFAULT_MEETING_RECAP_TEMPLATE/);
+  assert.match(server,/TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY='transcript_action_items_email'/);
+  assert.match(server,/DEFAULT_TRANSCRIPT_ACTION_ITEMS_TEMPLATE/);
+  assert.match(server,/settings_json jsonb not null default '\{\}'/);
+  assert.match(server,/alter table val_templates add column if not exists settings_json/);
   assert.match(server,/app\.get\('\/api\/val\/templates\/:templateKey'/);
   assert.match(server,/app\.put\('\/api\/val\/templates\/:templateKey'/);
   assert.match(server,/saveMeetingRecapDraft/);
   assert.match(server,/draftType:'meeting_recap'/);
   assert.match(server,/function transcriptOverviewEmailBody/);
+  assert.match(server,/function renderTranscriptActionItemsEmailTemplate/);
+  assert.match(server,/deliveryMode:String\(template\.settings\?\.deliveryMode/);
   assert.match(server,/function transcriptSourceReceipt/);
   assert.match(server,/return String\(overview\.body\|\|transcriptSourceReceipt\(transcript\)\.body\|\|''\)\.trim\(\)/);
   assert.match(server,/source:'transcript_meeting_overview'/);
@@ -365,4 +372,16 @@ test('exposes drafts and settings templates navigation',()=>{
   assert.match(dashboard,/api\/val\/drafts/);
   assert.match(ui,/Meeting Recaps & Drafts/);
   assert.match(dashboard,/Related|Transcript:|Meeting:|Recipients:/);
+});
+
+test('Hearth transcript drawer exposes Action Items email templates and delivery mode',()=>{
+  assert.match(hearth,/function renderTranscriptEmailTemplateSettings\(\)/);
+  assert.match(hearth,/data-transcript-template-subject/);
+  assert.match(hearth,/data-transcript-template-body/);
+  assert.match(hearth,/name="transcriptDeliveryMode"/);
+  assert.match(hearth,/Hold in drafts/);
+  assert.match(hearth,/Send automatically/);
+  assert.match(hearth,/api\/val\/templates\/transcript_action_items_email/);
+  assert.match(hearth,/data-transcript-action="save_email_template"/);
+  assert.match(hearth,/data-transcript-action="prepare_attendee_email"/);
 });

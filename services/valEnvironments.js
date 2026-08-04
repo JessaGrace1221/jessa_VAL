@@ -56,6 +56,7 @@ function environmentBlockCatalog(){
     ],
     actions:[
       {blockType:'external_action',blockId:'send_email',label:'Send Email',accepts:['approved_action_v1'],policy:'recipient_and_action_bounded'},
+      {blockType:'external_action',blockId:'send_sms',label:'Send me a Text Message',accepts:['approved_action_v1'],policy:'phone_provider_required'},
       {blockType:'external_action',blockId:'append_google_doc',label:'Append to Google Doc',accepts:['approved_action_v1'],policy:'document_id_bounded'}
     ],
     communication:[
@@ -77,7 +78,8 @@ function normalizeEnvironmentSpec(input={}){
   const eventTitlePattern=compactText(trigger.eventTitlePattern||trigger.event_title_pattern||input.eventTitlePattern,220);
   const appendGoogleDoc=Boolean(actions.appendGoogleDoc||actions.append_google_doc||connections.googleDocumentId||connections.google_document_id);
   const sendEmail=actions.sendEmail!==false&&actions.send_email!==false;
-  const actionScope=[sendEmail?'send_email':'',appendGoogleDoc?'append_google_doc':''].filter(Boolean);
+  const sendSms=Boolean(actions.sendSms||actions.send_sms||safeArray(actions.executionOrder||actions.execution_order).includes('send_sms'));
+  const actionScope=[sendEmail?'send_email':'',sendSms?'send_sms':'',appendGoogleDoc?'append_google_doc':''].filter(Boolean);
   return {
     contractVersion:1,
     name:compactText(input.name||'Untitled Environment',120),
@@ -125,6 +127,8 @@ function normalizeEnvironmentSpec(input={}){
     },
     actions:{
       sendEmail,
+      sendSms,
+      actionId:compactText(actions.actionId||actions.action_id,80),
       appendGoogleDoc,
       executionOrder:actionScope
     },

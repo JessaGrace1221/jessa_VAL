@@ -444,6 +444,7 @@ let timelineTranscriptCounts = {total:0, needsReview:0, withOpenActions:0, faile
 let timelineTranscriptOpenRequest = 0;
 let timelineTranscriptRefreshDays = 90;
 let timelineTranscriptsLoading = false;
+let transcriptEmailTemplateSettings = null;
 const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
@@ -14688,6 +14689,61 @@ function timelineAttendeeEmailDraftRecord(transcript = {}){
   return (Array.isArray(transcript.drafts) ? transcript.drafts : []).find((draft) => draft.draftType === 'transcript_action_items_email' && draft.sourceContext?.source === 'transcript_action_items_attendee_email') || null;
 }
 
+function defaultTranscriptEmailTemplateSettings(){
+  return {
+    subjectTemplate:'Follow-up: {{meeting_title}}',
+    textTemplate:[
+      "Hello, VAL here. I am {{executive_name}}'s AI assistant.",
+      'After reading the transcript, {{upbeat_key_point}}',
+      '',
+      'Action Items',
+      '{{action_items_text}}',
+      '',
+      'Key Points',
+      '{{key_points_text}}',
+      '',
+      'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask {{executive_first_name}} about getting you set up.'
+    ].join('\n'),
+    deliveryMode:'draft'
+  };
+}
+
+function transcriptEmailTemplateValue(){
+  const template=transcriptEmailTemplateSettings?.template||{};
+  const defaults=defaultTranscriptEmailTemplateSettings();
+  return {
+    subjectTemplate:template.subjectTemplate||defaults.subjectTemplate,
+    textTemplate:template.textTemplate||defaults.textTemplate,
+    deliveryMode:String(template.settings?.deliveryMode||defaults.deliveryMode)==='auto_send'?'auto_send':'draft'
+  };
+}
+
+function renderTranscriptEmailTemplateSettings(){
+  const value=transcriptEmailTemplateValue();
+  return [
+    '<section class="timeline-transcript-section timeline-email-template-settings" data-transcript-section="email-template">',
+      '<header class="timeline-source-section-heading">',
+        '<span>Meeting summary email</span>',
+        '<h4>Action Items and Key Points Template</h4>',
+      '</header>',
+      '<div class="timeline-template-toggle" role="radiogroup" aria-label="Meeting summary delivery mode">',
+        '<label><input type="radio" name="transcriptDeliveryMode" value="draft" ' + (value.deliveryMode==='draft'?'checked':'') + '>Hold in drafts</label>',
+        '<label><input type="radio" name="transcriptDeliveryMode" value="auto_send" ' + (value.deliveryMode==='auto_send'?'checked':'') + '>Send automatically</label>',
+      '</div>',
+      '<label class="timeline-email-review-field">Subject template<input type="text" value="' + escapeHtml(value.subjectTemplate) + '" data-transcript-template-subject></label>',
+      '<label class="timeline-email-review-field">Email template<textarea rows="14" data-transcript-template-body>' + escapeHtml(value.textTemplate) + '</textarea></label>',
+      '<div class="timeline-template-token-list">',
+        ['{{meeting_title}}','{{executive_name}}','{{executive_first_name}}','{{upbeat_key_point}}','{{action_items_text}}','{{action_items_bullets}}','{{key_points_text}}','{{key_points_bullets}}'].map(token=>'<span>' + escapeHtml(token) + '</span>').join(''),
+      '</div>',
+      '<div class="timeline-email-review-actions">',
+        '<button type="button" data-transcript-action="save_email_template">Save template</button>',
+        '<button type="button" data-transcript-action="prepare_attendee_email" data-transcript-id="' + escapeHtml(currentTimelineTranscript?.id || '') + '">Prepare email from this template</button>',
+      '</div>',
+      '<small>Automatic sending still uses the same provider approval boundary; drafts remain the default until email execution is connected and trusted.</small>',
+    '</section>'
+  ].join('');
+}
+
 function renderTimelineAttendeeEmailReview(draft = {}){
   const recipients = Array.isArray(draft.sourceContext?.recipients) ? draft.sourceContext.recipients.filter(Boolean) : [];
   const provider = String(draft.sourceContext?.emailProvider || 'gmail').toLowerCase();
@@ -15016,6 +15072,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
     renderTimelineTranscriptMappingControls(transcript, overviewDraft),
+    renderTranscriptEmailTemplateSettings(),
     '<section class="timeline-transcript-section timeline-transcript-cowork"><div><span>Ask, explore, or build from the meeting</span><h4>Chat about this transcript</h4><p>VAL already has this meeting\'s Action Items, Key Points, and verified connections loaded. Prepared drafts remain in Leverage.</p></div><button type="button" class="timeline-chat-transcript" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button></section>',
     '<div class="timeline-transcript-source-actions">',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
@@ -15053,7 +15110,10 @@ async function openTimelineTranscript(transcriptId){
   if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is opening the source receipt.</p></article>';
   resetTimelineTranscriptDetailScroll();
   try{
-    const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId), {cache: 'no-store'});
+    const [data] = await Promise.all([
+      getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId), {cache: 'no-store'}),
+      hydrateTranscriptEmailTemplateSettings()
+    ]);
     if(!data?.transcript) throw new Error('Transcript detail was empty.');
     if(requestId !== timelineTranscriptOpenRequest) return;
     renderTimelineTranscriptDetail(data.transcript);
@@ -15065,6 +15125,37 @@ async function openTimelineTranscript(transcriptId){
     if(requestId !== timelineTranscriptOpenRequest) return;
     if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Could not open transcript</span><p>' + escapeHtml(error.message || 'Transcript detail unavailable.') + '</p></article>';
   }
+}
+
+async function hydrateTranscriptEmailTemplateSettings(){
+  if(transcriptEmailTemplateSettings)return transcriptEmailTemplateSettings;
+  try{
+    transcriptEmailTemplateSettings=await getJson('/api/val/templates/transcript_action_items_email', {cache:'no-store'});
+  }catch(_error){
+    transcriptEmailTemplateSettings={ok:true,template:defaultTranscriptEmailTemplateSettings()};
+  }
+  return transcriptEmailTemplateSettings;
+}
+
+async function saveTranscriptEmailTemplateSettings(){
+  const subject=String(drawerTray?.querySelector?.('[data-transcript-template-subject]')?.value||'').trim();
+  const body=String(drawerTray?.querySelector?.('[data-transcript-template-body]')?.value||'').trim();
+  const deliveryMode=String(drawerTray?.querySelector?.('[name="transcriptDeliveryMode"]:checked')?.value||'draft')==='auto_send'?'auto_send':'draft';
+  if(!subject||!body){
+    setTimelineTranscriptActionStatus('Add a subject template and email template before saving.', 'danger');
+    return null;
+  }
+  setTimelineTranscriptActionStatus('Saving transcript email template...', 'working');
+  const result=await postJson('/api/val/templates/transcript_action_items_email',{
+    name:'Transcript Action Items and Key Points Email',
+    subjectTemplate:subject,
+    textTemplate:body,
+    htmlTemplate:'',
+    settings:{deliveryMode}
+  },{method:'PUT'});
+  transcriptEmailTemplateSettings=result;
+  setTimelineTranscriptActionStatus(deliveryMode==='auto_send'?'Template saved. New meeting summaries are set to send automatically when execution is connected.':'Template saved. Meeting summaries will stay in drafts.', 'success');
+  return result.template;
 }
 
 async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false, append = false} = {}){
@@ -29352,6 +29443,76 @@ function valStudioSpecFromStarter(template='blank',workflowText=''){
   }
   return spec;
 }
+function valStudioConnectorCatalog(){
+  return [
+    {group:'Inside VAL',source:'val',label:'VAL',events:['Transcript received','Action item detected','Key point detected','Executive Inbox item created','Relationship updated','Task overdue','Environment completed','Environment needs clarification','Human approved or rejected work']},
+    {group:'CRM',source:'hubspot',label:'HubSpot',events:['Deal created','Deal stage changed','Contact updated','Company updated','Note added','Task completed','Form submitted']},
+    {group:'CRM',source:'salesforce',label:'Salesforce',events:['Lead created','Opportunity stage changed','Account updated','Contact updated','Case created','Task completed','Activity logged']},
+    {group:'CRM',source:'ghl',label:'GoHighLevel',events:['Contact updated','Opportunity stage changed','Appointment booked','Form submitted','Tag added','Workflow event']},
+    {group:'Email and Calendar',source:'gmail',label:'Gmail',events:['Email received from person','Email received from domain','Thread updated','Attachment received','Label added']},
+    {group:'Email and Calendar',source:'outlook',label:'Outlook',events:['Email received from person','Email received from domain','Thread updated','Attachment received','Category added']},
+    {group:'Email and Calendar',source:'google_calendar',label:'Google Calendar',events:['Event created','Event updated','Event ending','Attendee added','RSVP changed']},
+    {group:'Email and Calendar',source:'outlook_calendar',label:'Outlook Calendar',events:['Event created','Event updated','Event ending','Attendee added','RSVP changed']},
+    {group:'Documents and Data',source:'google_docs',label:'Google Docs',events:['Document created','Document updated','Comment added','Shared document changed']},
+    {group:'Documents and Data',source:'google_sheets',label:'Google Sheets',events:['Row added','Row updated','Cell changed','Sheet created']},
+    {group:'Documents and Data',source:'google_drive',label:'Google Drive',events:['File uploaded','File updated','Folder changed','File shared']},
+    {group:'Documents and Data',source:'notion',label:'Notion',events:['Page created','Page updated','Database item created','Status changed','Comment added']},
+    {group:'Documents and Data',source:'airtable',label:'Airtable',events:['Record created','Record updated','Field changed','Attachment added']},
+    {group:'Work Management',source:'asana',label:'Asana',events:['Task created','Task completed','Status changed','Comment added','Due date approaching']},
+    {group:'Work Management',source:'linear',label:'Linear',events:['Issue created','Issue updated','Status changed','Comment added','Assignment changed']},
+    {group:'Work Management',source:'monday',label:'Monday.com',events:['Item created','Item updated','Status changed','Comment added']},
+    {group:'Work Management',source:'jira',label:'Jira',events:['Issue created','Issue updated','Status changed','Comment added','Assignment changed']},
+    {group:'Revenue',source:'stripe',label:'Stripe',events:['Payment succeeded','Payment failed','Subscription created','Subscription canceled','Invoice paid','Dispute created']},
+    {group:'Communication',source:'slack',label:'Slack',events:['Message posted','Mention received','File shared','Reaction added']},
+    {group:'Communication',source:'teams',label:'Teams',events:['Message posted','Mention received','File shared','Channel updated']},
+    {group:'Generic',source:'form_webhook',label:'Form or Webhook',events:['Form submitted','Webhook received','External event received']},
+    {group:'Generic',source:'database',label:'Database',events:['Row inserted','Row updated','Query result changed']},
+    {group:'Generic',source:'schedule',label:'Schedule',events:['At a specific time','Every day','Every week','Every month']},
+    {group:'Generic',source:'manual',label:'Manual',events:['User runs Environment']}
+  ];
+}
+function valStudioActionCatalog(){
+  return [
+    {id:'notify_user',label:'Notify me inside VAL'},
+    {id:'send_sms',label:'Send me a Text Message'},
+    {id:'draft_email',label:'Draft an email'},
+    {id:'send_email',label:'Send an email'},
+    {id:'create_task',label:'Create a task'},
+    {id:'add_executive_inbox',label:'Add to Executive Inbox'},
+    {id:'ask_clarification',label:'Ask for clarification'},
+    {id:'update_crm',label:'Update CRM'},
+    {id:'add_crm_note',label:'Add CRM note'},
+    {id:'append_google_doc',label:'Append Google Doc'},
+    {id:'update_sheet',label:'Update spreadsheet'},
+    {id:'create_notion_page',label:'Create or update Notion page'},
+    {id:'trigger_environment',label:'Trigger another Environment'},
+    {id:'publish_packet',label:'Publish result packet'},
+    {id:'pause_environment',label:'Pause and request approval'}
+  ];
+}
+function valStudioStarterSpecFromControls(root){
+  const source=root.querySelector('[name="starterTriggerSource"]')?.value||'val';
+  const eventName=root.querySelector('[name="starterTriggerEvent"]')?.value||'';
+  const action=root.querySelector('[name="starterAction"]')?.value||'notify_user';
+  const workflow=String(root.querySelector('[name="starterWorkflow"]')?.value||'').trim();
+  if(source==='val'&&/transcript received/i.test(eventName)&&action==='send_email'){
+    return valStudioSpecFromStarter('transcript_attendee_email',workflow);
+  }
+  const spec=valStudioSpecFromStarter('blank',workflow);
+  spec.name=workflow?workflow.split(/[.\n]/)[0].slice(0,80)||'New Environment':'New Environment';
+  spec.trigger.type=source+'_event';
+  spec.trigger.eventTitlePattern=eventName;
+  spec.trigger.mode='draft';
+  spec.actions={
+    sendEmail:action==='send_email'||action==='draft_email',
+    appendGoogleDoc:action==='append_google_doc',
+    sendSms:action==='send_sms',
+    actionId:action,
+    executionOrder:[action].filter(Boolean)
+  };
+  spec.connections.emailProvider=spec.actions.sendEmail?'gmail':'';
+  return spec;
+}
 let valStudioState = {
   stage:0,
   mode:'library',
@@ -29409,8 +29570,11 @@ function valStudioCurrentSpec(){
     actions:{
       sendEmail:has('emailProvider')?true:valStudioState.spec.actions?.sendEmail!==false,
       appendGoogleDoc:has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc),
+      sendSms:Boolean(valStudioState.spec.actions?.sendSms),
+      actionId:valStudioState.spec.actions?.actionId||'',
       executionOrder:[
         (has('emailProvider')?true:valStudioState.spec.actions?.sendEmail!==false)?'send_email':'',
+        valStudioState.spec.actions?.sendSms?'send_sms':'',
         (has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc))?'append_google_doc':''
       ].filter(Boolean)
     },
@@ -29478,6 +29642,7 @@ function valStudioVisualMap(){
   const trigger=valStudioTriggerCopy(valStudioState.spec);
   const produces=[
     valStudioState.spec.actions?.sendEmail!==false?'Email':'',
+    valStudioState.spec.actions?.sendSms?'Text Message':'',
     valStudioState.spec.actions?.appendGoogleDoc?'Google Doc':''
   ].filter(Boolean);
   return [
@@ -29769,6 +29934,19 @@ function valStudioLibraryView(){
 
 function valStudioStarterView(){
   const defaultText=valStudioState.starterText||'';
+  const connectors=valStudioConnectorCatalog();
+  const actions=valStudioActionCatalog();
+  const grouped=connectors.reduce((groups,item)=>{
+    if(!groups[item.group])groups[item.group]=[];
+    groups[item.group].push(item);
+    return groups;
+  },{});
+  const sourceOptions=Object.entries(grouped).map(([group,items])=>[
+    '<optgroup label="' + escapeHtml(group) + '">',
+      items.map(item=>'<option value="' + escapeHtml(item.source) + '">' + escapeHtml(item.label) + '</option>').join(''),
+    '</optgroup>'
+  ].join('')).join('');
+  const initialEvents=connectors[0]?.events||[];
   return [
     '<div class="val-studio val-studio-starter" data-val-studio>',
       '<header class="val-studio-header">',
@@ -29778,13 +29956,18 @@ function valStudioStarterView(){
       '<section class="val-studio-starter-panel">',
         '<div class="val-studio-starter-heading">',
           '<span>Start</span>',
-          '<h3>What should VAL recognize or do?</h3>',
+          '<h3>Choose the trigger and the action.</h3>',
+        '</div>',
+        '<div class="val-studio-trigger-grid">',
+          '<label><span>Trigger source</span><select name="starterTriggerSource" data-val-studio-trigger-source>' + sourceOptions + '</select></label>',
+          '<label><span>Trigger event</span><select name="starterTriggerEvent" data-val-studio-trigger-event>' + initialEvents.map(event=>'<option value="' + escapeHtml(event) + '">' + escapeHtml(event) + '</option>').join('') + '</select></label>',
+          '<label><span>Action</span><select name="starterAction">' + actions.map(action=>'<option value="' + escapeHtml(action.id) + '">' + escapeHtml(action.label) + '</option>').join('') + '</select></label>',
         '</div>',
         '<label><span>Describe the workflow</span><textarea name="starterWorkflow" placeholder="Example: When a HubSpot deal moves to closed won, text me and create the onboarding follow-up.">' + escapeHtml(defaultText) + '</textarea></label>',
-        '<div class="val-studio-starter-grid">',
-          '<button type="button" data-val-studio-start-template="blank"><strong>Blank governed draft</strong><span>No source or action assumed.</span></button>',
-          '<button type="button" data-val-studio-start-template="transcript_attendee_email"><strong>Transcript attendee email</strong><span>Krisp transcript in, attendee email out.</span></button>',
+        '<div class="val-studio-connector-inventory">',
+          connectors.map(item=>'<span>' + escapeHtml(item.label) + '</span>').join(''),
         '</div>',
+        '<button type="button" class="val-studio-create-from-trigger" data-val-studio-start-template="trigger_action">Create Environment</button>',
       '</section>',
       '<footer class="val-studio-library-footer"><span>Drafts can be shaped before every connector is live.</span><strong>Activation still requires a real historical test.</strong></footer>',
     '</div>'
@@ -29801,6 +29984,7 @@ function valStudioLiveView(){
   const trigger=valStudioTriggerCopy(spec);
   const produces=[
     spec.actions?.sendEmail!==false?'Email':'',
+    spec.actions?.sendSms?'Text Message':'',
     spec.actions?.appendGoogleDoc?'Google Doc':''
   ].filter(Boolean).join(' + ')||'Draft result';
   return [
@@ -30016,10 +30200,10 @@ function wireValStudio(){
   }));
   root.querySelectorAll('[data-val-studio-start-template]').forEach(button=>button.addEventListener('click',()=>{
     valStudioState.starterText=String(root.querySelector('[name="starterWorkflow"]')?.value||'').trim();
-    const template=button.dataset.valStudioStartTemplate||'blank';
-    valStudioState.notice=template==='transcript_attendee_email'
-      ?'Transcript attendee email draft started. Review the email before testing.'
-      :'Blank governed draft started. Add the source and action boundaries before activation.';
+    const spec=valStudioStarterSpecFromControls(root);
+    valStudioState.notice=spec.trigger?.type==='krisp_transcript_received'
+      ?'Transcript email draft started. Review the email before testing.'
+      :'Trigger/action draft started. Connect the source and permission boundary before activation.';
     valStudioState.mode='builder';
     valStudioState.stage=0;
     valStudioState.environmentId='';
@@ -30028,9 +30212,15 @@ function wireValStudio(){
     valStudioState.activeVersionNumber=0;
     valStudioState.lastTest=null;
     valStudioState.communications=null;
-    valStudioState.spec=valStudioSpecFromStarter(template,valStudioState.starterText);
+    valStudioState.spec=spec;
     renderValStudio();
   }));
+  root.querySelector('[data-val-studio-trigger-source]')?.addEventListener('change',event=>{
+    const source=event.target.value;
+    const item=valStudioConnectorCatalog().find(connector=>connector.source===source)||valStudioConnectorCatalog()[0];
+    const select=root.querySelector('[data-val-studio-trigger-event]');
+    if(select)select.innerHTML=(item.events||[]).map(label=>'<option value="' + escapeHtml(label) + '">' + escapeHtml(label) + '</option>').join('');
+  });
   const importInput=root.querySelector('[data-val-studio-import-file]');
   root.querySelector('[data-val-studio-import]')?.addEventListener('click',()=>importInput?.click());
   importInput?.addEventListener('change',async()=>{
@@ -31144,6 +31334,8 @@ drawerTray.addEventListener('click', async (event) => {
     event.stopPropagation();
     if(transcriptAction.dataset.transcriptAction === 'open_leverage') await openTranscriptLeverage();
     if(transcriptAction.dataset.transcriptAction === 'send_action_items') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'prepare_attendee_email') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'save_email_template') await saveTranscriptEmailTemplateSettings();
     if(transcriptAction.dataset.transcriptAction === 'save_attendee_email') await saveTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
     if(transcriptAction.dataset.transcriptAction === 'send_attendee_email') await sendTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
     if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
