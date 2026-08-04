@@ -467,10 +467,10 @@ function createValEnvironmentsService({
     const current=scope();
     let rows=[];
     if(hasPg()){
-      const result=await dbQuery('select * from val_environments where tenant_id=$1 and user_id=$2 order by updated_at desc limit $3',[current.tenantId,current.userId,Math.max(1,Math.min(Number(limit)||50,200))]);
+      const result=await dbQuery(`select * from val_environments where tenant_id=$1 and user_id=$2 and status<>'deleted' order by updated_at desc limit $3`,[current.tenantId,current.userId,Math.max(1,Math.min(Number(limit)||50,200))]);
       rows=(result.rows||[]).map(rowToCamel);
     }else{
-      rows=store().valEnvironments.filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId).slice(0,limit);
+      rows=store().valEnvironments.filter(item=>item.tenantId===current.tenantId&&item.userId===current.userId&&item.status!=='deleted').slice(0,limit);
     }
     return {ok:true,environments:await Promise.all(rows.map(hydrateEnvironment)),blockCatalog:environmentBlockCatalog()};
   }
@@ -726,6 +726,18 @@ function createValEnvironmentsService({
     if(!environment)throw new Error('Environment not found.');
     const saved=await saveEnvironment({...environment,status:'paused',updatedAt:new Date().toISOString()});
     return {ok:true,environment:await hydrateEnvironment(saved)};
+  }
+  async function deleteEnvironment(id){
+    const environment=await getEnvironment(id);
+    if(!environment)throw new Error('Environment not found.');
+    const saved=await saveEnvironment({
+      ...environment,
+      status:'deleted',
+      activeVersionId:null,
+      draftVersionId:null,
+      updatedAt:new Date().toISOString()
+    });
+    return {ok:true,deleted:true,environment:await hydrateEnvironment(saved),no_external_action:true};
   }
   async function runHistoricalTest(id,{transcriptId}={}){
     const environment=await getEnvironment(id);
@@ -1294,6 +1306,7 @@ function createValEnvironmentsService({
     importTemplate,
     activate,
     pause,
+    delete:deleteEnvironment,
     runHistoricalTest,
     listRuns,
     listNetwork,

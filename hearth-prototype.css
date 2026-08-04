@@ -1179,7 +1179,7 @@ button,a{font:inherit}
 }
 .val-studio-environment-row{
   display:grid;
-  grid-template-columns:125px minmax(250px,1fr) minmax(190px,.52fr) 24px;
+  grid-template-columns:125px minmax(250px,1fr) minmax(190px,.52fr) 132px;
   align-items:center;
   gap:20px;
   width:100%;
@@ -1252,6 +1252,44 @@ button,a{font:inherit}
   font-size:1rem;
   text-align:right;
 }
+.val-studio-environment-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+.val-studio-environment-actions button,
+.val-studio-delete-confirm button{
+  min-height:32px;
+  border:1px solid rgba(68,91,70,.18);
+  border-radius:6px;
+  background:rgba(255,255,255,.64);
+  color:#324237;
+  padding:0 10px;
+  font:650 .62rem/1 var(--body);
+}
+.val-studio-environment-actions button.danger,
+.val-studio-delete-confirm button.danger{
+  border-color:rgba(143,98,104,.28);
+  color:#855960;
+}
+.val-studio-delete-confirm{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  padding:10px 0 0;
+  color:#6c555a;
+  font-size:.64rem;
+}
+.val-studio-delete-confirm strong{
+  margin-right:auto;
+  color:#2f3d33;
+  font-size:.72rem;
+}
+.val-studio-delete-confirm span{
+  color:rgba(55,70,59,.58);
+}
 .val-studio-library-empty{
   display:grid;
   flex:1;
@@ -1287,6 +1325,82 @@ button,a{font:inherit}
 .val-studio-library-footer strong{
   color:#4a5c4d;
   font-weight:620;
+}
+.val-studio-starter-panel{
+  display:grid;
+  align-content:start;
+  gap:18px;
+  max-width:760px;
+  padding:34px 0;
+}
+.val-studio-starter-heading{
+  display:grid;
+  gap:7px;
+}
+.val-studio-starter-heading span{
+  color:#7d6469;
+  font:650 .56rem/1.2 var(--mono);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.val-studio-starter-heading h3{
+  margin:0;
+  color:#1f2922;
+  font:540 1.28rem/1.32 var(--body);
+}
+.val-studio-starter-panel label{
+  display:grid;
+  gap:7px;
+  color:#536255;
+  font-size:.68rem;
+  font-weight:650;
+}
+.val-studio-starter-panel textarea{
+  width:100%;
+  min-height:132px;
+  border:1px solid rgba(47,68,52,.2);
+  border-radius:6px;
+  outline:0;
+  background:rgba(255,255,255,.78);
+  color:#1e2821;
+  padding:12px 13px;
+  resize:vertical;
+  font:450 .8rem/1.48 var(--body);
+}
+.val-studio-starter-panel textarea:focus{
+  border-color:#778d72;
+  box-shadow:0 0 0 3px rgba(119,141,114,.12);
+}
+.val-studio-starter-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.val-studio-starter-grid button{
+  display:grid;
+  gap:6px;
+  min-height:94px;
+  border:1px solid rgba(49,68,53,.15);
+  border-radius:6px;
+  background:rgba(255,255,255,.58);
+  color:#26332a;
+  padding:14px;
+  text-align:left;
+}
+.val-studio-starter-grid button:hover,
+.val-studio-starter-grid button:focus-visible{
+  border-color:rgba(112,137,106,.4);
+  background:linear-gradient(115deg,rgba(213,227,202,.5),rgba(249,220,223,.3));
+  outline:none;
+}
+.val-studio-starter-grid strong{
+  font-size:.82rem;
+  font-weight:650;
+}
+.val-studio-starter-grid span{
+  color:rgba(39,51,41,.6);
+  font-size:.66rem;
+  line-height:1.4;
 }
 .val-studio-steps{
   display:grid;
@@ -2024,7 +2138,7 @@ button,a{font:inherit}
   .val-studio-layout{grid-template-columns:1fr}
   .val-studio-editor{padding:22px 0;border-right:0;border-bottom:1px solid rgba(50,70,55,.12)}
   .val-studio-canvas{padding:22px 0}
-  .val-studio-observer-picker,.val-studio-action-contract,.val-studio-two-fields{grid-template-columns:1fr}
+  .val-studio-observer-picker,.val-studio-action-contract,.val-studio-two-fields,.val-studio-starter-grid{grid-template-columns:1fr}
   .val-studio-learning-rule{align-items:flex-start;flex-direction:column}
   .val-studio-map{min-height:360px}
   .val-studio-activation{grid-template-columns:1fr}
@@ -2035,11 +2149,14 @@ button,a{font:inherit}
   .val-studio-header-actions{width:100%;justify-content:flex-start}
   .val-studio-live-actions{width:100%}
   .val-studio-live-actions button{flex:1}
-  .val-studio-environment-row{grid-template-columns:1fr 24px;gap:8px 12px;padding:16px 4px}
+  .val-studio-environment-row{grid-template-columns:1fr;gap:8px;padding:16px 4px}
   .val-studio-environment-state,
   .val-studio-environment-meta{grid-column:1}
   .val-studio-environment-copy{grid-column:1}
-  .val-studio-environment-arrow{grid-column:2;grid-row:1 / span 3}
+  .val-studio-environment-actions{grid-column:1;justify-content:flex-start}
+  .val-studio-delete-confirm{align-items:flex-start;flex-direction:column}
+  .val-studio-delete-confirm strong{margin-right:0}
+  .val-studio-environment-arrow{display:none}
   .val-studio-library-footer{align-items:flex-start;flex-direction:column}
   .val-studio-network-note{grid-template-columns:1fr;gap:6px}
   .val-studio-communications-heading{align-items:flex-start;flex-direction:column}

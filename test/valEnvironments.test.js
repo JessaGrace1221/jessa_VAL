@@ -68,6 +68,7 @@ test('Environment schema and routes are mounted as native VAL infrastructure',()
   assert.match(server,/registerValEnvironmentsRoutes/);
   assert.match(routes,/\/api\/val\/environments\/:id\/test/);
   assert.match(routes,/\/api\/val\/environments\/:id\/activate/);
+  assert.match(routes,/app\.delete\('\/api\/val\/environments\/:id'/);
   assert.match(routes,/\/api\/val\/environments\/:id\/export/);
   assert.match(routes,/\/api\/val\/environments\/import/);
   assert.match(routes,/\/api\/val\/environments\/network/);
@@ -196,6 +197,28 @@ test('Environment contract allows every-transcript email workflows and validates
   assert.ok(docResult.errors.some(error=>/Google Doc/i.test(error)));
 });
 
+test('Environments can be deleted from Studio without remaining runnable',async()=>{
+  let store={};
+  const service=createValEnvironmentsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:value=>{store=value;},
+    tenantId:()=>'tenant',
+    userId:()=>'jessa',
+    uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`
+  });
+  const first=await service.saveDraft({spec:attendeeEmailSpec()});
+  const second=await service.saveDraft({spec:{...attendeeEmailSpec(),name:'Keep me'}});
+  const deleted=await service.delete(first.environment.id);
+  assert.equal(deleted.deleted,true);
+  assert.equal(deleted.environment.status,'deleted');
+  assert.equal(deleted.environment.activeVersion,null);
+  assert.equal(deleted.environment.draftVersion,null);
+  const listed=await service.list();
+  assert.deepEqual(listed.environments.map(item=>item.id),[second.environment.id]);
+  await assert.rejects(()=>service.activate(first.environment.id),/no draft/i);
+});
+
 test('event title matching tolerates dates but stays tied to the confirmed event',()=>{
   assert.equal(titleRuleMatches('MGSH Weekly Meeting','MGSH Weekly Meeting - July 27, 2026'),true);
   assert.equal(titleRuleMatches('MGSH Weekly Meeting','Unrelated client call'),false);
@@ -266,8 +289,11 @@ test('VAL Studio opens as an Environment library and preserves live detail state
   assert.match(hearth,/function valStudioLibraryView\(\)/);
   assert.match(hearth,/data-val-studio-new>New Environment/);
   assert.match(hearth,/data-val-studio-open=/);
+  assert.match(hearth,/data-val-studio-delete=/);
+  assert.match(hearth,/function deleteValStudioEnvironment\(id\)/);
   assert.match(hearth,/Your first Environment starts with a repeated outcome\./);
   assert.match(hearth,/valStudioState\.mode='library'/);
+  assert.match(hearth,/valStudioState\.mode='starter'/);
   assert.match(hearth,/function valStudioResumeStage\(spec=\{\}\)/);
   assert.match(hearth,/environment\.draftVersion\?valStudioResumeStage\(valStudioState\.spec\):0/);
   assert.match(hearth,/function valStudioLiveView\(\)/);
@@ -281,13 +307,20 @@ test('VAL Studio opens as an Environment library and preserves live detail state
 });
 
 test('VAL Studio builder starts from a plain-language transcript email workflow',()=>{
+  assert.match(hearth,/function valStudioStarterView\(\)/);
+  assert.match(hearth,/data-val-studio-start-template="blank"/);
+  assert.match(hearth,/data-val-studio-start-template="transcript_attendee_email"/);
+  assert.match(hearth,/No source or action assumed\./);
+  assert.match(hearth,/function valStudioBlankSpec\(\)/);
+  assert.match(hearth,/manual_or_connected_event/);
+  assert.match(hearth,/function valStudioSpecFromStarter\(template='blank',workflowText=''\)/);
   assert.match(hearth,/Tell VAL the workflow in plain language\./);
   assert.match(hearth,/Run after every transcript VAL receives\./);
   assert.match(hearth,/name="emailBodyTemplate"/);
   assert.match(hearth,/name="appendGoogleDoc"/);
   assert.match(hearth,/Only required when Google Doc is on/);
   assert.match(hearth,/Every transcript/);
-  assert.match(hearthHtml,/val-studio-transcript-email-20260804/);
+  assert.match(hearthHtml,/val-studio-delete-simplify-20260804/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{

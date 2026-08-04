@@ -91,6 +91,14 @@ function registerValEnvironmentsRoutes(app,deps={}){
       res.json(result);
     }catch(error){res.status(400).json({ok:false,error:error.message});}
   });
+  app.delete('/api/val/environments/:id',async(req,res)=>{
+    try{
+      await waitForDb();
+      const result=await service.delete(req.params.id);
+      await auditLog({req,action:'val_environment_deleted',resourceType:'val_environment',resourceId:req.params.id,metadata:{softDelete:true,noExternalAction:true},success:true}).catch(()=>{});
+      res.json(result);
+    }catch(error){res.status(/not found/i.test(error.message)?404:400).json({ok:false,error:error.message,no_external_action:true});}
+  });
   app.post('/api/val/environments/:id/test',async(req,res)=>{
     try{
       await waitForDb();

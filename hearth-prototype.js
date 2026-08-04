@@ -29310,10 +29310,54 @@ function valStudioDefaultSpec(){
     }
   };
 }
+function valStudioBlankSpec(){
+  return {
+    name:'New Environment',
+    outcome:'',
+    purpose:'',
+    trigger:{type:'manual_or_connected_event',eventTitlePattern:'',eventTitleConfirmed:false,mode:'draft'},
+    observerIds:[...valStudioObserverDefaults],
+    connections:{emailProvider:'',googleDocumentId:''},
+    actions:{sendEmail:false,appendGoogleDoc:false,executionOrder:[]},
+    approvals:{sendEmail:'required',appendGoogleDoc:'required'},
+    instructions:{
+      sourceTruth:'Use the connected source exactly as received. Ask for clarification before inventing missing facts.',
+      formatting:'Keep the result concise, useful, and source-grounded.',
+      recipientRule:'Recipient scope must be confirmed before activation.',
+      emailSubject:'',
+      emailBodyTemplate:'',
+      upbeatKeyPointInstruction:'',
+      failureOrder:['ask_user','create_alignment_item','notify_chief_of_staff','pause_environment']
+    }
+  };
+}
+function valStudioSpecFromStarter(template='blank',workflowText=''){
+  const clean=String(workflowText||'').trim();
+  if(template==='transcript_attendee_email'){
+    const spec=valStudioDefaultSpec();
+    if(clean)spec.outcome=clean;
+    spec.name=/post meeting|meeting notes/i.test(clean)?'Post Meeting Notes':'Transcript Attendee Email';
+    spec.actions.appendGoogleDoc=/google\s*doc|append|document/i.test(clean);
+    spec.actions.executionOrder=['send_email',spec.actions.appendGoogleDoc?'append_google_doc':''].filter(Boolean);
+    return spec;
+  }
+  const spec=valStudioBlankSpec();
+  spec.outcome=clean;
+  if(/salesforce|hubspot|crm/i.test(clean)){
+    spec.name='CRM Signal Alert';
+    spec.trigger.type=/hubspot/i.test(clean)?'hubspot_event':'salesforce_event';
+  }else if(/calendar|meeting/i.test(clean)){
+    spec.name='Meeting Follow-up';
+    spec.trigger.type='calendar_or_transcript_event';
+  }
+  return spec;
+}
 let valStudioState = {
   stage:0,
   mode:'library',
   notice:'',
+  starterText:'',
+  deleteConfirmId:'',
   environmentId:'',
   environment:null,
   versionNumber:0,
@@ -29352,10 +29396,10 @@ function valStudioCurrentSpec(){
     outcome:has('environmentOutcome')?(value('environmentOutcome')||valStudioState.spec.outcome):valStudioState.spec.outcome,
     purpose:has('environmentPurpose')?(value('environmentPurpose')||valStudioState.spec.purpose):valStudioState.spec.purpose,
     trigger:{
-      type:'krisp_transcript_received',
-      eventTitlePattern:has('eventTitlePattern')?value('eventTitlePattern'):valStudioState.spec.trigger.eventTitlePattern,
-      eventTitleConfirmed:has('eventTitleConfirmed')?checked('eventTitleConfirmed'):valStudioState.spec.trigger.eventTitleConfirmed,
-      mode:has('triggerModeAll')?(checked('triggerModeAll')?'all_transcripts':'immediate'):(valStudioState.spec.trigger?.mode||'all_transcripts')
+      type:valStudioState.spec.trigger?.type||'manual_or_connected_event',
+      eventTitlePattern:has('eventTitlePattern')?value('eventTitlePattern'):(valStudioState.spec.trigger?.eventTitlePattern||''),
+      eventTitleConfirmed:has('eventTitleConfirmed')?checked('eventTitleConfirmed'):Boolean(valStudioState.spec.trigger?.eventTitleConfirmed),
+      mode:has('triggerModeAll')?(checked('triggerModeAll')?'all_transcripts':'immediate'):(valStudioState.spec.trigger?.mode||'draft')
     },
     observerIds:observerFields.length?observerFields.filter(input=>input.checked).map(input=>input.value):valStudioState.spec.observerIds,
     connections:{
@@ -29363,10 +29407,10 @@ function valStudioCurrentSpec(){
       googleDocumentId:has('googleDocumentId')?value('googleDocumentId'):valStudioState.spec.connections.googleDocumentId
     },
     actions:{
-      sendEmail:true,
+      sendEmail:has('emailProvider')?true:valStudioState.spec.actions?.sendEmail!==false,
       appendGoogleDoc:has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc),
       executionOrder:[
-        'send_email',
+        (has('emailProvider')?true:valStudioState.spec.actions?.sendEmail!==false)?'send_email':'',
         (has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc))?'append_google_doc':''
       ].filter(Boolean)
     },
@@ -29415,9 +29459,23 @@ function valStudioRecurringTitleSuggestion(value=''){
     .trim();
 }
 
+function valStudioTriggerCopy(spec={}){
+  const type=String(spec.trigger?.type||'manual_or_connected_event');
+  if(type==='krisp_transcript_received'){
+    return {
+      source:'Krisp transcript',
+      detail:spec.trigger?.mode==='all_transcripts'?'Every transcript':(spec.trigger?.eventTitlePattern||'Recurring event to confirm')
+    };
+  }
+  if(type==='salesforce_event')return {source:'Salesforce event',detail:'Connector setup required'};
+  if(type==='hubspot_event')return {source:'HubSpot event',detail:'Connector setup required'};
+  if(type==='calendar_or_transcript_event')return {source:'Meeting event',detail:'Source setup required'};
+  return {source:'Source to connect',detail:'Draft until connected'};
+}
+
 function valStudioVisualMap(){
   const names=valStudioSelectedObserverNames();
-  const allTranscripts=valStudioState.spec.trigger?.mode==='all_transcripts';
+  const trigger=valStudioTriggerCopy(valStudioState.spec);
   const produces=[
     valStudioState.spec.actions?.sendEmail!==false?'Email':'',
     valStudioState.spec.actions?.appendGoogleDoc?'Google Doc':''
@@ -29426,8 +29484,8 @@ function valStudioVisualMap(){
     '<div class="val-studio-map" aria-label="Environment map">',
       '<div class="val-studio-source-node">',
         '<span>Trigger</span>',
-        '<strong>Krisp transcript</strong>',
-        '<small>' + escapeHtml(allTranscripts?'Every transcript':(valStudioState.spec.trigger.eventTitlePattern||'Recurring event to confirm')) + '</small>',
+        '<strong>' + escapeHtml(trigger.source) + '</strong>',
+        '<small>' + escapeHtml(trigger.detail) + '</small>',
       '</div>',
       '<div class="val-studio-flow-line source-flow" aria-hidden="true"></div>',
       '<div class="val-studio-round-table">',
@@ -29471,22 +29529,32 @@ function valStudioStagePanel(){
     '</section>'
   ].join('');
   if(stage===1)return [
-    '<section class="val-studio-stage-panel">',
-      '<p class="val-studio-eyebrow">Evidence</p>',
-      '<h3>Which transcripts should begin this Environment?</h3>',
-      '<div class="val-studio-trigger-mode">',
-        '<label class="val-studio-confirm"><input name="triggerModeAll" type="checkbox" ' + (spec.trigger.mode==='all_transcripts'?'checked':'') + '><span>Run after every transcript VAL receives.</span></label>',
-      '</div>',
-      '<label><span>Start with a real transcript</span>',
-        '<select name="historicalTranscript">',
-          '<option value="">Select a recent Krisp transcript</option>',
-          transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
-        '</select>',
-      '</label>',
-      '<label><span>Optional recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="Only needed if this should run for one meeting series"></label>',
-      '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>Use this specific event title instead of every transcript.</span></label>',
-      '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL preserves Krisp’s Action Items and Key Points as source evidence. It may add the approved introduction and closing language, but it may not invent meeting details.</p></div>',
-    '</section>'
+    spec.trigger?.type==='krisp_transcript_received'?[
+      '<section class="val-studio-stage-panel">',
+        '<p class="val-studio-eyebrow">Evidence</p>',
+        '<h3>Which transcripts should begin this Environment?</h3>',
+        '<div class="val-studio-trigger-mode">',
+          '<label class="val-studio-confirm"><input name="triggerModeAll" type="checkbox" ' + (spec.trigger.mode==='all_transcripts'?'checked':'') + '><span>Run after every transcript VAL receives.</span></label>',
+        '</div>',
+        '<label><span>Start with a real transcript</span>',
+          '<select name="historicalTranscript">',
+            '<option value="">Select a recent Krisp transcript</option>',
+            transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
+          '</select>',
+        '</label>',
+        '<label><span>Optional recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="Only needed if this should run for one meeting series"></label>',
+        '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>Use this specific event title instead of every transcript.</span></label>',
+        '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL preserves Krisp’s Action Items and Key Points as source evidence. It may add the approved introduction and closing language, but it may not invent meeting details.</p></div>',
+      '</section>'
+    ].join(''):[
+      '<section class="val-studio-stage-panel">',
+        '<p class="val-studio-eyebrow">Evidence</p>',
+        '<h3>Connect the source this Environment should watch.</h3>',
+        '<div class="val-studio-source-rule"><strong>Draft source</strong><p>This Environment can be shaped now. Activation remains blocked until the source connector exists and a real historical test proves the workflow.</p></div>',
+        '<label><span>Source type</span><input name="draftTriggerType" type="text" value="' + escapeHtml(valStudioTriggerCopy(spec).source) + '" disabled></label>',
+        '<label><span>Source rule</span><textarea name="draftSourceRule" disabled>' + escapeHtml(spec.outcome||'Describe the event or signal VAL should recognize.') + '</textarea></label>',
+      '</section>'
+    ].join('')
   ].join('');
   if(stage===2){
     const selected=new Set(spec.observerIds||[]);
@@ -29522,6 +29590,17 @@ function valStudioStagePanel(){
       '</section>'
     ].join('');
   }
+  if(stage===3&&spec.actions?.sendEmail===false)return [
+    '<section class="val-studio-stage-panel">',
+      '<p class="val-studio-eyebrow">Actions</p>',
+      '<h3>Choose what VAL is allowed to do after it recognizes the source.</h3>',
+      '<div class="val-studio-source-rule"><strong>No action assumed</strong><p>This draft is not connected to email, SMS, CRM, or documents yet. Add a governed action when that connector is ready, then test before activation.</p></div>',
+      '<div class="val-studio-action-contract">',
+        '<div><span>Email</span><strong>Not enabled</strong><small>Use the transcript attendee email starter when the first action should be an attendee email.</small></div>',
+        '<div><span>External systems</span><strong>Connector required</strong><small>Salesforce, HubSpot, SMS, docs, and calendar actions need explicit source and permission setup.</small></div>',
+      '</div>',
+    '</section>'
+  ].join('');
   if(stage===3)return [
     '<section class="val-studio-stage-panel">',
       '<p class="val-studio-eyebrow">Actions</p>',
@@ -29611,9 +29690,10 @@ function valStudioEnvironmentStatus(environment={}){
 
 function valStudioResumeStage(spec={}){
   if(!String(spec.name||'').trim()||!String(spec.outcome||'').trim()||!String(spec.purpose||'').trim())return 0;
-  if(!String(spec.trigger?.eventTitlePattern||'').trim()||spec.trigger?.eventTitleConfirmed!==true)return 1;
+  if(spec.trigger?.mode!=='all_transcripts'&&(!String(spec.trigger?.eventTitlePattern||'').trim()||spec.trigger?.eventTitleConfirmed!==true))return 1;
   if(!safeArray(spec.observerIds).length)return 2;
-  if(!String(spec.connections?.emailProvider||'').trim()||!String(spec.connections?.googleDocumentId||'').trim())return 3;
+  if(spec.actions?.sendEmail!==false&&!String(spec.connections?.emailProvider||'').trim())return 3;
+  if(spec.actions?.appendGoogleDoc&&!String(spec.connections?.googleDocumentId||'').trim())return 3;
   return 4;
 }
 
@@ -29652,13 +29732,25 @@ function valStudioLibraryView(){
             const spec=version.specJson||{};
             const state=valStudioEnvironmentStatus(environment);
             const observers=safeArray(spec.observerIds);
+            const confirmDelete=valStudioState.deleteConfirmId===environment.id;
             return [
-              '<button type="button" class="val-studio-environment-row" data-val-studio-open="' + escapeHtml(environment.id||'') + '">',
+              '<article class="val-studio-environment-row">',
                 '<span class="val-studio-environment-state ' + escapeHtml(state.tone) + '"><i aria-hidden="true"></i>' + escapeHtml(state.label) + '</span>',
                 '<span class="val-studio-environment-copy"><strong>' + escapeHtml(environment.name||spec.name||'Untitled Environment') + '</strong><small>' + escapeHtml(spec.outcome||'Outcome not defined yet.') + '</small></span>',
-                '<span class="val-studio-environment-meta"><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'Trigger not confirmed') + '</strong><small>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</small></span>',
-                '<span class="val-studio-environment-arrow" aria-hidden="true">→</span>',
-              '</button>'
+                '<span class="val-studio-environment-meta"><strong>' + escapeHtml(valStudioTriggerCopy(spec).detail) + '</strong><small>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</small></span>',
+                '<span class="val-studio-environment-actions">',
+                  '<button type="button" data-val-studio-open="' + escapeHtml(environment.id||'') + '">Open</button>',
+                  '<button type="button" class="danger" data-val-studio-delete="' + escapeHtml(environment.id||'') + '">Delete</button>',
+                '</span>',
+                confirmDelete?[
+                  '<div class="val-studio-delete-confirm">',
+                    '<strong>Delete this Environment?</strong>',
+                    '<span>It will stop running and disappear from Studio.</span>',
+                    '<button type="button" class="danger" data-val-studio-delete-confirm="' + escapeHtml(environment.id||'') + '">Delete</button>',
+                    '<button type="button" data-val-studio-delete-cancel>Cancel</button>',
+                  '</div>'
+                ].join(''):'',
+              '</article>'
             ].join('');
           }).join(''),
         '</div>'
@@ -29675,6 +29767,30 @@ function valStudioLibraryView(){
   ].join('');
 }
 
+function valStudioStarterView(){
+  const defaultText=valStudioState.starterText||'';
+  return [
+    '<div class="val-studio val-studio-starter" data-val-studio>',
+      '<header class="val-studio-header">',
+        '<div><button type="button" class="val-studio-library-link" data-val-studio-library>← Environments</button><strong>New Environment</strong></div>',
+      '</header>',
+      valStudioNotice(),
+      '<section class="val-studio-starter-panel">',
+        '<div class="val-studio-starter-heading">',
+          '<span>Start</span>',
+          '<h3>What should VAL recognize or do?</h3>',
+        '</div>',
+        '<label><span>Describe the workflow</span><textarea name="starterWorkflow" placeholder="Example: When a HubSpot deal moves to closed won, text me and create the onboarding follow-up.">' + escapeHtml(defaultText) + '</textarea></label>',
+        '<div class="val-studio-starter-grid">',
+          '<button type="button" data-val-studio-start-template="blank"><strong>Blank governed draft</strong><span>No source or action assumed.</span></button>',
+          '<button type="button" data-val-studio-start-template="transcript_attendee_email"><strong>Transcript attendee email</strong><span>Krisp transcript in, attendee email out.</span></button>',
+        '</div>',
+      '</section>',
+      '<footer class="val-studio-library-footer"><span>Drafts can be shaped before every connector is live.</span><strong>Activation still requires a real historical test.</strong></footer>',
+    '</div>'
+  ].join('');
+}
+
 function valStudioLiveView(){
   const spec=valStudioState.spec;
   const observers=valStudioSelectedObserverNames();
@@ -29682,6 +29798,11 @@ function valStudioLiveView(){
   const incoming=safeArray(communications.incoming);
   const outgoing=safeArray(communications.outgoing);
   const used=incoming.filter(item=>item.delivery?.status==='used').length;
+  const trigger=valStudioTriggerCopy(spec);
+  const produces=[
+    spec.actions?.sendEmail!==false?'Email':'',
+    spec.actions?.appendGoogleDoc?'Google Doc':''
+  ].filter(Boolean).join(' + ')||'Draft result';
   return [
     '<div class="val-studio val-studio-live-home" data-val-studio>',
       '<header class="val-studio-header">',
@@ -29697,10 +29818,10 @@ function valStudioLiveView(){
             '<p>' + escapeHtml(spec.outcome) + '</p>',
           '</div>',
           '<div class="val-studio-live-contract">',
-            '<article><span>Begins when</span><strong>' + escapeHtml(spec.trigger?.eventTitlePattern||'The confirmed recurring event arrives') + '</strong><p>Krisp transcript received</p></article>',
+            '<article><span>Begins when</span><strong>' + escapeHtml(trigger.detail) + '</strong><p>' + escapeHtml(trigger.source) + '</p></article>',
             '<article><span>Round Table</span><strong>' + escapeHtml(String(observers.length)) + ' Observer' + (observers.length===1?'':'s') + '</strong><p>' + escapeHtml(observers.join(', ')) + '</p></article>',
-            '<article><span>Produces</span><strong>Email + shared record</strong><p>Exact Action Items and Key Points</p></article>',
-            '<article><span>Protection</span><strong>Email succeeds first</strong><p>A document retry never resends the email.</p></article>',
+            '<article><span>Produces</span><strong>' + escapeHtml(produces) + '</strong><p>Only the tested version can run.</p></article>',
+            '<article><span>Protection</span><strong>Bounded action</strong><p>Retries stay inside the tested action contract.</p></article>',
           '</div>',
           '<div class="val-studio-live-note"><strong>VAL is listening for the next matching meeting.</strong><span>The current version remains active until you deliberately replace it with another tested version.</span></div>',
           '<section class="val-studio-communications">',
@@ -29731,6 +29852,13 @@ function renderValStudio(){
     scraperPreviewList.hidden=false;
     scraperPreviewList.classList.add('val-studio-surface');
     scraperPreviewList.innerHTML=valStudioLibraryView();
+    wireValStudio();
+    return;
+  }
+  if(valStudioState.mode==='starter'){
+    scraperPreviewList.hidden=false;
+    scraperPreviewList.classList.add('val-studio-surface');
+    scraperPreviewList.innerHTML=valStudioStarterView();
     wireValStudio();
     return;
   }
@@ -29847,6 +29975,23 @@ async function importValStudioEnvironment(file){
   renderValStudio();
 }
 
+async function deleteValStudioEnvironment(id){
+  if(!id)throw new Error('Choose an Environment to delete.');
+  const result=await valStudioRequest(`/api/val/environments/${encodeURIComponent(id)}`,'DELETE');
+  valStudioState.environments=safeArray(valStudioState.environments).filter(item=>item.id!==id);
+  if(valStudioState.environmentId===id){
+    valStudioState.environmentId='';
+    valStudioState.environment=null;
+    valStudioState.spec=valStudioBlankSpec();
+    valStudioState.lastTest=null;
+    valStudioState.communications=null;
+  }
+  valStudioState.deleteConfirmId='';
+  valStudioState.mode='library';
+  valStudioState.notice=result.deleted?'Environment deleted. It will no longer run or appear in Studio.':'Environment removed from Studio.';
+  renderValStudio();
+}
+
 function wireValStudio(){
   const root=scraperPreviewList.querySelector('[data-val-studio]');
   if(!root)return;
@@ -29858,6 +30003,23 @@ function wireValStudio(){
   });
   root.querySelectorAll('[data-val-studio-new]').forEach(button=>button.addEventListener('click',()=>{
     valStudioState.notice='';
+    valStudioState.mode='starter';
+    valStudioState.stage=0;
+    valStudioState.environmentId='';
+    valStudioState.environment=null;
+    valStudioState.versionNumber=0;
+    valStudioState.activeVersionNumber=0;
+    valStudioState.lastTest=null;
+    valStudioState.communications=null;
+    valStudioState.spec=valStudioBlankSpec();
+    renderValStudio();
+  }));
+  root.querySelectorAll('[data-val-studio-start-template]').forEach(button=>button.addEventListener('click',()=>{
+    valStudioState.starterText=String(root.querySelector('[name="starterWorkflow"]')?.value||'').trim();
+    const template=button.dataset.valStudioStartTemplate||'blank';
+    valStudioState.notice=template==='transcript_attendee_email'
+      ?'Transcript attendee email draft started. Review the email before testing.'
+      :'Blank governed draft started. Add the source and action boundaries before activation.';
     valStudioState.mode='builder';
     valStudioState.stage=0;
     valStudioState.environmentId='';
@@ -29866,7 +30028,7 @@ function wireValStudio(){
     valStudioState.activeVersionNumber=0;
     valStudioState.lastTest=null;
     valStudioState.communications=null;
-    valStudioState.spec=valStudioDefaultSpec();
+    valStudioState.spec=valStudioSpecFromStarter(template,valStudioState.starterText);
     renderValStudio();
   }));
   const importInput=root.querySelector('[data-val-studio-import-file]');
@@ -29917,6 +30079,24 @@ function wireValStudio(){
       )||null;
       renderValStudio();
     }catch(_error){}
+  }));
+  root.querySelectorAll('[data-val-studio-delete]').forEach(button=>button.addEventListener('click',()=>{
+    valStudioState.deleteConfirmId=button.dataset.valStudioDelete||'';
+    valStudioState.notice='';
+    renderValStudio();
+  }));
+  root.querySelector('[data-val-studio-delete-cancel]')?.addEventListener('click',()=>{
+    valStudioState.deleteConfirmId='';
+    renderValStudio();
+  });
+  root.querySelectorAll('[data-val-studio-delete-confirm]').forEach(button=>button.addEventListener('click',async()=>{
+    button.disabled=true;
+    try{
+      await deleteValStudioEnvironment(button.dataset.valStudioDeleteConfirm||'');
+    }catch(error){
+      valStudioState.notice=error.message;
+      renderValStudio();
+    }
   }));
   root.querySelector('[data-val-studio-edit]')?.addEventListener('click',()=>{
     valStudioState.mode='builder';
