@@ -1393,20 +1393,6 @@ button,a{font:inherit}
   padding:9px 10px;
   font:450 .76rem/1.35 var(--body);
 }
-.val-studio-connector-inventory{
-  display:flex;
-  flex-wrap:wrap;
-  gap:7px;
-  max-width:860px;
-}
-.val-studio-connector-inventory span{
-  border:1px solid rgba(49,68,53,.12);
-  border-radius:6px;
-  background:rgba(255,255,255,.5);
-  color:rgba(39,51,41,.62);
-  padding:6px 8px;
-  font-size:.6rem;
-}
 .val-studio-create-from-trigger{
   justify-self:start;
   min-height:40px;
