@@ -20824,6 +20824,51 @@ body:has(.desk-workspace.observer-board-mode[aria-hidden="false"]) .conversation
   overflow-wrap:anywhere!important;
 }
 
+@media(min-width:901px){
+  .drawer-tray.timeline-open .transcript-workbench{
+    grid-template-columns:minmax(320px,.35fr) minmax(0,1fr)!important;
+  }
+}
+.drawer-tray.timeline-open .transcript-list{
+  align-items:stretch!important;
+  gap:16px!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row{
+  display:grid!important;
+  grid-template-rows:auto auto minmax(0,auto) auto!important;
+  align-content:start!important;
+  gap:8px!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:visible!important;
+  padding:18px 18px 16px 22px!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row strong{
+  display:-webkit-box!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  -webkit-box-orient:vertical!important;
+  -webkit-line-clamp:3!important;
+  overflow-wrap:anywhere!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row span,
+.drawer-tray.timeline-open .timeline-transcript-row p,
+.drawer-tray.timeline-open .timeline-transcript-row small{
+  position:static!important;
+  max-width:100%!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row p{
+  margin:0!important;
+  -webkit-line-clamp:1!important;
+}
+.drawer-tray.timeline-open .timeline-transcript-row small{
+  align-self:end!important;
+  justify-self:start!important;
+  margin-top:2px!important;
+  white-space:normal!important;
+}
+
 .drawer-tray.relationship-open .stewardship-network-layout{
   grid-template-columns:minmax(230px,.34fr) minmax(0,1fr)!important;
 }

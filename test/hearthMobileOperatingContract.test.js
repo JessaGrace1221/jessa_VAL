@@ -8,8 +8,8 @@ const css = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 
 test('production shell fingerprints the mobile operating contract', () => {
-  assert.match(html, /hearth-prototype\.css\?v=trigger-action-transcript-template-20260804/);
-  assert.match(html, /hearth-prototype\.js\?v=trigger-action-transcript-template-20260804/);
+  assert.match(html, /hearth-prototype\.css\?v=transcript-list-layout-20260804/);
+  assert.match(html, /hearth-prototype\.js\?v=transcript-list-layout-20260804/);
 });
 
 test('mobile functions use one fixed viewport and one vertical scroll owner', () => {
@@ -36,4 +36,11 @@ test('mobile Executive Functions compass stays inside the phone viewport', () =>
   assert.match(css, /\.retrieval-system\.open:not\(\[data-active-drawer\]\) \.drawer-tray\{[\s\S]*height:calc\(100dvh - 54px\)!important/);
   assert.match(css, /\.retrieval-system\.open:not\(\[data-active-drawer\]\) \.project-drawer-link\{[\s\S]*--node-x:-148px/);
   assert.match(css, /\.retrieval-system\.open:not\(\[data-active-drawer\]\) \.source-drawer-link\{[\s\S]*--node-x:148px/);
+});
+
+test('transcript index rows keep long titles and badges in normal flow', () => {
+  assert.match(css, /@media\(min-width:901px\)\{[\s\S]*\.drawer-tray\.timeline-open \.transcript-workbench\{[\s\S]*grid-template-columns:minmax\(320px,\.35fr\) minmax\(0,1fr\)!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-transcript-row\{[\s\S]*max-height:none!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-transcript-row strong\{[\s\S]*-webkit-line-clamp:3!important/);
+  assert.match(css, /\.drawer-tray\.timeline-open \.timeline-transcript-row small\{[\s\S]*position:static!important/);
 });
