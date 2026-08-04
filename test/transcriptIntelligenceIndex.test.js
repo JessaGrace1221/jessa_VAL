@@ -294,6 +294,10 @@ test('stores meeting recap templates and creates source-grounded transcript over
   assert.match(server,/function transcriptOverviewEmailBody/);
   assert.match(server,/function renderTranscriptActionItemsEmailTemplate/);
   assert.match(server,/deliveryMode:String\(template\.settings\?\.deliveryMode/);
+  assert.match(server,/async function executeTranscriptActionItemsAttendeeEmailAutoSend/);
+  assert.match(server,/autoSendScope:'all_future_transcripts'/);
+  assert.match(server,/prepareTranscriptActionItemsAttendeeEmailDraft\(\{[\s\S]*id:sourceId/);
+  assert.match(server,/action_items_attendee_email_auto_sent/);
   assert.match(server,/function transcriptSourceReceipt/);
   assert.match(server,/return String\(overview\.body\|\|transcriptSourceReceipt\(transcript\)\.body\|\|''\)\.trim\(\)/);
   assert.match(server,/source:'transcript_meeting_overview'/);
@@ -379,9 +383,13 @@ test('Hearth transcript drawer exposes Action Items email templates and delivery
   assert.match(hearth,/data-transcript-template-subject/);
   assert.match(hearth,/data-transcript-template-body/);
   assert.match(hearth,/name="transcriptDeliveryMode"/);
-  assert.match(hearth,/Hold in drafts/);
-  assert.match(hearth,/Send automatically/);
+  assert.match(hearth,/Global transcript follow-up setting/);
+  assert.match(hearth,/Applies to every transcript VAL receives/);
+  assert.match(hearth,/Hold all in drafts/);
+  assert.match(hearth,/Send all automatically/);
+  assert.match(hearth,/data-transcript-delivery-mode/);
   assert.match(hearth,/api\/val\/templates\/transcript_action_items_email/);
   assert.match(hearth,/data-transcript-action="save_email_template"/);
   assert.match(hearth,/data-transcript-action="prepare_attendee_email"/);
+  assert.match(hearth,/drawerTray\.addEventListener\('change'[\s\S]*saveTranscriptEmailTemplateSettings/);
 });

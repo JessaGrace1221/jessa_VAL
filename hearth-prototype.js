@@ -14723,12 +14723,13 @@ function renderTranscriptEmailTemplateSettings(){
   return [
     '<section class="timeline-transcript-section timeline-email-template-settings" data-transcript-section="email-template">',
       '<header class="timeline-source-section-heading">',
-        '<span>Meeting summary email</span>',
+        '<span>Global transcript follow-up setting</span>',
         '<h4>Action Items and Key Points Template</h4>',
       '</header>',
+      '<p>Applies to every transcript VAL receives. Draft mode holds each attendee follow-up for review; automatic mode sends each attendee follow-up when the transcript has Action Items, Key Points, attendee emails, and a connected email provider.</p>',
       '<div class="timeline-template-toggle" role="radiogroup" aria-label="Meeting summary delivery mode">',
-        '<label><input type="radio" name="transcriptDeliveryMode" value="draft" ' + (value.deliveryMode==='draft'?'checked':'') + '>Hold in drafts</label>',
-        '<label><input type="radio" name="transcriptDeliveryMode" value="auto_send" ' + (value.deliveryMode==='auto_send'?'checked':'') + '>Send automatically</label>',
+        '<label><input type="radio" name="transcriptDeliveryMode" value="draft" data-transcript-delivery-mode ' + (value.deliveryMode==='draft'?'checked':'') + '>Hold all in drafts</label>',
+        '<label><input type="radio" name="transcriptDeliveryMode" value="auto_send" data-transcript-delivery-mode ' + (value.deliveryMode==='auto_send'?'checked':'') + '>Send all automatically</label>',
       '</div>',
       '<label class="timeline-email-review-field">Subject template<input type="text" value="' + escapeHtml(value.subjectTemplate) + '" data-transcript-template-subject></label>',
       '<label class="timeline-email-review-field">Email template<textarea rows="14" data-transcript-template-body>' + escapeHtml(value.textTemplate) + '</textarea></label>',
@@ -14739,7 +14740,7 @@ function renderTranscriptEmailTemplateSettings(){
         '<button type="button" data-transcript-action="save_email_template">Save template</button>',
         '<button type="button" data-transcript-action="prepare_attendee_email" data-transcript-id="' + escapeHtml(currentTimelineTranscript?.id || '') + '">Prepare email from this template</button>',
       '</div>',
-      '<small>Automatic sending still uses the same provider approval boundary; drafts remain the default until email execution is connected and trusted.</small>',
+      '<small>This is global for all future transcript attendee follow-ups, not just this selected transcript.</small>',
     '</section>'
   ].join('');
 }
@@ -15154,7 +15155,7 @@ async function saveTranscriptEmailTemplateSettings(){
     settings:{deliveryMode}
   },{method:'PUT'});
   transcriptEmailTemplateSettings=result;
-  setTimelineTranscriptActionStatus(deliveryMode==='auto_send'?'Template saved. New meeting summaries are set to send automatically when execution is connected.':'Template saved. Meeting summaries will stay in drafts.', 'success');
+  setTimelineTranscriptActionStatus(deliveryMode==='auto_send'?'Global setting saved. Future transcript attendee follow-ups will send automatically when VAL has attendee emails and a connected provider.':'Global setting saved. Future transcript attendee follow-ups will stay in drafts.', 'success');
   return result.template;
 }
 
@@ -31290,6 +31291,13 @@ stewardshipPersonASelect?.addEventListener('change', () => {
 stewardshipPersonBSelect?.addEventListener('change', () => {
   stewardshipPersonBId = stewardshipPersonBSelect.value || '';
   renderStewardshipComparison();
+});
+
+drawerTray.addEventListener('change', async (event) => {
+  const deliveryMode = event.target.closest('[data-transcript-delivery-mode]');
+  if(deliveryMode){
+    await saveTranscriptEmailTemplateSettings();
+  }
 });
 
 drawerTray.addEventListener('click', async (event) => {

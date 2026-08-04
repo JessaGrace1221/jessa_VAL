@@ -330,7 +330,7 @@ test('VAL Studio builder starts from a trigger and action catalog',()=>{
   assert.match(hearth,/name="appendGoogleDoc"/);
   assert.match(hearth,/Only required when Google Doc is on/);
   assert.match(hearth,/Every transcript/);
-  assert.match(hearthHtml,/transcript-list-layout-20260804/);
+  assert.match(hearthHtml,/transcript-global-auto-send-20260804/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{

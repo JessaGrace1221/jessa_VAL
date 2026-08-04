@@ -27422,13 +27422,14 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
   const subject=rendered.subject;
   const body=writingRules?`${rendered.body}\n\n${transcriptWritingRuleSignoff(writingRules)}`:rendered.body;
   const existing=(await listDrafts()).find(d=>d.draftType==='transcript_action_items_email'&&d.sourceContext?.transcriptId===transcriptId);
+  const autoSend=rendered.deliveryMode==='auto_send';
   const draft=await saveInternalDraft({
     id:existing?.id,
     draftType:'transcript_action_items_email',
     provider:'internal',
     subject,
     body,
-    status:'ready_for_review',
+    status:autoSend?'auto_send_pending':'ready_for_review',
     sourceContext:{
       ...(existing?.sourceContext||{}),
       source:'transcript_action_items_attendee_email',
@@ -27444,19 +27445,85 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
       sourceReceipt:overview,
       preparedArtifactKind:'email_draft',
       preparedArtifact:{kind:'email_draft',subject,body,recipients:recipients.map(person=>person.email),keyPoints,actionItems},
-      canValAct:'approval_required',
-      executionPath:'review_then_send_email',
+      canValAct:autoSend?'global_transcript_auto_send':'approval_required',
+      executionPath:autoSend?'global_template_auto_send':'review_then_send_email',
       deliveryMode:rendered.deliveryMode,
-      noExternalAction:true,
-      noExternalSend:true,
+      autoSendEnabled:autoSend,
+      noExternalAction:!autoSend,
+      noExternalSend:!autoSend,
       exactKeyPointsFromSystem:true,
       exactActionItemsFromSystem:true,
       writingRules,
       templateKey:TRANSCRIPT_ACTION_ITEMS_TEMPLATE_KEY
     }
   });
-  await logTranscriptAction(transcriptId,'action_items_attendee_email_draft_ready',draft.id||'','completed').catch(()=>{});
-  return {draft,recipientCount:recipients.length,recipients,keyPoints,actionItems,noExternalAction:true};
+  let sendResult=null;
+  if(autoSend){
+    sendResult=await executeTranscriptActionItemsAttendeeEmailAutoSend({draft,transcript,title,recipients,keyPoints,actionItems}).catch(async(error)=>{
+      const failed=await saveInternalDraft({
+        ...draft,
+        status:'auto_send_failed',
+        sourceContext:{
+          ...(draft.sourceContext||{}),
+          autoSendAttemptedAt:new Date().toISOString(),
+          autoSendError:error.message||'Automatic send failed.',
+          noExternalAction:true,
+          noExternalSend:true
+        }
+      });
+      await logTranscriptAction(transcriptId,'action_items_attendee_email_auto_send_failed',failed.id||'', 'failed', error.message).catch(()=>{});
+      return {ok:false,error:error.message,draft:failed};
+    });
+  }
+  const finalDraft=sendResult?.draft||draft;
+  await logTranscriptAction(transcriptId,sendResult?.executed?'action_items_attendee_email_auto_sent':'action_items_attendee_email_draft_ready',finalDraft.id||'','completed').catch(()=>{});
+  return {draft:finalDraft,recipientCount:recipients.length,recipients,keyPoints,actionItems,noExternalAction:!sendResult?.executed,autoSendAttempted:autoSend,autoSendResult:sendResult};
+}
+async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},transcript={},title='',recipients=[],keyPoints=[],actionItems=[]}={}){
+  if(!valExternalActions?.createEmailSendPacket||!valExternalActions?.executor?.execute)throw new Error('Email execution is not connected yet.');
+  const recipientEmails=safeArray(recipients).map(person=>person.email||person).filter(Boolean);
+  if(!recipientEmails.length)throw new Error('No attendee email addresses are attached to this transcript.');
+  const transcriptId=transcript.id||transcript.transcriptId||draft.sourceContext?.transcriptId||'';
+  const packet=await valExternalActions.createEmailSendPacket({
+    provider:draft.sourceContext?.emailProvider||'gmail',
+    to:recipientEmails.join(', '),
+    subject:draft.subject||`Follow-up: ${title||'Meeting'}`,
+    body:draft.body||'',
+    summary:`Automatically send transcript Action Items and Key Points for ${title||'this meeting'}.`,
+    sourceRefs:[{sourceType:'transcript',sourceId:transcriptId,quoteOrSummary:title||draft.subject||'Transcript attendee follow-up',confidence:0.95}],
+    sourceContext:{
+      source:'transcript_action_items_attendee_email',
+      transcriptId,
+      transcriptTitle:title,
+      draftId:draft.id||'',
+      deliveryMode:'auto_send',
+      autoSendScope:'all_future_transcripts',
+      keyPointCount:keyPoints.length,
+      actionItemCount:actionItems.length,
+      finalApprovalSurface:'transcripts_global_delivery_toggle'
+    },
+    finalApprovalSurface:'transcripts_global_delivery_toggle',
+    approvalNote:'User enabled Send all automatically for transcript attendee follow-ups.'
+  });
+  const approved=await valExternalActions.approve(packet.id,{note:'Global transcript attendee follow-up auto-send is enabled.'});
+  const result=await valExternalActions.executor.execute(approved.id,{finalConfirmation:true,executedBy:'transcripts:auto_send'});
+  await processExternalActionBoardEvidence(result.packet||approved).catch(()=>{});
+  if(!result?.executed)throw new Error(result?.error||result?.packet?.failureReason||'Automatic attendee email send did not complete.');
+  const sentDraft=await saveInternalDraft({
+    ...draft,
+    status:'sent',
+    sourceContext:{
+      ...(draft.sourceContext||{}),
+      autoSendAttemptedAt:new Date().toISOString(),
+      autoSendExecutedAt:result.packet?.executedAt||new Date().toISOString(),
+      externalActionPacketId:result.packet?.id||approved.id,
+      providerResponseId:result.packet?.providerResponseId||'',
+      providerResponseSummary:result.packet?.providerResponseSummary||'',
+      noExternalAction:false,
+      noExternalSend:false
+    }
+  });
+  return {ok:true,executed:true,draft:sentDraft,packet:result.packet||approved,receipt:result.receipt||null};
 }
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
@@ -33713,6 +33780,22 @@ async function processTranscriptPayload(payload){
   }
   const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript,sourcePayloadMetadata:payload.metadata||payload,metadata:payload.metadata||payload}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
   if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
+  const attendeeFollowupDraft=await prepareTranscriptActionItemsAttendeeEmailDraft({
+    id:sourceId,
+    title,
+    meetingTitle:title,
+    transcriptText:transcript,
+    rawText:transcript,
+    attendees:participants,
+    participants,
+    metadata:payload.metadata||payload,
+    sourcePayloadMetadata:payload.metadata||payload,
+    sourceReceipt:transcriptSourceReceipt({title,transcriptText:transcript,metadata:payload.metadata||payload,sourcePayloadMetadata:payload.metadata||payload})
+  },stagedTasks).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','action_items_attendee_email_followup','failed',e.message).catch(()=>{});return null;});
+  if(attendeeFollowupDraft?.draft){
+    createdDrafts.push(attendeeFollowupDraft.draft);
+    await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:attendeeFollowupDraft.draft.id||'',relationship:attendeeFollowupDraft.autoSendResult?.executed?'auto_sent_attendee_followup':'prepared_attendee_followup',summary:attendeeFollowupDraft.draft.subject||`Follow-up: ${title}`,confidence:1,metadata:{draftType:'transcript_action_items_email',deliveryMode:attendeeFollowupDraft.draft.sourceContext?.deliveryMode||'draft',autoSendAttempted:!!attendeeFollowupDraft.autoSendAttempted,autoSent:!!attendeeFollowupDraft.autoSendResult?.executed}}).catch(()=>{});
+  }
   for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){
     const body=draft.body||draft.message||'';
     if(!body.trim())continue;
@@ -34323,7 +34406,12 @@ app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req
       : (Array.isArray(transcript.tasks)?transcript.tasks:[]);
     const result=await prepareTranscriptActionItemsAttendeeEmailDraft(transcript,tasks,{writingRules:req.body?.writingRules||req.body?.writing_rules||''});
     await auditLog({req,action:'transcript_action_items_email_draft_prepared',resourceType:'transcript',resourceId:id,metadata:{draftId:result.draft?.id,recipientCount:result.recipientCount,keyPoints:result.keyPoints.length,actionItems:result.actionItems.length},success:true}).catch(()=>{});
-    res.json({ok:true,...result,message:`Key Points and Action Items are ready for review in one group email to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}. No email was sent yet.`});
+    const message=result.autoSendResult?.executed
+      ? `Key Points and Action Items were sent automatically to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'} because the global transcript setting is Send all automatically.`
+      : (result.autoSendAttempted
+        ? `VAL tried to send automatically, but kept the follow-up in drafts because sending did not complete: ${result.autoSendResult?.error||'provider send unavailable'}.`
+        : `Key Points and Action Items are ready for review in one group email to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}. The global transcript setting is Hold all in drafts.`);
+    res.json({ok:true,...result,message});
   }catch(e){
     res.status(e.statusCode||500).json({ok:false,error:e.message});
   }
