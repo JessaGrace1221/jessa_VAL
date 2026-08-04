@@ -24,6 +24,17 @@ function normalizeEmailProvider(value=''){
   if(provider.includes('gmail')||provider.includes('google'))return 'gmail';
   return '';
 }
+function normalizeApproval(value=''){
+  return value==='preauthorized'?'preauthorized':'required';
+}
+function normalizeWorkflowText(value='',fallback='',limit=2400){
+  const text=compactText(value,limit);
+  return text||fallback;
+}
+function normalizeTemplateText(value='',fallback='',limit=2400){
+  const text=String(value||'').replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().slice(0,limit);
+  return text||fallback;
+}
 const VAL_ENVIRONMENT_SHARE_FORMAT='val_environment_template_v1';
 function environmentBlockCatalog(){
   return {
@@ -61,6 +72,12 @@ function normalizeEnvironmentSpec(input={}){
   const trigger=input.trigger&&typeof input.trigger==='object'?input.trigger:{};
   const connections=input.connections&&typeof input.connections==='object'?input.connections:{};
   const approvals=input.approvals&&typeof input.approvals==='object'?input.approvals:{};
+  const instructions=input.instructions&&typeof input.instructions==='object'?input.instructions:{};
+  const actions=input.actions&&typeof input.actions==='object'?input.actions:{};
+  const eventTitlePattern=compactText(trigger.eventTitlePattern||trigger.event_title_pattern||input.eventTitlePattern,220);
+  const appendGoogleDoc=Boolean(actions.appendGoogleDoc||actions.append_google_doc||connections.googleDocumentId||connections.google_document_id);
+  const sendEmail=actions.sendEmail!==false&&actions.send_email!==false;
+  const actionScope=[sendEmail?'send_email':'',appendGoogleDoc?'append_google_doc':''].filter(Boolean);
   return {
     contractVersion:1,
     name:compactText(input.name||'Untitled Environment',120),
@@ -68,9 +85,9 @@ function normalizeEnvironmentSpec(input={}){
     purpose:compactText(input.purpose,900),
     trigger:{
       type:String(trigger.type||input.triggerType||'krisp_transcript_received'),
-      eventTitlePattern:compactText(trigger.eventTitlePattern||trigger.event_title_pattern||input.eventTitlePattern,220),
+      eventTitlePattern,
       eventTitleConfirmed:Boolean(trigger.eventTitleConfirmed||trigger.event_title_confirmed),
-      mode:String(trigger.mode||'immediate')
+      mode:String(trigger.mode||(eventTitlePattern?'immediate':'all_transcripts'))
     },
     observerIds,
     roundTable:{required:true,authority:'observe_only'},
@@ -83,26 +100,39 @@ function normalizeEnvironmentSpec(input={}){
       maxContextPackets:20
     },
     instructions:{
-      sourceTruth:'Use Krisp Action Items and Key Points exactly as received.',
-      formatting:'Basic headings and a short introduction are allowed. Source wording is not rewritten.',
-      recipientRule:'Include every attendee except the executive.',
-      emailSubject:'Meeting Title and Date - Overview',
-      failureOrder:['ask_user','create_alignment_item','notify_chief_of_staff','pause_environment']
+      sourceTruth:normalizeWorkflowText(instructions.sourceTruth,'Use Krisp Action Items and Key Points exactly as received.',900),
+      formatting:normalizeWorkflowText(instructions.formatting,'Basic headings and a short introduction are allowed. Source wording is not rewritten.',900),
+      recipientRule:normalizeWorkflowText(instructions.recipientRule,'Include every attendee except the executive.',900),
+      emailSubject:normalizeWorkflowText(instructions.emailSubject,'Meeting Title and Date - Overview',220),
+      emailBodyTemplate:normalizeTemplateText(instructions.emailBodyTemplate,[
+        'Hello, VAL here. I am Jessa\'s AI assistant.',
+        'After reading the transcript, {{upbeat_key_point}}',
+        '',
+        'Action Items',
+        '{{action_items}}',
+        '',
+        'Key Points',
+        '{{key_points}}',
+        '',
+        'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask Jessa about getting you set up.'
+      ].join('\n'),2400),
+      upbeatKeyPointInstruction:normalizeWorkflowText(instructions.upbeatKeyPointInstruction,'Write one upbeat, transcript-grounded sentence about the meeting momentum without inventing facts.',600),
+      failureOrder:safeArray(instructions.failureOrder).length?safeArray(instructions.failureOrder):['ask_user','create_alignment_item','notify_chief_of_staff','pause_environment']
     },
     connections:{
       emailProvider:normalizeEmailProvider(connections.emailProvider||connections.email_provider),
       googleDocumentId:compactText(connections.googleDocumentId||connections.google_document_id,240)
     },
     actions:{
-      sendEmail:true,
-      appendGoogleDoc:true,
-      executionOrder:['send_email','append_google_doc']
+      sendEmail,
+      appendGoogleDoc,
+      executionOrder:actionScope
     },
     approvals:{
-      sendEmail:approvals.sendEmail==='preauthorized'?'preauthorized':'required',
-      appendGoogleDoc:approvals.appendGoogleDoc==='preauthorized'?'preauthorized':'required',
+      sendEmail:normalizeApproval(approvals.sendEmail),
+      appendGoogleDoc:normalizeApproval(approvals.appendGoogleDoc),
       recipientScope:'meeting_attendees_except_executive',
-      actionScope:['send_email','append_google_doc']
+      actionScope
     },
     retryPolicy:{
       idempotent:true,
@@ -191,15 +221,16 @@ function validateEnvironmentSpec(spec={}){
   if(!compactText(spec.name,120))errors.push('Name the Environment.');
   if(!compactText(spec.outcome,600))errors.push('Explain the outcome this Environment should create.');
   if(!compactText(spec.purpose,900))errors.push('Explain why this Environment exists.');
-  if(spec.trigger?.type!=='krisp_transcript_received')errors.push('The first Environment requires a Krisp transcript trigger.');
-  if(!compactText(spec.trigger?.eventTitlePattern,220))errors.push('Confirm the recurring calendar event title.');
-  if(!spec.trigger?.eventTitleConfirmed)errors.push('Confirm the recurring calendar event title rule.');
+  if(spec.trigger?.type!=='krisp_transcript_received')errors.push('This Environment currently requires a Krisp transcript trigger.');
+  const allTranscripts=spec.trigger?.mode==='all_transcripts';
+  if(!allTranscripts&&!compactText(spec.trigger?.eventTitlePattern,220))errors.push('Confirm the recurring calendar event title or choose every transcript.');
+  if(!allTranscripts&&!spec.trigger?.eventTitleConfirmed)errors.push('Confirm the recurring calendar event title rule or choose every transcript.');
   if(!safeArray(spec.observerIds).length)errors.push('Choose at least one Observer.');
   for(const id of safeArray(spec.observerIds))if(!observerIds.has(id))errors.push(`Unknown Observer: ${id}.`);
   if(!spec.roundTable?.required)errors.push('Every Environment requires the Round Table.');
   if(!spec.chiefOfStaff?.required)errors.push('Every Environment requires the Chief of Staff.');
-  if(!normalizeEmailProvider(spec.connections?.emailProvider))errors.push('Select the connected sending account.');
-  if(!compactText(spec.connections?.googleDocumentId,240))errors.push('Add the destination Google Doc ID.');
+  if(spec.actions?.sendEmail!==false&&!normalizeEmailProvider(spec.connections?.emailProvider))errors.push('Select the connected sending account.');
+  if(spec.actions?.appendGoogleDoc&& !compactText(spec.connections?.googleDocumentId,240))errors.push('Add the destination Google Doc ID or turn off the Google Doc action.');
   if(spec.approvals?.recipientScope!=='meeting_attendees_except_executive')errors.push('Email authorization must remain bounded to meeting attendees except the executive.');
   return {ok:errors.length===0,errors};
 }
@@ -210,19 +241,21 @@ function humanEnvironmentContract(spec={}){
   return {
     title:spec.name,
     outcome:spec.outcome,
-    when:`Immediately after VAL receives a Krisp transcript matching "${spec.trigger?.eventTitlePattern||''}".`,
+    when:spec.trigger?.mode==='all_transcripts'
+      ? 'Immediately after VAL receives any Krisp transcript.'
+      : `Immediately after VAL receives a Krisp transcript matching "${spec.trigger?.eventTitlePattern||''}".`,
     listensTo:'Krisp Action Items, Key Points, attendee emails, meeting title, and meeting date.',
     observers,
     observerPurpose:'Each selected Observer reviews the exact meeting packet. The Round Table observes their receipts. The Chief of Staff advises but does not govern execution.',
     sharedIntelligence:'Every live run publishes one evidence-backed result packet. Other active Environments may use it as context, but cannot act from it without an explicit governed handoff.',
     produces:[
-      'One email to all attendees except the executive.',
-      'One dated section appended to the selected Google Doc.'
-    ],
+      spec.actions?.sendEmail!==false?'One email to all attendees except the executive.':'',
+      spec.actions?.appendGoogleDoc?'One dated section appended to the selected Google Doc.':''
+    ].filter(Boolean),
     sourcePromise:'Krisp Action Items and Key Points remain word for word.',
     approval:{
       email:spec.approvals?.sendEmail||'required',
-      googleDoc:spec.approvals?.appendGoogleDoc||'required'
+      googleDoc:spec.actions?.appendGoogleDoc?spec.approvals?.appendGoogleDoc||'required':'disabled'
     },
     failure:'Ask for missing context, create Alignment, notify the Chief of Staff, then pause visibly.',
     safety:'Duplicate sends, invalid recipients, missing authorization, and expired permission remain permanently blocked.'
@@ -246,6 +279,11 @@ function titleRuleMatches(rule='',title=''){
   if(expected===actual||actual.includes(expected)||expected.includes(actual))return true;
   const tokens=expected.split(' ').filter(token=>token.length>2);
   return tokens.length>0&&tokens.every(token=>actual.includes(token));
+}
+function environmentMatchesSource(spec={},source={}){
+  if(spec.trigger?.type!=='krisp_transcript_received')return false;
+  if(spec.trigger?.mode==='all_transcripts')return true;
+  return titleRuleMatches(spec.trigger?.eventTitlePattern,source.title||source.meetingTitle||'');
 }
 function displayDate(value=''){
   const date=new Date(value);
@@ -277,13 +315,42 @@ function exactMeetingContent(source={}){
   const exactBody=String(source.exactBody||'').trim();
   return {actionItems,keyPoints,body:exactBody||sections.join('\n\n').trim(),ready:Boolean(exactBody||sections.length)};
 }
+function numberedLines(lines=[]){
+  return safeArray(lines).map((line,index)=>`${index+1}. ${compactText(line,800)}`).filter(Boolean).join('\n');
+}
+function upbeatMeetingPoint(spec={},source={},exact={}){
+  const firstKeyPoint=sourceLines(exact.keyPoints||source.keyPoints)[0]||'it feels like momentum is happening.';
+  const sentence=compactText(firstKeyPoint,220);
+  if(/[.!?]$/.test(sentence))return sentence;
+  return sentence+'.';
+}
+function renderEnvironmentEmailBody(spec={},source={},exact={}){
+  const template=normalizeTemplateText(spec.instructions?.emailBodyTemplate,'',2400);
+  if(!template)return [
+    `Hello, VAL here. I am Jessa's AI assistant.`,
+    `After reading the transcript, ${upbeatMeetingPoint(spec,source,exact)}`,
+    '',
+    'Action Items',
+    numberedLines(exact.actionItems),
+    '',
+    'Key Points',
+    numberedLines(exact.keyPoints),
+    '',
+    'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask Jessa about getting you set up.'
+  ].join('\n').trim();
+  return template
+    .replace(/\{\{\s*upbeat_key_point\s*\}\}/gi,upbeatMeetingPoint(spec,source,exact))
+    .replace(/\{\{\s*action_items\s*\}\}/gi,numberedLines(exact.actionItems)||'No Action Items were provided.')
+    .replace(/\{\{\s*key_points\s*\}\}/gi,numberedLines(exact.keyPoints)||'No Key Points were provided.')
+    .replace(/\{\{\s*meeting_title\s*\}\}/gi,compactText(source.title||source.meetingTitle||'the meeting',220))
+    .replace(/\{\{\s*meeting_date\s*\}\}/gi,displayDate(source.occurredAt||source.createdAt));
+}
 function meetingOutputs(spec={},source={}){
   const exact=exactMeetingContent(source);
   const title=compactText(source.title||'Meeting',220);
   const date=displayDate(source.occurredAt||source.createdAt);
   const attendees=externalRecipients(source);
-  const emailIntro=`Thank you for your time. Here is the overview from ${title}.`;
-  const emailBody=[emailIntro,exact.body].filter(Boolean).join('\n\n');
+  const emailBody=renderEnvironmentEmailBody(spec,source,exact);
   const documentBody=[
     `${title} | ${date}`,
     attendees.length?`Attendees: ${attendees.map(person=>person.name||person.email).join(', ')}`:'',
@@ -295,7 +362,9 @@ function meetingOutputs(spec={},source={}){
       provider:spec.connections?.emailProvider||'',
       to:attendees.map(person=>person.email).join(', '),
       recipients:attendees,
-      subject:`${title} ${date} - Overview`,
+      subject:normalizeWorkflowText(spec.instructions?.emailSubject,'Meeting Title and Date - Overview',220)
+        .replace(/\{\{\s*meeting_title\s*\}\}/gi,title)
+        .replace(/\{\{\s*meeting_date\s*\}\}/gi,date),
       body:emailBody,
       approval:spec.approvals?.sendEmail||'required',
       state:'proposed'
@@ -308,7 +377,7 @@ function meetingOutputs(spec={},source={}){
       state:'proposed'
     },
     exactSourceSections:exact,
-    executionOrder:['send_email','append_google_doc']
+    executionOrder:safeArray(spec.actions?.executionOrder).length?safeArray(spec.actions.executionOrder):['send_email']
   };
 }
 
@@ -667,7 +736,7 @@ function createValEnvironmentsService({
     if(!validation.ok)throw new Error(validation.errors.join(' '));
     const source=await loadTranscript(String(transcriptId||'').trim());
     if(!source)throw new Error('Choose a real historical transcript for this test.');
-    if(!titleRuleMatches(version.specJson.trigger?.eventTitlePattern,source.title)){
+    if(!environmentMatchesSource(version.specJson,source)){
       throw new Error(`"${source.title||'This transcript'}" does not match the confirmed recurring event rule "${version.specJson.trigger?.eventTitlePattern}".`);
     }
     const exact=exactMeetingContent(source);
@@ -1038,8 +1107,11 @@ function createValEnvironmentsService({
     return [...observerReceipts,roundTable,chief];
   }
   async function prepareEnvironmentActions({environment,version,source,run,outputs}){
-    if(!externalActions?.createEmailSendPacket||!externalActions?.createGoogleDocAppendPacket){
+    if(!externalActions?.createEmailSendPacket){
       throw new Error('VAL Environment action infrastructure is unavailable.');
+    }
+    if(version.specJson.actions?.appendGoogleDoc&& !externalActions?.createGoogleDocAppendPacket){
+      throw new Error('VAL Environment Google Doc action infrastructure is unavailable.');
     }
     const sourceRef={
       sourceType:'transcript',
@@ -1055,27 +1127,31 @@ function createValEnvironmentsService({
       environmentRunId:run.id,
       environmentVersion:version.versionNumber
     };
-    const emailPacket=await externalActions.createEmailSendPacket({
-      ...outputs.email,
-      messageId:`${run.id}:email`,
-      why:`${environment.name} prepared this attendee follow-through from the exact Krisp sections.`,
-      sourceRefs:[sourceRef],
-      sourceContext:{...commonContext,actionKey:'send_email'},
-      finalApprovalSurface:'val_environment'
-    });
-    const docPacket=await externalActions.createGoogleDocAppendPacket({
-      ...outputs.googleDoc,
-      id:`${run.id}:google_doc`,
-      title:`Append ${source.title||'meeting'} overview`,
-      why:`${environment.name} prepared this dated record from the exact Krisp sections.`,
-      sourceRefs:[sourceRef],
-      sourceContext:{...commonContext,actionKey:'append_google_doc',dependsOnPacketId:emailPacket.id},
-      finalApprovalSurface:'val_environment'
-    });
-    const packets=[
-      {key:'send_email',approval:version.specJson.approvals?.sendEmail||'required',packet:emailPacket},
-      {key:'append_google_doc',approval:version.specJson.approvals?.appendGoogleDoc||'required',packet:docPacket}
-    ];
+    const packets=[];
+    let emailPacket=null;
+    if(version.specJson.actions?.sendEmail!==false){
+      emailPacket=await externalActions.createEmailSendPacket({
+        ...outputs.email,
+        messageId:`${run.id}:email`,
+        why:`${environment.name} prepared this attendee follow-through from the exact Krisp sections.`,
+        sourceRefs:[sourceRef],
+        sourceContext:{...commonContext,actionKey:'send_email'},
+        finalApprovalSurface:'val_environment'
+      });
+      packets.push({key:'send_email',approval:version.specJson.approvals?.sendEmail||'required',packet:emailPacket});
+    }
+    if(version.specJson.actions?.appendGoogleDoc){
+      const docPacket=await externalActions.createGoogleDocAppendPacket({
+        ...outputs.googleDoc,
+        id:`${run.id}:google_doc`,
+        title:`Append ${source.title||'meeting'} overview`,
+        why:`${environment.name} prepared this dated record from the exact Krisp sections.`,
+        sourceRefs:[sourceRef],
+        sourceContext:{...commonContext,actionKey:'append_google_doc',dependsOnPacketId:emailPacket?.id||''},
+        finalApprovalSurface:'val_environment'
+      });
+      packets.push({key:'append_google_doc',approval:version.specJson.approvals?.appendGoogleDoc||'required',packet:docPacket});
+    }
     const actionReceipts=[];
     let priorActionPending=false;
     for(const action of packets){
@@ -1126,7 +1202,7 @@ function createValEnvironmentsService({
     if(!source?.id)return {ok:true,matched:0,runs:[],message:'No durable transcript was available for Environment matching.'};
     const exact=exactMeetingContent(source);
     const matches=(await activeEnvironments()).filter(environment=>
-      titleRuleMatches(environment.activeVersion?.specJson?.trigger?.eventTitlePattern,source.title)
+      environmentMatchesSource(environment.activeVersion?.specJson||{},source)
     );
     const results=[];
     for(const environment of matches){
@@ -1243,6 +1319,7 @@ module.exports={
   validateEnvironmentSpec,
   humanEnvironmentContract,
   environmentSourceHash,
+  environmentMatchesSource,
   titleRuleMatches,
   exactMeetingContent,
   meetingOutputs

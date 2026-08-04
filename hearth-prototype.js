@@ -29285,12 +29285,29 @@ const valStudioObserverDefaults = ['commitment','relationship','delight','synchr
 function valStudioDefaultSpec(){
   return {
     name:'New executive Environment',
-    outcome:'Turn a recurring source into a clear, governed result.',
-    purpose:'Remove repeated executive work without hiding judgment or taking unapproved action.',
-    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'immediate'},
+    outcome:'After every transcript is received, email Action Items and Key Points to each attendee.',
+    purpose:'Gently introduce VAL to meeting attendees while also getting them all relevant information.',
+    trigger:{type:'krisp_transcript_received',eventTitlePattern:'',eventTitleConfirmed:false,mode:'all_transcripts'},
     observerIds:[...valStudioObserverDefaults],
     connections:{emailProvider:'gmail',googleDocumentId:''},
-    approvals:{sendEmail:'required',appendGoogleDoc:'required'}
+    actions:{sendEmail:true,appendGoogleDoc:false,executionOrder:['send_email']},
+    approvals:{sendEmail:'required',appendGoogleDoc:'required'},
+    instructions:{
+      emailSubject:'{{meeting_title}} {{meeting_date}} - Notes from VAL',
+      emailBodyTemplate:[
+        "Hello, VAL here. I am Jessa's AI assistant.",
+        'After reading the transcript, {{upbeat_key_point}}',
+        '',
+        'Action Items',
+        '{{action_items}}',
+        '',
+        'Key Points',
+        '{{key_points}}',
+        '',
+        'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask Jessa about getting you set up.'
+      ].join('\n'),
+      upbeatKeyPointInstruction:'Write one upbeat, transcript-grounded sentence about the meeting momentum without inventing facts.'
+    }
   };
 }
 let valStudioState = {
@@ -29338,16 +29355,30 @@ function valStudioCurrentSpec(){
       type:'krisp_transcript_received',
       eventTitlePattern:has('eventTitlePattern')?value('eventTitlePattern'):valStudioState.spec.trigger.eventTitlePattern,
       eventTitleConfirmed:has('eventTitleConfirmed')?checked('eventTitleConfirmed'):valStudioState.spec.trigger.eventTitleConfirmed,
-      mode:'immediate'
+      mode:has('triggerModeAll')?(checked('triggerModeAll')?'all_transcripts':'immediate'):(valStudioState.spec.trigger?.mode||'all_transcripts')
     },
     observerIds:observerFields.length?observerFields.filter(input=>input.checked).map(input=>input.value):valStudioState.spec.observerIds,
     connections:{
       emailProvider:has('emailProvider')?(value('emailProvider')||'gmail'):valStudioState.spec.connections.emailProvider,
       googleDocumentId:has('googleDocumentId')?value('googleDocumentId'):valStudioState.spec.connections.googleDocumentId
     },
+    actions:{
+      sendEmail:true,
+      appendGoogleDoc:has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc),
+      executionOrder:[
+        'send_email',
+        (has('appendGoogleDoc')?checked('appendGoogleDoc'):Boolean(valStudioState.spec.actions?.appendGoogleDoc))?'append_google_doc':''
+      ].filter(Boolean)
+    },
     approvals:{
       sendEmail:has('emailPreauthorized')?(checked('emailPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.sendEmail,
       appendGoogleDoc:has('docPreauthorized')?(checked('docPreauthorized')?'preauthorized':'required'):valStudioState.spec.approvals.appendGoogleDoc
+    },
+    instructions:{
+      ...(valStudioState.spec.instructions||{}),
+      emailSubject:has('emailSubject')?(value('emailSubject')||'{{meeting_title}} {{meeting_date}} - Notes from VAL'):(valStudioState.spec.instructions?.emailSubject||''),
+      emailBodyTemplate:has('emailBodyTemplate')?(field('emailBodyTemplate')?.value||'').trim():(valStudioState.spec.instructions?.emailBodyTemplate||''),
+      upbeatKeyPointInstruction:has('upbeatKeyPointInstruction')?(field('upbeatKeyPointInstruction')?.value||'').trim():(valStudioState.spec.instructions?.upbeatKeyPointInstruction||'')
     }
   };
 }
@@ -29386,12 +29417,17 @@ function valStudioRecurringTitleSuggestion(value=''){
 
 function valStudioVisualMap(){
   const names=valStudioSelectedObserverNames();
+  const allTranscripts=valStudioState.spec.trigger?.mode==='all_transcripts';
+  const produces=[
+    valStudioState.spec.actions?.sendEmail!==false?'Email':'',
+    valStudioState.spec.actions?.appendGoogleDoc?'Google Doc':''
+  ].filter(Boolean);
   return [
     '<div class="val-studio-map" aria-label="Environment map">',
       '<div class="val-studio-source-node">',
         '<span>Trigger</span>',
         '<strong>Krisp transcript</strong>',
-        '<small>' + escapeHtml(valStudioState.spec.trigger.eventTitlePattern||'Recurring event to confirm') + '</small>',
+        '<small>' + escapeHtml(allTranscripts?'Every transcript':(valStudioState.spec.trigger.eventTitlePattern||'Recurring event to confirm')) + '</small>',
       '</div>',
       '<div class="val-studio-flow-line source-flow" aria-hidden="true"></div>',
       '<div class="val-studio-round-table">',
@@ -29411,8 +29447,7 @@ function valStudioVisualMap(){
       '</div>',
       '<div class="val-studio-action-rail">',
         '<span>Produces</span>',
-        '<strong>Email</strong>',
-        '<strong>Google Doc</strong>',
+        produces.map(label=>'<strong>'+escapeHtml(label)+'</strong>').join('')||'<strong>Draft result</strong>',
       '</div>',
     '</div>'
   ].join('');
@@ -29425,9 +29460,9 @@ function valStudioStagePanel(){
   if(stage===0)return [
     '<section class="val-studio-stage-panel">',
       '<p class="val-studio-eyebrow">Outcome</p>',
-      '<h3>What should happen without consuming another executive hour?</h3>',
+      '<h3>Tell VAL the workflow in plain language.</h3>',
       '<label><span>Environment name</span><input name="environmentName" type="text" value="' + escapeHtml(spec.name) + '"></label>',
-      '<label><span>Outcome</span><textarea name="environmentOutcome">' + escapeHtml(spec.outcome) + '</textarea></label>',
+      '<label><span>What should happen?</span><textarea name="environmentOutcome" placeholder="Example: After every transcript is received, email Action Items and Key Points to each attendee.">' + escapeHtml(spec.outcome) + '</textarea></label>',
       '<label><span>Purpose</span><textarea name="environmentPurpose">' + escapeHtml(spec.purpose) + '</textarea></label>',
       '<div class="val-studio-learning-rule">',
         '<div><strong>Something VAL should understand differently?</strong><p>Every durable learning candidate still requires review before it changes future judgment.</p></div>',
@@ -29438,16 +29473,19 @@ function valStudioStagePanel(){
   if(stage===1)return [
     '<section class="val-studio-stage-panel">',
       '<p class="val-studio-eyebrow">Evidence</p>',
-      '<h3>Which recurring event begins this Environment?</h3>',
+      '<h3>Which transcripts should begin this Environment?</h3>',
+      '<div class="val-studio-trigger-mode">',
+        '<label class="val-studio-confirm"><input name="triggerModeAll" type="checkbox" ' + (spec.trigger.mode==='all_transcripts'?'checked':'') + '><span>Run after every transcript VAL receives.</span></label>',
+      '</div>',
       '<label><span>Start with a real transcript</span>',
         '<select name="historicalTranscript">',
           '<option value="">Select a recent Krisp transcript</option>',
           transcripts.map(item=>'<option value="' + escapeHtml(item.id||item.transcriptId||'') + '">' + escapeHtml(item.title||item.meetingTitle||'Meeting transcript') + '</option>').join(''),
         '</select>',
       '</label>',
-      '<label><span>Recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="VAL will suggest this from the transcript"></label>',
-      '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>This is the recurring event VAL should recognize.</span></label>',
-      '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL sends Krisp’s Action Items and Key Points exactly as received. It may add headings and one short introduction. It may not rewrite the source.</p></div>',
+      '<label><span>Optional recurring calendar event</span><input name="eventTitlePattern" type="text" value="' + escapeHtml(spec.trigger.eventTitlePattern||'') + '" placeholder="Only needed if this should run for one meeting series"></label>',
+      '<label class="val-studio-confirm"><input name="eventTitleConfirmed" type="checkbox" ' + (spec.trigger.eventTitleConfirmed?'checked':'') + '><span>Use this specific event title instead of every transcript.</span></label>',
+      '<div class="val-studio-source-rule"><strong>Source truth</strong><p>VAL preserves Krisp’s Action Items and Key Points as source evidence. It may add the approved introduction and closing language, but it may not invent meeting details.</p></div>',
     '</section>'
   ].join('');
   if(stage===2){
@@ -29487,14 +29525,16 @@ function valStudioStagePanel(){
   if(stage===3)return [
     '<section class="val-studio-stage-panel">',
       '<p class="val-studio-eyebrow">Actions</p>',
-      '<h3>Connect the places this Environment is allowed to act.</h3>',
+      '<h3>Write the attendee email and choose where VAL is allowed to act.</h3>',
       '<div class="val-studio-two-fields">',
         '<label><span>Send from</span><select name="emailProvider"><option value="gmail" ' + (spec.connections.emailProvider==='gmail'?'selected':'') + '>Connected Gmail</option><option value="outlook" ' + (spec.connections.emailProvider==='outlook'?'selected':'') + '>Connected Outlook</option></select></label>',
-        '<label><span>Google Doc ID</span><input name="googleDocumentId" type="text" value="' + escapeHtml(spec.connections.googleDocumentId||'') + '" placeholder="Paste the existing document ID"></label>',
+        '<label><span>Email subject</span><input name="emailSubject" type="text" value="' + escapeHtml(spec.instructions?.emailSubject||'{{meeting_title}} {{meeting_date}} - Notes from VAL') + '"></label>',
       '</div>',
+      '<label><span>Email body</span><textarea name="emailBodyTemplate" class="val-studio-email-template">' + escapeHtml(spec.instructions?.emailBodyTemplate||'') + '</textarea></label>',
+      '<label><span>Upbeat key point instruction</span><input name="upbeatKeyPointInstruction" type="text" value="' + escapeHtml(spec.instructions?.upbeatKeyPointInstruction||'') + '"></label>',
       '<div class="val-studio-action-contract">',
         '<div><span>Email</span><strong>All attendees</strong><small>One message. Every attendee except the executive.</small><label class="val-studio-confirm"><input name="emailPreauthorized" type="checkbox" ' + (spec.approvals.sendEmail==='preauthorized'?'checked':'') + '><span>Allow automatically for this recipient type</span></label></div>',
-        '<div><span>Google Doc</span><strong>Append after email</strong><small>If this fails, retry the document only. Never resend the email.</small><label class="val-studio-confirm"><input name="docPreauthorized" type="checkbox" ' + (spec.approvals.appendGoogleDoc==='preauthorized'?'checked':'') + '><span>Allow automatically for this document</span></label></div>',
+        '<div><span>Google Doc</span><strong>Optional shared record</strong><small>Only append a document if this workflow needs one.</small><label class="val-studio-confirm"><input name="appendGoogleDoc" type="checkbox" ' + (spec.actions?.appendGoogleDoc?'checked':'') + '><span>Also append to a Google Doc</span></label><label><span>Google Doc ID</span><input name="googleDocumentId" type="text" value="' + escapeHtml(spec.connections.googleDocumentId||'') + '" placeholder="Only required when Google Doc is on"></label><label class="val-studio-confirm"><input name="docPreauthorized" type="checkbox" ' + (spec.approvals.appendGoogleDoc==='preauthorized'?'checked':'') + '><span>Allow automatically for this document</span></label></div>',
       '</div>',
     '</section>'
   ].join('');

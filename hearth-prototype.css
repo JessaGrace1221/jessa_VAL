@@ -936,6 +936,7 @@ button,a{font:inherit}
     rgba(26,16,13,.28);
   outline:none;
 }
+.teach-pen[hidden]{display:none!important}
 
 /* VAL Studio: guided Environment composer */
 .desk-workspace:has(.val-studio-surface){
@@ -1362,6 +1363,12 @@ button,a{font:inherit}
   min-height:90px;
   resize:vertical;
 }
+.val-studio-stage-panel textarea.val-studio-email-template{
+  min-height:230px;
+  font-family:var(--mono);
+  font-size:.68rem;
+  line-height:1.55;
+}
 .val-studio-stage-panel input:focus,
 .val-studio-stage-panel textarea:focus,
 .val-studio-stage-panel select:focus{
@@ -1382,6 +1389,7 @@ button,a{font:inherit}
   accent-color:#6f836c;
 }
 .val-studio-source-rule,
+.val-studio-trigger-mode,
 .val-studio-chief-advice,
 .val-studio-learning-rule{
   padding:14px 15px;

@@ -8,8 +8,10 @@ const {
   normalizeEnvironmentSpec,
   importedEnvironmentSpec,
   validateEnvironmentSpec,
+  environmentMatchesSource,
   titleRuleMatches,
-  exactMeetingContent
+  exactMeetingContent,
+  meetingOutputs
 }=require('../services/valEnvironments');
 const {VAL_ENVIRONMENTS_SQL}=require('../services/valEnvironmentsSchema');
 
@@ -17,6 +19,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valEnvironmentsRoutes.js'),'utf8');
 const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 
 function validSpec(){
   return normalizeEnvironmentSpec({
@@ -27,6 +30,33 @@ function validSpec(){
     observerIds:['commitment','relationship','delight','synchronicity'],
     connections:{emailProvider:'gmail',googleDocumentId:'doc_123'},
     approvals:{sendEmail:'required',appendGoogleDoc:'required'}
+  });
+}
+function attendeeEmailSpec(){
+  return normalizeEnvironmentSpec({
+    name:'Transcript attendee email',
+    outcome:'After every transcript is received, email Action Items and Key Points to each attendee.',
+    purpose:'Gently introduce VAL to meeting attendees while also getting them all relevant information.',
+    trigger:{type:'krisp_transcript_received',mode:'all_transcripts'},
+    observerIds:['commitment','relationship','delight','synchronicity'],
+    connections:{emailProvider:'gmail'},
+    actions:{sendEmail:true,appendGoogleDoc:false},
+    approvals:{sendEmail:'required'},
+    instructions:{
+      emailSubject:'{{meeting_title}} {{meeting_date}} - Notes from VAL',
+      emailBodyTemplate:[
+        "Hello, VAL here. I am Jessa's AI assistant.",
+        'After reading the transcript, {{upbeat_key_point}}',
+        '',
+        'Action Items',
+        '{{action_items}}',
+        '',
+        'Key Points',
+        '{{key_points}}',
+        '',
+        'If you have your own VAL all of this information will now be in your own system. If you do not have a VAL be sure to ask Jessa about getting you set up.'
+      ].join('\n')
+    }
   });
 }
 
@@ -103,6 +133,30 @@ test('imported Environments are new disconnected Drafts that require recipient t
   await assert.rejects(()=>recipientService.activate(imported.environment.id),/recurring calendar event|sending account|Google Doc/);
 });
 
+test('transcript attendee email environments can run for every transcript without a Google Doc',()=>{
+  const spec=attendeeEmailSpec();
+  const validation=validateEnvironmentSpec(spec);
+  assert.equal(validation.ok,true);
+  assert.equal(spec.trigger.mode,'all_transcripts');
+  assert.equal(spec.actions.appendGoogleDoc,false);
+  assert.deepEqual(spec.actions.executionOrder,['send_email']);
+  assert.equal(environmentMatchesSource(spec,{title:'Any customer transcript'}),true);
+  const outputs=meetingOutputs(spec,{
+    title:'Momentum Call',
+    occurredAt:'2026-08-04T13:00:00.000Z',
+    attendees:[{name:'Jessa',email:'jessa@example.com',isExecutive:true},{name:'Client',email:'client@example.com'}],
+    actionItems:['Client will review the next step.'],
+    keyPoints:['Momentum is happening.']
+  });
+  assert.equal(outputs.email.to,'client@example.com');
+  assert.match(outputs.email.subject,/Momentum Call/);
+  assert.match(outputs.email.body,/Hello, VAL here\. I am Jessa's AI assistant\./);
+  assert.match(outputs.email.body,/After reading the transcript, Momentum is happening\./);
+  assert.match(outputs.email.body,/Action Items\n1\. Client will review the next step\./);
+  assert.match(outputs.email.body,/Key Points\n1\. Momentum is happening\./);
+  assert.match(outputs.email.body,/If you have your own VAL all of this information will now be in your own system/);
+});
+
 test('Environment imports reject unknown or malformed share files',()=>{
   assert.throws(()=>importedEnvironmentSpec({format:'other',formatVersion:1}),/not a supported/);
   assert.throws(()=>importedEnvironmentSpec({format:VAL_ENVIRONMENT_SHARE_FORMAT,formatVersion:1}),/usable template/);
@@ -126,16 +180,20 @@ test('scheduled Observer model lane omits unsupported temperature before request
   assert.match(server,/packetType:'environment_result_packet_v1'/);
 });
 
-test('Environment contract requires confirmed event, observers, sender, and document',()=>{
+test('Environment contract allows every-transcript email workflows and validates selected actions',()=>{
   assert.equal(validateEnvironmentSpec(validSpec()).ok,true);
   const invalid=normalizeEnvironmentSpec({name:'Incomplete'});
   const result=validateEnvironmentSpec(invalid);
   assert.equal(result.ok,false);
   assert.ok(result.errors.some(error=>/outcome/i.test(error)));
-  assert.ok(result.errors.some(error=>/recurring calendar event/i.test(error)));
   assert.ok(result.errors.some(error=>/Observer/i.test(error)));
   assert.ok(result.errors.some(error=>/sending account/i.test(error)));
-  assert.ok(result.errors.some(error=>/Google Doc/i.test(error)));
+  assert.ok(!result.errors.some(error=>/recurring calendar event/i.test(error)));
+  assert.ok(!result.errors.some(error=>/Google Doc/i.test(error)));
+  const docInvalid=normalizeEnvironmentSpec({...attendeeEmailSpec(),actions:{sendEmail:true,appendGoogleDoc:true},connections:{emailProvider:'gmail'}});
+  const docResult=validateEnvironmentSpec(docInvalid);
+  assert.equal(docResult.ok,false);
+  assert.ok(docResult.errors.some(error=>/Google Doc/i.test(error)));
 });
 
 test('event title matching tolerates dates but stays tied to the confirmed event',()=>{
@@ -220,6 +278,16 @@ test('VAL Studio opens as an Environment library and preserves live detail state
   assert.match(hearth,/Live v.*remains active/);
   assert.match(hearth,/Shared Intelligence Network/);
   assert.match(hearth,/received · .*used · .*published/);
+});
+
+test('VAL Studio builder starts from a plain-language transcript email workflow',()=>{
+  assert.match(hearth,/Tell VAL the workflow in plain language\./);
+  assert.match(hearth,/Run after every transcript VAL receives\./);
+  assert.match(hearth,/name="emailBodyTemplate"/);
+  assert.match(hearth,/name="appendGoogleDoc"/);
+  assert.match(hearth,/Only required when Google Doc is on/);
+  assert.match(hearth,/Every transcript/);
+  assert.match(hearthHtml,/val-studio-transcript-email-20260804/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{

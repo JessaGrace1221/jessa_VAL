@@ -86,7 +86,8 @@ test('Board cards visibly prove bounded role and completed review state',()=>{
 });
 
 test('Home exposes VAL Studio while Teach VAL remains a reviewed action inside it',()=>{
-  assert.match(hearthHtml,/<button class="teach-pen"[^>]*>[\s\S]*<span>VAL Studio<\/span>/);
+  assert.match(hearthHtml,/<button class="teach-pen"[^>]*hidden[^>]*aria-hidden="true"[^>]*>[\s\S]*<span>VAL Studio<\/span>/);
+  assert.match(hearthHtml,/<button type="button" class="drawer-link studio-drawer-link"[^>]*>[\s\S]*<span>VAL Studio<\/span>/);
   assert.doesNotMatch(hearthHtml,/<button class="teach-pen"[^>]*>[\s\S]*<span>Teach VAL<\/span>/);
   assert.match(hearthJs,/lens: 'VAL Studio'/);
   assert.match(hearthJs,/label: 'Teach VAL a correction'/);
