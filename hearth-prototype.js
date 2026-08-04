@@ -29446,7 +29446,7 @@ function valStudioSpecFromStarter(template='blank',workflowText=''){
 }
 function valStudioConnectorCatalog(){
   return [
-    {group:'Inside VAL',source:'val',label:'VAL',events:['Transcript received','Action item detected','Key point detected','Executive Inbox item created','Relationship updated','Task overdue','Environment completed','Environment needs clarification','Human approved or rejected work']},
+    {group:'Inside VAL',source:'val',label:'VAL',events:['Transcript received','Action item detected','VAL enacted an Action Item','Key point detected','Executive Inbox item created','Relationship updated','Task overdue','Environment completed','Environment needs clarification','Human approved or rejected work']},
     {group:'CRM',source:'hubspot',label:'HubSpot',events:['Deal created','Deal stage changed','Contact updated','Company updated','Note added','Task completed','Form submitted']},
     {group:'CRM',source:'salesforce',label:'Salesforce',events:['Lead created','Opportunity stage changed','Account updated','Contact updated','Case created','Task completed','Activity logged']},
     {group:'CRM',source:'ghl',label:'GoHighLevel',events:['Contact updated','Opportunity stage changed','Appointment booked','Form submitted','Tag added','Workflow event']},

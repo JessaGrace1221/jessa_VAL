@@ -314,6 +314,7 @@ test('VAL Studio builder starts from a trigger and action catalog',()=>{
   assert.match(hearth,/name="starterTriggerSource"/);
   assert.match(hearth,/name="starterTriggerEvent"/);
   assert.match(hearth,/name="starterAction"/);
+  assert.match(hearth,/VAL enacted an Action Item/);
   assert.match(hearth,/HubSpot/);
   assert.match(hearth,/Salesforce/);
   assert.match(hearth,/Stripe/);
@@ -331,7 +332,7 @@ test('VAL Studio builder starts from a trigger and action catalog',()=>{
   assert.match(hearth,/name="appendGoogleDoc"/);
   assert.match(hearth,/Only required when Google Doc is on/);
   assert.match(hearth,/Every transcript/);
-  assert.match(hearthHtml,/environment-starter-clean-20260804/);
+  assert.match(hearthHtml,/environment-action-item-trigger-20260804/);
 });
 
 test('VAL Studio can share and import sanitized Environment files',()=>{
