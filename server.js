@@ -183,7 +183,7 @@ function clientFeatureLocks(){
   };
 }
 function systemUpdateStatus(){
-  const currentVersion = String(process.env.VAL_DASHBOARD_VERSION || process.env.RAILWAY_GIT_COMMIT_SHA || '').trim();
+  const currentVersion = String(process.env.VAL_DASHBOARD_VERSION || process.env.RAILWAY_GIT_COMMIT_SHA || 'unversioned').trim();
   const baselineVersion = String(process.env.VAL_SYSTEM_BASELINE_VERSION || currentVersion).trim();
   const updateUrl = String(process.env.VAL_SYSTEM_UPDATE_URL || '').trim();
   const releaseLabel = String(process.env.VAL_SYSTEM_RELEASE_LABEL || '').trim();
