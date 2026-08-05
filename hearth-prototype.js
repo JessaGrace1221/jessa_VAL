@@ -14899,6 +14899,48 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
   ].join('');
 }
 
+function timelineTranscriptOverlapReview(transcript = {}){
+  const review = transcript.overlapReview || transcript.metadata?.overlapReview || transcript.sourcePayloadMetadata?.overlapReview || {};
+  return review && typeof review === 'object' ? review : {};
+}
+
+function renderTimelineTranscriptOverlapReview(transcript = {}){
+  const review = timelineTranscriptOverlapReview(transcript);
+  const suspected = Boolean(review.suspected && !['cleared','clear','not_overlapped','separated'].includes(String(review.status || '').toLowerCase()));
+  const titles = Array.isArray(review.meetingTitles) ? review.meetingTitles : [];
+  const candidates = Array.isArray(review.candidates) ? review.candidates.slice(0, 4) : [];
+  const reasons = Array.isArray(review.reasons) ? review.reasons.filter(Boolean).slice(0, 4) : [];
+  const statusLabel = suspected ? 'Needs your review' : 'Available if needed';
+  return [
+    '<section class="timeline-transcript-section timeline-overlap-review' + (suspected ? ' needs-review' : '') + '" data-transcript-section="overlap-review">',
+    '<header class="timeline-source-section-heading">',
+    '<span>Transcript integrity</span>',
+    '<h4>Overlapped meetings</h4>',
+    '</header>',
+    '<p>' + escapeHtml(suspected ? 'VAL thinks this transcript may include more than one meeting. Add the meeting titles before VAL uses it for attendee follow-up.' : 'If this transcript accidentally contains two meetings, label them here so VAL can separate the source correctly.') + '</p>',
+    '<div class="timeline-overview-receipt"><span>' + escapeHtml(statusLabel) + '</span><strong>' + escapeHtml(suspected ? 'Possible overlap' : 'No overlap confirmed') + '</strong></div>',
+    reasons.length ? '<ul class="timeline-overlap-reasons">' + reasons.map((reason) => '<li>' + escapeHtml(reason) + '</li>').join('') + '</ul>' : '',
+    candidates.length ? '<div class="timeline-overlap-candidates">' + candidates.map((candidate) => [
+      '<article>',
+      '<strong>' + escapeHtml(candidate.title || ('Possible meeting ' + (candidate.index || ''))) + '</strong>',
+      '<small>' + escapeHtml(candidate.line ? 'Around transcript line ' + candidate.line : 'Possible boundary') + '</small>',
+      candidate.preview ? '<p>' + escapeHtml(candidate.preview) + '</p>' : '',
+      '</article>'
+    ].join('')).join('') + '</div>' : '',
+    '<div class="timeline-project-link-row timeline-overlap-title-row">',
+    '<input type="text" placeholder="First meeting title..." value="' + escapeHtml(titles[0] || '') + '" data-transcript-overlap-title="0" aria-label="First overlapped meeting title">',
+    '<input type="text" placeholder="Second meeting title..." value="' + escapeHtml(titles[1] || '') + '" data-transcript-overlap-title="1" aria-label="Second overlapped meeting title">',
+    '</div>',
+    '<label class="timeline-email-review-field">Boundary notes<textarea rows="4" data-transcript-overlap-notes placeholder="Example: The second client joined when Greg left, around the section where Mike starts talking.">' + escapeHtml(review.boundaryNotes || '') + '</textarea></label>',
+    '<div class="timeline-email-review-actions">',
+    '<button type="button" data-transcript-action="save_overlap_review" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Save overlap titles</button>',
+    '<button type="button" data-transcript-action="clear_overlap_review" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Mark as one meeting</button>',
+    '</div>',
+    '<small>VAL will not send transcript follow-up emails from a suspected overlap until this is reviewed.</small>',
+    '</section>'
+  ].join('');
+}
+
 function renderTimelineMeetingOverviewDraft(transcript = {}, tasks = [], overviewDraft = null){
   const draft = overviewDraft || timelineMeetingOverviewDraft(transcript, tasks);
   const savedDraft = timelineMeetingOverviewRecord(transcript);
@@ -14954,6 +14996,8 @@ function renderTimelineTranscriptList(activeId = ''){
   timelineEventList.innerHTML = items.map((transcript) => {
     const summary = timelineSummaryObject(transcript);
     const tasks = Number(transcript.taskCount || transcript.openActionCount || 0);
+    const overlap = timelineTranscriptOverlapReview(transcript);
+    const overlapSuspected = Boolean(overlap.suspected && !['cleared','clear','not_overlapped','separated'].includes(String(overlap.status || '').toLowerCase()));
     const active = String(activeId || '') === String(transcript.id || '');
     const title = timelineTranscriptTitle(transcript);
     const meta = timelineTranscriptMeta(transcript) || 'Transcript source';
@@ -14963,7 +15007,7 @@ function renderTimelineTranscriptList(activeId = ''){
       '<strong>' + escapeHtml(title) + '</strong>',
       '<span>' + escapeHtml(meta) + '</span>',
       '<p>' + escapeHtml(preview) + '</p>',
-      '<small>' + escapeHtml(tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items') + '</small>',
+      '<small>' + escapeHtml((overlapSuspected ? 'Possible overlap · ' : '') + (tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items')) + '</small>',
       '</button>'
     ].join('');
   }).join('') + (timelineTranscriptPagination.hasMore
@@ -15076,6 +15120,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<button type="button" class="timeline-chat-transcript timeline-chat-transcript-top" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Chat about this transcript</button>',
     '</div>',
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
+    renderTimelineTranscriptOverlapReview(transcript),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
     renderTimelineTranscriptMappingControls(transcript, overviewDraft),
     renderTranscriptEmailTemplateSettings(),
@@ -15275,6 +15320,37 @@ async function prepareTranscriptActionItemsEmail(transcriptId = ''){
     setTimelineTranscriptActionStatus(result.message || 'The group email is ready for review. No email was sent yet.', 'success');
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not prepare the attendee email.', 'danger');
+  }
+}
+
+async function saveTimelineTranscriptOverlapReview(transcriptId = '', status = 'needs_split'){
+  if(!transcriptId) return;
+  const titles = Array.from(drawerTray?.querySelectorAll?.('[data-transcript-overlap-title]') || [])
+    .sort((left, right) => Number(left.dataset.transcriptOverlapTitle || 0) - Number(right.dataset.transcriptOverlapTitle || 0))
+    .map((input) => String(input.value || '').trim())
+    .filter(Boolean);
+  const notes = String(drawerTray?.querySelector?.('[data-transcript-overlap-notes]')?.value || '').trim();
+  if(status === 'needs_split' && titles.length < 2){
+    setTimelineTranscriptActionStatus('Add at least two meeting titles before saving the overlap review.', 'danger');
+    return;
+  }
+  setTimelineTranscriptActionStatus(status === 'needs_split' ? 'Saving overlapped meeting titles...' : 'Clearing the overlap warning...', 'working');
+  try{
+    const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/overlap-review', {
+      status,
+      meetingTitles:titles,
+      boundaryNotes:notes
+    });
+    if(currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId)){
+      currentTimelineTranscript.overlapReview = result.overlapReview || {};
+      currentTimelineTranscript.metadata = {...(currentTimelineTranscript.metadata || {}), overlapReview:currentTimelineTranscript.overlapReview};
+      renderTimelineTranscriptDetail(currentTimelineTranscript);
+    }
+    currentTimelineTranscriptItems = currentTimelineTranscriptItems.map((item) => String(item.id || '') === String(transcriptId) ? {...item, overlapReview:result.overlapReview || {}} : item);
+    renderTimelineTranscriptList(transcriptId);
+    setTimelineTranscriptActionStatus(result.message || 'Overlap review saved.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not save the overlap review.', 'danger');
   }
 }
 
@@ -31373,6 +31449,8 @@ drawerTray.addEventListener('click', async (event) => {
     if(transcriptAction.dataset.transcriptAction === 'save_email_template') await saveTranscriptEmailTemplateSettings();
     if(transcriptAction.dataset.transcriptAction === 'save_attendee_email') await saveTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
     if(transcriptAction.dataset.transcriptAction === 'send_attendee_email') await sendTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
+    if(transcriptAction.dataset.transcriptAction === 'save_overlap_review') await saveTimelineTranscriptOverlapReview(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '', 'needs_split');
+    if(transcriptAction.dataset.transcriptAction === 'clear_overlap_review') await saveTimelineTranscriptOverlapReview(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '', 'cleared');
     if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'create_project') await createTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'link_transcript_relationship') await linkTimelineTranscriptStandaloneRelationship(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');

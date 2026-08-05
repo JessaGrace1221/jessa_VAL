@@ -18407,6 +18407,34 @@ button.timeline-overview-receipt:focus-visible{
   border-left-color:rgba(176,111,126,.58)!important;
   background:rgba(255,250,251,.76)!important;
 }
+.drawer-tray.timeline-open .timeline-overlap-review{
+  padding:22px 24px!important;
+  border-top:0!important;
+  border-left:2px solid rgba(176,111,126,.58)!important;
+  background:rgba(255,250,251,.72)!important;
+}
+.drawer-tray.timeline-open .timeline-overlap-review:not(.needs-review){
+  border-left-color:rgba(100,129,89,.42)!important;
+  background:rgba(250,252,248,.62)!important;
+}
+.drawer-tray.timeline-open .timeline-overlap-reasons,
+.drawer-tray.timeline-open .timeline-overlap-candidates{
+  display:grid;
+  gap:10px;
+  margin:12px 0;
+}
+.drawer-tray.timeline-open .timeline-overlap-candidates article{
+  padding:12px;
+  border:1px solid rgba(24,28,24,.1);
+  border-radius:8px;
+  background:rgba(255,255,255,.62);
+}
+.drawer-tray.timeline-open .timeline-overlap-candidates small{
+  display:block;
+  margin:4px 0 0;
+  color:rgba(24,28,24,.58)!important;
+  font:500 .68rem/1.25 var(--body);
+}
 .drawer-tray.timeline-open .timeline-source-section-heading{
   display:grid;
   gap:6px;

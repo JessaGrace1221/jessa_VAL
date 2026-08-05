@@ -27000,7 +27000,7 @@ function transcriptDetailFromIndex(data,transcript){
     detail.processingStatus='source_captured';
     detail.summaryStatus='krisp_exact';
   }
-  return {...detail,sourceReceipt};
+  return {...detail,sourceReceipt,overlapReview:transcriptLikelyOverlapReview(detail)};
 }
 function transcriptKrispNativeMetadata(metadata={}){
   const sourceMetadata=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
@@ -27144,6 +27144,78 @@ function transcriptSourceReceipt(transcript={}){
     ...(Array.isArray(section.lines)?section.lines:[])
   ].filter(Boolean).join('\n')).join('\n\n').trim();
   return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
+}
+function transcriptOverlapStoredReview(transcript={}){
+  const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
+  const review=metadata.overlapReview||metadata.transcriptOverlapReview||transcript.overlapReview;
+  return review&&typeof review==='object'?review:null;
+}
+function transcriptLikelyOverlapReview(transcript={}){
+  const stored=transcriptOverlapStoredReview(transcript);
+  const raw=String(transcript.transcriptText||transcript.rawTranscript||transcript.rawText||transcript.raw_transcript||'');
+  const title=String(transcript.title||transcript.meetingTitle||'Transcript');
+  const source=String(transcript.source||transcript.metadata?.source||transcript.sourcePayloadMetadata?.source||'');
+  const lines=raw.split(/\r?\n/);
+  const receiptHeadingRx=/^\s*#{1,2}\s+(?!Recording Download Link|Transcript\b|Action Items?\b|Key Points\b|Meeting Overview\b)(.{6,180})\s*$/i;
+  const headings=[];
+  lines.forEach((line,index)=>{
+    const match=String(line||'').match(receiptHeadingRx);
+    if(match)headings.push({line:index+1,title:transcriptCleanDisplayLine(match[1]).slice(0,160)});
+  });
+  const actionHeadingLines=[];
+  const keyHeadingLines=[];
+  lines.forEach((line,index)=>{
+    if(/^\s*#{1,4}\s*Action Items?\s*:?\s*$/i.test(line))actionHeadingLines.push(index+1);
+    if(/^\s*#{1,4}\s*(?:Key Points|Meeting Overview)\s*:?\s*$/i.test(line))keyHeadingLines.push(index+1);
+  });
+  const speakerTimeline=[];
+  lines.forEach((line,index)=>{
+    const match=String(line||'').match(/^\s*(?:\*\*)?([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
+    if(!match)return;
+    const name=transcriptCleanDisplayLine(match[1])
+      .replace(/\b(Speaker[_\s-]?\d+|Jessa Grace|VAL)\b/gi,'')
+      .trim();
+    if(name&&name.length>2)speakerTimeline.push({line:index+1,name});
+  });
+  const earlySpeakers=new Set(speakerTimeline.filter(item=>item.line<Math.max(80,lines.length*0.35)).map(item=>item.name.toLowerCase()));
+  const lateNewSpeakers=[...new Set(speakerTimeline.filter(item=>item.line>lines.length*0.45&&!earlySpeakers.has(item.name.toLowerCase())).map(item=>item.name))].slice(0,5);
+  const reasons=[];
+  if(headings.length>1)reasons.push(`Krisp source contains ${headings.length} top-level meeting headings.`);
+  if(actionHeadingLines.length>1&&keyHeadingLines.length>1)reasons.push(`Krisp source contains ${actionHeadingLines.length} Action Items sections and ${keyHeadingLines.length} Key Points sections.`);
+  if(lateNewSpeakers.length>=2&&raw.length>30000)reasons.push(`New speaker names appear deep into a long transcript: ${lateNewSpeakers.slice(0,3).join(', ')}.`);
+  const sourceReceipts=headings.length>1||actionHeadingLines.length>1&&keyHeadingLines.length>1;
+  const suspected=sourceReceipts||lateNewSpeakers.length>=2&&raw.length>45000;
+  const candidates=(headings.length?headings:actionHeadingLines.map((line,index)=>({line,title:`Possible meeting ${index+1}`}))).slice(0,6).map((candidate,index)=>{
+    const startLine=Math.max(0,(candidate.line||1)-1);
+    const preview=lines.slice(startLine,startLine+14).join('\n').replace(/\s+/g,' ').slice(0,420);
+    return {index:index+1,title:candidate.title||`Possible meeting ${index+1}`,line:candidate.line||0,preview};
+  });
+  const review={
+    suspected,
+    status:suspected?'needs_review':'clear',
+    confidence:sourceReceipts?'high':(suspected?'medium':'low'),
+    reasons,
+    candidates,
+    suggestedMeetingCount:Math.max(2,candidates.length||0),
+    detectedAt:new Date().toISOString(),
+    source,
+    title
+  };
+  if(stored){
+    return {
+      ...review,
+      ...stored,
+      suspected:stored.suspected!==undefined?Boolean(stored.suspected):review.suspected,
+      reasons:Array.isArray(stored.reasons)&&stored.reasons.length?stored.reasons:review.reasons,
+      candidates:Array.isArray(stored.candidates)&&stored.candidates.length?stored.candidates:review.candidates,
+      status:stored.status||review.status
+    };
+  }
+  return review;
+}
+function transcriptOverlapBlocksFollowup(transcript={}){
+  const review=transcriptLikelyOverlapReview(transcript);
+  return Boolean(review.suspected&&!['cleared','clear','separated','not_overlapped'].includes(String(review.status||'').toLowerCase()));
 }
 function transcriptDrawerRecordTime(record={}){
   const value=record.meetingDatetime||record.createdAt||record.receivedAt||'';
@@ -27611,6 +27683,10 @@ async function sendTranscriptMissingEmailSmsAlert({transcript={},title='',missin
 async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},tasks=[],{writingRules=''}={}){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
   const overview=transcriptOverviewSections(transcript,tasks);
+  const overlapReview=transcriptLikelyOverlapReview(transcript);
+  if(transcriptOverlapBlocksFollowup(transcript)){
+    throw Object.assign(new Error('This transcript may contain more than one meeting. Add the overlapped meeting titles or mark it as one meeting before VAL prepares attendee follow-up emails.'),{statusCode:409,overlapReview});
+  }
   const keyPoints=(Array.isArray(overview.keyPoints)?overview.keyPoints:[]).map(String).filter(Boolean);
   const actionItems=(Array.isArray(overview.actionItems)&&overview.actionItems.length?overview.actionItems:tasks.map(task=>task.taskTitle||task.title||task.text||'')).map(String).filter(Boolean);
   const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
@@ -27647,6 +27723,7 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
       invitees:recipients,
       missingInvitees,
       missingAttendeeEmailAlert:missingEmailSmsAlert,
+      overlapReview,
       keyPoints,
       actionItems,
       sourceReceipt:overview,
@@ -34375,6 +34452,15 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
     });
     const sourceActions=safeArray(receipt.actionItems).slice(0,30);
     const sourceKeyPoints=safeArray(receipt.keyPoints).slice(0,12);
+    const overlapReview=transcriptLikelyOverlapReview({
+      source:row.source||'',
+      title:row.meeting_title||'',
+      meetingTitle:row.meeting_title||'',
+      transcriptText:row.raw_transcript||'',
+      rawTranscript:row.raw_transcript||'',
+      sourcePayloadMetadata,
+      metadata:sourcePayloadMetadata
+    });
     const taskCount=Math.max(Number(row.task_count||0),sourceActions.length);
     const receiptReady=Boolean(receipt.ready||sourceActions.length||sourceKeyPoints.length);
     const isPendingSourceCapture=/krisp/i.test(String(row.source||''))&&receiptReady&&String(row.processing_status||'').toLowerCase()==='received';
@@ -34393,6 +34479,7 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
       summary:{executiveSummary:row.executive_summary||sourceKeyPoints[0]||''},
       actionItems:sourceActions,
       keyPoints:sourceKeyPoints,
+      overlapReview,
       taskCount,
       openActionCount:taskCount,
       reviewCount:Number(row.review_count||0)
@@ -34626,6 +34713,45 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
     let transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript=await transcriptWithCalendarInvitees(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/:transcriptId/overlap-review',async(req,res)=>{
+  try{
+    const id=decodeURIComponent(req.params.transcriptId);
+    const data=await transcriptIndexData(id);
+    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
+    if(!transcript){
+      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
+    }
+    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
+    const existing=transcriptLikelyOverlapReview(transcript);
+    const status=String(req.body?.status||'needs_split').trim().toLowerCase().replace(/\s+/g,'_');
+    const allowed=new Set(['needs_split','cleared','not_overlapped','separated']);
+    if(!allowed.has(status))return res.status(400).json({ok:false,error:'Choose needs_split, cleared, not_overlapped, or separated.'});
+    const meetingTitles=safeArray(req.body?.meetingTitles||req.body?.meeting_titles)
+      .map(value=>String(value||'').trim())
+      .filter(Boolean)
+      .slice(0,8);
+    if(status==='needs_split'&&meetingTitles.length<2)return res.status(400).json({ok:false,error:'Add at least two meeting titles so VAL can separate the overlapped transcript.'});
+    const boundaryNotes=String(req.body?.boundaryNotes||req.body?.boundary_notes||req.body?.notes||'').trim().slice(0,3000);
+    const review={
+      ...existing,
+      suspected:status==='needs_split'||existing.suspected,
+      status,
+      meetingTitles,
+      boundaryNotes,
+      reviewedAt:new Date().toISOString(),
+      reviewedBy:'user',
+      noExternalAction:true
+    };
+    await updateTranscriptMetadata(id,{overlapReview:review,transcriptOverlapReview:review}).catch(()=>{});
+    await logTranscriptAction(id,'overlap_review_saved','transcript_overlap_review','completed').catch(()=>{});
+    await auditLog({req,action:'transcript_overlap_review_saved',resourceType:'transcript',resourceId:id,metadata:{status,meetingTitleCount:meetingTitles.length},success:true}).catch(()=>{});
+    res.json({ok:true,overlapReview:review,message:status==='needs_split'?'Overlap labels saved. VAL will keep this transcript out of automatic follow-up until the meetings are separated.':'Overlap review saved.'});
+  }catch(e){
+    await auditLog({req,action:'transcript_overlap_review_failed',resourceType:'transcript',resourceId:req.params.transcriptId,metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(e.statusCode||500).json({ok:false,error:e.message,overlapReview:e.overlapReview});
+  }
 });
 app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req,res)=>{
   try{
