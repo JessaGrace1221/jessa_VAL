@@ -27023,12 +27023,13 @@ function transcriptCleanDisplayLine(value=''){
     .trim();
 }
 function transcriptSourceLines(value){
-  if(Array.isArray(value))return value.map(transcriptSourceItemText).map(transcriptCleanDisplayLine).filter(item=>String(item||'').trim());
+  const usable=item=>String(item||'').trim()&&!/^(?:n\/?a|none|no action items?|not applicable)$/i.test(String(item||'').trim());
+  if(Array.isArray(value))return value.map(transcriptSourceItemText).map(transcriptCleanDisplayLine).filter(usable);
   if(typeof value!=='string')return [];
   const lines=value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
-  if(lines.length>1)return lines.map(transcriptCleanDisplayLine).filter(Boolean);
+  if(lines.length>1)return lines.map(transcriptCleanDisplayLine).filter(usable);
   const checklist=value.match(/(?:^|\s)((?:[-*]\s*)?\[[ x]\]\s+.*?)(?=(?:\s+(?:[-*]\s*)?\[[ x]\]\s+)|$)/gi)||[];
-  return (checklist.length?checklist:lines).map(transcriptCleanDisplayLine).filter(Boolean);
+  return (checklist.length?checklist:lines).map(transcriptCleanDisplayLine).filter(usable);
 }
 function transcriptSourceLooksLikeFullTranscript(lines=[]){
   const list=(Array.isArray(lines)?lines:[]).map(line=>String(line||'')).filter(Boolean);
