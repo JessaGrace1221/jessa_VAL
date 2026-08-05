@@ -19931,9 +19931,14 @@ async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={
   const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:[];
   const participants=Array.isArray(payload.attendees)?payload.attendees:[];
   const saved=await saveTranscript({...payload,title});
-  if(meetingMatch){
-    await updateTranscriptIndexStatus(saved.id,{meetingTitle:title,calendarEventTitle:title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:payload.timestamp||meetingMatch.startTime||null}).catch(()=>{});
-  }
+  await updateTranscriptIndexStatus(saved.id,{
+    meetingTitle:title,
+    calendarEventTitle:title,
+    calendarEventId:meetingMatch?.calendarEventId||meetingMatch?.meetingEventId||'',
+    meetingDatetime:payload.timestamp||meetingMatch?.startTime||null,
+    processingStatus:'source_captured',
+    summaryStatus:nativeSummary||nativeActionItems.length?'krisp_exact':'source_captured'
+  }).catch(()=>{});
   await updateTranscriptMetadata(saved.id,{
     source:'krisp_mcp',provider:'krisp',reviewStatus:'ready_for_review',processingStatus:'source_captured',summaryStatus:'krisp_exact',
     nativeSummary,nativeActionItems,krispNative:true,sourceCapture:{capturedAt:new Date().toISOString(),preservedExactly:true,packetEligibility:['transcripts','stewardship','project_managers','chief_of_staff']}
@@ -26943,7 +26948,17 @@ async function transcriptIndexData(transcriptId=''){
   await valDbReady;
   if(pgPool){
     const where=transcriptId?' and transcript_id=$2':'',args=transcriptId?[VAL_USER_ID,transcriptId]:[VAL_USER_ID];
-    const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow).filter(isUsableTranscriptIndexRow);
+    const transcripts=(await dbQuery(`
+      select
+        t.*,
+        vt.metadata as source_payload_metadata,
+        vt.raw_text as archive_raw_text,
+        vt.title as archive_title
+      from transcripts t
+      left join val_transcripts vt on vt.id=t.transcript_id and vt.user_id=t.user_id
+      where t.user_id=$1${where}
+      order by t.created_at desc
+    `,args)).rows.map(transcriptPgRow).filter(isUsableTranscriptIndexRow);
     const ids=transcripts.map(row=>row.transcriptId);if(!ids.length)return {transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]};
     const fetch=async table=>(await dbQuery(`select * from ${table} where transcript_id=any($1::text[]) order by created_at asc`,[ids])).rows.map(transcriptPgRow);
     const [participants,summaries,tasks,contactUpdates,actionLog]=await Promise.all([
@@ -26975,8 +26990,10 @@ function transcriptDetailFromIndex(data,transcript){
   const id=transcript.transcriptId;
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
   const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
-  const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
-  const detail=cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+  const rawTranscript=transcript.rawTranscript||transcript.archiveRawText||'';
+  const sourcePayloadMetadata=transcript.sourcePayloadMetadata&&typeof transcript.sourcePayloadMetadata==='object'?transcript.sourcePayloadMetadata:(transcript.metadata||{});
+  const title=transcriptDisplayTitleFromPayload({...sourcePayloadMetadata,...transcript,title:transcript.meetingTitle||transcript.archiveTitle,meetingTitle:transcript.meetingTitle||transcript.archiveTitle,calendarEventTitle:transcript.calendarEventTitle},rawTranscript);
+  const detail=cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:rawTranscript,rawTranscript,rawText:rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount,sourcePayloadMetadata,metadata:sourcePayloadMetadata});
   return {...detail,sourceReceipt:transcriptSourceReceipt(detail)};
 }
 function transcriptKrispNativeMetadata(metadata={}){
@@ -27192,7 +27209,15 @@ function transcriptKrispSourceSectionsForOverview(transcript={}){
     || {};
 }
 function transcriptOverviewSections(transcript={},tasks=[]){
-  return transcriptSourceReceipt(transcript);
+  const receipt=transcriptSourceReceipt(transcript);
+  const taskLines=transcriptOverviewLineItems(tasks).filter(Boolean);
+  if(receipt.actionItems.length||!taskLines.length)return receipt;
+  const sections=[{kind:'action_items',heading:'Action Items',raw:['Action Items',...taskLines].join('\n'),lines:taskLines},...(Array.isArray(receipt.sections)?receipt.sections:[])];
+  const body=sections.map(section=>[
+    transcriptCleanDisplayLine(section.heading||''),
+    ...(Array.isArray(section.lines)?section.lines:[])
+  ].filter(Boolean).join('\n')).join('\n\n').trim();
+  return {...receipt,body,sections,actionItems:taskLines,ready:Boolean(body&&sections.length)};
 }
 function transcriptOverviewInvitees(transcript={},calendarEvent={}){
   const buckets=[
@@ -28009,13 +28034,18 @@ function isValVoiceSelfTranscriptRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||record.transcript||record.text||'');
   const combined=`${title}\n${source}\n${raw}`;
   const looksLikeKrispChrome=/krisp/i.test(combined)&&(/\bGoogle Chrome meeting\b/i.test(combined)||/krisp_mcp/i.test(source));
+  const genericChromeReceipt=/^\s*#?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*-\s*Google Chrome meeting\b/im.test(raw)||/\bGoogle Chrome meeting\b/i.test(title);
+  const hasNativeReceipt=/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i.test(raw);
   const looksLikeValVoice=/\bHey Jessa\b[\s\S]{0,80}\bWhat can I do\b/i.test(combined)
     || /\bGood morning Jessa\b[\s\S]{0,100}\bwhat would you like to discuss\b/i.test(combined)
     || /\bSpeak with VAL\b/i.test(combined)
     || /\bGHL Voice\b/i.test(combined)
     || /\bVAL voice\b/i.test(combined)
+    || /\bVAL meeting\b/i.test(title)
+    || /\bcan you find\b[\s\S]{0,180}\bemail address\b/i.test(combined)
+    || /\bhang tight\b[\s\S]{0,120}\blook that up\b/i.test(combined)
     || /\bone sec\b[\s\S]{0,160}\bRolodex|Rolodex[\s\S]{0,160}\bone sec\b/i.test(combined);
-  return looksLikeKrispChrome&&(looksLikeValVoice||/\bGoogle Chrome meeting\b/i.test(title));
+  return looksLikeKrispChrome&&(looksLikeValVoice||(genericChromeReceipt&&!hasNativeReceipt&&/\b(Jessa Grace|VAL|can you|hang tight|I'?m checking)\b/i.test(raw)));
 }
 function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
@@ -28296,9 +28326,12 @@ async function purgeJessaRecoveredNonKrispTranscripts(){
   await valDbReady;
   let ids=[];
   if(pgPool){
-    const archived=(await dbQuery(`select id,title,raw_text,metadata,type from val_transcripts where user_id=$1 and (id like 'recovered_%' or coalesce(metadata->>'recoveredFrom','') <> '' or coalesce(metadata->>'source','') like 'recovered:%')`,[VAL_USER_ID])).rows;
-    const indexed=(await dbQuery(`select transcript_id,meeting_title,raw_transcript,source from transcripts where user_id=$1 and (transcript_id like 'recovered_%' or source like 'recovered:%')`,[VAL_USER_ID])).rows;
-    ids=[...archived.filter(row=>recoveredTranscriptWithoutKrisp({id:row.id,title:row.title,rawText:row.raw_text,type:row.type,metadata:row.metadata})).map(row=>row.id),...indexed.filter(row=>recoveredTranscriptWithoutKrisp({transcriptId:row.transcript_id,meetingTitle:row.meeting_title,rawTranscript:row.raw_transcript,source:row.source})).map(row=>row.transcript_id)];
+    const archived=(await dbQuery(`select id,title,raw_text,metadata,type from val_transcripts where user_id=$1 and (id like 'recovered_%' or coalesce(metadata->>'recoveredFrom','') <> '' or coalesce(metadata->>'source','') like 'recovered:%' or coalesce(metadata->>'source','')='krisp_mcp' or coalesce(metadata->>'provider','')='krisp')`,[VAL_USER_ID])).rows;
+    const indexed=(await dbQuery(`select transcript_id,meeting_title,raw_transcript,source from transcripts where user_id=$1 and (transcript_id like 'recovered_%' or source like 'recovered:%' or source='krisp_mcp')`,[VAL_USER_ID])).rows;
+    ids=[
+      ...archived.filter(row=>recoveredTranscriptWithoutKrisp({id:row.id,title:row.title,rawText:row.raw_text,type:row.type,metadata:row.metadata})||isValVoiceSelfTranscriptRecord({id:row.id,title:row.title,rawText:row.raw_text,type:row.type,metadata:row.metadata,source:row.metadata?.source||row.metadata?.provider||''})).map(row=>row.id),
+      ...indexed.filter(row=>recoveredTranscriptWithoutKrisp({transcriptId:row.transcript_id,meetingTitle:row.meeting_title,rawTranscript:row.raw_transcript,source:row.source})||isValVoiceSelfTranscriptRecord({transcriptId:row.transcript_id,meetingTitle:row.meeting_title,rawTranscript:row.raw_transcript,source:row.source})).map(row=>row.transcript_id)
+    ];
     ids=[...new Set(ids.filter(Boolean))];
     if(ids.length){
       await dbQuery('delete from transcript_action_log where transcript_id=any($1::text[])',[ids]).catch(()=>{});

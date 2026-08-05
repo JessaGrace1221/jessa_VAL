@@ -14417,6 +14417,9 @@ function timelineSummaryObject(transcript = {}){
 }
 
 function timelineCompactText(value = '', limit = 220){
+  if(value && typeof value === 'object'){
+    value = value.executiveSummary || value.clientSummary || value.internalNotes || value.summary || '';
+  }
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if(text.length <= limit) return text;
   return text.slice(0, limit - 1).trim() + '...';
@@ -14954,7 +14957,7 @@ function renderTimelineTranscriptList(activeId = ''){
     const active = String(activeId || '') === String(transcript.id || '');
     const title = timelineTranscriptTitle(transcript);
     const meta = timelineTranscriptMeta(transcript) || 'Transcript source';
-    const preview = timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summary || 'Open to review the transcript details.', 130);
+    const preview = timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summaryPreview || transcript.preview || transcript.summary || 'Open to review the transcript details.', 130);
     return [
       '<button type="button" class="timeline-transcript-row' + (active ? ' active' : '') + '" data-transcript-open="' + escapeHtml(transcript.id || '') + '">',
       '<strong>' + escapeHtml(title) + '</strong>',
