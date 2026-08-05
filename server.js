@@ -26994,7 +26994,13 @@ function transcriptDetailFromIndex(data,transcript){
   const sourcePayloadMetadata=transcript.sourcePayloadMetadata&&typeof transcript.sourcePayloadMetadata==='object'?transcript.sourcePayloadMetadata:(transcript.metadata||{});
   const title=transcriptDisplayTitleFromPayload({...sourcePayloadMetadata,...transcript,title:transcript.meetingTitle||transcript.archiveTitle,meetingTitle:transcript.meetingTitle||transcript.archiveTitle,calendarEventTitle:transcript.calendarEventTitle},rawTranscript);
   const detail=cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:rawTranscript,rawTranscript,rawText:rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount,sourcePayloadMetadata,metadata:sourcePayloadMetadata});
-  return {...detail,sourceReceipt:transcriptSourceReceipt(detail)};
+  const sourceReceipt=transcriptSourceReceipt(detail);
+  const sourceReady=Boolean(sourceReceipt.ready||sourceReceipt.actionItems?.length||sourceReceipt.keyPoints?.length);
+  if(/krisp/i.test(String(detail.source||''))&&sourceReady&&String(detail.processingStatus||'').toLowerCase()==='received'){
+    detail.processingStatus='source_captured';
+    detail.summaryStatus='krisp_exact';
+  }
+  return {...detail,sourceReceipt};
 }
 function transcriptKrispNativeMetadata(metadata={}){
   const sourceMetadata=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
@@ -34294,6 +34300,8 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
         t.summary_status,
         t.created_at,
         t.updated_at,
+        t.raw_transcript,
+        vt.metadata as source_payload_metadata,
         coalesce(summary.executive_summary,'') as executive_summary,
         coalesce(task_counts.task_count,0)::int as task_count,
         (
@@ -34302,6 +34310,7 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
           + coalesce(review_counts.contact_reviews,0)
         )::int as review_count
       from transcripts t
+      left join val_transcripts vt on vt.id=t.transcript_id and vt.user_id=t.user_id
       left join lateral (
         select executive_summary
         from transcript_summaries
@@ -34351,24 +34360,43 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
         and coalesce(t.source,'') not like 'recovered:%'
     `,[VAL_USER_ID,since])
   ]);
-  const transcripts=safeArray(listResult?.rows).map(row=>({
-    id:row.transcript_id,
-    transcriptId:row.transcript_id,
-    source:row.source||'transcript',
-    title:row.meeting_title||'Transcript',
-    meetingTitle:row.meeting_title||'Transcript',
-    createdAt:row.created_at?.toISOString?.()||row.created_at||'',
-    receivedAt:row.created_at?.toISOString?.()||row.created_at||'',
-    meetingDatetime:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||'',
-    processingStatus:row.processing_status||'',
-    summaryStatus:row.summary_status||'',
-    reviewStatus:Number(row.review_count||0)>0?'needs_review':'reviewed',
-    summary:{executiveSummary:row.executive_summary||''},
-    actionItems:[],
-    taskCount:Number(row.task_count||0),
-    openActionCount:Number(row.task_count||0),
-    reviewCount:Number(row.review_count||0)
-  }));
+  const transcripts=safeArray(listResult?.rows).map(row=>{
+    const sourcePayloadMetadata=row.source_payload_metadata&&typeof row.source_payload_metadata==='object'?row.source_payload_metadata:{};
+    const receipt=transcriptSourceReceipt({
+      source:row.source||'',
+      meetingTitle:row.meeting_title||'',
+      transcriptText:row.raw_transcript||'',
+      rawTranscript:row.raw_transcript||'',
+      sourcePayloadMetadata,
+      metadata:sourcePayloadMetadata,
+      nativeSummary:sourcePayloadMetadata.krispSummary||sourcePayloadMetadata.summaryFromKrisp||'',
+      nativeActionItems:sourcePayloadMetadata.krispActionItems||sourcePayloadMetadata.krisp_action_items||[]
+    });
+    const sourceActions=safeArray(receipt.actionItems).slice(0,30);
+    const sourceKeyPoints=safeArray(receipt.keyPoints).slice(0,12);
+    const taskCount=Math.max(Number(row.task_count||0),sourceActions.length);
+    const receiptReady=Boolean(receipt.ready||sourceActions.length||sourceKeyPoints.length);
+    const isPendingSourceCapture=/krisp/i.test(String(row.source||''))&&receiptReady&&String(row.processing_status||'').toLowerCase()==='received';
+    return {
+      id:row.transcript_id,
+      transcriptId:row.transcript_id,
+      source:row.source||'transcript',
+      title:row.meeting_title||'Transcript',
+      meetingTitle:row.meeting_title||'Transcript',
+      createdAt:row.created_at?.toISOString?.()||row.created_at||'',
+      receivedAt:row.created_at?.toISOString?.()||row.created_at||'',
+      meetingDatetime:row.meeting_datetime?.toISOString?.()||row.meeting_datetime||'',
+      processingStatus:isPendingSourceCapture?'source_captured':(row.processing_status||''),
+      summaryStatus:isPendingSourceCapture?'krisp_exact':(row.summary_status||''),
+      reviewStatus:Number(row.review_count||0)>0?'needs_review':'reviewed',
+      summary:{executiveSummary:row.executive_summary||sourceKeyPoints[0]||''},
+      actionItems:sourceActions,
+      keyPoints:sourceKeyPoints,
+      taskCount,
+      openActionCount:taskCount,
+      reviewCount:Number(row.review_count||0)
+    };
+  });
   const countsRow=countResult?.rows?.[0]||{};
   const total=Number(countsRow.total||0);
   return {
