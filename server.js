@@ -34400,13 +34400,14 @@ async function transcriptDrawerFastPayload({days=90,limit=50,offset=0}={}){
   });
   const countsRow=countResult?.rows?.[0]||{};
   const total=Number(countsRow.total||0);
+  const visibleWithOpenActions=transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length;
   return {
     transcripts,
     pagination:{offset:safeOffset,limit:safeLimit,total,hasMore:safeOffset+transcripts.length<total},
     counts:{
       total,
       needsReview:Number(countsRow.needs_review||0),
-      withOpenActions:Number(countsRow.with_open_actions||0),
+      withOpenActions:Math.max(Number(countsRow.with_open_actions||0),visibleWithOpenActions),
       failedProcessing:Number(countsRow.failed_processing||0)
     }
   };
