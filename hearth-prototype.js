@@ -22732,6 +22732,18 @@ function valWitnessingConnectionCard(connection = {}){
   ].join('');
 }
 
+const executiveTimezoneChoices = [
+  ['America/New_York','Eastern Time'],['America/Chicago','Central Time'],['America/Denver','Mountain Time'],
+  ['America/Phoenix','Arizona Time'],['America/Los_Angeles','Pacific Time'],['America/Anchorage','Alaska Time'],
+  ['Pacific/Honolulu','Hawaii Time'],['America/Toronto','Toronto'],['Europe/London','London'],
+  ['Europe/Paris','Central European Time'],['Asia/Dubai','Dubai'],['Asia/Kolkata','India Standard Time'],
+  ['Asia/Singapore','Singapore'],['Australia/Sydney','Sydney']
+];
+function executiveTimezoneOptions(){
+  const choices=executiveTimezoneChoices.slice();
+  if(clientTimeZone&&!choices.some(([value])=>value===clientTimeZone))choices.unshift([clientTimeZone,clientTimeZone]);
+  return choices.map(([value,label])=>'<option value="'+escapeHtml(value)+'"'+(value===clientTimeZone?' selected':'')+'>'+escapeHtml(label)+'</option>').join('');
+}
 function renderValWitnessingConnectionHub(){
   return [
     '<section class="val-witnessing-connection-hub" aria-label="Connect your world">',
@@ -22744,6 +22756,12 @@ function renderValWitnessingConnectionHub(){
         '<p class="val-witnessing-connection-loading">Checking secure connections...</p>',
       '</div>',
       '<div class="val-witnessing-credential-slot" data-val-witnessing-credential-slot></div>',
+      '<div class="val-witnessing-timezone">',
+        '<label for="val-executive-timezone">Your timezone</label>',
+        '<p>VAL uses this for greetings, calendars, scheduled work, and Board briefings.</p>',
+        '<select id="val-executive-timezone" data-val-executive-timezone>' + executiveTimezoneOptions() + '</select>',
+        '<small data-val-timezone-status>Saved changes apply everywhere in this VAL.</small>',
+      '</div>',
       '<div class="val-witnessing-connection-footer">',
         '<small>Google, Outlook, and Krisp open their own secure connection page. API keys are encrypted and never shown again.</small>',
         '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingRefreshConnections">Refresh connection status</button>',
@@ -22751,6 +22769,24 @@ function renderValWitnessingConnectionHub(){
     '</section>'
   ].join('');
 }
+
+document.addEventListener('change',async(event)=>{
+  const select=event.target.closest?.('[data-val-executive-timezone]');
+  if(!select)return;
+  const status=select.parentElement?.querySelector('[data-val-timezone-status]');
+  select.disabled=true;
+  if(status)status.textContent='Saving timezone...';
+  try{
+    const result=await postJson('/api/val/preferences/timezone',{timezone:select.value});
+    clientTimeZone=String(result.timezone||select.value);
+    applyHearthTimePeriod();
+    if(executiveBriefingState)applyVelocityPerspective(executiveBriefingState);
+    else if(title)title.textContent=valTimeGreeting();
+    document.querySelectorAll('[data-val-executive-timezone]').forEach(control=>{control.value=clientTimeZone;});
+    document.querySelectorAll('[data-val-timezone-status]').forEach(node=>{node.textContent='Timezone saved. VAL now uses '+select.options[select.selectedIndex].text+'.';});
+  }catch(error){if(status)status.textContent='Could not save timezone: '+(error.message||'Unknown error.');}
+  finally{select.disabled=false;}
+});
 
 function valWitnessingConnectionSurface(){
   const connectionSelector = '[data-val-witnessing-connection-list], [data-val-openai-setup-form]';

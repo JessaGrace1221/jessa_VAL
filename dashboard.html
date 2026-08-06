@@ -4347,10 +4347,14 @@ function babyStudioFormHtml(settings){
   var links=(settings.importantLinks||[]).map(function(l){return (l.label||'')+' | '+(l.url||'');}).join('\n');
   var cards=['today','chat','calendar','tasks','integrations','relationships','transcripts'];
   var shown=settings.shownCards||['today','chat','calendar','tasks','integrations'];
+  var timezoneOptions=[['America/New_York','Eastern Time'],['America/Chicago','Central Time'],['America/Denver','Mountain Time'],['America/Phoenix','Arizona Time'],['America/Los_Angeles','Pacific Time'],['America/Anchorage','Alaska Time'],['Pacific/Honolulu','Hawaii Time'],['America/Toronto','Toronto'],['Europe/London','London'],['Europe/Paris','Central European Time'],['Asia/Dubai','Dubai'],['Asia/Kolkata','India Standard Time'],['Asia/Singapore','Singapore'],['Australia/Sydney','Sydney']];
+  var selectedTimezone=settings.timezone||VAL_CONFIG.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  if(!timezoneOptions.some(function(option){return option[0]===selectedTimezone;}))timezoneOptions.unshift([selectedTimezone,selectedTimezone]);
   return '<section class="exec-card" style="grid-column:1/-1"><h3>Simple Baby VAL Settings</h3><p>These edits save to this VAL’s existing Postgres and update the dashboard/chat behavior without Codex.</p>'
     +'<div class="exec-workspace-grid">'
     +'<label>Baby VAL name<input id="babyStudioName" value="'+docSafe(settings.babyValName||VAL_CONFIG.brandName||'VAL')+'" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"></label>'
     +'<label>Brand/accent color<input id="babyStudioAccent" type="color" value="'+docSafe(settings.accentColor||'#C4963A')+'" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"></label>'
+    +'<label>Your timezone<select id="babyStudioTimezone" style="width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:#fff;color:#111827">'+timezoneOptions.map(function(option){return '<option value="'+docSafe(option[0])+'" '+(option[0]===selectedTimezone?'selected':'')+'>'+docSafe(option[1])+'</option>';}).join('')+'</select></label>'
     +'</div>'
     +'<label>Welcome message<textarea id="babyStudioWelcome" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.welcomeMessage||'')+'</textarea></label>'
     +'<label>About Me context<textarea id="babyStudioAbout" rows="4" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.aboutMe||'')+'</textarea></label>'
@@ -4369,7 +4373,8 @@ function babyStudioPayload(){
     preferredTone:(document.getElementById('babyStudioTone')||{}).value||'',
     importantLinks:(document.getElementById('babyStudioLinks')||{}).value||'',
     shownCards:Array.from(document.querySelectorAll('.babyStudioCard:checked')).map(function(x){return x.value;}),
-    simpleInstructions:(document.getElementById('babyStudioInstructions')||{}).value||''
+    simpleInstructions:(document.getElementById('babyStudioInstructions')||{}).value||'',
+    timezone:(document.getElementById('babyStudioTimezone')||{}).value||VAL_CONFIG.timezone||'America/New_York'
   };
 }
 function saveBabyStudioSettings(){
@@ -4379,6 +4384,7 @@ function saveBabyStudioSettings(){
       if(state)state.textContent='Saved';
       VAL_CONFIG.babyValStudioSettings=data.settings;
       VAL_CONFIG.brandName=data.settings.babyValName||VAL_CONFIG.brandName;
+      VAL_CONFIG.timezone=data.settings.timezone||VAL_CONFIG.timezone;
       document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
       addSys('Dashboard Studio settings saved.');
     })
@@ -5966,7 +5972,8 @@ fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function
   document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
   var homeGreeting=document.querySelector('[data-val-home-greeting]');
   if(homeGreeting){
-    var greetingHour=new Date().getHours();
+    var greetingParts=new Intl.DateTimeFormat('en-US',{hour:'2-digit',hourCycle:'h23',timeZone:VAL_CONFIG.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone}).formatToParts(new Date());
+    var greetingHour=Number((greetingParts.find(function(part){return part.type==='hour';})||{}).value||new Date().getHours());
     var greetingDaypart=greetingHour<12?'morning':greetingHour<17?'afternoon':'evening';
     var greetingName=String(VAL_CONFIG.clientName||'').trim().split(/\s+/)[0]||'';
     homeGreeting.textContent='Good '+greetingDaypart+(greetingName?', '+greetingName:'')+'.';

@@ -153,7 +153,22 @@ const CLIENT_CONFIG = {
   projectName: process.env.VAL_PROJECT_NAME || '',
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
-function hourInTenantTimezone(date=new Date(),timeZone=CLIENT_CONFIG.timezone){
+let EXECUTIVE_TIMEZONE = CLIENT_CONFIG.timezone;
+function validIanaTimeZone(value=''){
+  const candidate=String(value||'').trim();
+  if(!candidate)return '';
+  try{new Intl.DateTimeFormat('en-US',{timeZone:candidate}).format(new Date());return candidate;}
+  catch(_error){return '';}
+}
+function executiveTimeZone(){
+  return validIanaTimeZone(EXECUTIVE_TIMEZONE)||CLIENT_CONFIG.timezone||'America/New_York';
+}
+function setExecutiveTimeZone(value=''){
+  EXECUTIVE_TIMEZONE=validIanaTimeZone(value)||CLIENT_CONFIG.timezone||'America/New_York';
+  CLIENT_CONFIG.timezone=EXECUTIVE_TIMEZONE;
+  return EXECUTIVE_TIMEZONE;
+}
+function hourInTenantTimezone(date=new Date(),timeZone=executiveTimeZone()){
   try{
     const hourPart=new Intl.DateTimeFormat('en-US',{
       hour:'2-digit',
@@ -3590,7 +3605,8 @@ const DEFAULT_BABY_STUDIO_SETTINGS = {
   preferredTone:'',
   importantLinks:[],
   shownCards:['today','chat','calendar','tasks','integrations'],
-  simpleInstructions:''
+  simpleInstructions:'',
+  timezone:CLIENT_CONFIG.timezone
 };
 const TEACH_VAL_VOICE_PROMPT = `You are VAL, a warm, intelligent Executive AI and Chief of Staff.
 
@@ -7114,7 +7130,8 @@ function normalizeBabyStudioSettings(input={}){
     preferredTone:String(input.preferredTone||'').trim().slice(0,1000),
     importantLinks:links.filter(l=>l.label||l.url).slice(0,12),
     shownCards:shownCards.map(x=>String(x||'').trim()).filter(Boolean).slice(0,20),
-    simpleInstructions:String(input.simpleInstructions||'').trim().slice(0,4000)
+    simpleInstructions:String(input.simpleInstructions||'').trim().slice(0,4000),
+    timezone:validIanaTimeZone(input.timezone)||executiveTimeZone()
   };
 }
 async function getBabyStudioSettings(){
@@ -7123,10 +7140,14 @@ async function getBabyStudioSettings(){
   await valDbReady;
   if(pgPool){
     const r=await dbQuery('select settings_json from baby_val_studio_settings where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),currentUserId()]);
-    return {...fallback,...(r.rows[0]?.settings_json||{})};
+    const settings={...fallback,...(r.rows[0]?.settings_json||{})};
+    settings.timezone=setExecutiveTimeZone(settings.timezone);
+    return settings;
   }
   const store=valStore();
-  return {...fallback,...(store.babyValStudioSettings||{})};
+  const settings={...fallback,...(store.babyValStudioSettings||{})};
+  settings.timezone=setExecutiveTimeZone(settings.timezone);
+  return settings;
 }
 async function saveBabyStudioSettings(input){
   const settings=normalizeBabyStudioSettings(input);
@@ -7136,10 +7157,17 @@ async function saveBabyStudioSettings(input){
     await dbQuery(`insert into baby_val_studio_settings (tenant_id,user_id,settings_json,updated_at)
       values ($1,$2,$3,now())
       on conflict (tenant_id,user_id) do update set settings_json=excluded.settings_json,updated_at=now()`,[tenantId(),currentUserId(),JSON.stringify(settings)]);
+    setExecutiveTimeZone(settings.timezone);
     return settings;
   }
   if(process.env.DATABASE_URL) throw new Error('Could not save because Postgres is unavailable. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
-  const store=valStore();store.babyValStudioSettings=settings;saveValStore(store);return settings;
+  const store=valStore();store.babyValStudioSettings=settings;saveValStore(store);setExecutiveTimeZone(settings.timezone);return settings;
+}
+async function saveExecutiveTimezone(value=''){
+  const timezone=validIanaTimeZone(value);
+  if(!timezone)throw new Error('Choose a valid timezone.');
+  const current=await getBabyStudioSettings();
+  return saveBabyStudioSettings({...current,timezone});
 }
 async function babyStudioPromptContext(){
   const s=await getBabyStudioSettings().catch(()=>null);
@@ -8534,12 +8562,13 @@ app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
   res.set('Cache-Control','public, max-age=300');
   res.sendFile(path.join(__dirname,'assets',`hearth-${req.params.time}.png`));
 });
-app.get('/api/public-config',(req,res)=>{
+app.get('/api/public-config',async(req,res)=>{
+  const babyStudio=await getBabyStudioSettings().catch(()=>null);
   res.json({
     clientSlug: CLIENT_CONFIG.clientSlug,
     clientName: CLIENT_CONFIG.clientName,
-    brandName: CLIENT_CONFIG.brandName,
-    timezone: CLIENT_CONFIG.timezone,
+    brandName: babyStudio?.babyValName || CLIENT_CONFIG.brandName,
+    timezone: babyStudio?.timezone || executiveTimeZone(),
     voiceWidgetId: process.env.GHL_VOICE_WIDGET_ID || '6a6253197742c156ecacd8ca',
     featureFlags: clientFeatureLocks(),
     systemUpdate: systemUpdateStatus()
@@ -8553,7 +8582,7 @@ app.get('/api/config',async(req,res)=>{
   const studioOverride=await getTenantDashboardStudioOverride().catch(()=>null);
   const babyStudio=await getBabyStudioSettings().catch(()=>null);
   const configuredName=babyStudio?.babyValName||CLIENT_CONFIG.brandName;
-  res.json({...CLIENT_CONFIG,brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false),...clientFeatureLocks()},systemUpdate:systemUpdateStatus(),dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
+  res.json({...CLIENT_CONFIG,timezone:babyStudio?.timezone||executiveTimeZone(),brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false),...clientFeatureLocks()},systemUpdate:systemUpdateStatus(),dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
 });
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.get('/api/setup-health',async(req,res)=>{
@@ -8575,6 +8604,14 @@ app.get('/api/baby-val-studio/settings',async(req,res)=>{
 app.post('/api/baby-val-studio/settings',async(req,res)=>{
   try{res.json({ok:true,settings:await saveBabyStudioSettings(req.body||{}),message:'Saved'});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/preferences/timezone',async(req,res)=>{
+  try{const settings=await getBabyStudioSettings();res.json({ok:true,timezone:settings.timezone||executiveTimeZone()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/preferences/timezone',async(req,res)=>{
+  try{const settings=await saveExecutiveTimezone(req.body?.timezone);res.json({ok:true,timezone:settings.timezone,message:'Timezone saved'});}
+  catch(e){res.status(400).json({ok:false,error:e.message});}
 });
 app.get('/api/teach-val/onboarding',async(req,res)=>{
   try{res.json(await teachValStateResponse(req.query.sessionId||''));}
@@ -12225,7 +12262,7 @@ async function fetchOutlookCalendarEvents(start,end,maxResults=75){
     '$select':'id,subject,bodyPreview,start,end,location,attendees,organizer,webLink,isCancelled,onlineMeeting,onlineMeetingUrl',
     '$filter':filter
   }).toString();
-  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`,Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`}});
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`,Prefer:`outlook.timezone="${executiveTimeZone()}"`}});
   const d=await readJsonResponse(r);
   if(!r.ok) throw new Error(d.error?.message||`Microsoft calendar ${r.status}`);
   return (d.value||[]).map(e=>({
@@ -12364,8 +12401,8 @@ async function createGoogleTaskBlock(task,{start,end,calendarId='primary',durati
   const event={
     summary:taskBlockTitle(task,focus?'FOCUS':'TASK'),
     description:taskBlockDescription(task),
-    start:{dateTime:start.toISOString(),timeZone:CLIENT_CONFIG.timezone},
-    end:{dateTime:end.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    start:{dateTime:start.toISOString(),timeZone:executiveTimeZone()},
+    end:{dateTime:end.toISOString(),timeZone:executiveTimeZone()},
     transparency:'opaque',
     visibility:'private',
     attendees:[],
@@ -12384,8 +12421,8 @@ async function updateGoogleTaskBlock(task,{eventId,calendarId='primary',start,en
   const event={
     summary:completed?doneTaskBlockTitle(task):taskBlockTitle(task,focus?'FOCUS':'TASK'),
     description:taskBlockDescription(task),
-    start:{dateTime:start.toISOString(),timeZone:CLIENT_CONFIG.timezone},
-    end:{dateTime:end.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    start:{dateTime:start.toISOString(),timeZone:executiveTimeZone()},
+    end:{dateTime:end.toISOString(),timeZone:executiveTimeZone()},
     transparency:'opaque',
     visibility:'private',
     attendees:[]
@@ -12412,7 +12449,7 @@ async function createOutlookTaskBlock(task,{start,end,calendarId='',durationMinu
     singleValueExtendedProperties:[{id:'String {00020329-0000-0000-C000-000000000046} Name val_task_id',value:String(task.id)}]
   };
   const url=calendarId?`https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(calendarId)}/events`:'https://graph.microsoft.com/v1.0/me/events';
-  const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`},body:JSON.stringify(event)});
+  const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${executiveTimeZone()}"`},body:JSON.stringify(event)});
   const d=await readJsonResponse(r);
   if(!r.ok) throw new Error(d.error?.message||`Outlook task block failed (${r.status})`);
   return {provider:'outlook',calendarId,eventId:d.id,webLink:d.webLink||'',raw:d};
@@ -12429,7 +12466,7 @@ async function updateOutlookTaskBlock(task,{eventId,start,end,completed=false,fo
     sensitivity:'private',
     attendees:[]
   };
-  const r=await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`},body:JSON.stringify(event)});
+  const r=await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${executiveTimeZone()}"`},body:JSON.stringify(event)});
   const d=await readJsonResponse(r);
   if(!r.ok) throw new Error(d.error?.message||`Outlook task block update failed (${r.status})`);
   return {provider:'outlook',eventId,webLink:d.webLink||'',raw:d};
@@ -18073,7 +18110,7 @@ async function suggestTaskSlots(task,opts={}){
     if(cursor<dayStart){cursor.setTime(dayStart.getTime());}
     const candidateEnd=addMinutes(cursor,duration);
     if(candidateEnd<=dayEnd&&!busy.some(b=>intervalsOverlap(cursor,candidateEnd,b.start,b.end))){
-      slots.push({start:cursor.toISOString(),end:candidateEnd.toISOString(),durationMinutes:duration,label:cursor.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:CLIENT_CONFIG.timezone})});
+      slots.push({start:cursor.toISOString(),end:candidateEnd.toISOString(),durationMinutes:duration,label:cursor.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:executiveTimeZone()})});
       cursor.setTime(candidateEnd.getTime()+15*60000);
     }else{
       cursor.setMinutes(cursor.getMinutes()+30,0,0);
@@ -35352,14 +35389,14 @@ app.get('/api/val/context-debug',async(req,res)=>{
 });
 async function boardObserverDailyBudget(localDate=''){
   if(!pgPool)return {allowed:true,count:0,limit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT};
-  const boardDate=String(localDate||currentBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.localDate||'');
+  const boardDate=String(localDate||currentBoardBriefingSlot({timeZone:executiveTimeZone()})?.localDate||'');
   const result=await dbQuery(
     `select count(*)::int as count
      from observer_runs
      where tenant_id=$1
        and user_id=$2
        and (created_at at time zone $3)::date=$4::date`,
-    [tenantId(),currentUserId(),CLIENT_CONFIG.timezone,boardDate]
+    [tenantId(),currentUserId(),executiveTimeZone(),boardDate]
   ).catch(error=>{
     console.warn('[val-board] daily reasoning budget check failed:',error.message);
     return {rows:[{count:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT}]};
@@ -35401,7 +35438,7 @@ function queueBoardIntelligenceForPackets(packets=[],event={}){
     queued:livePackets.length,
     packetIds:livePackets.map(packet=>packet.id),
     sourceType:event.sourceType||livePackets[0]?.sourceType||'',
-    nextBriefing:nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone})?.id||'morning'
+    nextBriefing:nextBoardBriefingSlot({timeZone:executiveTimeZone()})?.id||'morning'
   };
 }
 
@@ -38015,7 +38052,8 @@ async function runScheduledBoardBriefingIfDue({now=new Date()}={}){
   if(VAL_BOARD_LAUNCH_HOLD){
     return {ok:true,skipped:true,reason:'launch_hold'};
   }
-  const slot=currentBoardBriefingSlot({now,timeZone:CLIENT_CONFIG.timezone});
+  await getBabyStudioSettings().catch(()=>null);
+  const slot=currentBoardBriefingSlot({now,timeZone:executiveTimeZone()});
   if(!slot)return {ok:true,skipped:true,reason:'before_first_briefing'};
   const checkpoint=await claimScheduledBoardBriefing(slot);
   if(!checkpoint)return {ok:true,skipped:true,reason:'briefing_already_claimed',slot};
@@ -38049,7 +38087,7 @@ async function runScheduledBoardBriefingIfDue({now=new Date()}={}){
 app.get('/api/val/board/briefing-status',async(req,res)=>{
   try{
     await valDbReady;
-    const next=nextBoardBriefingSlot({timeZone:CLIENT_CONFIG.timezone});
+    const next=nextBoardBriefingSlot({timeZone:executiveTimeZone()});
     let runs=[];
     if(pgPool){
       const result=await dbQuery(
@@ -38066,7 +38104,7 @@ app.get('/api/val/board/briefing-status',async(req,res)=>{
     res.json({
       ok:true,
       schedule:['06:00','12:00','17:00'],
-      timezone:CLIENT_CONFIG.timezone,
+      timezone:executiveTimeZone(),
       nextBriefing:next?.id||'morning',
       packetsPerBriefing:VAL_BOARD_PACKETS_PER_BRIEFING,
       dailyObserverCallLimit:VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT,
@@ -40420,7 +40458,7 @@ function ghlVoiceEventTitle(event={}){
 }
 function ghlVoiceFormatEvent(event={}){
   const start=ghlVoiceEventStart(event);
-  const when=Number.isNaN(start.getTime())?'time unknown':start.toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:CLIENT_CONFIG.timezone||'America/New_York'});
+  const when=Number.isNaN(start.getTime())?'time unknown':start.toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:executiveTimeZone()});
   return `${ghlVoiceEventTitle(event)} on ${when}`;
 }
 function ghlVoiceLooksLikePrivateBlock(event={}){
