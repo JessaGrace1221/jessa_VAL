@@ -90,7 +90,8 @@ test('missing user-owned OpenAI key gates the authenticated Hearth before any ot
   assert.match(server,/requiresOpenAIKey:!openai\.connected/);
   assert.doesNotMatch(server,/requiresOpenAIKey:!openai\.connected&&!continuationAllowed/);
   assert.match(hearthJs,/async function enforceOpenAIConnectionOnDashboardEntry\(\)/);
-  assert.match(hearthJs,/openValOpenAISetup\('dashboard',\{mandatory:true,afterConnect:'dashboard'\}\)/);
+  assert.match(hearthJs,/openValOpenAISetup\('dashboard',\{mandatory:true,afterConnect:'witnessing'\}\)/);
+  assert.match(hearthJs,/await openValWitnessingSession\('meeting_val',\{resume:true\}\)/);
   assert.match(hearthJs,/if\(openAiSetupRequired\) return;/);
   assert.match(hearthJs,/window\.setTimeout\(initializeAuthenticatedDashboardEntry,120\)/);
   assert.match(hearthJs,/No Jessa or shared client AI key will be used for your work/);

@@ -22897,7 +22897,7 @@ async function enforceOpenAIConnectionOnDashboardEntry(){
   try{
     const readiness = await getJson('/api/val/witnessing/readiness', {cache:'no-store'});
     if(!readiness.requiresOpenAIKey) return true;
-    openValOpenAISetup('dashboard',{mandatory:true,afterConnect:'dashboard'});
+    openValOpenAISetup('dashboard',{mandatory:true,afterConnect:'witnessing'});
     return false;
   }catch(error){
     valLiveStatus.textContent = 'VAL could not confirm the OpenAI connection: ' + error.message;
@@ -23039,10 +23039,9 @@ async function completeValOpenAISetup(){
   if(!connected) return false;
   const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
   pendingValWitnessingLaunch = null;
-  if(launch.options?.afterConnect === 'dashboard'){
+  if(launch.options?.afterConnect === 'witnessing'){
     releaseValOpenAISetup();
-    closeWorkspace();
-    hydrateHomePresence();
+    await openValWitnessingSession('meeting_val',{resume:true});
   }else{
     releaseValOpenAISetup();
     await openValWitnessingSession(launch.cardId,launch.options);
