@@ -22741,8 +22741,8 @@ const executiveTimezoneChoices = [
 ];
 function executiveTimezoneOptions(){
   const choices=executiveTimezoneChoices.slice();
-  if(clientTimeZone&&!choices.some(([value])=>value===clientTimeZone))choices.unshift([clientTimeZone,clientTimeZone]);
-  return choices.map(([value,label])=>'<option value="'+escapeHtml(value)+'"'+(value===clientTimeZone?' selected':'')+'>'+escapeHtml(label)+'</option>').join('');
+  if(clientTimezone&&!choices.some(([value])=>value===clientTimezone))choices.unshift([clientTimezone,clientTimezone]);
+  return choices.map(([value,label])=>'<option value="'+escapeHtml(value)+'"'+(value===clientTimezone?' selected':'')+'>'+escapeHtml(label)+'</option>').join('');
 }
 function renderValWitnessingConnectionHub(){
   return [
@@ -22778,11 +22778,11 @@ document.addEventListener('change',async(event)=>{
   if(status)status.textContent='Saving timezone...';
   try{
     const result=await postJson('/api/val/preferences/timezone',{timezone:select.value});
-    clientTimeZone=String(result.timezone||select.value);
+    clientTimezone=String(result.timezone||select.value);
     applyHearthTimePeriod();
     if(executiveBriefingState)applyVelocityPerspective(executiveBriefingState);
     else if(title)title.textContent=valTimeGreeting();
-    document.querySelectorAll('[data-val-executive-timezone]').forEach(control=>{control.value=clientTimeZone;});
+    document.querySelectorAll('[data-val-executive-timezone]').forEach(control=>{control.value=clientTimezone;});
     document.querySelectorAll('[data-val-timezone-status]').forEach(node=>{node.textContent='Timezone saved. VAL now uses '+select.options[select.selectedIndex].text+'.';});
   }catch(error){if(status)status.textContent='Could not save timezone: '+(error.message||'Unknown error.');}
   finally{select.disabled=false;}
@@ -24156,6 +24156,7 @@ function renderValWitnessingEntry(onboarding = {}){
       '</div>',
       '<div class="val-entry-actions">',
         '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingOpenBoard">View Board of Observers</button>',
+        '<button type="button" data-workflow-action="valConnections:review">Connections &amp; keys</button>',
       '</div>',
       '<small data-val-live-status>Your saved answers remain intact until you deliberately update one.</small>'
     ].join('');
@@ -24174,6 +24175,7 @@ function renderValWitnessingEntry(onboarding = {}){
     '</div>',
     '<div class="val-entry-actions">',
       '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingResume">' + escapeHtml(actionLabel) + '</button>',
+      '<button type="button" data-workflow-action="valConnections:review">Connections &amp; keys</button>',
       hasSavedAnswers ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFresh">Start Fresh</button>' : '',
     '</div>',
     '<small data-val-live-status>' + escapeHtml(hasSavedAnswers ? 'Your previous answers are already saved. Continue from the next unfinished step.' : 'VAL will save each answer as you move through the session.') + '</small>'
@@ -24419,10 +24421,10 @@ function openValConnectionsWorkspace(){
     actions: [{label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL connections workspace'
   });
+  openWorkspaceShell('VAL connections workspace', {returnTarget:'val'});
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = renderValWitnessingConnectionHub();
   refreshValWitnessingConnections();
-  openWorkspaceShell('VAL connections workspace', {returnTarget:'val'});
 }
 
 async function refreshGoogleConnectionStatus(){
@@ -30985,6 +30987,10 @@ async function handleValDetailWorkflowClick(event){
     await openValWitnessingSession('meeting_val', {fresh:true});
     return true;
   }
+  if(action === 'valConnections:review' || action === 'valConnections'){
+    openValConnectionsWorkspace();
+    return true;
+  }
   if(action === 'valWitnessingBegin'){
     await openValWitnessingSession('meeting_val', {resume:true});
     return true;
@@ -31011,10 +31017,6 @@ async function handleValDetailWorkflowClick(event){
     }
   });
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-  if(action === 'valConnections:review' || action === 'valConnections'){
-    openValConnectionsWorkspace();
-    return true;
-  }
   if(action === 'valWitnessingResume'){
     await openValWitnessingSession('meeting_val', {resume:true});
     return true;

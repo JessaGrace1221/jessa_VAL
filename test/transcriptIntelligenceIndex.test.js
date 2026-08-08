@@ -295,6 +295,8 @@ test('stores meeting recap templates and creates source-grounded transcript over
   assert.match(server,/function renderTranscriptActionItemsEmailTemplate/);
   assert.match(server,/deliveryMode:String\(template\.settings\?\.deliveryMode/);
   assert.match(server,/async function executeTranscriptActionItemsAttendeeEmailAutoSend/);
+  assert.match(server,/if\(packet\.status==='executed'\|\|packet\.executedAt\|\|packet\.executed_at\)/);
+  assert.match(server,/alreadyExecuted:true/);
   assert.match(server,/autoSendScope:'all_future_transcripts'/);
   assert.match(server,/prepareTranscriptActionItemsAttendeeEmailDraft\(\{[\s\S]*id:sourceId/);
   assert.match(server,/action_items_attendee_email_auto_sent/);

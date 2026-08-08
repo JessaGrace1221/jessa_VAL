@@ -2691,6 +2691,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /async function saveValOnboardingContext/);
   assert.match(hearthJs, /function openValConnectionsWorkspace/);
   assert.match(hearthJs, /renderValWitnessingConnectionHub/);
+  assert.equal((hearthJs.match(/data-workflow-action="valConnections:review">Connections &amp; keys/g) || []).length, 2);
+  assert.match(hearthJs, /openWorkspaceShell\('VAL connections workspace', \{returnTarget:'val'\}\);\s*workspaceInputPanel\.hidden = false;\s*workspaceInputPanel\.innerHTML = renderValWitnessingConnectionHub\(\);/);
   assert.match(hearthJs, /google: \{keyLabel:'Google'/);
   assert.match(hearthJs, /microsoft: \{keyLabel:'Outlook'/);
   assert.match(hearthJs, /Google, Outlook, and Krisp open their own secure connection page/);

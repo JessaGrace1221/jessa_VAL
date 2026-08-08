@@ -27827,6 +27827,23 @@ async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},trans
     approvalNote:'User enabled Send all automatically for transcript attendee follow-ups.'
   });
   if(!packet?.id)throw new Error('VAL could not save the email send packet. No email was sent.');
+  if(packet.status==='executed'||packet.executedAt||packet.executed_at){
+    const sentDraft=await saveInternalDraft({
+      ...draft,
+      status:'sent',
+      sourceContext:{
+        ...(draft.sourceContext||{}),
+        autoSendAttemptedAt:packet.attemptedAt||packet.attempted_at||new Date().toISOString(),
+        autoSendExecutedAt:packet.executedAt||packet.executed_at||new Date().toISOString(),
+        externalActionPacketId:packet.id,
+        providerResponseId:packet.providerResponseId||packet.provider_response_id||'',
+        providerResponseSummary:packet.providerResponseSummary||packet.provider_response_summary||'',
+        noExternalAction:false,
+        noExternalSend:false
+      }
+    });
+    return {ok:true,executed:true,alreadyExecuted:true,draft:sentDraft,packet,receipt:packet.receipt||null};
+  }
   const approved=await valExternalActions.approve(packet.id,{note:'Global transcript attendee follow-up auto-send is enabled.'});
   if(!approved?.id)throw new Error('VAL could not persist approval for this email. No email was sent.');
   const result=await valExternalActions.executor.execute(approved.id,{finalConfirmation:true,executedBy:'transcripts:auto_send'});
