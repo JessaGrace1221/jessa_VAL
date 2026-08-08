@@ -300,6 +300,79 @@ test('global email send gate creates one approved packet and requires final conf
   assert.equal(store.valExecutionReceipts[0].status,'succeeded');
 });
 
+test('Postgres email send packets serialize JSON and return a durable packet id',async()=>{
+  const calls=[];
+  const service=createValExternalActionsService({
+    hasPg:()=>true,
+    dbQuery:async(sql,params)=>{
+      calls.push({sql,params});
+      return {rowCount:1,rows:[{
+        id:params[0],tenant_id:params[1],user_id:params[2],status:params[3],action_type:params[4],target_system:params[5],target_id:params[6],
+        payload_preview_json:params[7],source_refs_json:params[8],retry_count:params[28],source_context_json:params[32],created_at:params[33],updated_at:params[34]
+      }]};
+    },
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_pg`
+  });
+  const first=await service.createEmailSendPacket({
+    to:'aric@example.com',subject:'Meeting follow-up',body:'First version.',provider:'gmail',
+    sourceRefs:[{sourceType:'transcript',sourceId:'tr_1',quoteOrSummary:'Meeting follow-up',confidence:0.9}],
+    sourceContext:{source:'transcript_action_items_attendee_email',draftId:'draft_1'}
+  });
+  assert.ok(first.id);
+  assert.equal(first.payloadPreviewJson.body,'First version.');
+  assert.equal(first.sourceRefsJson[0].source_id,'tr_1');
+  assert.equal(typeof calls[0].params[7],'string');
+  assert.equal(typeof calls[0].params[8],'string');
+  assert.equal(typeof calls[0].params[32],'string');
+  assert.equal(calls[0].params[28],0);
+  assert.match(calls[0].sql,/case when val_external_action_packets\.status='executed'/);
+
+  const second=await service.createEmailSendPacket({to:'aric@example.com',subject:'Meeting follow-up',body:'Second version.',provider:'gmail'});
+  const third=await service.createEmailSendPacket({to:'aric@example.com',subject:'Meeting follow-up',body:'Third version.',provider:'gmail'});
+  assert.notEqual(second.id,third.id);
+});
+
+test('Postgres packet persistence fails before execution when no row is saved',async()=>{
+  const service=createValExternalActionsService({
+    hasPg:()=>true,
+    dbQuery:async()=>({rows:[],rowCount:0}),
+    tenantId:()=>'tenant',
+    userId:()=>'user'
+  });
+  await assert.rejects(
+    service.createEmailSendPacket({to:'aric@example.com',subject:'Meeting follow-up',body:'Body'}),
+    /could not save the external action packet/i
+  );
+});
+
+test('Postgres execution receipts serialize provider proof as JSON',async()=>{
+  let captured=null;
+  const service=createValExecutionReceiptService({
+    hasPg:()=>true,
+    dbQuery:async(sql,params)=>{
+      captured={sql,params};
+      return {rowCount:1,rows:[{
+        id:params[0],tenant_id:params[1],user_id:params[2],packet_id:params[3],action_type:params[4],target_system:params[5],
+        provider_response_id:params[6],provider_response_summary:params[8],executed_at:params[9],executed_by:params[10],status:params[11],
+        source_refs_json:params[14],audit_refs_json:params[15],reconciliation_status:params[16],provider_payload_json:params[18],created_at:params[19],updated_at:params[20]
+      }]};
+    },
+    tenantId:()=>'tenant',
+    userId:()=>'user'
+  });
+  const receipt=await service.createReceipt({
+    packet:{id:'packet_1',actionType:'send_email',targetSystem:'gmail',status:'executed',executedAt:new Date().toISOString(),executedBy:'user',providerResponseId:'gmail_1',sourceRefsJson:[{source_type:'transcript',source_id:'tr_1'}]},
+    providerResult:{providerResponseId:'gmail_1',raw:{id:'gmail_1',threadId:'thread_1'}}
+  });
+  assert.equal(receipt.id,'receipt_packet_1');
+  assert.equal(receipt.providerPayloadJson.threadId,'thread_1');
+  assert.equal(typeof captured.params[14],'string');
+  assert.equal(typeof captured.params[15],'string');
+  assert.equal(typeof captured.params[18],'string');
+});
+
 test('global SMS send gate creates one approved packet and requires final confirmation',async()=>{
   let store={valExternalActionPackets:[],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
   const packetService=createValExternalActionsService({

@@ -27826,7 +27826,9 @@ async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},trans
     finalApprovalSurface:'transcripts_global_delivery_toggle',
     approvalNote:'User enabled Send all automatically for transcript attendee follow-ups.'
   });
+  if(!packet?.id)throw new Error('VAL could not save the email send packet. No email was sent.');
   const approved=await valExternalActions.approve(packet.id,{note:'Global transcript attendee follow-up auto-send is enabled.'});
+  if(!approved?.id)throw new Error('VAL could not persist approval for this email. No email was sent.');
   const result=await valExternalActions.executor.execute(approved.id,{finalConfirmation:true,executedBy:'transcripts:auto_send'});
   await processExternalActionBoardEvidence(result.packet||approved).catch(()=>{});
   if(!result?.executed)throw new Error(result?.error||result?.packet?.failureReason||'Automatic attendee email send did not complete.');

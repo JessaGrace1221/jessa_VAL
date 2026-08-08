@@ -96,11 +96,15 @@ function createValExecutionReceiptService({
   async function saveReceipt(row){
     if(hasPg()){
       const cols=['id','tenantId','userId','packetId','actionType','targetSystem','providerResponseId','providerObjectUrl','providerResponseSummary','executedAt','executedBy','status','failureReason','retryAllowed','sourceRefsJson','auditRefsJson','reconciliationStatus','reconciliationSummary','providerPayloadJson','createdAt','updatedAt'];
-      const values=cols.map(c=>row[c]);
+      const jsonColumns=new Set(['sourceRefsJson','auditRefsJson','providerPayloadJson']);
+      const values=cols.map(c=>jsonColumns.has(c)
+        ?JSON.stringify(row[c]??(c==='providerPayloadJson'?{}:[]))
+        :(row[c]??null));
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
       const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
       const r=await dbQuery(`insert into val_execution_receipts (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
+      if(!r?.rows?.[0])throw new Error('VAL could not save the external action receipt.');
       return toCamelRow(r.rows[0]);
     }
     const s=store();const idx=s.valExecutionReceipts.findIndex(r=>r.id===row.id);
@@ -110,10 +114,12 @@ function createValExecutionReceiptService({
   async function saveEvent(row){
     if(hasPg()){
       const cols=['id','tenantId','userId','receiptId','packetId','targetTable','targetId','reconciliationType','status','summary','beforeJson','afterJson','createdAt'];
-      const values=cols.map(c=>row[c]);
+      const jsonColumns=new Set(['beforeJson','afterJson']);
+      const values=cols.map(c=>jsonColumns.has(c)?JSON.stringify(row[c]??{}):(row[c]??null));
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
-      await dbQuery(`insert into val_execution_reconciliation_events (${names.join(',')}) values (${params})`,values);
+      const result=await dbQuery(`insert into val_execution_reconciliation_events (${names.join(',')}) values (${params})`,values);
+      if(!result?.rowCount)throw new Error('VAL could not save the execution reconciliation event.');
       return row;
     }
     const s=store();s.valExecutionReconciliationEvents.unshift(row);saveStore(s);return row;

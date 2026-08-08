@@ -1,3 +1,5 @@
+const crypto=require('node:crypto');
+
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
@@ -253,11 +255,19 @@ function createValExternalActionsService({
   async function upsertPacket(packet){
     if(hasPg()){
       const cols=['id','tenantId','userId','status','actionType','targetSystem','targetId','payloadPreviewJson','sourceRefsJson','whyThisActionExists','whatWillHappen','whatWillNotHappen','riskLevel','approvalPolicy','representationRisk','financialOrLegalRisk','relationshipRisk','authorizationSource','authorizationEventId','authorizationQuote','authenticatedUserConfirmed','speakerConfidence','authorizationCreatedAt','attemptedAt','executedAt','providerResponseId','providerResponseSummary','failureReason','retryCount','idempotencyKey','executedBy','expiresAt','sourceContextJson','createdAt','updatedAt','reviewedAt'];
-      const values=cols.map(c=>packet[c]);
+      const jsonColumns=new Set(['payloadPreviewJson','sourceRefsJson','sourceContextJson']);
+      const values=cols.map(c=>{
+        if(jsonColumns.has(c))return JSON.stringify(packet[c]??(c==='sourceRefsJson'?[]:{}));
+        if(c==='retryCount')return Math.max(0,Number(packet[c])||0);
+        return packet[c]??null;
+      });
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
-      const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
+      const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>
+        `${n}=case when val_external_action_packets.status='executed' then val_external_action_packets.${n} else excluded.${n} end`
+      ).join(',');
       const r=await dbQuery(`insert into val_external_action_packets (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
+      if(!r?.rows?.[0])throw new Error('VAL could not save the external action packet. No external action was taken.');
       return toCamelRow(r.rows[0]);
     }
     const s=store();const idx=s.valExternalActionPackets.findIndex(p=>p.id===packet.id);
@@ -330,6 +340,7 @@ function createValExternalActionsService({
     const before=await get(id);if(!before)return null;
     if(before.status==='executed')throw new Error('Executed packets are not managed by the Phase 9 planner.');
     const after=await updatePacket(id,{status:'approved_local_only',reviewedAt:new Date().toISOString()});
+    if(!after)throw new Error('VAL could not persist approval for this external action. No external action was taken.');
     await audit(id,'approved_local_only',before,after,note);
     return after;
   }
@@ -354,13 +365,14 @@ function createValExternalActionsService({
     const accountEmail=compactText(payload.accountEmail||payload.account_email||'',320);
     const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const contentKey=crypto.createHash('sha256').update([to,subject,body,provider].join('\n')).digest('hex').slice(0,20);
     const packet=basePacket({
       uuid,
       scope:scope(),
       source:'send_gate',
       actionType:'send_email',
       targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':'gmail',
-      targetId:payload.threadId||payload.messageId||to||subject,
+      targetId:payload.threadId||payload.messageId||sourceContext.draftId||payload.id||`${to}:${contentKey}`,
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
       payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,googleProvider,accountEmail,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},

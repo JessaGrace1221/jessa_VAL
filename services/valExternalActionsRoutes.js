@@ -114,6 +114,7 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       if(typeof service.createEmailSendPacket!=='function')throw new Error('Email send packets are not available.');
       const packet=await service.createEmailSendPacket(req.body||{});
+      if(!packet?.id)throw new Error('VAL could not save the email send packet. No email was sent.');
       await afterExternalActionPacket(packet,{req,phase:'created'}).catch(error=>{packet.boardPacketWarning=error.message;});
       await auditLog({req,action:'email_send_packet_created',resourceType:'val_external_action_packet',resourceId:packet.id,metadata:{actionType:packet.actionType,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
       res.json({ok:true,packet,no_external_action:true,execution_available:false});
@@ -125,7 +126,9 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       if(typeof service.createEmailSendPacket!=='function')throw new Error('Email send packets are not available.');
       const packet=await service.createEmailSendPacket(req.body||{});
+      if(!packet?.id)throw new Error('VAL could not save the email send packet. No email was sent.');
       const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final send approved from VAL send gate.'});
+      if(!approved?.id)throw new Error('VAL could not persist approval for this email. No email was sent.');
       const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
       await afterExternalActionPacket(result.packet||approved,{req,phase:result.executed?'executed':'execution_not_completed'}).catch(error=>{result.boardPacketWarning=error.message;});
       await auditLog({req,action:result.executed?'email_send_gate_executed':'email_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
