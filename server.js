@@ -34827,7 +34827,9 @@ app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req
     const result=await prepareTranscriptActionItemsAttendeeEmailDraft(transcript,tasks,{writingRules:req.body?.writingRules||req.body?.writing_rules||''});
     await auditLog({req,action:'transcript_action_items_email_draft_prepared',resourceType:'transcript',resourceId:id,metadata:{draftId:result.draft?.id,recipientCount:result.recipientCount,keyPoints:result.keyPoints.length,actionItems:result.actionItems.length},success:true}).catch(()=>{});
     const message=result.autoSendResult?.executed
-      ? `Key Points and Action Items were sent automatically to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'} because the global transcript setting is Send all automatically.`
+      ? (result.autoSendResult?.alreadyExecuted
+        ? `This exact follow-up was already sent earlier to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}${result.autoSendResult?.packet?.executedAt?` at ${new Date(result.autoSendResult.packet.executedAt).toLocaleString('en-US',{timeZone:CLIENT_CONFIG.timezone||'America/New_York'})}`:''}. VAL did not send a duplicate.`
+        : `Key Points and Action Items were sent automatically to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'} because the global transcript setting is Send all automatically.`)
       : (result.autoSendAttempted
         ? `VAL tried to send automatically, but kept the follow-up in drafts because sending did not complete: ${result.autoSendResult?.error||'provider send unavailable'}.`
         : `Key Points and Action Items are ready for review in one group email to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}. The global transcript setting is Hold all in drafts.`);
@@ -37615,7 +37617,12 @@ async function executeEmailSendPacket({packet,payload}){
   const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
-  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}${accountTokens.account_email?` from ${accountTokens.account_email}`:''}.`,raw:{...d,googleProvider,accountEmail:accountTokens.account_email||''}};
+  const accountEmail=accountTokens.account_email||'';
+  const sentMessageId=d.threadId||d.id||'';
+  const providerObjectUrl=sentMessageId
+    ? `https://mail.google.com/mail/u/?${accountEmail?`authuser=${encodeURIComponent(accountEmail)}`:''}#sent/${encodeURIComponent(sentMessageId)}`
+    : '';
+  return {providerResponseId:d.id||'',providerObjectUrl,providerResponseSummary:`Sent Gmail email to ${to}${accountEmail?` from ${accountEmail}`:''}.`,raw:{...d,googleProvider,accountEmail}};
 }
 async function executeSmsPacket({packet,payload}){
   const contactId=String(payload.contactId||payload.contact_id||packet.targetId||'').trim();

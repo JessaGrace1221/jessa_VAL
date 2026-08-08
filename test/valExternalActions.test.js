@@ -306,6 +306,7 @@ test('Postgres email send packets serialize JSON and return a durable packet id'
     hasPg:()=>true,
     dbQuery:async(sql,params)=>{
       calls.push({sql,params});
+      if(/^select /i.test(sql.trim()))return {rowCount:0,rows:[]};
       return {rowCount:1,rows:[{
         id:params[0],tenant_id:params[1],user_id:params[2],status:params[3],action_type:params[4],target_system:params[5],target_id:params[6],
         payload_preview_json:params[7],source_refs_json:params[8],retry_count:params[28],source_context_json:params[32],created_at:params[33],updated_at:params[34]
@@ -323,15 +324,42 @@ test('Postgres email send packets serialize JSON and return a durable packet id'
   assert.ok(first.id);
   assert.equal(first.payloadPreviewJson.body,'First version.');
   assert.equal(first.sourceRefsJson[0].source_id,'tr_1');
-  assert.equal(typeof calls[0].params[7],'string');
-  assert.equal(typeof calls[0].params[8],'string');
-  assert.equal(typeof calls[0].params[32],'string');
-  assert.equal(calls[0].params[28],0);
-  assert.match(calls[0].sql,/case when val_external_action_packets\.status='executed'/);
+  const insertCall=calls.find(call=>/^insert /i.test(call.sql.trim()));
+  assert.equal(typeof insertCall.params[7],'string');
+  assert.equal(typeof insertCall.params[8],'string');
+  assert.equal(typeof insertCall.params[32],'string');
+  assert.equal(insertCall.params[28],0);
+  assert.match(insertCall.sql,/case when val_external_action_packets\.status='executed'/);
 
   const second=await service.createEmailSendPacket({to:'aric@example.com',subject:'Meeting follow-up',body:'Second version.',provider:'gmail'});
   const third=await service.createEmailSendPacket({to:'aric@example.com',subject:'Meeting follow-up',body:'Third version.',provider:'gmail'});
   assert.notEqual(second.id,third.id);
+});
+
+test('email send packets reuse identical legacy drafts but create a new packet after edits',async()=>{
+  let store={valExternalActionPackets:[],valExternalActionAudit:[]};
+  const service=createValExternalActionsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_content_identity`
+  });
+  const original=await service.createEmailSendPacket({
+    to:'aric@example.com',subject:'Meeting follow-up',body:'First version.',provider:'gmail',
+    sourceContext:{source:'transcript_action_items_attendee_email',draftId:'draft_1'}
+  });
+  const identical=await service.createEmailSendPacket({
+    to:'aric@example.com',subject:'Meeting follow-up',body:'First version.',provider:'gmail',
+    sourceContext:{source:'transcript_action_items_attendee_email',draftId:'draft_1'}
+  });
+  const edited=await service.createEmailSendPacket({
+    to:'aric@example.com',subject:'Meeting follow-up',body:'Second version.',provider:'gmail',
+    sourceContext:{source:'transcript_action_items_attendee_email',draftId:'draft_1'}
+  });
+  assert.equal(identical.id,original.id);
+  assert.notEqual(edited.id,original.id);
 });
 
 test('Postgres packet persistence fails before execution when no row is saved',async()=>{

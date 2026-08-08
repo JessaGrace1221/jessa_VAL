@@ -366,13 +366,28 @@ function createValExternalActionsService({
     const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
     const contentKey=crypto.createHash('sha256').update([to,subject,body,provider].join('\n')).digest('hex').slice(0,20);
+    const stableTarget=payload.threadId||payload.messageId||sourceContext.draftId||payload.id||'';
+    if(stableTarget){
+      const legacyId=packetId(uuid,scope(),'send_gate','send_email',stableTarget,subject);
+      const legacyPacket=await get(legacyId);
+      if(legacyPacket){
+        const legacyPayload=jsonValue(legacyPacket.payloadPreviewJson||legacyPacket.payload_preview_json,{});
+        const legacyContentKey=crypto.createHash('sha256').update([
+          compactText(legacyPayload.to||'',320),
+          compactText(legacyPayload.subject||'',320),
+          String(legacyPayload.body||legacyPayload.bodyText||legacyPayload.message||legacyPayload.bodyPreview||'').trim(),
+          String(legacyPayload.provider||legacyPacket.targetSystem||'gmail').trim().toLowerCase()
+        ].join('\n')).digest('hex').slice(0,20);
+        if(legacyContentKey===contentKey)return legacyPacket;
+      }
+    }
     const packet=basePacket({
       uuid,
       scope:scope(),
       source:'send_gate',
       actionType:'send_email',
       targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':'gmail',
-      targetId:payload.threadId||payload.messageId||sourceContext.draftId||payload.id||`${to}:${contentKey}`,
+      targetId:stableTarget?`${stableTarget}:${contentKey}`:`${to}:${contentKey}`,
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
       payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,googleProvider,accountEmail,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
