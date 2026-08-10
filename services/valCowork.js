@@ -1858,10 +1858,43 @@ function projectOverviewFocusLine(value={},brief={}){
     'confidence: ' + (focus.confidence || '...')
   ].join(' | ');
 }
-function parseProjectOverviewFocus(answer='',brief={},current={}){
+function inferredProjectOverviewFocusType(answer=''){
+  const source=String(answer || '').toLowerCase();
+  if(/\b(compare|comparison|versus|vs\.?|option|trade[- ]?off)\b/.test(source)) return 'comparison';
+  if(/\b(draft|write|create|build|prepare|proposal|email|document|artifact|outline)\b/.test(source)) return 'prepared_artifact';
+  if(/\b(missing|need to know|find out|unknown|clarify|more context|input)\b/.test(source)) return 'missing_input';
+  if(/\b(plan|map|sequence|roadmap|steps?|approach|strategy)\b/.test(source)) return 'plan';
+  return 'decision';
+}
+function inferredProjectOverviewTargetSection(answer='',focusType='decision'){
+  const source=String(answer || '').toLowerCase();
+  if(/\b(owner|person|people|team|who)\b/.test(source)) return 'people_involved';
+  if(/\b(document|source|transcript|email|evidence|file)\b/.test(source)) return 'documents_sources';
+  if(/\b(risk|block|stuck|problem|constraint|concern)\b/.test(source)) return 'risk_blocker';
+  if(/\b(milestone|checkpoint|deadline)\b/.test(source)) return 'milestones';
+  if(/\b(workstream|lane of work)\b/.test(source)) return 'workstreams';
+  if(/\b(relationship|trust|nurture|repair)\b/.test(source)) return 'relationship_nurture';
+  if(/\b(monitor|watch|after launch|signal)\b/.test(source)) return 'monitoring_rules';
+  if(/\b(phase|stage)\b/.test(source)) return 'project_phase';
+  if(/\b(operating system|process|sop|workflow)\b/.test(source)) return 'sop_fit';
+  if(focusType==='prepared_artifact') return 'prepared_work';
+  if(focusType==='missing_input') return 'what_val_needs_next';
+  return 'next_move';
+}
+function inferredProjectOverviewTitle(answer=''){
+  const source=compactText(answer,500)
+    .replace(/^(?:i (?:need|want|would like)|we (?:need|want|should))\s+to\s+/i,'')
+    .replace(/^(?:please)\s+/i,'');
+  const first=source.split(/[.!?]\s/)[0] || source;
+  return compactText(first,180).replace(/[.!?]+$/,'') || 'Choose the next project focus';
+}
+function parseProjectOverviewFocus(answer='',brief={},current={},expectedField=''){
   const source=multilineText(answer,5000).trim();
   if(!source) return normalizeProjectOverviewFocus(current,brief);
   const previous=normalizeProjectOverviewFocus(current,brief);
+  if(expectedField && !/[|]|(?:^|[;\n])\s*(?:focus type|type|focus title|title|focus|question|decision|work to resolve|complete when|completion condition|success condition|follow-through section|target section|section|basis|evidence|confidence)\s*:/i.test(source)){
+    return normalizeProjectOverviewFocus({...previous,[expectedField]:source},brief);
+  }
   const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
   let focusType=projectOverviewFocusType(monitoringValueFromLine(source,'focus type|type'));
   let title=monitoringValueFromLine(source,'focus title|title');
@@ -1879,15 +1912,18 @@ function parseProjectOverviewFocus(answer='',brief={},current={}){
     basis=basis || parts[5].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
     confidence=confidence || parts[6].replace(/^\s*confidence\s*:\s*/i,'');
   }
+  const inferredType=focusType || previous.focusType || inferredProjectOverviewFocusType(source);
+  const inferredTarget=targetSection || previous.targetSection || inferredProjectOverviewTargetSection(source,inferredType);
+  const sourceReceipt=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quote_or_summary || ref.quoteOrSummary || '',500)).find(Boolean);
   return normalizeProjectOverviewFocus({
     ...previous,
-    focusType:focusType || previous.focusType,
-    title:title || previous.title,
-    focusStatement:focusStatement || previous.focusStatement,
-    completionCondition:completionCondition || previous.completionCondition,
-    targetSection:targetSection || previous.targetSection,
-    basis:basis || previous.basis,
-    confidence:confidence || previous.confidence,
+    focusType:inferredType,
+    title:title || previous.title || inferredProjectOverviewTitle(source),
+    focusStatement:focusStatement || previous.focusStatement || source,
+    completionCondition:completionCondition || previous.completionCondition || 'The question is resolved and the next move is clear.',
+    targetSection:inferredTarget,
+    basis:basis || previous.basis || sourceReceipt || 'Executive judgment shared in Co-Work.',
+    confidence:confidence || previous.confidence || 'High',
     sourceRefs:brief.sourceRefs
   },brief);
 }
@@ -1915,28 +1951,45 @@ function buildProjectOverviewBrief(project={},input={}){
 }
 function projectOverviewQuestion(state={},brief={}){
   const focus=normalizeProjectOverviewFocus(state.draftProjectOverviewFocus || brief.currentFocus || {},brief);
-  const focusTypes=safeArray(brief.availableFocusTypes).map((option)=>`${option.name} (${option.id})`).join('; ');
-  const targetSections=safeArray(brief.availableTargetSections).map((option)=>`${option.name} (${option.id})`).join('; ');
-  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
   if(state.stage === 'project_overview'){
     return {
       targetField:'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus',
-      question:`What one thing should the ${brief.projectName || 'selected project'} Round Table focus on now? Choose one type: ${focusTypes}. Add one line: focus type | focus title | exact question, decision, or work to resolve | useful completion condition | Project Managers follow-through section (${targetSections}) | basis (source receipt or executive judgment) | confidence.`,
-      detail:`This creates one visible focus only; it does not rewrite the target section. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not create tasks, draft content, or take external action here.`
+      question:`What feels most important for ${brief.projectName || 'this project'} to resolve next?`,
+      detail:'Answer naturally. VAL will organize the project focus behind the scenes and show it to you before anything changes.'
     };
   }
   if(state.stage === 'project_overview_details'){
     const missing=missingProjectOverviewFocusFields(focus,brief);
+    const fieldByMissing={
+      'focus type from the available choices':'focusType',
+      'focus title':'title',
+      'exact question, decision, or work to resolve':'focusStatement',
+      'useful completion condition':'completionCondition',
+      'Project Managers follow-through section':'targetSection',
+      basis:'basis',
+      confidence:'confidence'
+    };
+    const prompts={
+      focusType:'Is this mainly a decision, a plan, a comparison, something for VAL to prepare, or information we still need?',
+      title:'What short name would make this focus easy to recognize?',
+      focusStatement:'What exactly needs to be resolved?',
+      completionCondition:'What will be true when this is handled?',
+      targetSection:'Where should this live in the project: the next move, people, prepared work, sources, a risk, or somewhere else?',
+      basis:'What are you basing this on?',
+      confidence:'How certain are you about this right now?'
+    };
+    const answerField=fieldByMissing[missing[0]] || '';
     return {
       targetField:'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus',
-      question:`Fill only these missing Round Table Focus details: ${missing.join(', ')}.\n\n${projectOverviewFocusLine(focus,brief)}`,
-      detail:'Choose only a focus type and Project Managers follow-through section that already exist. This records the focus; it does not update the target section.'
+      answerField,
+      question:prompts[answerField] || 'What else should VAL understand before it prepares this project focus?',
+      detail:'One question at a time. VAL is keeping the rest of the project context in place.'
     };
   }
   return {
     targetField:'project_overview_focus_packet',
     question:'Review the Round Table Focus, then apply it to this Project Manager.',
-    detail:'Applying updates only this project’s internal focus packet. Nothing external happens and no other section is rewritten.'
+    detail:'Review VAL’s understanding, then apply it to this project. Nothing external happens.'
   };
 }
 
@@ -2770,13 +2823,13 @@ function relationshipSectionQuestion(state={},brief={}){
 
 const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
   first_question:{
-    question:'What should this project be called, and what outcome should it create?',
+    question:'What should this project accomplish?',
     detail:'Feeds Identity, What this is, and Working narrative.',
     targetPacketField:'project_identity_packet.canonical_name + project_identity_packet.desired_outcome',
     pageBoxes:['Identity','What this is','Working narrative']
   },
   owner_monitoring:{
-    question:'Who owns this project, what is the next move, and what should VAL monitor next?',
+    question:'Who is responsible for moving this project forward?',
     detail:'Feeds People involved, Next move, and Monitoring after launch.',
     targetPacketField:'project_owner_packet + project_next_action_packet + project_monitoring_packet',
     pageBoxes:['People involved','Next move','Monitoring after launch']
@@ -2812,6 +2865,44 @@ const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
     pageBoxes:['Project Manager']
   }
 });
+
+function projectOnboardingQuestions(stage='first_question',brief={}){
+  const projectName=brief.projectName || 'this project';
+  const questions={
+    first_question:[
+      {key:'outcome',question:`What should ${projectName} accomplish?`}
+    ],
+    owner_monitoring:[
+      {key:'owner',question:`Who is responsible for moving ${projectName} forward?`},
+      {key:'next_move',question:'What needs to happen next?'},
+      {key:'monitor',question:'What should VAL keep an eye on so this does not quietly stall?'}
+    ],
+    workstreams:[
+      {key:'workstreams',question:'What are the main parts of the work? A simple list is perfect.'}
+    ],
+    milestones:[
+      {key:'milestones',question:'What are the important checkpoints along the way?'},
+      {key:'current_phase',question:'Where is the project right now?'}
+    ],
+    relationship_nurture:[
+      {key:'relationship_nurture',question:'Which relationships need attention for this project to go well?'}
+    ],
+    prepared_work:[
+      {key:'prepared_work',question:'What could VAL prepare now that would save you the most time?'}
+    ]
+  };
+  return questions[stage] || [];
+}
+function projectOnboardingCombinedAnswer(stage='first_question',answers={},brief={}){
+  const projectName=brief.projectName || 'Project';
+  if(stage==='first_question') return `Project name: ${projectName}\nOutcome: ${answers.outcome || ''}`;
+  if(stage==='owner_monitoring') return `Owner: ${answers.owner || ''}\nNext move: ${answers.next_move || ''}\nMonitor: ${answers.monitor || ''}`;
+  if(stage==='workstreams') return `Workstreams: ${answers.workstreams || ''}`;
+  if(stage==='milestones') return `Milestones: ${answers.milestones || ''}\nCurrent phase: ${answers.current_phase || ''}`;
+  if(stage==='relationship_nurture') return `Relationship nurture: ${answers.relationship_nurture || ''}`;
+  if(stage==='prepared_work') return `Prepared work: ${answers.prepared_work || ''}`;
+  return Object.values(answers).filter(Boolean).join('\n');
+}
 
 const PROJECT_ONBOARDING_STAGE_ORDER=['first_question','owner_monitoring','workstreams','milestones','relationship_nurture','prepared_work'];
 
@@ -2870,13 +2961,16 @@ function projectOnboardingQuestion(state={},brief={}){
   };
   if(state.stage==='ready_to_apply') return {
     targetField:contract.targetPacketField,
-    question:`Review this answer for ${contract.pageBoxes.join(', ')}, then apply it to this Project Manager.`,
-    detail:'Applying stores the answer exactly as provided. VAL does not infer or create additional project details here.'
+    question:'Does this look right?',
+    detail:'Review what VAL heard, then apply it to this project.'
   };
+  const questions=projectOnboardingQuestions(stage,brief);
+  const current=questions[Math.max(0,Number(state.questionIndex)||0)];
   return {
     targetField:contract.targetPacketField,
-    question:contract.question,
-    detail:`${contract.detail} This answer updates only: ${contract.pageBoxes.join(', ')}.`
+    answerField:current?.key || '',
+    question:current?.question || contract.question,
+    detail:'One question at a time. VAL will organize your answers into the project behind the scenes.'
   };
 }
 
@@ -3379,14 +3473,15 @@ function createValCoworkService({
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
     state.answers.push({text:answer,at:new Date().toISOString()});
-    state.draftProjectOverviewFocus=parseProjectOverviewFocus(answer,brief,state.draftProjectOverviewFocus || {});
+    const expectedField=safeArray(session.questionPlanJson).slice(-1)[0]?.answerField || '';
+    state.draftProjectOverviewFocus=parseProjectOverviewFocus(answer,brief,state.draftProjectOverviewFocus || {},expectedField);
     const focus=normalizeProjectOverviewFocus(state.draftProjectOverviewFocus,brief);
     const missing=missingProjectOverviewFocusFields(focus,brief);
     let question,message='';
     if(!missing.length){
       state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
       workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectOverviewFocus:focus,completionCondition:brief.completionCondition};
-      question=projectOverviewQuestion(state,brief);message='VAL prepared the Round Table Focus for review. Apply it when this is true.';
+      question=projectOverviewQuestion(state,brief);message='Here is what I heard. Review it, then add it to the project when it feels right.';
     }else{
       state.stage='project_overview_details';session.status='needs_input';workItem.status='needs_input';
       question=projectOverviewQuestion(state,brief);message=question.question;
@@ -3428,7 +3523,7 @@ function createValCoworkService({
     const now=new Date().toISOString();
     const sc=scope();
     const complete=brief.currentStage==='complete';
-    const state={stage:brief.currentStage,draftAnswer:'',answers:[]};
+    const state={stage:brief.currentStage,questionIndex:0,stageAnswers:{},draftAnswer:'',answers:[]};
     const question=projectOnboardingQuestion(state,brief);
     const session=await saveSession({
       id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,
@@ -3445,8 +3540,25 @@ function createValCoworkService({
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
     const stage=state.stage || brief.currentStage || 'first_question';
     if(stage==='complete') throw new Error('This project onboarding sequence is complete. Open the Project Managers section you want to refine.');
-    state.answers.push({text:answer,at:new Date().toISOString()});
-    state.draftAnswer=answer;
+    const questions=projectOnboardingQuestions(stage,brief);
+    const questionIndex=Math.max(0,Number(state.questionIndex)||0);
+    const currentQuestion=questions[questionIndex];
+    state.answers.push({text:answer,field:currentQuestion?.key || '',at:new Date().toISOString()});
+    state.stageAnswers={...(state.stageAnswers || {}),[currentQuestion?.key || `answer_${questionIndex+1}`]:answer};
+    if(questionIndex < questions.length-1){
+      state.questionIndex=questionIndex+1;
+      const question=projectOnboardingQuestion(state,brief);
+      session.stateJson=state;
+      session.questionPlanJson=[...(session.questionPlanJson || []),question];
+      session.status='needs_input';
+      session.updatedAt=new Date().toISOString();
+      workItem.status='needs_input';
+      workItem.updatedAt=new Date().toISOString();
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return publicResult(session,workItem,question.question,question);
+    }
+    state.draftAnswer=projectOnboardingCombinedAnswer(stage,state.stageAnswers,brief);
     state.stage='ready_to_apply';
     session.status='needs_review';
     workItem.status='needs_review';
@@ -3456,7 +3568,7 @@ function createValCoworkService({
       projectId:brief.entityId,
       projectName:brief.projectName,
       stage,
-      answer,
+      answer:state.draftAnswer,
       nextStage:projectOnboardingNextStage(stage),
       stageContract:contract,
       completionCondition:brief.completionCondition
@@ -3468,7 +3580,7 @@ function createValCoworkService({
     workItem.updatedAt=new Date().toISOString();
     await saveSession(session);
     await saveWorkItem(workItem);
-    return publicResult(session,workItem,`VAL prepared this onboarding answer for ${contract.pageBoxes.join(', ')}. Apply it when this is true.`,question);
+    return publicResult(session,workItem,'Here is what I heard. Review it, then add it to the project when it feels right.',question);
   }
   async function openProjectPeopleEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.people'];

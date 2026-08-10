@@ -691,10 +691,10 @@ test('Project Interview preserves its protected question, applies only its mappe
   const freshProject={...project(),metadataJson:{projectOnboarding:{status:'needs_interview'}}};
   const {service,appliedOnboarding}=serviceFor({loadedProject:freshProject});
   const opened=await service.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
-  assert.equal(opened.question.question,'What should this project be called, and what outcome should it create?');
+  assert.equal(opened.question.question,'What should Forever Freedom onboarding accomplish?');
   assert.equal(opened.question.targetField,'project_identity_packet.canonical_name + project_identity_packet.desired_outcome');
   assert.deepEqual(opened.session.workingBrief.currentStageContract.pageBoxes,['Identity','What this is','Working narrative']);
-  const ready=await service.respond(opened.session.id,{answer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'});
+  const ready=await service.respond(opened.session.id,{answer:'A ready partnership launch.'});
   assert.equal(ready.workItem.status,'needs_review');
   assert.equal(ready.workItem.payload.stage,'first_question');
   assert.equal(ready.workItem.payload.answer,'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.');
@@ -705,9 +705,19 @@ test('Project Interview preserves its protected question, applies only its mappe
   assert.equal(appliedOnboarding[0].stage,'first_question');
 
   const resumedProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'}}};
-  const resumed=await serviceFor({loadedProject:resumedProject}).service.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
-  assert.equal(resumed.question.question,'Who owns this project, what is the next move, and what should VAL monitor next?');
+  const {service:resumedService}=serviceFor({loadedProject:resumedProject});
+  const resumed=await resumedService.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
+  assert.equal(resumed.question.question,'Who is responsible for moving Forever Freedom onboarding forward?');
   assert.deepEqual(resumed.session.workingBrief.currentStageContract.pageBoxes,['People involved','Next move','Monitoring after launch']);
+  const owner=await resumedService.respond(resumed.session.id,{answer:'Jessa'});
+  assert.equal(owner.workItem.status,'needs_input');
+  assert.equal(owner.question.question,'What needs to happen next?');
+  const nextMove=await resumedService.respond(resumed.session.id,{answer:'Confirm the launch plan with the partner.'});
+  assert.equal(nextMove.workItem.status,'needs_input');
+  assert.match(nextMove.question.question,/keep an eye on/i);
+  const monitor=await resumedService.respond(resumed.session.id,{answer:'Watch for a week without a confirmed launch date.'});
+  assert.equal(monitor.workItem.status,'needs_review');
+  assert.equal(monitor.workItem.payload.answer,'Owner: Jessa\nNext move: Confirm the launch plan with the partner.\nMonitor: Watch for a week without a confirmed launch date.');
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -1078,14 +1088,11 @@ test('Project overview records one bounded Round Table focus without rewriting i
     scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_overview'}
   });
   assert.equal(opened.question.targetField,'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus');
-  assert.match(opened.question.question,/Decision/i);
+  assert.equal(opened.question.question,'What feels most important for Forever Freedom onboarding to resolve next?');
+  assert.doesNotMatch(opened.question.question,/focus type|confidence|\|/i);
   await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
 
-  const rejected=await service.respond(opened.session.id,{answer:'Unmapped request | Choose the sponsor revenue path | Decide which sponsor revenue path matches the MOU | One path and owner are explicit | Next move | Executive judgment: MOU has two possible sponsor paths | High'});
-  assert.equal(rejected.workItem.status,'needs_input');
-  assert.match(rejected.question.question,/focus type/i);
-
-  const ready=await service.respond(opened.session.id,{answer:'Decision | Choose the sponsor revenue path | Decide which sponsor revenue path matches the MOU | One path and owner are explicit | Next move | Executive judgment: MOU has two possible sponsor paths | High'});
+  const ready=await service.respond(opened.session.id,{answer:'We need to choose which sponsor revenue path matches the MOU.'});
   assert.equal(ready.workItem.status,'needs_review');
   assert.equal(ready.workItem.payload.projectOverviewFocus.focusType,'decision');
   assert.equal(ready.workItem.payload.projectOverviewFocus.targetSection,'next_move');
@@ -1095,7 +1102,7 @@ test('Project overview records one bounded Round Table focus without rewriting i
   assert.equal(applied.receipt.action,'apply_project_overview_focus');
   assert.equal(applied.receipt.payloadJson.noExternalAction,true);
   assert.equal(appliedOverviewFocuses.length,1);
-  assert.equal(appliedOverviewFocuses[0].projectOverviewFocus.title,'Choose the sponsor revenue path');
+  assert.equal(appliedOverviewFocuses[0].projectOverviewFocus.title,'choose which sponsor revenue path matches the MOU');
 });
 
 test('Prepared Work accepts only existing VAL artifact types and applies one internal Ready for You proposal',async()=>{
