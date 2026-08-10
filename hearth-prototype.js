@@ -1837,6 +1837,18 @@ const PROJECT_MANAGER_HEADER_COLORS = [
   {name:'Pistachio',hex:'#bad8c7',family:'green'}
 ];
 const PROJECT_ONBOARDING_FIRST_QUESTION = 'What should this project be called, and what outcome should it create?';
+const PROJECT_INTERVIEW_STAGE_QUESTIONS = {
+  first_question:[{key:'outcome',question:'What outcome should this project create?'}],
+  owner_monitoring:[
+    {key:'owner',question:'Who is responsible for moving this project forward?'},
+    {key:'next_move',question:'What needs to happen next?'},
+    {key:'monitor',question:'What should VAL keep an eye on so this does not quietly stall?'}
+  ],
+  workstreams:[{key:'workstreams',question:'What are the main parts of the work? A simple list is perfect.'}],
+  milestones:[{key:'milestones',question:'What are the important checkpoints that will prove this is moving?'}],
+  relationship_nurture:[{key:'relationship_nurture',question:'Which relationships need attention for this project to go well?'}],
+  prepared_work:[{key:'prepared_work',question:'What could VAL prepare now that would save you the most time?'}]
+};
 const PROJECT_INTERVIEW_STAGE_CONTRACTS = {
   first_question: {
     question: PROJECT_ONBOARDING_FIRST_QUESTION,
@@ -4775,8 +4787,12 @@ function projectInterviewStageContract(stage = 'first_question'){
 
 function projectInterviewNextQuestion(project = activeProjectProfile){
   const onboarding = projectOnboardingData(project || {});
-  return projectCleanText(onboarding.currentQuestion || '', '')
-    || projectInterviewStageContract(projectInterviewStage(project || {})).question;
+  const stage = projectInterviewStage(project || {});
+  const answeredKeys = new Set(Object.keys(onboarding.answers || {}).map((key) => String(key).split(':').pop()));
+  const unanswered = (PROJECT_INTERVIEW_STAGE_QUESTIONS[stage] || []).find((item) => !answeredKeys.has(item.key));
+  return unanswered?.question
+    || projectCleanText(onboarding.currentQuestion || '', '')
+    || projectInterviewStageContract(stage).question;
 }
 
 function projectPersonName(value = ''){

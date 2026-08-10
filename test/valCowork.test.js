@@ -714,6 +714,12 @@ test('Project Interview saves each answer immediately, names the visible change,
   assert.equal(owner.change.field,'owner');
   assert.equal(owner.question.question,'What needs to happen next?');
   assert.equal(resumedApplications[0].nextQuestion,'What needs to happen next?');
+
+  const ownerSavedProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.',answers:{'owner_monitoring:owner':{answer:'Owner: Jessa'}}}}};
+  const {service:ownerSavedService}=serviceFor({loadedProject:ownerSavedProject});
+  const ownerSaved=await ownerSavedService.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
+  assert.equal(ownerSaved.question.question,'What needs to happen next?');
+
   const nextMove=await resumedService.respond(resumed.session.id,{answer:'Confirm the launch plan with the partner.'});
   assert.equal(nextMove.workItem.status,'needs_input');
   assert.match(nextMove.question.question,/keep an eye on/i);

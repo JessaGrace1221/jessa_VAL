@@ -2939,6 +2939,7 @@ function projectOnboardingNextStage(stage='first_question'){
 }
 function buildProjectOnboardingBrief(project={},input={}){
   const metadata=project.metadataJson || project.metadata || {};
+  const onboarding=projectOnboardingData(project);
   const stage=projectOnboardingStage(project);
   const contract=projectOnboardingStageContract(stage);
   const projectId=String(project.projectId || project.id || input.scope?.entityId || '');
@@ -2961,6 +2962,7 @@ function buildProjectOnboardingBrief(project={},input={}){
       preparedWork:safeArray(project.preparedWork || metadata.preparedWork)
     },
     currentStage:stage,
+    answeredQuestionKeys:Object.keys(onboarding.answers || {}).filter((key)=>String(key).startsWith(`${stage}:`)).map((key)=>String(key).split(':').pop()),
     currentStageContract:contract,
     completedStages:PROJECT_ONBOARDING_STAGE_ORDER.filter((item)=>PROJECT_ONBOARDING_STAGE_ORDER.indexOf(item)<PROJECT_ONBOARDING_STAGE_ORDER.indexOf(stage)),
     sourceRefs:references,
@@ -3545,7 +3547,9 @@ function createValCoworkService({
     const now=new Date().toISOString();
     const sc=scope();
     const complete=brief.currentStage==='complete';
-    const state={stage:brief.currentStage,questionIndex:0,stageAnswers:{},draftAnswer:'',answers:[]};
+    const stageQuestions=projectOnboardingQuestions(brief.currentStage,brief);
+    const firstUnansweredIndex=stageQuestions.findIndex((question)=>!safeArray(brief.answeredQuestionKeys).includes(question.key));
+    const state={stage:brief.currentStage,questionIndex:firstUnansweredIndex>=0?firstUnansweredIndex:0,stageAnswers:{},draftAnswer:'',answers:[]};
     const question=projectOnboardingQuestion(state,brief);
     const session=await saveSession({
       id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,
