@@ -6133,10 +6133,10 @@ function renderCoworkProjectPreparedWorkItem(workItem = {}){
   if(!preparedWork || typeof preparedWork !== 'object') return '';
   const ready = workItem.status === 'needs_review';
   const applied = workItem.status === 'applied';
-  const status = applied ? 'Applied to Project Managers and Ready for You' : (ready ? 'Ready for review' : 'Preparing one artifact proposal');
+  const status = applied ? 'Created and waiting in Leverage' : (ready ? 'Ready to create' : 'Gathering the right context');
   return [
     '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
-      '<div class="cowork-work-item-heading"><span>Prepared artifact proposal</span><strong>' + escapeHtml(preparedWork.title || workItem.title || 'Prepared work') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-work-item-heading"><span>Work VAL will prepare</span><strong>' + escapeHtml(preparedWork.title || workItem.title || 'Prepared work') + '</strong><small>' + escapeHtml(status) + '</small></div>',
       '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(preparedWork.kindName || preparedWork.kind || 'Artifact type') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Audience', preparedWork.audience) + coworkWorkstreamField('Source context', preparedWork.sourceContext || preparedWork.source_context) + coworkWorkstreamField('Desired outcome', preparedWork.desiredOutcome || preparedWork.desired_outcome) + coworkWorkstreamField('Review boundary', preparedWork.reviewBoundary || preparedWork.review_boundary) + coworkWorkstreamField('Basis', preparedWork.basis) + coworkWorkstreamField('Confidence', preparedWork.confidence) + '</div></article></div>',
       ready ? '<button type="button" data-cowork-apply-project-prepared-work="' + escapeHtml(workItem.id || '') + '">Apply prepared work</button>' : '',
     '</section>'
