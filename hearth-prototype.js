@@ -8130,7 +8130,10 @@ function projectProfileFromIndexItem(item = {}){
   const name = item.name || item.displayName || 'Unnamed project';
   const summary = projectCompactText(item.summary || item.reality || '', 360);
   const signal = projectCompactText(item.signal || summary || 'Project signal available.', 150);
-  const nextMove = projectJudgmentLabel(item.nextMove || item.recommendedAction || '', 'Decide the next narrow move', [summary, signal]);
+  const nextMoveCandidate = projectCompactText(item.nextMove || item.recommendedAction || '', 180);
+  const nextMove = nextMoveCandidate && ![summary, signal].some((blockedText) => projectSimilarText(nextMoveCandidate, blockedText))
+    ? nextMoveCandidate
+    : 'Decide the next narrow move';
   const sourceDetails = normalizedProjectSourceDetails(item);
   const metadata = projectMetadataObject(item);
   return {
