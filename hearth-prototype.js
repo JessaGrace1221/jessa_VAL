@@ -4763,7 +4763,7 @@ function projectInterviewStage(project = {}){
   if(status === 'relationship_nurture_answered' || onboarding.relationshipNurtureAnswer || (Array.isArray(project.relationshipNurtureRules) && project.relationshipNurtureRules.length)) return 'prepared_work';
   if(status === 'milestones_answered' || onboarding.milestonesAnswer || (Array.isArray(project.milestones) && project.milestones.length)) return 'relationship_nurture';
   if(status === 'workstreams_answered' || status === 'lanes_answered' || onboarding.workstreamsAnswer || onboarding.lanesAnswer || (Array.isArray(project.workstreams) && project.workstreams.length)) return 'milestones';
-  if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'workstreams';
+  if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer) return 'workstreams';
   if(status === 'answered_first_question' || onboarding.firstAnswer) return 'owner_monitoring';
   if(projectNeedsOnboarding(project)) return 'first_question';
   return 'owner_monitoring';

@@ -2926,7 +2926,7 @@ function projectOnboardingStage(project={}){
   if(status==='relationship_nurture_answered' || onboarding.relationshipNurtureAnswer || safeArray(project.relationshipNurtureRules).length) return 'prepared_work';
   if(status==='milestones_answered' || onboarding.milestonesAnswer || safeArray(project.milestones).length) return 'relationship_nurture';
   if(status==='workstreams_answered' || status==='workstreams_applied' || onboarding.workstreamsAnswer || safeArray(project.workstreams).length) return 'milestones';
-  if(status==='owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || compactText(project.ownerMonitoringNotes || '',700)) return 'workstreams';
+  if(status==='owner_monitoring_answered' || onboarding.ownerMonitoringAnswer) return 'workstreams';
   if(status==='answered_first_question' || status==='foundation_applied' || onboarding.firstAnswer) return 'owner_monitoring';
   return 'first_question';
 }
@@ -3580,6 +3580,7 @@ function createValCoworkService({
       stage,
       questionKey:currentQuestion.key,
       answer:appliedAnswer,
+      answerValue:answer,
       advanceStage:isLastQuestion,
       nextQuestion,
       stageContract:projectOnboardingStageContract(stage),
