@@ -687,7 +687,7 @@ test('Postgres Co-Work fails closed when a scoped session cannot be written',asy
   );
 });
 
-test('Project Interview preserves its protected question, applies only its mapped answer, and resumes at the next stage',async()=>{
+test('Project Interview saves each answer immediately, names the visible change, and continues one question at a time',async()=>{
   const freshProject={...project(),metadataJson:{projectOnboarding:{status:'needs_interview'}}};
   const {service,appliedOnboarding}=serviceFor({loadedProject:freshProject});
   const opened=await service.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
@@ -695,14 +695,13 @@ test('Project Interview preserves its protected question, applies only its mappe
   assert.equal(opened.question.targetField,'project_identity_packet.canonical_name + project_identity_packet.desired_outcome');
   assert.deepEqual(opened.session.workingBrief.currentStageContract.pageBoxes,['Identity','What this is','Working narrative']);
   const ready=await service.respond(opened.session.id,{answer:'A ready partnership launch.'});
-  assert.equal(ready.workItem.status,'needs_review');
-  assert.equal(ready.workItem.payload.stage,'first_question');
-  assert.equal(ready.workItem.payload.answer,'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.');
-  const applied=await service.applyWorkItem(ready.workItem.id);
-  assert.equal(applied.receipt.action,'apply_project_onboarding_first_question');
-  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(ready.workItem.status,'needs_input');
+  assert.equal(ready.workItem.payload.stage,'owner_monitoring');
+  assert.equal(ready.change.field,'outcome');
+  assert.match(ready.message,/Updated outcome.*Who is responsible/i);
   assert.equal(appliedOnboarding.length,1);
   assert.equal(appliedOnboarding[0].stage,'first_question');
+  assert.equal(appliedOnboarding[0].questionKey,'outcome');
 
   const resumedProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'}}};
   const {service:resumedService}=serviceFor({loadedProject:resumedProject});
@@ -711,13 +710,16 @@ test('Project Interview preserves its protected question, applies only its mappe
   assert.deepEqual(resumed.session.workingBrief.currentStageContract.pageBoxes,['People involved','Next move','Monitoring after launch']);
   const owner=await resumedService.respond(resumed.session.id,{answer:'Jessa'});
   assert.equal(owner.workItem.status,'needs_input');
+  assert.equal(owner.change.field,'owner');
   assert.equal(owner.question.question,'What needs to happen next?');
   const nextMove=await resumedService.respond(resumed.session.id,{answer:'Confirm the launch plan with the partner.'});
   assert.equal(nextMove.workItem.status,'needs_input');
   assert.match(nextMove.question.question,/keep an eye on/i);
   const monitor=await resumedService.respond(resumed.session.id,{answer:'Watch for a week without a confirmed launch date.'});
-  assert.equal(monitor.workItem.status,'needs_review');
-  assert.equal(monitor.workItem.payload.answer,'Owner: Jessa\nNext move: Confirm the launch plan with the partner.\nMonitor: Watch for a week without a confirmed launch date.');
+  assert.equal(monitor.workItem.status,'needs_input');
+  assert.equal(monitor.workItem.payload.stage,'workstreams');
+  assert.equal(monitor.change.field,'monitor');
+  assert.match(monitor.question.question,/main parts of the work/i);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -1081,28 +1083,26 @@ test('Current Phase requires the applied operating system and accepts only its p
   assert.equal(appliedPhases[0].projectPhase.exitCondition,'Dashboard is ready for metric validation');
 });
 
-test('Project overview records one bounded Round Table focus without rewriting its follow-through section',async()=>{
-  const {service,appliedOverviewFocuses}=serviceFor();
+test('Project overview opens a source-scoped project conversation without manufacturing an apply step',async()=>{
+  const {service,appliedOverviewFocuses}=serviceFor({
+    generateConversationReply:async({workingBrief,messages})=>`For ${workingBrief.projectName}, the saved next move is ${workingBrief.recommendedNextMove}. You asked: ${messages.at(-1).content}`
+  });
   const opened=await service.openEntry({
     entrypointId:'project.overview',
     scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_overview'}
   });
-  assert.equal(opened.question.targetField,'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus');
-  assert.equal(opened.question.question,'What feels most important for Forever Freedom onboarding to resolve next?');
-  assert.doesNotMatch(opened.question.question,/focus type|confidence|\|/i);
-  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+  assert.equal(opened.question.targetField,'project conversation');
+  assert.equal(opened.question.question,'What would you like to work through about Forever Freedom onboarding?');
+  assert.equal(opened.workItem.type,'project_conversation');
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/cannot apply|complete and reviewed/i);
 
-  const ready=await service.respond(opened.session.id,{answer:'We need to choose which sponsor revenue path matches the MOU.'});
-  assert.equal(ready.workItem.status,'needs_review');
-  assert.equal(ready.workItem.payload.projectOverviewFocus.focusType,'decision');
-  assert.equal(ready.workItem.payload.projectOverviewFocus.targetSection,'next_move');
-
-  const applied=await service.applyWorkItem(ready.workItem.id);
-  assert.equal(applied.workItem.status,'applied');
-  assert.equal(applied.receipt.action,'apply_project_overview_focus');
-  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
-  assert.equal(appliedOverviewFocuses.length,1);
-  assert.equal(appliedOverviewFocuses[0].projectOverviewFocus.title,'choose which sponsor revenue path matches the MOU');
+  const answered=await service.respond(opened.session.id,{answer:'Which sponsor revenue path best matches the MOU?'});
+  assert.equal(answered.workItem.status,'active');
+  assert.match(answered.message,/Forever Freedom onboarding/);
+  assert.match(answered.message,/Which sponsor revenue path best matches the MOU/);
+  assert.ok(answered.workItem.sourceRefs.length > 0);
+  assert.equal(answered.session.state.messages.length,2);
+  assert.equal(appliedOverviewFocuses.length,0);
 });
 
 test('Prepared Work accepts only existing VAL artifact types and applies one internal Ready for You proposal',async()=>{

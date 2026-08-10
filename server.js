@@ -25474,7 +25474,7 @@ function projectCreatePayload(body={}, files=[]){
   const summary=String(body.summary||body.description||body.currentReality||'').trim();
   const projectId=String(body.projectId||stableKey(name)).replace(/[^a-z0-9:_-]/gi,'-').toLowerCase();
   const createdFrom=String(body.createdFrom||body.created_from||'hearth_projects_drawer').trim();
-  const needsProjectOnboarding=String(body.needsProjectOnboarding||body.needs_project_onboarding||'').toLowerCase()==='true'||createdFrom===PROJECT_DOCUMENT_ASSIGNMENT_SOURCE;
+  const needsProjectOnboarding=String(body.needsProjectOnboarding||body.needs_project_onboarding||'').toLowerCase()!=='false';
   const onboardingQuestion=String(body.onboardingQuestion||body.onboarding_question||'').trim();
   const intake={
     sopId:String(body.sopId||body.sop_id||'').trim(),
@@ -36449,20 +36449,20 @@ function coworkOnboardingOwner(answer=''){
   if(explicit) return explicit;
   return /\b(i own|i am the owner|i'm the owner|my project)\b/i.test(String(answer||'')) ? 'Jessa' : '';
 }
-async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',answer='',stageContract={},sourceRefs=[],sessionId='',workItemId=''}={}){
+async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',questionKey='',answer='',advanceStage=true,stageContract={},sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   if(!found) return null;
   const current=projectIndexItemFromProfile(found);
   const cleanStage=String(stage||'').trim();
-  const status=PROJECT_ONBOARDING_STATUS_BY_STAGE[cleanStage];
+  const status=advanceStage ? PROJECT_ONBOARDING_STATUS_BY_STAGE[cleanStage] : String(current.metadataJson?.projectOnboarding?.status||'needs_interview');
   const exactAnswer=String(answer||'').replace(/\r\n?/g,'\n').trim();
   if(!status||!exactAnswer) return null;
   const existing=current.metadataJson?.projectOnboarding&&typeof current.metadataJson.projectOnboarding==='object'
     ? current.metadataJson.projectOnboarding
     : {};
   const now=new Date().toISOString();
-  const answers={...(existing.answers&&typeof existing.answers==='object'?existing.answers:{}),[cleanStage]:{
+  const answers={...(existing.answers&&typeof existing.answers==='object'?existing.answers:{}),[`${cleanStage}:${questionKey||'answer'}`]:{
     answer:exactAnswer,
     targetPacketField:String(stageContract.targetPacketField||''),
     pageBoxes:Array.isArray(stageContract.pageBoxes)?stageContract.pageBoxes:[],
@@ -36472,6 +36472,7 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',a
     ...existing,
     status,
     currentStage:cleanStage,
+    lastChange:{field:questionKey||cleanStage,value:exactAnswer,updatedAt:now},
     firstQuestion:existing.firstQuestion||'What should this project be called, and what outcome should it create?',
     answers,
     updatedAt:now
@@ -36482,7 +36483,7 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',a
     whatValNowKnows:exactAnswer,
     projectOnboarding,
     hasNeedsProjectOnboarding:true,
-    needsProjectOnboarding:cleanStage!=='prepared_work',
+    needsProjectOnboarding:!(advanceStage&&cleanStage==='prepared_work'),
     rawContext:[
       current.sourceDetails?.rawContext||'',
       `Co-Work onboarding ${cleanStage} applied from session ${sessionId||'unknown'}.`
@@ -36502,8 +36503,8 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',a
     const owner=coworkOnboardingOwner(exactAnswer);
     const nextMove=coworkOnboardingAnswerField(exactAnswer,'next move|next step');
     const monitor=coworkOnboardingAnswerField(exactAnswer,'monitor|watch');
-    projectOnboarding.ownerMonitoringAnswer=exactAnswer;
-    patch.ownerMonitoringNotes=exactAnswer;
+    if(advanceStage) projectOnboarding.ownerMonitoringAnswer=[existing.ownerMonitoringAnswer,exactAnswer].filter(Boolean).join('\n');
+    patch.ownerMonitoringNotes=[current.ownerMonitoringNotes,exactAnswer].filter(Boolean).join('\n');
     if(owner) patch.nextStepOwner=owner;
     if(nextMove) patch.nextMove=nextMove;
     if(monitor) patch.monitoringRules=[monitor];
@@ -36515,10 +36516,8 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',a
   }
   if(cleanStage==='milestones'){
     const milestones=coworkOnboardingList(exactAnswer,'milestones?|checkpoints?');
-    const currentPhase=coworkOnboardingAnswerField(exactAnswer,'current phase|phase');
     projectOnboarding.milestonesAnswer=exactAnswer;
     if(milestones.length) patch.milestones=milestones;
-    if(currentPhase) patch.projectPhase=currentPhase;
   }
   if(cleanStage==='relationship_nurture'){
     const rules=coworkOnboardingList(exactAnswer,'relationship nurture|nurture');

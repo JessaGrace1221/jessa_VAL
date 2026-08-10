@@ -526,19 +526,21 @@
             <input type="text" name="name" placeholder="Frisson, client portal, book launch..." autocomplete="off" required>
           </label>
           <label>
-            <span>Operating system / SOP</span>
-            <select name="sopId" data-project-sop-select>
-              <option value="">Choose after VAL interviews me</option>
-              <option value="frisson_partner_onboarding">Frisson Partner Onboarding</option>
-              <option value="client_dashboard_buildout">Client Dashboard Buildout</option>
-              <option value="relationship_nurture_partnership">Long-Term Partnership Nurture</option>
-              <option value="new_sop">Create a new SOP from this project</option>
-            </select>
+            <span>What are you trying to make happen?</span>
+            <textarea name="summary" placeholder="Think out loud. A few sentences are enough; VAL will organize the project and ask one useful question at a time." required></textarea>
           </label>
-          <label>
-            <span>What is this project?</span>
-            <textarea name="summary" placeholder="Think out loud. VAL will interview you, structure this into a Project Manager Packet, and ask what is missing."></textarea>
-          </label>
+          <details class="project-create-context">
+            <summary>Add people, sources, or existing material</summary>
+            <label>
+              <span>Operating system / SOP</span>
+              <select name="sopId" data-project-sop-select>
+                <option value="">Let VAL recommend this later</option>
+                <option value="frisson_partner_onboarding">Frisson Partner Onboarding</option>
+                <option value="client_dashboard_buildout">Client Dashboard Buildout</option>
+                <option value="relationship_nurture_partnership">Long-Term Partnership Nurture</option>
+                <option value="new_sop">Create a new SOP from this project</option>
+              </select>
+            </label>
           <label>
             <span>Website or source code</span>
             <textarea name="websiteSource" placeholder="URLs, repo paths, source-code notes, sitemap clues, or what the codebase is called."></textarea>
@@ -560,6 +562,7 @@
             <span>Raw context</span>
             <textarea name="rawContext" placeholder="Anything else VAL should hold: risks, promises, constraints, links, pasted notes, open questions."></textarea>
           </label>
+          </details>
           <div class="project-create-actions">
             <button type="submit">Create project</button>
             <button type="button" data-project-create-cancel>Cancel</button>

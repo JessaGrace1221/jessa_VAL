@@ -1939,14 +1939,23 @@ function buildProjectOverviewBrief(project={},input={}){
     sectionId:'project_overview',
     projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
     currentReality:compactText(project.livingNarrative || project.reality || project.summary || '',900),
+    desiredOutcome:compactText(project.desiredOutcome || project.outcome || metadata.desiredOutcome || '',900),
     recommendedNextMove:compactText(project.nextMove || metadata.nextMove || '',500),
+    owner:compactText(project.nextStepOwner || metadata.nextStepOwner || metadata.owner?.name || '',180),
+    people:safeArray(project.relationships || project.people || metadata.relationships),
+    workstreams:safeArray(project.workstreams || metadata.workstreams),
+    milestones:safeArray(project.milestones || metadata.milestones),
+    monitoringRules:safeArray(project.monitoringRules || metadata.monitoringRules),
+    relationshipNurtureRules:safeArray(project.relationshipNurtureRules || metadata.relationshipNurtureRules),
+    preparedWork:safeArray(project.preparedWork || metadata.preparedWork),
+    projectOnboarding:metadata.projectOnboarding || {},
     availableFocusTypes:Object.values(PROJECT_OVERVIEW_FOCUS_TYPES),
     availableTargetSections:Object.entries(PROJECT_OVERVIEW_TARGET_SECTIONS).map(([id,name])=>({id,name})),
     currentFocus,
     sourceRefs:references,
-    objective:'Choose the one bounded question or work item the Project Managers Round Table should focus on next.',
-    completionCondition:'One allowed focus type, title, exact focus, useful completion condition, named Project Managers follow-through section, basis, confidence, and immutable source references are explicit.',
-    approvalBoundary:'Applying this focus changes only the selected project’s internal Round Table focus packet. It does not rewrite the named follow-through section, create a task, generate content, send a message, update CRM, change a calendar, or alter source evidence.'
+    objective:'Help the executive understand, decide, plan, or create within this exact project using its saved context and source evidence.',
+    completionCondition:'The executive receives a direct, useful answer grounded in this project, with a clear next move when one is warranted.',
+    approvalBoundary:'Conversation may clarify or prepare internal work. Nothing sends, publishes, changes CRM, or changes a calendar without explicit approval.'
   };
 }
 function projectOverviewQuestion(state={},brief={}){
@@ -2881,8 +2890,7 @@ function projectOnboardingQuestions(stage='first_question',brief={}){
       {key:'workstreams',question:'What are the main parts of the work? A simple list is perfect.'}
     ],
     milestones:[
-      {key:'milestones',question:'What are the important checkpoints along the way?'},
-      {key:'current_phase',question:'Where is the project right now?'}
+      {key:'milestones',question:'What are the important checkpoints that will prove this is moving?'}
     ],
     relationship_nurture:[
       {key:'relationship_nurture',question:'Which relationships need attention for this project to go well?'}
@@ -2898,7 +2906,7 @@ function projectOnboardingCombinedAnswer(stage='first_question',answers={},brief
   if(stage==='first_question') return `Project name: ${projectName}\nOutcome: ${answers.outcome || ''}`;
   if(stage==='owner_monitoring') return `Owner: ${answers.owner || ''}\nNext move: ${answers.next_move || ''}\nMonitor: ${answers.monitor || ''}`;
   if(stage==='workstreams') return `Workstreams: ${answers.workstreams || ''}`;
-  if(stage==='milestones') return `Milestones: ${answers.milestones || ''}\nCurrent phase: ${answers.current_phase || ''}`;
+  if(stage==='milestones') return `Milestones: ${answers.milestones || ''}`;
   if(stage==='relationship_nurture') return `Relationship nurture: ${answers.relationship_nurture || ''}`;
   if(stage==='prepared_work') return `Prepared work: ${answers.prepared_work || ''}`;
   return Object.values(answers).filter(Boolean).join('\n');
@@ -2942,6 +2950,16 @@ function buildProjectOnboardingBrief(project={},input={}){
     entityId:projectId,
     sectionId:'project_interview',
     projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentProject:{
+      desiredOutcome:compactText(project.desiredOutcome || project.outcome || metadata.desiredOutcome || '',900),
+      owner:compactText(project.nextStepOwner || metadata.nextStepOwner || metadata.owner?.name || '',180),
+      nextMove:compactText(project.nextMove || metadata.nextMove || '',700),
+      monitoringRules:safeArray(project.monitoringRules || metadata.monitoringRules),
+      workstreams:safeArray(project.workstreams || metadata.workstreams),
+      milestones:safeArray(project.milestones || metadata.milestones),
+      relationshipNurtureRules:safeArray(project.relationshipNurtureRules || metadata.relationshipNurtureRules),
+      preparedWork:safeArray(project.preparedWork || metadata.preparedWork)
+    },
     currentStage:stage,
     currentStageContract:contract,
     completedStages:PROJECT_ONBOARDING_STAGE_ORDER.filter((item)=>PROJECT_ONBOARDING_STAGE_ORDER.indexOf(item)<PROJECT_ONBOARDING_STAGE_ORDER.indexOf(stage)),
@@ -3462,11 +3480,15 @@ function createValCoworkService({
     if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
     const brief=buildProjectOverviewBrief(project,input);
     if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
-    const state={stage:'project_overview',draftProjectOverviewFocus:{},answers:[]};
-    const question=projectOverviewQuestion(state,brief);
+    const state={stage:'conversation',messages:[],answers:[]};
+    const question={
+      targetField:'project conversation',
+      question:`What would you like to work through about ${brief.projectName || 'this project'}?`,
+      detail:'VAL has the saved project brief, people, sources, decisions, and prepared work in context.'
+    };
     const now=new Date().toISOString(),sc=scope();
     const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
-    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_overview_focus',title:`Round Table focus for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectOverviewFocus:state.draftProjectOverviewFocus,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_conversation',title:`Co-Work on ${brief.projectName}`,status:'active',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
     return publicResult(session,workItem,question.question,question);
   }
   async function respondProjectOverview(session,workItem,answer){
@@ -3543,8 +3565,26 @@ function createValCoworkService({
     const questions=projectOnboardingQuestions(stage,brief);
     const questionIndex=Math.max(0,Number(state.questionIndex)||0);
     const currentQuestion=questions[questionIndex];
+    if(!currentQuestion) throw new Error('VAL could not identify the next project question. Nothing was changed.');
     state.answers.push({text:answer,field:currentQuestion?.key || '',at:new Date().toISOString()});
     state.stageAnswers={...(state.stageAnswers || {}),[currentQuestion?.key || `answer_${questionIndex+1}`]:answer};
+    const isLastQuestion=questionIndex >= questions.length-1;
+    const appliedAnswer=projectOnboardingCombinedAnswer(stage,{[currentQuestion.key]:answer},brief);
+    const project=await applyProjectOnboarding({
+      projectId:brief.entityId,
+      projectName:brief.projectName,
+      stage,
+      questionKey:currentQuestion.key,
+      answer:appliedAnswer,
+      advanceStage:isLastQuestion,
+      stageContract:projectOnboardingStageContract(stage),
+      sourceRefs:workItem.sourceRefsJson || [],
+      sessionId:session.id,
+      workItemId:workItem.id
+    });
+    if(!project) throw new Error('VAL could not save that answer to the selected project. Nothing was changed.');
+    const changeLabel={outcome:'Outcome',owner:'Owner',next_move:'Next move',monitor:'What VAL should watch',workstreams:'Workstreams',milestones:'Milestones',current_phase:'Current phase',relationship_nurture:'Relationship care',prepared_work:'Prepared work request'}[currentQuestion.key] || 'Project brief';
+    const change={field:currentQuestion.key,label:changeLabel,value:answer,summary:`Updated ${changeLabel.toLowerCase()} in the project brief.`};
     if(questionIndex < questions.length-1){
       state.questionIndex=questionIndex+1;
       const question=projectOnboardingQuestion(state,brief);
@@ -3553,26 +3593,23 @@ function createValCoworkService({
       session.status='needs_input';
       session.updatedAt=new Date().toISOString();
       workItem.status='needs_input';
+      workItem.payloadJson={...workItem.payloadJson,lastChange:change,answer:'',stage};
       workItem.updatedAt=new Date().toISOString();
       await saveSession(session);
       await saveWorkItem(workItem);
-      return publicResult(session,workItem,question.question,question);
+      return {...publicResult(session,workItem,`${change.summary} ${question.question}`,question),project,change};
     }
-    state.draftAnswer=projectOnboardingCombinedAnswer(stage,state.stageAnswers,brief);
-    state.stage='ready_to_apply';
-    session.status='needs_review';
-    workItem.status='needs_review';
-    const contract=projectOnboardingStageContract(stage);
-    workItem.payloadJson={
-      ...workItem.payloadJson,
-      projectId:brief.entityId,
-      projectName:brief.projectName,
-      stage,
-      answer:state.draftAnswer,
-      nextStage:projectOnboardingNextStage(stage),
-      stageContract:contract,
-      completionCondition:brief.completionCondition
-    };
+    const nextStage=projectOnboardingNextStage(stage);
+    const complete=nextStage==='complete';
+    state.stage=nextStage;
+    state.questionIndex=0;
+    state.stageAnswers={};
+    session.status=complete?'completed':'needs_input';
+    workItem.status=complete?'applied':'needs_input';
+    brief.currentStage=nextStage;
+    brief.currentStageContract=projectOnboardingStageContract(nextStage);
+    session.workingBriefJson=brief;
+    workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,stage:nextStage,nextStage,stageContract:brief.currentStageContract,lastChange:change,answer:'',completionCondition:brief.completionCondition};
     const question=projectOnboardingQuestion(state,brief);
     session.stateJson=state;
     session.questionPlanJson=[...(session.questionPlanJson || []),question];
@@ -3580,7 +3617,8 @@ function createValCoworkService({
     workItem.updatedAt=new Date().toISOString();
     await saveSession(session);
     await saveWorkItem(workItem);
-    return publicResult(session,workItem,'Here is what I heard. Review it, then add it to the project when it feels right.',question);
+    const message=complete ? `${change.summary} The project foundation is now complete and visible in Project Managers.` : `${change.summary} ${question.question}`;
+    return {...publicResult(session,workItem,message,complete?null:question),project,change};
   }
   async function openProjectPeopleEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.people'];
@@ -4398,9 +4436,8 @@ function createValCoworkService({
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     // A Transcript Working Brief is an active source-scoped conversation, not a
     // one-shot form. Every turn must retain the exact selected transcript.
-    if(session.entrypointId === 'transcript.working_brief') return respondScopedConversation(session,workItem,answer);
+    if(session.entrypointId === 'transcript.working_brief' || session.entrypointId === 'project.overview') return respondScopedConversation(session,workItem,answer);
     if(coworkTurnLooksConversational(answer)) return respondScopedConversation(session,workItem,answer);
-    if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.onboarding') return respondProjectOnboarding(session,workItem,answer);
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);

@@ -4455,7 +4455,9 @@ function setProjectCreateOpen(open){
 }
 
 function projectCreateFormPayload(){
-  return new FormData(projectCreateForm);
+  const payload = new FormData(projectCreateForm);
+  payload.set('needsProjectOnboarding', 'true');
+  return payload;
 }
 
 function projectCreateFormValue(payload, key){
@@ -5734,6 +5736,8 @@ function renderProjectManagerProfile(project = {}){
   const overviewFocus = packet.project_overview_focus_packet || {};
   const needsOnboarding = projectNeedsOnboarding(project);
   const onboardingIncomplete = projectOnboardingIncomplete(project);
+  const onboarding = projectOnboardingData(project);
+  const lastChange = onboarding.lastChange || {};
   const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
@@ -5744,11 +5748,11 @@ function renderProjectManagerProfile(project = {}){
     .filter(Boolean);
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks.map(projectGraphLinkText) : [];
   const projectSummary = needsOnboarding
-    ? projectCleanText(project.desiredOutcome || project.outcome, 'Project details are blank until onboarding is complete.')
+    ? projectCleanText(project.desiredOutcome || project.outcome || project.summary || project.reality, 'Tell VAL what you are trying to make happen.')
     : projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
   const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
-  const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
-  const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
+  const nextMove = onboardingIncomplete ? interview.current_question : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
+  const whyNext = onboardingIncomplete ? 'Answer one question. VAL will update this brief immediately and show you what changed.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
   const peopleHtml = relationships.length
     ? '<ul>' + projectManagerList(relationships) + '</ul>'
     : '<p>No people are linked yet. VAL should not pretend a project has stakeholders until they are attached.</p>';
@@ -5758,8 +5762,9 @@ function renderProjectManagerProfile(project = {}){
     details.rawContext ? 'Raw project context attached' : '',
     details.relationships ? 'Relationship context attached' : ''
   ].filter(Boolean);
-  const evidenceHtml = documents.concat(graph).length
-    ? '<ul>' + projectManagerList(documents.concat(graph), 'No source evidence linked yet.') + '</ul>'
+  const visibleEvidence = documents.concat(graph).concat(details.rawContext ? ['Project intake: ' + details.rawContext] : []);
+  const evidenceHtml = visibleEvidence.length
+    ? '<ul>' + projectManagerList(visibleEvidence, 'No source evidence linked yet.') + '</ul>'
     : '<p>No inspectable source evidence is attached to this project yet.</p>';
   const preparedHtml = prepared.length
     ? '<ul>' + projectManagerList(prepared, 'No prepared work yet.') + '</ul>'
@@ -5814,6 +5819,7 @@ function renderProjectManagerProfile(project = {}){
       '<article><span>Evidence</span>' + evidenceHtml + '</article>',
       '<article><span>Prepared work</span>' + preparedHtml + '</article>',
     '</section>',
+    lastChange.value ? '<section class="project-manager-story" aria-label="Latest project learning"><div><span>What changed</span><p>' + escapeHtml(projectCleanText(lastChange.value, 'The project brief was updated.')) + '</p></div><div><span>Saved</span><p>' + escapeHtml(lastChange.updatedAt ? new Date(lastChange.updatedAt).toLocaleString() : 'Just now') + '</p></div></section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
       '<div><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p></div>',
       '<div><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p></div>',
@@ -6190,10 +6196,12 @@ function renderCoworkProjectOnboardingItem(workItem = {}){
   const ready = workItem.status === 'needs_review';
   const applied = workItem.status === 'applied';
   const complete = String(payload.stage || '') === 'complete';
+  const lastChange = payload.lastChange || {};
   const status = complete ? 'Project onboarding complete' : (applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing the next onboarding answer'));
   return [
     '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
-      '<div class="cowork-work-item-heading"><span>Protected project onboarding</span><strong>' + escapeHtml(workItem.title || 'Project onboarding') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-work-item-heading"><span>Project understanding</span><strong>' + escapeHtml(workItem.title || 'Project conversation') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      lastChange.summary ? '<div class="cowork-workstream-list"><article><strong>What changed</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField(lastChange.label || 'Project brief', lastChange.value || '') + '</div></article></div>' : '',
       answer ? '<div class="cowork-workstream-list"><article><strong>Answer</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Project Manager boxes', pageBoxes.join(', ')) + coworkWorkstreamField('Response', answer) + coworkWorkstreamField('Approval', 'Internal Project Managers update only.') + '</div></article></div>' : '',
       ready ? '<button type="button" data-cowork-apply-project-onboarding="' + escapeHtml(workItem.id || '') + '">Apply onboarding answer</button>' : '',
     '</section>'
@@ -6645,20 +6653,21 @@ async function openProjectWorkstreamsCowork(node = null){
 async function openProjectOverviewCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
+  if(projectOnboardingIncomplete(project)) return openProjectOnboardingCowork(node);
   const projectId = project.projectId || project.id || project.profileKey || '';
   if(!projectId) return;
   const scopedPacket = projectScopedCoworkPacket('project_overview', project);
   const action = 'project:cowork:project_overview';
   const baseSource = projectSource(project, action);
   const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
-  activeProjectCoworkTarget = {field:'project_overview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Set Round Table focus',scopedPacket};
+  activeProjectCoworkTarget = {field:'project_overview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Co-Work on this project',scopedPacket};
   activeCoworkEntry = {entrypointId:'project.overview',sessionId:'',workItemId:'',projectId,status:'opening'};
-  openContextualCoworkSession({returnTarget:'project',title:'Set Round Table focus',meaning:'Preparing the Round Table Focus for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will record one bounded focus, its completion condition, and the one Project Managers section that needs follow-through. It will not rewrite that section, create a task, generate content, or take external action.',placeholder:'Preparing the selected Project Managers Round Table brief...',heading:'Choosing one focus for ' + (project.name || 'this project'),detail:'This interview fills the Round Table focus at the top of this Project Manager.',publicDetail:'Scoped to Project Managers: Round Table focus.',lockContext:true});
+  openContextualCoworkSession({returnTarget:'project',title:'Co-Work on this project',meaning:'VAL has the saved understanding of ' + (project.name || 'this project') + ' in the room.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'Ask a question, test a decision, map a plan, or create something useful. VAL will answer from this project and its attached sources. Nothing external happens without approval.',placeholder:'Ask VAL about this project...',heading:'What would you like to work through?',detail:project.name || 'This project',publicDetail:'The project context is already loaded.',lockContext:true});
   void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
   try{
-    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.overview',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_overview'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Round Table focus yet.'});
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.overview',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_overview'}},{timeoutMs:10000,timeoutMessage:'VAL could not open this project conversation yet.'});
     renderCoworkEntryResult(result,{replaceMessage:true});
-  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Round Table Focus interview. Nothing was changed. ' + error.message,{replace:true});}
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this project conversation. Nothing was changed. ' + error.message,{replace:true});}
 }
 
 async function openProjectOnboardingCowork(node = null){
@@ -6672,18 +6681,18 @@ async function openProjectOnboardingCowork(node = null){
   const action = 'project:cowork:project_interview';
   const baseSource = projectSource(project, action);
   const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
-  activeProjectCoworkTarget = {field:'project_interview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Continue project onboarding',scopedPacket};
+  activeProjectCoworkTarget = {field:'project_interview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Shape this project with VAL',scopedPacket};
   activeCoworkEntry = {entrypointId:'project.onboarding',sessionId:'',workItemId:'',projectId,status:'opening'};
   openContextualCoworkSession({
     returnTarget:'project',
-    title:'Continue project onboarding',
-    meaning:'Preparing the next protected onboarding question for ' + (project.name || 'this project') + '.',
+    title:'Shape this project with VAL',
+    meaning:'VAL is holding what is already known about ' + (project.name || 'this project') + ' and choosing the next useful question.',
     context:projectScopedCoworkContextLines(scopedPacket),
-    recommendation:'VAL will ask only the current mapped onboarding question, then prepare that answer for internal review. It will not infer missing details, copy another project, create a task, or take external action.',
+    recommendation:'Answer naturally. VAL will update the visible project brief immediately, tell you exactly what changed, and then ask the next useful question. Nothing external happens here.',
     placeholder:'Preparing the next Project Managers onboarding question...',
-    heading:'Project onboarding for ' + (project.name || 'this project'),
-    detail:'This interview currently feeds ' + contract.pageBoxes.join(', ') + '.',
-    publicDetail:'Scoped to Project Managers: Project Interview.',
+    heading:'Working on ' + (project.name || 'this project'),
+    detail:'The next answer will update ' + contract.pageBoxes.join(', ') + '.',
+    publicDetail:'Scoped to this project and its saved evidence.',
     lockContext:true
   });
   void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {
@@ -7083,6 +7092,13 @@ async function finalizeActiveCoworkResponse(entry = {}, result = {}){
   const isDirectRelationshipCardUpdate = entry?.entrypointId === 'relationship.section'
     && workItem.status === 'needs_review'
     && Boolean(workItem.id);
+  if(result.project && entry?.entrypointId === 'project.onboarding'){
+    const refreshed = projectProfileFromIndexItem(result.project);
+    projectIndexProfiles[refreshed.id] = refreshed;
+    activeProjectProfile = refreshed;
+    renderProjectRolodex();
+    renderProjectManagerProfile(refreshed);
+  }
   if(!isDirectRelationshipCardUpdate){
     renderCoworkEntryResult(result);
     return result;
@@ -9042,13 +9058,15 @@ function appendProjectRolodexRow(project){
   name.textContent = project.name;
   const status = document.createElement('span');
   status.className = 'project-row-status';
-  status.textContent = project.status || packet.project_admission_packet.admission_state.replace(/_/g, ' ');
+  const onboardingIncomplete = projectOnboardingIncomplete(project);
+  const ownerName = projectPersonName(project.owner || project.nextStepOwner || '');
+  status.textContent = onboardingIncomplete ? 'Shaping' : ([project.projectPhase || project.status, ownerName].filter(Boolean).join(' · ') || packet.project_admission_packet.admission_state.replace(/_/g, ' '));
   const signal = document.createElement('span');
   signal.className = 'project-row-signal';
-  signal.textContent = judgment.why_it_matters;
+  signal.textContent = projectCleanText(project.desiredOutcome || project.summary || project.reality || judgment.current_reality, 'Open the project to add its outcome.');
   const next = document.createElement('span');
   next.className = 'project-row-next';
-  next.textContent = nextPacket.next_action;
+  next.textContent = onboardingIncomplete ? projectInterviewNextQuestion(project) : nextPacket.next_action;
   button.append(name, status, signal, next);
   projectRolodex.appendChild(button);
 }
@@ -9056,6 +9074,11 @@ function appendProjectRolodexRow(project){
 function renderProjectRolodex(){
   if(!projectRolodex) return;
   updateProjectIndexSourceLabel();
+  if(projectDetail?.classList.contains('project-index-open') && projectSubtitle){
+    projectSubtitle.textContent = projectIndexLoaded
+      ? 'Choose a project to see its current truth, next move, evidence, and prepared work.'
+      : 'Loading the live project index.';
+  }
   projectRolodex.innerHTML = '';
   const items = projectIndexItems();
   if(!items.length){
@@ -9269,6 +9292,7 @@ async function createProjectFromDrawer(event){
       updateProjectFileReceipt();
       setProjectCreateOpen(false);
       if(projectCreateStatus) projectCreateStatus.textContent = '';
+      window.setTimeout(() => { void openProjectOnboardingCowork(projectManagerProfile); }, 0);
     }
   }catch(error){
     projectCreateStatus.textContent = 'Project was not created: ' + error.message;
