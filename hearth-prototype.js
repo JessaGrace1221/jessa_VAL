@@ -5550,7 +5550,7 @@ function renderProjectOnboardingPanel(project = activeProjectProfile, interview 
     '<section class="project-onboarding-panel" aria-label="Project onboarding">',
       '<div>',
         '<span>Project onboarding</span>',
-        '<strong>' + escapeHtml(interview.current_question || PROJECT_ONBOARDING_FIRST_QUESTION) + '</strong>',
+        '<strong>' + escapeHtml(projectInterviewNextQuestion(project)) + '</strong>',
         '<p>' + escapeHtml(continuing ? 'Continue with the next mapped Project Manager section. Earlier answers remain attached to this project.' : 'VAL has the project shell and evidence. The plan stays blank until this answer gives the project its shape.') + '</p>',
       '</div>',
       '<button type="button" data-project-cowork-field="project_interview">' + (continuing ? 'Continue onboarding chat' : 'Start onboarding chat') + '</button>',
@@ -5770,7 +5770,7 @@ function renderProjectManagerProfile(project = {}){
     ? projectCleanText(project.desiredOutcome || project.outcome || project.summary || project.reality, 'Tell VAL what you are trying to make happen.')
     : projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
   const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
-  const nextMove = onboardingIncomplete ? interview.current_question : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
+  const nextMove = onboardingIncomplete ? projectInterviewNextQuestion(project) : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = onboardingIncomplete ? 'Answer one question. VAL will update this brief immediately and show you what changed.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
   const peopleHtml = relationships.length
     ? '<ul>' + projectManagerList(relationships) + '</ul>'
@@ -5841,7 +5841,7 @@ function renderProjectManagerProfile(project = {}){
     lastChange.value ? '<section class="project-manager-story" aria-label="Latest project learning"><div><span>What changed</span><p>' + escapeHtml(projectCleanText(lastChange.value, 'The project brief was updated.')) + '</p></div><div><span>Saved</span><p>' + escapeHtml(lastChange.updatedAt ? new Date(lastChange.updatedAt).toLocaleString() : 'Just now') + '</p></div></section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
       '<div><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p></div>',
-      '<div><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p></div>',
+      '<div><span>What VAL needs next</span><p>' + escapeHtml(projectInterviewNextQuestion(project)) + '</p></div>',
     '</section>'
   ].join('');
 }
