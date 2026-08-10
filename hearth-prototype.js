@@ -4789,6 +4789,7 @@ function projectInterviewNextQuestion(project = activeProjectProfile){
   const onboarding = projectOnboardingData(project || {});
   const stage = projectInterviewStage(project || {});
   const answeredKeys = new Set(Object.keys(onboarding.answers || {}).map((key) => String(key).split(':').pop()));
+  if(onboarding.lastChange?.field) answeredKeys.add(String(onboarding.lastChange.field));
   const unanswered = (PROJECT_INTERVIEW_STAGE_QUESTIONS[stage] || []).find((item) => !answeredKeys.has(item.key));
   return unanswered?.question
     || projectCleanText(onboarding.currentQuestion || '', '')

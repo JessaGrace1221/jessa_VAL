@@ -2962,7 +2962,10 @@ function buildProjectOnboardingBrief(project={},input={}){
       preparedWork:safeArray(project.preparedWork || metadata.preparedWork)
     },
     currentStage:stage,
-    answeredQuestionKeys:Object.keys(onboarding.answers || {}).filter((key)=>String(key).startsWith(`${stage}:`)).map((key)=>String(key).split(':').pop()),
+    answeredQuestionKeys:Array.from(new Set([
+      ...Object.keys(onboarding.answers || {}).filter((key)=>String(key).startsWith(`${stage}:`)).map((key)=>String(key).split(':').pop()),
+      ...(onboarding.lastChange?.field ? [String(onboarding.lastChange.field)] : [])
+    ])),
     currentStageContract:contract,
     completedStages:PROJECT_ONBOARDING_STAGE_ORDER.filter((item)=>PROJECT_ONBOARDING_STAGE_ORDER.indexOf(item)<PROJECT_ONBOARDING_STAGE_ORDER.indexOf(stage)),
     sourceRefs:references,

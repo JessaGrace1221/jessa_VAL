@@ -720,6 +720,11 @@ test('Project Interview saves each answer immediately, names the visible change,
   const ownerSaved=await ownerSavedService.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
   assert.equal(ownerSaved.question.question,'What needs to happen next?');
 
+  const ownerReceiptProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.',lastChange:{field:'owner',value:'Jessa'}}}};
+  const {service:ownerReceiptService}=serviceFor({loadedProject:ownerReceiptProject});
+  const ownerReceipt=await ownerReceiptService.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
+  assert.equal(ownerReceipt.question.question,'What needs to happen next?');
+
   const nextMove=await resumedService.respond(resumed.session.id,{answer:'Confirm the launch plan with the partner.'});
   assert.equal(nextMove.workItem.status,'needs_input');
   assert.match(nextMove.question.question,/keep an eye on/i);
