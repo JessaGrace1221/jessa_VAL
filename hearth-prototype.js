@@ -8131,7 +8131,7 @@ function projectProfileFromIndexItem(item = {}){
   const summary = projectCompactText(item.summary || item.reality || '', 360);
   const signal = projectCompactText(item.signal || summary || 'Project signal available.', 150);
   const nextMoveCandidate = projectCompactText(item.nextMove || item.recommendedAction || '', 180);
-  const nextMove = nextMoveCandidate && ![summary, signal].some((blockedText) => projectSimilarText(nextMoveCandidate, blockedText))
+  const nextMove = nextMoveCandidate && ![summary].some((blockedText) => projectSimilarText(nextMoveCandidate, blockedText))
     ? nextMoveCandidate
     : 'Decide the next narrow move';
   const sourceDetails = normalizedProjectSourceDetails(item);
