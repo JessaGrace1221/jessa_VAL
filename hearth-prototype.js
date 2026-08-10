@@ -1847,9 +1847,9 @@ const PROJECT_INTERVIEW_STAGE_CONTRACTS = {
     pageBoxes: ['Identity', 'What this is', 'Working narrative']
   },
   owner_monitoring: {
-    question: 'Who owns this project, what is the next move, and what should VAL monitor?',
-    detail: 'Feeds People involved, Next move, and Monitoring after launch.',
-    placeholder: 'Owner: ... Next move: ... VAL should monitor...',
+    question: 'Who is responsible for moving this project forward?',
+    detail: 'VAL asks about ownership, the next move, and monitoring one question at a time.',
+    placeholder: 'Name the person responsible for moving this forward.',
     missingField: 'owner_next_move_monitoring',
     targetPacketField: 'project_owner_packet + project_next_action_packet.next_action + project_sop_packet.monitoring_rules',
     pageBoxes: ['People involved', 'Next move', 'Monitoring after launch']
@@ -4774,7 +4774,9 @@ function projectInterviewStageContract(stage = 'first_question'){
 }
 
 function projectInterviewNextQuestion(project = activeProjectProfile){
-  return projectInterviewStageContract(projectInterviewStage(project || {})).question;
+  const onboarding = projectOnboardingData(project || {});
+  return projectCleanText(onboarding.currentQuestion || '', '')
+    || projectInterviewStageContract(projectInterviewStage(project || {})).question;
 }
 
 function projectPersonName(value = ''){
@@ -5894,6 +5896,10 @@ function projectProfileForCoworkNode(node = null){
 }
 
 function coworkEntryPlaceholder(question = {}){
+  const prompt = String(question.question || '');
+  if(/who is responsible for moving/i.test(prompt)) return 'Name the person responsible for moving this forward.';
+  if(/what needs to happen next/i.test(prompt)) return 'Describe the next concrete move.';
+  if(/what should val keep an eye on/i.test(prompt)) return 'Name the signal, risk, or change VAL should watch.';
   const target = String(question.targetField || '');
   if(target === 'project_identity_packet.canonical_name + project_identity_packet.desired_outcome') return 'Project name: ...; Outcome: ...';
   if(target === 'project_owner_packet + project_next_action_packet + project_monitoring_packet') return 'Owner: ...; Next move: ...; Monitor: ...';

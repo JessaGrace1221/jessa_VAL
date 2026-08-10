@@ -36449,7 +36449,7 @@ function coworkOnboardingOwner(answer=''){
   if(explicit) return explicit;
   return /\b(i own|i am the owner|i'm the owner|my project)\b/i.test(String(answer||'')) ? 'Jessa' : '';
 }
-async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',questionKey='',answer='',advanceStage=true,stageContract={},sourceRefs=[],sessionId='',workItemId=''}={}){
+async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',questionKey='',answer='',advanceStage=true,nextQuestion='',stageContract={},sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   if(!found) return null;
@@ -36472,6 +36472,7 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',q
     ...existing,
     status,
     currentStage:cleanStage,
+    currentQuestion:String(nextQuestion||''),
     lastChange:{field:questionKey||cleanStage,value:exactAnswer,updatedAt:now},
     firstQuestion:existing.firstQuestion||'What should this project be called, and what outcome should it create?',
     answers,

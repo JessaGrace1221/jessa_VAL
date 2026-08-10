@@ -3570,6 +3570,10 @@ function createValCoworkService({
     state.stageAnswers={...(state.stageAnswers || {}),[currentQuestion?.key || `answer_${questionIndex+1}`]:answer};
     const isLastQuestion=questionIndex >= questions.length-1;
     const appliedAnswer=projectOnboardingCombinedAnswer(stage,{[currentQuestion.key]:answer},brief);
+    const nextStage=projectOnboardingNextStage(stage);
+    const nextQuestion=isLastQuestion
+      ? projectOnboardingQuestions(nextStage,brief)[0]?.question || ''
+      : questions[questionIndex+1]?.question || '';
     const project=await applyProjectOnboarding({
       projectId:brief.entityId,
       projectName:brief.projectName,
@@ -3577,6 +3581,7 @@ function createValCoworkService({
       questionKey:currentQuestion.key,
       answer:appliedAnswer,
       advanceStage:isLastQuestion,
+      nextQuestion,
       stageContract:projectOnboardingStageContract(stage),
       sourceRefs:workItem.sourceRefsJson || [],
       sessionId:session.id,
@@ -3599,7 +3604,6 @@ function createValCoworkService({
       await saveWorkItem(workItem);
       return {...publicResult(session,workItem,`${change.summary} ${question.question}`,question),project,change};
     }
-    const nextStage=projectOnboardingNextStage(stage);
     const complete=nextStage==='complete';
     state.stage=nextStage;
     state.questionIndex=0;

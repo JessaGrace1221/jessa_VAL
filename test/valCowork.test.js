@@ -702,9 +702,10 @@ test('Project Interview saves each answer immediately, names the visible change,
   assert.equal(appliedOnboarding.length,1);
   assert.equal(appliedOnboarding[0].stage,'first_question');
   assert.equal(appliedOnboarding[0].questionKey,'outcome');
+  assert.match(appliedOnboarding[0].nextQuestion,/Who is responsible/i);
 
   const resumedProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'}}};
-  const {service:resumedService}=serviceFor({loadedProject:resumedProject});
+  const {service:resumedService,appliedOnboarding:resumedApplications}=serviceFor({loadedProject:resumedProject});
   const resumed=await resumedService.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
   assert.equal(resumed.question.question,'Who is responsible for moving Forever Freedom onboarding forward?');
   assert.deepEqual(resumed.session.workingBrief.currentStageContract.pageBoxes,['People involved','Next move','Monitoring after launch']);
@@ -712,9 +713,11 @@ test('Project Interview saves each answer immediately, names the visible change,
   assert.equal(owner.workItem.status,'needs_input');
   assert.equal(owner.change.field,'owner');
   assert.equal(owner.question.question,'What needs to happen next?');
+  assert.equal(resumedApplications[0].nextQuestion,'What needs to happen next?');
   const nextMove=await resumedService.respond(resumed.session.id,{answer:'Confirm the launch plan with the partner.'});
   assert.equal(nextMove.workItem.status,'needs_input');
   assert.match(nextMove.question.question,/keep an eye on/i);
+  assert.match(resumedApplications[1].nextQuestion,/keep an eye on/i);
   const monitor=await resumedService.respond(resumed.session.id,{answer:'Watch for a week without a confirmed launch date.'});
   assert.equal(monitor.workItem.status,'needs_input');
   assert.equal(monitor.workItem.payload.stage,'workstreams');
