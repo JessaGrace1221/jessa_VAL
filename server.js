@@ -25481,7 +25481,7 @@ function projectCreatePayload(body={}, files=[]){
     websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
     documents:String(body.documents||body.documentsAndContracts||body.contracts||'').trim(),
     relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
-    rawContext:String(body.rawContext||body.raw_context||body.notes||'').trim()
+    rawContext:String(body.rawContext||body.raw_context||body.notes||(summary?`Executive project brief: ${summary}`:'')).trim()
   };
   const sourceTypes=Object.entries(intake).filter(([,value])=>value).map(([key])=>key);
   const projectFiles=(files||[]).filter(file=>/documentsAndContracts|documents|contracts|projectFiles/i.test(String(file.fieldname||'')));
@@ -39363,6 +39363,15 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
     if(!payload.name)return res.status(400).json({ok:false,error:'Project name is required.'});
     const profileKey=`project:${payload.projectId||stableKey(payload.name)}`;
     const uploadedFiles=await saveProjectSourceFiles({files:payload.projectFiles,payload,profileKey});
+    const intakeAnswered=Boolean(payload.needsProjectOnboarding&&payload.summary);
+    const projectOnboarding=payload.needsProjectOnboarding ? {
+      status:intakeAnswered?'answered_first_question':'needs_interview',
+      firstQuestion:'What outcome should this project create?',
+      firstAnswer:intakeAnswered?`Project name: ${payload.name}\nOutcome: ${payload.summary}`:'',
+      currentQuestion:intakeAnswered
+        ? `Who is responsible for moving ${payload.name} forward?`
+        : (payload.onboardingQuestion||'What outcome should this project create?')
+    } : null;
     const row=await saveRelationshipProfile({
       profileType:'project',
       profileKey,
@@ -39380,7 +39389,8 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
         sourceTypes:payload.sourceTypes,
         createdFrom:payload.createdFrom||'hearth_projects_drawer',
         needsProjectOnboarding:payload.needsProjectOnboarding,
-        ...(payload.needsProjectOnboarding?{projectOnboarding:{status:'needs_interview',currentQuestion:payload.onboardingQuestion||'What should this project be called, and what outcome should it create?'}}:{}),
+        ...(payload.summary?{desiredOutcome:payload.summary,whatValNowKnows:payload.summary,livingNarrative:payload.summary}:{}),
+        ...(projectOnboarding?{projectOnboarding}:{}),
         noExternalAction:true
       }
     });
