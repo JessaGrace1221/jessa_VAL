@@ -5759,12 +5759,21 @@ function renderProjectManagerProfile(project = {}){
   const lastChange = onboarding.lastChange || {};
   const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
+  const ownerAssignment = packet.project_owner_packet || projectOwnerAssignment(project, relationships);
+  const ownerName = projectCleanText(ownerAssignment.name);
+  const visiblePeople = Array.from(new Set([ownerName, ...relationships].filter(Boolean)));
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
   const details = normalizedProjectSourceDetails(project);
   const documents = projectListFromValue(project.documents || details.documents);
   const prepared = packet.project_prepared_work_packets
     .map((item) => typeof item === 'string' ? item : (item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review'))
     .filter(Boolean);
+  const preparationRequests = projectListFromValue(
+    project.preparedWorkRequests ||
+    project.metadataJson?.preparedWorkRequests ||
+    project.metadata?.preparedWorkRequests ||
+    (onboarding.preparedWorkAnswer && !prepared.length ? onboarding.preparedWorkAnswer.replace(/^Prepared work:\s*/i, '') : '')
+  );
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks.map(projectGraphLinkText) : [];
   const projectSummary = needsOnboarding
     ? projectCleanText(project.desiredOutcome || project.outcome || project.summary || project.reality, 'Tell VAL what you are trying to make happen.')
@@ -5772,8 +5781,8 @@ function renderProjectManagerProfile(project = {}){
   const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
   const nextMove = onboardingIncomplete ? projectInterviewNextQuestion(project) : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = onboardingIncomplete ? 'Answer one question. VAL will update this brief immediately and show you what changed.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
-  const peopleHtml = relationships.length
-    ? '<ul>' + projectManagerList(relationships) + '</ul>'
+  const peopleHtml = visiblePeople.length
+    ? '<ul>' + projectManagerList(visiblePeople.map((name) => name === ownerName ? name + ' (owner)' : name)) + '</ul>'
     : '<p>No people are linked yet. VAL should not pretend a project has stakeholders until they are attached.</p>';
   const evidenceItems = [
     documents.length ? documents.length + ' document/source receipt' + (documents.length === 1 ? '' : 's') : '',
@@ -5787,7 +5796,9 @@ function renderProjectManagerProfile(project = {}){
     : '<p>No inspectable source evidence is attached to this project yet.</p>';
   const preparedHtml = prepared.length
     ? '<ul>' + projectManagerList(prepared, 'No prepared work yet.') + '</ul>'
-    : '<p>No prepared work is waiting here. If VAL can draft from this packet, it should appear in Leverage.</p>';
+    : preparationRequests.length
+      ? '<p><strong>Requested from VAL:</strong> ' + escapeHtml(preparationRequests.join('; ')) + '</p><p>No draft exists yet. Shape the actual artifact before anything can enter Leverage.</p>'
+      : '<p>No prepared artifact is waiting here. Only real, reviewable work will appear in this section and in Leverage.</p>';
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
     ? 'Project attached to ' + relationshipSubtitle + '.'
@@ -5804,7 +5815,7 @@ function renderProjectManagerProfile(project = {}){
         '<p>' + escapeHtml(projectSummary) + '</p>',
         '<div class="project-manager-tags">',
           '<span>' + escapeHtml(statusLabel) + '</span>',
-          '<span>' + escapeHtml(relationships.length ? relationships.length + ' people linked' : 'No people linked') + '</span>',
+          '<span>' + escapeHtml(visiblePeople.length ? visiblePeople.length + (visiblePeople.length === 1 ? ' person linked' : ' people linked') : 'No people linked') + '</span>',
           '<span>' + escapeHtml(evidenceItems.length ? evidenceItems[0] : 'Evidence needed') + '</span>',
           '<span>' + escapeHtml(sop.sop_name) + '</span>',
         '</div>',
@@ -5814,6 +5825,7 @@ function renderProjectManagerProfile(project = {}){
           '<button type="button" data-project-edit-open>Edit project</button>',
           '<button type="button" data-project-pin-open>Put a pin in it</button>',
           prepared.length ? '<button type="button" data-project-cowork-field="prepared_work">Review prepared work</button>' : '',
+          !prepared.length && preparationRequests.length ? '<button type="button" data-project-cowork-field="prepared_work">Prepare requested work</button>' : '',
           onboardingIncomplete ? '<button type="button" data-project-cowork-field="project_interview">Answer what is missing</button>' : '',
         '</div>',
         renderProjectEditForm(project),

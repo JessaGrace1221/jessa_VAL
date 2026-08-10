@@ -36528,7 +36528,7 @@ async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',q
   if(cleanStage==='prepared_work'){
     const preparedWork=coworkOnboardingList(exactAnswer,'prepared work|prepare');
     projectOnboarding.preparedWorkAnswer=exactAnswer;
-    if(preparedWork.length) patch.preparedWork=preparedWork;
+    if(preparedWork.length) patch.preparedWorkRequests=preparedWork;
   }
   await updateProjectProfileLocal(projectId,patch);
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));

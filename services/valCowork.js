@@ -3629,7 +3629,9 @@ function createValCoworkService({
     workItem.updatedAt=new Date().toISOString();
     await saveSession(session);
     await saveWorkItem(workItem);
-    const message=complete ? `${change.summary} The project foundation is now complete and visible in Project Managers.` : `${change.summary} ${question.question}`;
+    const message=complete
+      ? `${change.summary} The project foundation is now complete and visible in Project Managers. This is a preparation request, not a finished draft; choose Prepare requested work to shape the real artifact for Leverage.`
+      : `${change.summary} ${question.question}`;
     return {...publicResult(session,workItem,message,complete?null:question),project,change};
   }
   async function openProjectPeopleEntry(input={}){

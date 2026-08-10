@@ -83,3 +83,11 @@ test('core drawer Co-Work controls route to selected canonical entries only', ()
   assert.match(transcriptRoute, /Select a transcript before opening its Working Brief/);
   assert.doesNotMatch(hearthJs, /Co-Work with VAL about Transcripts/);
 });
+
+test('Project Managers separates saved preparation requests from real prepared artifacts', () => {
+  assert.match(serverJs, /patch\.preparedWorkRequests=preparedWork/);
+  assert.doesNotMatch(serverJs, /if\(preparedWork\.length\) patch\.preparedWork=preparedWork/);
+  assert.match(hearthJs, /No draft exists yet\. Shape the actual artifact before anything can enter Leverage\./);
+  assert.match(hearthJs, /Prepare requested work/);
+  assert.match(hearthJs, /visiblePeople\.map\(\(name\) => name === ownerName \? name \+ ' \(owner\)'/);
+});
