@@ -31327,6 +31327,14 @@ document.querySelector('[data-project-create-cancel]')?.addEventListener('click'
 
 projectFileInput?.addEventListener('change', updateProjectFileReceipt);
 
+projectManagerProfile?.addEventListener('click', async (event) => {
+  const card = event.target.closest('[data-project-cowork-field]');
+  if(!card) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await openProjectFieldCowork(card.dataset.projectCoworkField, card);
+});
+
 projectManagerProfile?.addEventListener('keydown', async (event) => {
   if(event.target.closest('button,a,input,select,textarea,summary')) return;
   const scope = event.target.closest('[data-project-cowork-scope]');
