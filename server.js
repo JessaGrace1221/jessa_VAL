@@ -23909,6 +23909,7 @@ function projectUpdatePayload(body={}){
     milestones:projectUpdateListValue(body.milestones),
     relationshipNurtureRules:projectUpdateListValue(body.relationshipNurtureRules||body.relationship_nurture_rules),
     preparedWork:projectUpdateListValue(body.preparedWork||body.prepared_work),
+    preparedWorkRequests:projectUpdateListValue(body.preparedWorkRequests||body.prepared_work_requests),
     hasNeedsProjectOnboarding,
     needsProjectOnboarding:String(needsProjectOnboardingValue||'').toLowerCase()==='true',
     projectOnboardingStatus:String(body.projectOnboardingStatus||body.project_onboarding_status||'').trim(),
@@ -23966,6 +23967,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
         })).filter((item)=>item.id&&item.kind&&item.title&&item.audience&&item.sourceContext&&item.desiredOutcome&&item.reviewBoundary&&item.basis&&item.confidence)
       : null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
+    const preparedWorkRequests=Array.isArray(patch.preparedWorkRequests)?patch.preparedWorkRequests:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
           relationshipId:String(person?.relationshipId||person?.relationship_id||person?.id||'').trim(),
@@ -24061,6 +24063,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectOverviewFocus?.id&&projectOverviewFocus.focusType&&projectOverviewFocus.title&&projectOverviewFocus.focusStatement&&projectOverviewFocus.completionCondition&&projectOverviewFocus.targetSection&&projectOverviewFocus.basis&&projectOverviewFocus.confidence?{projectOverviewFocus}:{}),
       ...(projectPreparedWork?{projectPreparedWork}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
+      ...(preparedWorkRequests.length?{preparedWorkRequests}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
       ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
@@ -25296,7 +25299,15 @@ function projectIndexItemFromProfile(profile={}){
   const status=profile.relationshipStatus||metadata.status||profile.status||'Observed';
   const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
-  const nextMove=metadata.nextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
+  const onboarding=metadata.projectOnboarding&&typeof metadata.projectOnboarding==='object'&&!Array.isArray(metadata.projectOnboarding)?metadata.projectOnboarding:{};
+  const onboardingAnswers=onboarding.answers&&typeof onboarding.answers==='object'&&!Array.isArray(onboarding.answers)?onboarding.answers:{};
+  const savedOnboardingOwner=coworkOnboardingAnswerField(onboardingAnswers['owner_monitoring:owner']?.answer||'','owner|project owner');
+  const savedOnboardingNextMove=coworkOnboardingAnswerField(onboardingAnswers['owner_monitoring:next_move']?.answer||'','next move|next step');
+  const metadataOwner=String(metadata.nextStepOwner||metadata.owner?.name||'').trim();
+  const metadataNextMove=String(metadata.nextMove||'').trim();
+  const effectiveOwner=/^(?:owner|next move|next step|monitor):?$/i.test(metadataOwner)?savedOnboardingOwner:(metadataOwner||savedOnboardingOwner);
+  const effectiveNextMove=/^(?:owner|next move|next step|monitor):?/i.test(metadataNextMove)?savedOnboardingNextMove:(metadataNextMove||savedOnboardingNextMove);
+  const nextMove=effectiveNextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
   const projectNarrative=metadata.projectNarrative&&typeof metadata.projectNarrative==='object'&&!Array.isArray(metadata.projectNarrative)?metadata.projectNarrative:null;
   const projectNeedsNext=metadata.projectNeedsNext&&typeof metadata.projectNeedsNext==='object'&&!Array.isArray(metadata.projectNeedsNext)?metadata.projectNeedsNext:null;
   const projectOperatingSystem=metadata.projectOperatingSystem&&typeof metadata.projectOperatingSystem==='object'&&!Array.isArray(metadata.projectOperatingSystem)?metadata.projectOperatingSystem:null;
@@ -25337,11 +25348,11 @@ function projectIndexItemFromProfile(profile={}){
     ].filter(Boolean).join(' · '),
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
-    owner:metadata.owner||null,
+    owner:effectiveOwner?{...(metadata.owner||{}),name:effectiveOwner,id:metadata.owner?.id||effectiveOwner}:metadata.owner||null,
     assignedProjectManager:metadata.assignedProjectManager||null,
     desiredOutcome:metadata.desiredOutcome||metadata.outcome||'',
     outcome:metadata.outcome||metadata.desiredOutcome||'',
-    nextStepOwner:metadata.nextStepOwner||metadata.owner?.name||'',
+    nextStepOwner:effectiveOwner,
     nextStepDueAt:metadata.nextStepDueAt||'',
     projectPhase:metadata.projectPhase||projectPhaseRecord?.currentPhase||projectPhaseRecord?.current_phase||'',
     projectPhaseEvidence:metadata.projectPhaseEvidence||projectPhaseRecord?.phaseEvidence||projectPhaseRecord?.phase_evidence||'',
@@ -25389,6 +25400,7 @@ function projectIndexItemFromProfile(profile={}){
     projectDocuments:Array.isArray(metadata.projectDocuments)?metadata.projectDocuments:[],
     projectPreparedWork:Array.isArray(metadata.projectPreparedWork)?metadata.projectPreparedWork:[],
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
+    preparedWorkRequests:Array.isArray(metadata.preparedWorkRequests)?metadata.preparedWorkRequests:[],
     metadataJson:metadata,
     sourceDetails,
     href:'./dashboard.html?view=projects&projectId='+encodeURIComponent(id)
@@ -36436,7 +36448,7 @@ const PROJECT_ONBOARDING_STATUS_BY_STAGE={
 };
 function coworkOnboardingAnswerField(answer='',labels=''){
   const source=String(answer||'');
-  const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`,'i'));
+  const match=source.match(new RegExp(`(?:^|[;\\n])[ \\t]*(?:${labels})[ \\t]*:[ \\t]*([^;\\n]*)`,'i'));
   return String(match?.[1]||'').replace(/\s+/g,' ').trim();
 }
 function coworkOnboardingList(answer='',labels=''){
