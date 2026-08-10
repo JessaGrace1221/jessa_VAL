@@ -1119,19 +1119,20 @@ test('Project overview opens a source-scoped project conversation without manufa
   assert.equal(appliedOverviewFocuses.length,0);
 });
 
-test('Prepared Work accepts only existing VAL artifact types and applies one internal Ready for You proposal',async()=>{
+test('Prepared Work asks human questions and sends one grounded request into Leverage',async()=>{
   const {service,appliedPreparedWork}=serviceFor();
   const opened=await service.openEntry({
     entrypointId:'project.prepared_work',
     scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'prepared_work'}
   });
   assert.equal(opened.question.targetField,'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You');
-  assert.match(opened.question.question,/Proposal draft/i);
+  assert.match(opened.question.question,/document, proposal, email/i);
+  assert.doesNotMatch(opened.question.question,/proposal_draft|working title \| intended audience/i);
   await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
 
   const rejected=await service.respond(opened.session.id,{answer:'Made-up podcast | Forever Freedom sponsor proposal | prospective US sponsors | Forever Freedom MOU | Clarify scope and sponsorship value | Internal review before any external draft or send | Source receipt: Forever Freedom MOU | High'});
   assert.equal(rejected.workItem.status,'needs_input');
-  assert.match(rejected.question.question,/artifact type/i);
+  assert.match(rejected.question.question,/What should VAL create|What form should it take/i);
 
   const ready=await service.respond(opened.session.id,{answer:'Proposal draft | Forever Freedom sponsor proposal | prospective US sponsors | Forever Freedom MOU | Clarify scope and sponsorship value | Internal review before any external draft or send | Source receipt: Forever Freedom MOU | High'});
   assert.equal(ready.workItem.status,'needs_review');

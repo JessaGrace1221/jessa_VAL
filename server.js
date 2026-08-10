@@ -23963,6 +23963,11 @@ async function updateProjectProfileLocal(projectId='',patch={}){
           reviewBoundary:String(item?.reviewBoundary||item?.review_boundary||'').trim(),
           basis:String(item?.basis||'').trim(),
           confidence:String(item?.confidence||'').trim(),
+          subject:String(item?.subject||'').trim(),
+          body:String(item?.body||item?.content||'').trim(),
+          html:String(item?.html||'').trim(),
+          generatedAt:String(item?.generatedAt||item?.generated_at||'').trim(),
+          usedEvidence:Array.isArray(item?.usedEvidence)?item.usedEvidence:(Array.isArray(item?.used_evidence)?item.used_evidence:[]),
           sourceRefs:Array.isArray(item?.sourceRefs)?item.sourceRefs:[]
         })).filter((item)=>item.id&&item.kind&&item.title&&item.audience&&item.sourceContext&&item.desiredOutcome&&item.reviewBoundary&&item.basis&&item.confidence)
       : null;
@@ -37255,6 +37260,48 @@ async function applyCoworkProjectPreparedWork({projectId,projectName='',projectP
     confidence,
     sourceRefs:refs
   };
+  const projectPacket=[
+    `Project: ${current.name}`,
+    current.outcome?`Outcome: ${current.outcome}`:'',
+    current.currentReality?`Current reality: ${current.currentReality}`:'',
+    current.nextMove?`Next move: ${current.nextMove}`:'',
+    current.nextStepOwner?`Owner: ${current.nextStepOwner}`:'',
+    current.whatValNeedsNext?`What VAL needs next: ${current.whatValNeedsNext}`:'',
+    Array.isArray(current.workstreams)&&current.workstreams.length?`Workstreams: ${current.workstreams.map(item=>item?.name||item?.title||item).filter(Boolean).join('; ')}`:'',
+    Array.isArray(current.milestones)&&current.milestones.length?`Milestones: ${current.milestones.map(item=>item?.name||item?.title||item).filter(Boolean).join('; ')}`:'',
+    `Requested work: ${prepared.title}`,
+    `Audience: ${prepared.audience}`,
+    `Source direction: ${prepared.sourceContext}`,
+    `Desired outcome: ${prepared.desiredOutcome}`,
+    `Review boundary: ${prepared.reviewBoundary}`,
+    current.sourceDetails?.rawContext?`Project history:\n${current.sourceDetails.rawContext}`:''
+  ].filter(Boolean).join('\n\n');
+  const sourcePackets=[
+    {source_title:`${current.name} project brief`,source_type:'project',context_excerpt:projectPacket},
+    ...refs.map((ref,index)=>({
+      source_title:ref.title||ref.sourceTitle||`Project evidence ${index+1}`,
+      source_type:ref.sourceType||ref.source_type||'project_evidence',
+      context_excerpt:ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||''
+    })).filter(packet=>packet.context_excerpt)
+  ];
+  const generated=await generatePreparedArtifact({
+    artifact:{kind:prepared.kind,title:prepared.title,target:prepared.audience,recipientName:prepared.audience},
+    workItem:{
+      id:workItemId,
+      title:prepared.title,
+      projectId,
+      projectName:current.name,
+      evidence_quote:refs[0]?.quote_or_summary||refs[0]?.quoteOrSummary||'',
+      source_refs:refs,
+      source_packets:sourcePackets,
+      workingBrief:{projectName:current.name,sourceRefs:refs,sourcePackets,contextLines:[projectPacket]}
+    }
+  });
+  if(!generated?.ok){
+    const missing=(generated?.missingInformation||[]).filter(Boolean).join(' ');
+    throw new Error(missing||'VAL could not create grounded prepared work from this project packet.');
+  }
+  Object.assign(prepared,generated.artifact);
   const existing=Array.isArray(current.projectPreparedWork)?current.projectPreparedWork:[];
   const projectPreparedWorkRecords=[...existing.filter((item)=>String(item?.id||'')!==prepared.id),prepared];
   const now=new Date().toISOString();
@@ -37268,14 +37315,14 @@ async function applyCoworkProjectPreparedWork({projectId,projectName='',projectP
     itemType:prepared.kind,
     title:prepared.title,
     status:'ready_for_review',
-    summary:prepared.desiredOutcome,
-    whyUserIsSeeingThis:`VAL prepared the ${prepared.kindName.toLowerCase()} proposal for ${current.name}. Your review is required before any content is generated or anything external happens.`,
+    summary:String(prepared.body||prepared.html||prepared.desiredOutcome).slice(0,500),
+    whyUserIsSeeingThis:`VAL prepared this ${prepared.kindName.toLowerCase()} from the ${current.name} project packet. Your review is required before anything external happens.`,
     whyNow:prepared.sourceContext,
     readinessJson:{status:'ready_for_review',projectId,projectName:current.name,noExternalAction:true},
-    whatValPrepared:`Prepared the internal ${prepared.kindName.toLowerCase()} proposal only.`,
+    whatValPrepared:String(prepared.body||prepared.html||'').slice(0,1200),
     whatUserNeedsToDo:prepared.reviewBoundary,
-    whatValDid:'Recorded the artifact type, source context, desired outcome, and review boundary. No content was generated and no external action was taken.',
-    whatOnlyUserCanDo:'Review whether this is the right artifact to prepare and provide any further direction before content generation or any external action.',
+    whatValDid:`Created the actual ${prepared.kindName.toLowerCase()} from the attached project evidence. No external action was taken.`,
+    whatOnlyUserCanDo:'Review, edit, approve, or dismiss this prepared work before any external action.',
     estimatedReviewMinutes:2,
     sourceRefsJson:refs,
     confidence:confidenceScore,
@@ -37283,7 +37330,7 @@ async function applyCoworkProjectPreparedWork({projectId,projectName='',projectP
     approvalPolicy:'approval_required',
     representationRisk:/proposal|invoice|agreement|email|calendar/.test(kind)?'high':'medium',
     actionsJson:[{key:'review_prepared_work',label:'Review prepared work',external_action:false},{key:'approve',label:'Approve',external_action:false},{key:'reject',label:'Reject',external_action:false}],
-    metadataJson:{source:'project_managers_cowork',projectId,projectName:current.name,preparedArtifactKind:prepared.kind,preparedArtifact:{id:prepared.id,kind:prepared.kind,title:prepared.title,audience:prepared.audience,sourceContext:prepared.sourceContext,desiredOutcome:prepared.desiredOutcome,reviewBoundary:prepared.reviewBoundary,externalSend:false,externalPublish:false,externalCalendarWrite:false,reviewRequired:true},canValAct:'approval_required',noExternalAction:true,noExternalSend:true,noExternalPublish:true,noExternalCalendarWrite:true},
+    metadataJson:{source:'project_managers_cowork',projectId,projectName:current.name,preparedArtifactKind:prepared.kind,preparedArtifact:{id:prepared.id,kind:prepared.kind,title:prepared.title,subject:prepared.subject||'',body:prepared.body||'',html:prepared.html||'',audience:prepared.audience,sourceContext:prepared.sourceContext,desiredOutcome:prepared.desiredOutcome,reviewBoundary:prepared.reviewBoundary,usedEvidence:prepared.usedEvidence||[],generatedAt:prepared.generatedAt||now,generatedFromCanonicalPacket:true,externalSend:false,externalPublish:false,externalCalendarWrite:false,reviewRequired:true},canValAct:'approval_required',noExternalAction:true,noExternalSend:true,noExternalPublish:true,noExternalCalendarWrite:true},
     decisionJson:{},
     createdAt:now,
     updatedAt:now,

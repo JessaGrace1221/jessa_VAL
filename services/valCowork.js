@@ -1643,6 +1643,14 @@ const PROJECT_PREPARED_ARTIFACTS=Object.freeze({
 function projectPreparedArtifactKind(value=''){
   const normalized=compactText(value,180).toLowerCase();
   if(!normalized) return '';
+  const aliases={
+    proposal:'proposal_draft',invoice:'invoice_draft',agreement:'agreement_draft',contract:'agreement_draft',
+    document:'document_draft',checklist:'document_draft',brief:'document_draft',copy:'copy_draft',
+    'web page':'html_page_draft',website:'html_page_draft',html:'html_page_draft',
+    calendar:'calendar_invite_draft','calendar invite':'calendar_invite_draft',invite:'calendar_invite_draft',
+    introduction:'introduction_email_draft','introduction email':'introduction_email_draft',email:'email_draft'
+  };
+  if(aliases[normalized]) return aliases[normalized];
   const match=Object.values(PROJECT_PREPARED_ARTIFACTS).find((option)=>{
     const id=option.id.toLowerCase();
     return normalized===id || normalized===option.name.toLowerCase() || normalized===id.replace(/_/g,' ') || normalized===`${option.name.toLowerCase()} (${id})`;
@@ -1735,7 +1743,8 @@ function parseProjectPreparedWork(answer='',brief={},current={}){
 function buildProjectPreparedWorkBrief(project={},input={}){
   const metadata=project.metadataJson || project.metadata || {};
   const references=projectIdentityReferences(project,input);
-  const existing=safeArray(project.projectPreparedWork || metadata.projectPreparedWork || project.preparedWork || metadata.preparedWork).map((item)=>normalizeProjectPreparedWork(item,{sourceRefs:references}));
+  const existing=safeArray(project.projectPreparedWork || metadata.projectPreparedWork).map((item)=>normalizeProjectPreparedWork(item,{sourceRefs:references}));
+  const requests=safeArray(project.preparedWorkRequests || metadata.preparedWorkRequests);
   return {
     id:stableKey(`working_brief_project_prepared_work_${project.projectId || project.id || input.scope?.entityId || project.name}`),
     entrypointId:'project.prepared_work',
@@ -1745,35 +1754,42 @@ function buildProjectPreparedWorkBrief(project={},input={}){
     projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
     availableArtifactTypes:Object.values(PROJECT_PREPARED_ARTIFACTS),
     existingPreparedWork:existing,
+    preparationRequest:compactText(requests[0] || '',700),
     sourceRefs:references,
-    objective:'Decide the one reviewable artifact VAL should prepare for the selected project, with the correct evidence and approval boundary.',
-    completionCondition:'One allowed artifact type, working title, audience, source context, desired outcome, review boundary, basis, confidence, and immutable source references are explicit.',
-    approvalBoundary:'Applying this proposal changes only the selected project’s internal Prepared Work packet and creates one internal Ready for You review item. It does not generate content, create a provider draft, send a message, publish a page, create a calendar event, update CRM, alter source evidence, or create a task.'
+    objective:'Shape the actual work VAL should prepare for this project, one clear answer at a time.',
+    completionCondition:'VAL knows what to prepare, who it is for, what evidence to use, the intended outcome, and who must approve it.',
+    approvalBoundary:'This step creates a preparation brief for review. It does not pretend the finished work exists, and nothing is sent, published, scheduled, or changed externally.'
   };
+}
+const PROJECT_PREPARED_WORK_QUESTION_FIELDS=['kind','title','audience','sourceContext','desiredOutcome','reviewBoundary'];
+function projectPreparedWorkNextField(value={},brief={}){
+  const preparedWork=normalizeProjectPreparedWork(value,brief);
+  return PROJECT_PREPARED_WORK_QUESTION_FIELDS.find((field)=>!compactText(preparedWork[field])) || '';
 }
 function projectPreparedWorkQuestion(state={},brief={}){
   const preparedWork=normalizeProjectPreparedWork(state.draftProjectPreparedWork || {},brief);
-  const available=safeArray(brief.availableArtifactTypes).map((option)=>`${option.name} (${option.id})`).join('; ');
-  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
-  if(state.stage === 'prepared_work'){
-    return {
-      targetField:'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You',
-      question:`What one reviewable artifact should VAL prepare for ${brief.projectName || 'this project'}? Choose one available type: ${available}. Add one line: artifact type | working title | intended audience | source receipt or project evidence to use | desired outcome | review or approval boundary | basis (source receipt or executive judgment) | confidence.`,
-      detail:`This fills Project Managers > Prepared work and creates one internal Ready for You item after review. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not generate the content or take an external action here.`
-    };
-  }
-  if(state.stage === 'prepared_work_details'){
-    const missing=missingProjectPreparedWorkFields(preparedWork,brief);
-    return {
-      targetField:'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You',
-      question:`Fill only these missing Prepared Work details: ${missing.join(', ')}.\n\n${projectPreparedWorkLine(preparedWork,brief)}`,
-      detail:'Choose only an existing VAL artifact type. The review boundary must make clear that no external action is authorized.'
-    };
-  }
+  const field=projectPreparedWorkNextField(preparedWork,brief);
+  const request=compactText(brief.preparationRequest || '',500);
+  const questions={
+    kind:request
+      ? `You asked VAL to ${request.replace(/^prepare\s+/i,'prepare ')} What form should it take: a document, proposal, email, agreement, invoice, web page, calendar invite, introduction, or another piece of copy?`
+      : 'What should VAL create: a document, proposal, email, agreement, invoice, web page, calendar invite, introduction, or another piece of copy?',
+    title:'What should we call it?',
+    audience:'Who is this for?',
+    sourceContext:'What should VAL use to prepare it? Name the transcript, document, email, or say “use the full project brief.”',
+    desiredOutcome:'What should this help the reader decide, understand, or do?',
+    reviewBoundary:'Who needs to review or approve this before anything leaves VAL?'
+  };
+  if(field) return {
+    targetField:'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You',
+    answerField:field,
+    question:questions[field],
+    detail:'One question at a time. VAL will attach the project evidence and keep all external action behind approval.'
+  };
   return {
     targetField:'project_prepared_work_packets',
-    question:'Review the prepared artifact proposal, then apply it to this Project Manager and Ready for You.',
-    detail:'Applying creates an internal proposal only. Nothing is drafted, sent, published, scheduled, or changed externally.'
+    question:`I have enough to prepare ${preparedWork.title || 'this work'} for ${preparedWork.audience || 'the intended audience'}. Confirm the brief and VAL will create the actual work in Leverage for your review.`,
+    detail:'Nothing is sent, published, scheduled, or changed externally.'
   };
 }
 
@@ -4008,17 +4024,35 @@ function createValCoworkService({
   async function respondProjectPreparedWork(session,workItem,answer){
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
-    state.answers.push({text:answer,at:new Date().toISOString()});
-    state.draftProjectPreparedWork=parseProjectPreparedWork(answer,brief,state.draftProjectPreparedWork || {});
-    const preparedWork=normalizeProjectPreparedWork(state.draftProjectPreparedWork,brief);
+    const current=normalizeProjectPreparedWork(state.draftProjectPreparedWork || {},brief);
+    const currentField=projectPreparedWorkNextField(current,brief);
+    state.answers.push({text:answer,field:currentField,at:new Date().toISOString()});
+    if(String(answer||'').includes('|')){
+      state.draftProjectPreparedWork=parseProjectPreparedWork(answer,brief,current);
+    }else if(currentField==='kind'){
+      state.draftProjectPreparedWork=normalizeProjectPreparedWork({...current,kind:projectPreparedArtifactKind(answer)},brief);
+    }else if(currentField){
+      state.draftProjectPreparedWork=normalizeProjectPreparedWork({...current,[currentField]:answer},brief);
+    }
+    let preparedWork=normalizeProjectPreparedWork(state.draftProjectPreparedWork,brief);
+    const remainingQuestionField=projectPreparedWorkNextField(preparedWork,brief);
+    if(!remainingQuestionField){
+      const firstRef=safeArray(brief.sourceRefs)[0] || {};
+      preparedWork=normalizeProjectPreparedWork({
+        ...preparedWork,
+        basis:preparedWork.basis || compactText(firstRef.quoteOrSummary || firstRef.quote_or_summary || firstRef.sourceId || firstRef.source_id || 'Executive request in Project Managers',700),
+        confidence:preparedWork.confidence || (safeArray(brief.sourceRefs).length ? 'High' : 'Medium')
+      },brief);
+      state.draftProjectPreparedWork=preparedWork;
+    }
     const missing=missingProjectPreparedWorkFields(preparedWork,brief);
     let question,message='';
     if(!missing.length){
       state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
       workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectPreparedWork:preparedWork,completionCondition:brief.completionCondition};
-      question=projectPreparedWorkQuestion(state,brief);message='VAL prepared the artifact proposal for review. Apply it when this is true.';
+      question=projectPreparedWorkQuestion(state,brief);message='VAL has enough context to create the actual work. Confirm this preparation brief when it is right.';
     }else{
-      state.stage='prepared_work_details';session.status='needs_input';workItem.status='needs_input';
+      state.stage='prepared_work';session.status='needs_input';workItem.status='needs_input';
       question=projectPreparedWorkQuestion(state,brief);message=question.question;
     }
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
@@ -4914,17 +4948,17 @@ function createValCoworkService({
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_prepared_work'){
-      if(workItem.status !== 'needs_review') throw new Error('The prepared-work proposal must be complete and reviewed before it can be applied.');
+      if(workItem.status !== 'needs_review') throw new Error('The preparation brief must be complete and reviewed before VAL can create the work.');
       const session=await getSession(workItem.sessionId);
       if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
       const payload=workItem.payloadJson || {};
       const brief=session.workingBriefJson || {};
       const projectPreparedWork=normalizeProjectPreparedWork(payload.projectPreparedWork || {},brief);
-      if(missingProjectPreparedWorkFields(projectPreparedWork,brief).length) throw new Error('The prepared-work proposal is incomplete and cannot be applied yet.');
+      if(missingProjectPreparedWorkFields(projectPreparedWork,brief).length) throw new Error('The preparation brief is incomplete. VAL still needs the unanswered context before it can create the work.');
       const project=await applyProjectPreparedWork({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectPreparedWork,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
-      if(!project) throw new Error('VAL could not save the prepared-work proposal to the selected Project Manager.');
+      if(!project) throw new Error('VAL could not create grounded prepared work for the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
-      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_prepared_work',status:'completed',summary:`Applied the ${projectPreparedWork.kindName} proposal to ${payload.projectName || 'the selected Project Manager'} and Ready for You.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectPreparedWork,noExternalAction:true},createdAt:now});
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_prepared_work',status:'completed',summary:`Created the ${projectPreparedWork.kindName} from the project packet and placed it in Leverage for review.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectPreparedWork,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_needs_next'){

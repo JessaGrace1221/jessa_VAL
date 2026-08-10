@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const hearthJs = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
 const serverJs = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const coworkJs = fs.readFileSync(path.join(root, 'services', 'valCowork.js'), 'utf8');
 const clickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
 const coworkRegistry = fs.readFileSync(path.join(root, 'docs', 'VAL_COWORK_ENTRYPOINT_REGISTRY.md'), 'utf8');
 const acceptanceGate = fs.readFileSync(path.join(root, 'docs', 'VAL_CORE_FUNCTIONALITY_ACCEPTANCE.md'), 'utf8');
@@ -90,4 +91,8 @@ test('Project Managers separates saved preparation requests from real prepared a
   assert.match(hearthJs, /No draft exists yet\. Shape the actual artifact before anything can enter Leverage\./);
   assert.match(hearthJs, /Prepare requested work/);
   assert.match(hearthJs, /visiblePeople\.map\(\(name\) => name === ownerName \? name \+ ' \(owner\)'/);
+  assert.match(coworkJs, /What form should it take: a document, proposal, email/);
+  assert.doesNotMatch(coworkJs, /Add one line: artifact type \| working title/);
+  assert.match(serverJs, /const generated=await generatePreparedArtifact\(\{/);
+  assert.match(serverJs, /Created the actual \$\{prepared\.kindName\.toLowerCase\(\)\} from the attached project evidence/);
 });
