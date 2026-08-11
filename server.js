@@ -27833,10 +27833,13 @@ async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},trans
   if(!recipientEmails.length)throw new Error('No attendee email addresses are attached to this transcript.');
   const transcriptId=transcript.id||transcript.transcriptId||draft.sourceContext?.transcriptId||'';
   const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
-  const meeting=metadata.meeting&&typeof metadata.meeting==='object'?metadata.meeting:{};
+  const sourceData=metadata.data&&typeof metadata.data==='object'?metadata.data:{};
+  const meeting=metadata.meeting&&typeof metadata.meeting==='object'
+    ? metadata.meeting
+    : (sourceData.meeting&&typeof sourceData.meeting==='object'?sourceData.meeting:{});
   const meetingIdentity=String(
     meeting.id||metadata.meetingId||metadata.meeting_id||metadata.documentId||metadata.document_id||
-    metadata.sourcePayloadMetadata?.meeting?.id||metadata.sourcePayloadMetadata?.meetingId||
+    metadata.sourcePayloadMetadata?.meeting?.id||metadata.sourcePayloadMetadata?.data?.meeting?.id||metadata.sourcePayloadMetadata?.meetingId||
     transcript.calendarEventId||transcript.calendar_event_id||transcriptId
   ).trim();
   const recipientIdentity=recipientEmails.map(normalizeEmailAddress).filter(Boolean).sort().join(',');

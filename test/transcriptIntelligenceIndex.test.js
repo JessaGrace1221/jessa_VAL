@@ -370,6 +370,16 @@ test('Transcript display never falls back to VAL-generated tasks or truncates Kr
   assert.doesNotMatch(hearth.slice(nativeStart,nativeEnd),/transcript\.actionItems|transcript\.tasks|nativeActionItems/);
 });
 
+test('transcript auto-send keys paired Krisp events by the nested native meeting id',()=>{
+  const start=server.indexOf('async function executeTranscriptActionItemsAttendeeEmailAutoSend');
+  const end=server.indexOf('function transcriptActionItemsHtml',start);
+  const block=server.slice(start,end);
+  assert.match(block,/const sourceData=metadata\.data/);
+  assert.match(block,/sourceData\.meeting/);
+  assert.match(block,/metadata\.sourcePayloadMetadata\?\.data\?\.meeting\?\.id/);
+  assert.match(block,/singleExecutionKey=`transcript_followup:\$\{meetingIdentity\}:\$\{recipientIdentity\}`/);
+});
+
 test('shows one trustworthy Krisp receipt when the same meeting is ingested twice',()=>{
   const {dedupeTranscriptDrawerRecords}=transcriptSourceHelpersForTest();
   const rows=dedupeTranscriptDrawerRecords([
