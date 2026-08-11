@@ -362,6 +362,33 @@ test('email send packets reuse identical legacy drafts but create a new packet a
   assert.notEqual(edited.id,original.id);
 });
 
+test('transcript follow-up packets execute at most once for one Krisp meeting and recipient set',async()=>{
+  let store={valExternalActionPackets:[],valExternalActionAudit:[]};
+  const service=createValExternalActionsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_meeting_once`
+  });
+  const sourceContext={
+    source:'transcript_action_items_attendee_email',
+    singleExecutionKey:'transcript_followup:krisp_meeting_123:ed@example.com'
+  };
+  const first=await service.createEmailSendPacket({
+    to:'ed@example.com',subject:'First generated subject',body:'All native Krisp sections.',provider:'gmail',sourceContext
+  });
+  await service.updatePacket(first.id,{status:'executed',executedAt:new Date().toISOString(),providerResponseId:'gmail_1'});
+  const duplicate=await service.createEmailSendPacket({
+    to:'ed@example.com',subject:'Different duplicate subject',body:'Incomplete generated fallback.',provider:'gmail',sourceContext
+  });
+  assert.equal(duplicate.id,first.id);
+  assert.equal(duplicate.status,'executed');
+  assert.equal(store.valExternalActionPackets.length,1);
+  assert.equal(duplicate.payloadPreviewJson.body,'All native Krisp sections.');
+});
+
 test('Postgres packet persistence fails before execution when no row is saved',async()=>{
   const service=createValExternalActionsService({
     hasPg:()=>true,

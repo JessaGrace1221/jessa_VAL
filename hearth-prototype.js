@@ -14345,7 +14345,7 @@ function timelineNativeLineItems(value = ''){
     return value.map((item) => {
       if(typeof item === 'string') return item;
       if(!item || typeof item !== 'object') return '';
-      return item.title || item.text || item.summary || item.point || item.name || '';
+      return item.title || item.text || item.summary || item.point || item.name || item.description || '';
     }).map(cleanLine).filter(Boolean);
   }
   const text = String(value || '').trim();
@@ -14374,8 +14374,7 @@ function timelineSourceReceipt(transcript = {}){
   const sourceLineLooksLikeTranscript = (line) => {
     const text = String(line || '').trim();
     const clean = text.replace(/^\*{1,2}/, '').replace(/\*{1,2}$/, '').trim();
-    return text.length > 260
-      || /^(File|Valid for|Recording|Transcript\s*\d*|Download Recording)\b/i.test(clean)
+    return /^(File|Valid for|Recording|Transcript\s*\d*|Download Recording)\b/i.test(clean)
       || /\[Download Recording\]\(<https?:\/\//i.test(text)
       || /\b\d{1,2}:\d{2}\b/.test(text)
       || /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\s*[:|]\s*\d{1,2}:\d{2}/i.test(clean)
@@ -14398,7 +14397,6 @@ function timelineSourceReceipt(transcript = {}){
   }).filter((section) => {
     if(section?.kind !== 'key_points') return true;
     const lines = Array.isArray(section.lines) ? section.lines : [];
-    if(lines.length > 12) return false;
     return !lines.some(sourceLineLooksLikeTranscript);
   });
   const safeBody = safeSections.map((section) => [
@@ -14442,7 +14440,7 @@ function timelineKrispSections(transcript = {}){
     : [];
   return {
     actionItems: structuredActionItems.length ? structuredActionItems : actionItems,
-    keyPoints: (structuredKeyPoints.length ? structuredKeyPoints : timelineNativeLineItems(overview)).filter((item) => item.length <= 260 && !/\b\d{1,2}:\d{2}\b/.test(item)),
+    keyPoints: structuredKeyPoints.length ? structuredKeyPoints : timelineNativeLineItems(overview),
     overview
   };
 }
@@ -14531,42 +14529,15 @@ function timelineTranscriptMeta(transcript = {}){
 
 function timelineNativeActionItems(transcript = {}){
   const sourceReceipt = timelineSourceReceipt(transcript);
-  if(sourceReceipt.actionItems.length){
-    return sourceReceipt.actionItems.map((item) => ({
-      taskTitle:item,
-      status:'source receipt',
-      sourceQuote:item
-    }));
-  }
-  const krispSections = timelineKrispSections(transcript);
-  const krispStructured = timelineKrispStructuredActionItems(transcript);
-  const native = Array.isArray(transcript.nativeActionItems) && transcript.nativeActionItems.length
-    ? transcript.nativeActionItems
-    : (krispStructured.length ? krispStructured : (krispSections.actionItems.length ? krispSections.actionItems : (Array.isArray(transcript.actionItems) ? transcript.actionItems : [])));
-  return native.map((item) => {
-    if(typeof item === 'string') return {taskTitle:item, status:'from VAL'};
-    if(!item || typeof item !== 'object') return null;
-    return {
-      taskTitle:item.taskTitle || item.title || item.text || item.action || item.summary || item.name || '',
-      taskDescription:item.taskDescription || item.description || item.notes || item.detail || '',
-      assignedToName:item.assignedToName || item.assignee || item.owner || item.person || '',
-      dueDate:item.dueDate || item.due || item.deadline || '',
-      status:item.status || 'from VAL',
-      sourceQuote:item.sourceQuote || item.quote || ''
-    };
-  }).filter((item) => String(item?.taskTitle || '').trim());
+  return sourceReceipt.actionItems.map((item) => ({
+    taskTitle:item,
+    status:'source receipt',
+    sourceQuote:item
+  }));
 }
 
 function timelineTranscriptTasks(transcript = {}){
-  const native = timelineNativeActionItems(transcript);
-  if(native.length) return native;
-  return (Array.isArray(transcript.tasks) ? transcript.tasks : [])
-    .filter((task) => {
-      const haystack = [task.taskTitle, task.taskDescription, task.sourceQuote].join(' ');
-      if(!String(task.taskTitle || '').trim()) return false;
-      if(/\bplay in the sprinkler\b|every third sentence|f-word|check that|send something out|diagnose it from there/i.test(haystack)) return false;
-      return true;
-    });
+  return timelineNativeActionItems(transcript);
 }
 
 function timelineListItems(value){
@@ -14889,8 +14860,7 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
 
 function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = null){
   const receipt = timelineSourceReceipt(transcript);
-  const taskLines = (Array.isArray(tasks) ? tasks : []).map((task) => String(task?.taskTitle || task?.title || task?.text || task?.sourceQuote || '').trim()).filter(Boolean);
-  const actionItems = receipt.actionItems.length ? receipt.actionItems : taskLines;
+  const actionItems = receipt.actionItems;
   const sourceSections = receipt.sections.filter((section) => section.kind !== 'key_points' || receipt.keyPoints.length);
   if(receipt.keyPoints.length && !sourceSections.some((section) => section.kind === 'key_points')){
     sourceSections.push({kind:'key_points', heading:'Key Points', raw:['Key Points', ...receipt.keyPoints].join('\n'), lines:receipt.keyPoints});
@@ -14898,9 +14868,9 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
   if(actionItems.length && !sourceSections.some((section) => section.kind === 'action_items')){
     sourceSections.unshift({kind:'action_items', heading:'Action Items', raw:['Action Items', ...actionItems].join('\n'), lines:actionItems});
   }
-  const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
+  const sections = sourceSections;
   const structuredBody = sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n').trim();
-  const body = structuredBody || receipt.body || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
+  const body = structuredBody || receipt.body || '';
   const invitees = timelineTranscriptInvitees(transcript);
   return {
     ...receipt,
@@ -14908,7 +14878,7 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
     sections,
     actionItems,
     invitees,
-    ready:Boolean(receipt.ready || actionItems.length)
+    ready:Boolean(receipt.ready)
   };
 }
 

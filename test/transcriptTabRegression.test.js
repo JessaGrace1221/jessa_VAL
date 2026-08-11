@@ -340,7 +340,8 @@ test('Hearth transcript index stays lightweight while the detail route retains t
   assert.match(server,/const \[participants,summaries,tasks,contactUpdates,actionLog\]=await Promise\.all/);
   assert.match(server,/const indexedRecords=transcriptMigrationRecordsFromIndex\(data\)/);
   assert.match(server,/const records=indexedRecords\.length\?indexedRecords:await transcriptArchiveRecords/);
-  assert.match(server,/sourceReceipt:transcriptSourceReceipt\(detail\)/);
+  assert.match(server,/const sourceReceipt=transcriptSourceReceipt\(detail\)/);
+  assert.match(server,/return \{\.\.\.detail,sourceReceipt,overlapReview:/);
   assert.match(server,/function transcriptSourceDownloadUrl/);
   assert.match(server,/downloadUrl:sourceUrl/);
   assert.match(server,/function transcriptCleanDisplayLine/);

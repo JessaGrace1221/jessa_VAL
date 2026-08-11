@@ -27068,6 +27068,23 @@ function transcriptSourceItemText(item){
   if(!item||typeof item!=='object')return '';
   return item.text||item.title||item.taskTitle||item.action||item.summary||item.point||item.name||item.description||'';
 }
+function transcriptSourceDueDateLabel(value=''){
+  const raw=String(value||'').trim();
+  if(!raw)return '';
+  const date=new Date(raw);
+  if(Number.isNaN(date.getTime()))return raw;
+  const timezone=typeof CLIENT_CONFIG!=='undefined'&&CLIENT_CONFIG?.timezone?CLIENT_CONFIG.timezone:'America/New_York';
+  return new Intl.DateTimeFormat('en-US',{timeZone:timezone,month:'short',day:'numeric'}).format(date);
+}
+function transcriptSourceActionItemText(item){
+  if(typeof item==='string')return item;
+  if(!item||typeof item!=='object')return '';
+  const title=transcriptSourceItemText(item);
+  const assignee=item.assignee&&typeof item.assignee==='object'?item.assignee:{};
+  const owner=String(assignee.first_name||assignee.name||assignee.email||item.assignedToName||item.assigned_to_name||item.owner||'').trim();
+  const due=transcriptSourceDueDateLabel(item.due_date||item.dueDate||'');
+  return [title,owner?`- ${owner}`:'',due?`Due: ${due}`:''].filter(Boolean).join(' ').trim();
+}
 function transcriptCleanDisplayLine(value=''){
   return String(value||'')
     .replace(/^\s*#{1,6}\s*/,'')
@@ -27172,9 +27189,6 @@ function transcriptSourceReceipt(transcript={}){
     metadata.data?.meetingOverview,
     metadata.data?.summary,
     transcript.nativeSummary,
-    transcript.summary?.executiveSummary,
-    transcript.summary?.clientSummary,
-    transcript.summary?.internalNotes,
     rawDocument.meetingOverview,
     rawDocument.summary,
     rawDocument.notes
@@ -27185,19 +27199,20 @@ function transcriptSourceReceipt(transcript={}){
   const actionSection=transcriptSourceSectionText(sourceText,['Action Items?']);
   const rawKeyPointsSection=transcriptSourceSectionText(sourceText,['Key Points','Meeting Overview']);
   const keyPointsSection=rawKeyPointsSection&&!transcriptSourceLooksLikeFullTranscript(rawKeyPointsSection.lines)?rawKeyPointsSection:null;
-  const actionItems=actionSection?.lines?.length?actionSection.lines:transcriptSourceLines(actionSource);
-  const keyPoints=keyPointsSection?.lines?.length?keyPointsSection.lines:transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||transcript.nativeSummary||transcript.summary?.executiveSummary||transcript.summary?.clientSummary||'');
+  const structuredActionItems=Array.isArray(actionSource)?actionSource.map(transcriptSourceActionItemText).map(transcriptCleanDisplayLine).filter(Boolean):transcriptSourceLines(actionSource);
+  const structuredKeyPoints=transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||transcript.nativeSummary||'');
+  const actionItems=structuredActionItems.length?structuredActionItems:(actionSection?.lines||[]);
+  const keyPoints=structuredKeyPoints.length?structuredKeyPoints:(keyPointsSection?.lines||[]);
   const sections=[];
-  if(actionSection)sections.push({kind:'action_items',...actionSection});
-  else if(actionItems.length)sections.push({kind:'action_items',heading:'Action Items',raw:['Action Items',...actionItems].join('\n'),lines:actionItems});
-  if(keyPointsSection)sections.push({kind:'key_points',...keyPointsSection});
-  else if(keyPoints.length&&!transcriptSourceLooksLikeFullTranscript(keyPoints))sections.push({kind:'key_points',heading:'Key Points',raw:['Key Points',...keyPoints].join('\n'),lines:keyPoints});
+  if(actionItems.length)sections.push({kind:'action_items',heading:actionSection?.heading||'Action Items',raw:['Action Items',...actionItems].join('\n'),lines:actionItems});
+  if(keyPoints.length)sections.push({kind:'key_points',heading:keyPointsSection?.heading||'Key Points',raw:['Key Points',...keyPoints].join('\n'),lines:keyPoints});
   const firstHeading=sourceText.search(/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i);
   const body=sections.map(section=>[
     transcriptCleanDisplayLine(section.heading||''),
     ...(Array.isArray(section.lines)?section.lines:[])
   ].filter(Boolean).join('\n')).join('\n\n').trim();
-  return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
+  const native=Boolean(rawSectionText||structuredActionItems.length||structuredKeyPoints.length);
+  return {body,sections,actionItems,keyPoints,native,sourceKind:native?'krisp_native_receipt':'unverified',ready:Boolean(native&&body&&sections.length)};
 }
 function transcriptOverlapStoredReview(transcript={}){
   const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
@@ -27343,14 +27358,7 @@ function transcriptKrispSourceSectionsForOverview(transcript={}){
 }
 function transcriptOverviewSections(transcript={},tasks=[]){
   const receipt=transcriptSourceReceipt(transcript);
-  const taskLines=transcriptOverviewLineItems(tasks).filter(Boolean);
-  if(receipt.actionItems.length||!taskLines.length)return receipt;
-  const sections=[{kind:'action_items',heading:'Action Items',raw:['Action Items',...taskLines].join('\n'),lines:taskLines},...(Array.isArray(receipt.sections)?receipt.sections:[])];
-  const body=sections.map(section=>[
-    transcriptCleanDisplayLine(section.heading||''),
-    ...(Array.isArray(section.lines)?section.lines:[])
-  ].filter(Boolean).join('\n')).join('\n\n').trim();
-  return {...receipt,body,sections,actionItems:taskLines,ready:Boolean(body&&sections.length)};
+  return receipt;
 }
 function transcriptOverviewInvitees(transcript={},calendarEvent={}){
   const buckets=[
@@ -27647,7 +27655,8 @@ function transcriptBulletText(items=[]){
   return list.length?list.map(item=>`- ${item}`).join('\n'):'None captured.';
 }
 function transcriptUpbeatPoint(keyPoints=[]){
-  const line=(Array.isArray(keyPoints)?keyPoints:[]).map(transcriptCleanDisplayLine).find(Boolean)||'it feels like momentum is happening.';
+  const line=(Array.isArray(keyPoints)?keyPoints:[]).map(transcriptCleanDisplayLine).find(Boolean)||'';
+  if(!line)return '';
   return /[.!?]$/.test(line)?line:line+'.';
 }
 async function renderTranscriptActionItemsEmailTemplate({title='',keyPoints=[],actionItems=[]}={}){
@@ -27742,10 +27751,11 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
     throw Object.assign(new Error('This transcript may contain more than one meeting. Add the overlapped meeting titles or mark it as one meeting before VAL prepares attendee follow-up emails.'),{statusCode:409,overlapReview});
   }
   const keyPoints=(Array.isArray(overview.keyPoints)?overview.keyPoints:[]).map(String).filter(Boolean);
-  const actionItems=(Array.isArray(overview.actionItems)&&overview.actionItems.length?overview.actionItems:tasks.map(task=>task.taskTitle||task.title||task.text||'')).map(String).filter(Boolean);
+  const actionItems=(Array.isArray(overview.actionItems)?overview.actionItems:[]).map(String).filter(Boolean);
   const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
   const missingInvitees=transcriptMissingEmailInvitees(transcript,calendarEvent,recipients);
-  if(!actionItems.length)throw Object.assign(new Error('This transcript has no source Action Items to send yet.'),{statusCode:400});
+  if(!overview.native)throw Object.assign(new Error('This transcript record does not contain Krisp\'s native Action Items and Key Points. VAL will not substitute generated work or send a follow-up from it.'),{statusCode:409});
+  if(!actionItems.length||!keyPoints.length)throw Object.assign(new Error('Krisp\'s native Action Items and Key Points must both be present before VAL can send the attendee follow-up.'),{statusCode:409});
   const transcriptId=transcript.id||transcript.transcriptId||'';
   const title=transcript.title||transcript.meetingTitle||'Meeting';
   const rendered=await renderTranscriptActionItemsEmailTemplate({title,keyPoints,actionItems});
@@ -27822,6 +27832,15 @@ async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},trans
   const recipientEmails=safeArray(recipients).map(person=>person.email||person).filter(Boolean);
   if(!recipientEmails.length)throw new Error('No attendee email addresses are attached to this transcript.');
   const transcriptId=transcript.id||transcript.transcriptId||draft.sourceContext?.transcriptId||'';
+  const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
+  const meeting=metadata.meeting&&typeof metadata.meeting==='object'?metadata.meeting:{};
+  const meetingIdentity=String(
+    meeting.id||metadata.meetingId||metadata.meeting_id||metadata.documentId||metadata.document_id||
+    metadata.sourcePayloadMetadata?.meeting?.id||metadata.sourcePayloadMetadata?.meetingId||
+    transcript.calendarEventId||transcript.calendar_event_id||transcriptId
+  ).trim();
+  const recipientIdentity=recipientEmails.map(normalizeEmailAddress).filter(Boolean).sort().join(',');
+  const singleExecutionKey=`transcript_followup:${meetingIdentity}:${recipientIdentity}`;
   const packet=await valExternalActions.createEmailSendPacket({
     provider:draft.sourceContext?.emailProvider||'gmail',
     to:recipientEmails.join(', '),
@@ -27831,6 +27850,8 @@ async function executeTranscriptActionItemsAttendeeEmailAutoSend({draft={},trans
     sourceRefs:[{sourceType:'transcript',sourceId:transcriptId,quoteOrSummary:title||draft.subject||'Transcript attendee follow-up',confidence:0.95}],
     sourceContext:{
       source:'transcript_action_items_attendee_email',
+      singleExecutionKey,
+      meetingIdentity,
       transcriptId,
       transcriptTitle:title,
       draftId:draft.id||'',
@@ -34278,7 +34299,7 @@ function transcriptIndexUiRecord(record){
   });
   const metadata=transcriptIndexContextMetadata(transcript.sourcePayloadMetadata||transcript.metadata||{});
   const sourceReceipt=transcriptSourceReceipt(transcript);
-  const sourceActions=(sourceReceipt.actionItems.length?sourceReceipt.actionItems:(Array.isArray(transcript.actionItems)?transcript.actionItems:[]))
+  const sourceActions=sourceReceipt.actionItems
     .slice(0,30)
     .map(item=>{
       if(typeof item==='string')return item.slice(0,900);

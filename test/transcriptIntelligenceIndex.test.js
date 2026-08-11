@@ -328,6 +328,48 @@ test('preserves every Krisp action item and key point word for word in the sourc
   ]);
 });
 
+test('uses the complete structured Krisp receipt and never substitutes generated transcript analysis',()=>{
+  const actionItems=Array.from({length:9},(_,index)=>({
+    title:`Exact Krisp action ${index+1}`,
+    assignee:{first_name:index%2?'Ed':'Jessa'},
+    due_date:index===0?'2026-08-15T00:00:00.000Z':null
+  }));
+  const keyPoints=Array.from({length:15},(_,index)=>({
+    description:`Exact Krisp key point ${index+1}: ${'source detail '.repeat(index===14?28:2).trim()}`
+  }));
+  const receipt=sourceReceiptForTest({
+    sourcePayloadMetadata:{data:{sections:{action_items:actionItems,key_points:keyPoints}}},
+    summary:{executiveSummary:'VAL generated summary that must not replace Krisp.'},
+    actionItems:['VAL generated task that must not replace Krisp.']
+  });
+  assert.equal(receipt.native,true);
+  assert.equal(receipt.ready,true);
+  assert.equal(receipt.actionItems.length,9);
+  assert.equal(receipt.keyPoints.length,15);
+  assert.match(receipt.actionItems[0],/^Exact Krisp action 1 - Jessa Due: Aug 14$/);
+  assert.equal(receipt.keyPoints[14],keyPoints[14].description);
+  assert.doesNotMatch(receipt.body,/VAL generated/);
+
+  const rawOnly=sourceReceiptForTest({
+    rawTranscript:'Jessa: We should think about this later.',
+    summary:{executiveSummary:'VAL generated summary.'},
+    actionItems:['VAL generated task.']
+  });
+  assert.equal(rawOnly.native,false);
+  assert.equal(rawOnly.ready,false);
+  assert.deepEqual(rawOnly.actionItems,[]);
+  assert.deepEqual(rawOnly.keyPoints,[]);
+});
+
+test('Transcript display never falls back to VAL-generated tasks or truncates Krisp Key Points',()=>{
+  assert.match(server,/const sourceActions=sourceReceipt\.actionItems/);
+  assert.doesNotMatch(hearth,/keyPoints:[^\n]*item\.length <= 260/);
+  assert.match(hearth,/function timelineTranscriptTasks\(transcript = \{\}\)\{\s*return timelineNativeActionItems\(transcript\);\s*\}/);
+  const nativeStart=hearth.indexOf('function timelineNativeActionItems');
+  const nativeEnd=hearth.indexOf('function timelineTranscriptTasks',nativeStart);
+  assert.doesNotMatch(hearth.slice(nativeStart,nativeEnd),/transcript\.actionItems|transcript\.tasks|nativeActionItems/);
+});
+
 test('shows one trustworthy Krisp receipt when the same meeting is ingested twice',()=>{
   const {dedupeTranscriptDrawerRecords}=transcriptSourceHelpersForTest();
   const rows=dedupeTranscriptDrawerRecords([

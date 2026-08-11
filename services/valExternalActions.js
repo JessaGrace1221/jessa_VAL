@@ -271,7 +271,12 @@ function createValExternalActionsService({
       return toCamelRow(r.rows[0]);
     }
     const s=store();const idx=s.valExternalActionPackets.findIndex(p=>p.id===packet.id);
-    if(idx>=0)s.valExternalActionPackets[idx]={...s.valExternalActionPackets[idx],...packet,createdAt:s.valExternalActionPackets[idx].createdAt||packet.createdAt,updatedAt:new Date().toISOString()};else s.valExternalActionPackets.unshift(packet);
+    if(idx>=0){
+      const existing=s.valExternalActionPackets[idx];
+      s.valExternalActionPackets[idx]=existing.status==='executed'
+        ? existing
+        : {...existing,...packet,createdAt:existing.createdAt||packet.createdAt,updatedAt:new Date().toISOString()};
+    }else s.valExternalActionPackets.unshift(packet);
     saveStore(s);return idx>=0?s.valExternalActionPackets[idx]:packet;
   }
   async function audit(id,action,before={},after={},note=''){
@@ -366,7 +371,8 @@ function createValExternalActionsService({
     const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
     const contentKey=crypto.createHash('sha256').update([to,subject,body,provider].join('\n')).digest('hex').slice(0,20);
-    const stableTarget=payload.threadId||payload.messageId||sourceContext.draftId||payload.id||'';
+    const singleExecutionKey=compactText(sourceContext.singleExecutionKey||sourceContext.single_execution_key||'',320);
+    const stableTarget=singleExecutionKey||payload.threadId||payload.messageId||sourceContext.draftId||payload.id||'';
     if(stableTarget){
       const legacyId=packetId(uuid,scope(),'send_gate','send_email',stableTarget,subject);
       const legacyPacket=await get(legacyId);
@@ -387,7 +393,7 @@ function createValExternalActionsService({
       source:'send_gate',
       actionType:'send_email',
       targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':'gmail',
-      targetId:stableTarget?`${stableTarget}:${contentKey}`:`${to}:${contentKey}`,
+      targetId:singleExecutionKey?singleExecutionKey:(stableTarget?`${stableTarget}:${contentKey}`:`${to}:${contentKey}`),
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
       payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,googleProvider,accountEmail,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
@@ -395,6 +401,9 @@ function createValExternalActionsService({
       approvalPolicy:'approval_required',
       sourceContext:{...sourceContext,source:'send_gate',googleProvider,accountEmail,finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
     });
+    if(singleExecutionKey){
+      packet.id=packetId(uuid,scope(),'send_gate','send_email',singleExecutionKey,'single_execution');
+    }
     packet.whatWillHappen='After final approval, VAL will send exactly this email through the connected provider and save an execution receipt.';
     packet.whatWillNotHappen='VAL will not send any other email, modify CRM, create calendar events, publish content, or change the draft contents beyond the fields shown in this send gate.';
     return upsertPacket(packet);
