@@ -17301,6 +17301,9 @@ app.get('/api/frisson/scott-integrity-dashboard',async(req,res)=>{
 app.post('/api/frisson/convergence-assessment',async(req,res)=>{
   try{
     const lead=convergenceAssessmentLeadFromBody(req.body||{});
+    if(!lead.organizationName || !validEmail(lead.email)){
+      return res.status(400).json({ok:false,error:'Company and a valid work email are required.'});
+    }
     const scored=applyFrissonScoring(lead,'partners');
     let imported;
     if(DEMO_MODE){

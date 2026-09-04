@@ -12,6 +12,7 @@ test('Convergence assessment is a public Frisson intake endpoint',()=>{
   assert.match(server,/\/api\/frisson\/convergence-assessment/);
   assert.match(server,/app\.post\('\/api\/frisson\/convergence-assessment'/);
   assert.match(server,/convergenceAssessmentLeadFromBody\(req\.body\|\|\{\}\)/);
+  assert.match(server,/Company and a valid work email are required/);
 });
 
 test('Convergence assessment updates GHL and Scott dashboard together',()=>{
