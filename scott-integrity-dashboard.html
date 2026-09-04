@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Scott Travis Integrity Dashboard</title>
+  <link rel="stylesheet" href="./scott-integrity-dashboard.css">
+</head>
+<body>
+  <main class="integrity-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Grace Intelligence / Frisson Consulting</p>
+        <h1>Scott Travis Integrity Dashboard</h1>
+      </div>
+      <a class="refresh-link" href="./scott-integrity-dashboard">Refresh</a>
+    </header>
+
+    <section class="summary-strip" aria-label="Dashboard summary">
+      <article>
+        <span data-stat="leadCount">0</span>
+        <small>Dashboard leads</small>
+      </article>
+      <article>
+        <span data-stat="perfectForScott">0</span>
+        <small>Perfect for Scott</small>
+      </article>
+      <article>
+        <span data-stat="strongFit">0</span>
+        <small>Strong fit</small>
+      </article>
+      <article>
+        <span data-stat="needsReview">0</span>
+        <small>Needs review</small>
+      </article>
+    </section>
+
+    <section class="positioning-grid" aria-label="Positioning">
+      <div class="panel">
+        <p class="eyebrow">Grace Intelligence</p>
+        <h2>How Jessa Positions Convergence</h2>
+        <ul data-positioning="graceIntelligence"></ul>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Frisson Consulting</p>
+        <h2>Partner Lens</h2>
+        <ul data-positioning="frissonConsulting"></ul>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Convergence Solutions</p>
+        <h2>Fit Rules</h2>
+        <ul data-positioning="convergence"></ul>
+      </div>
+    </section>
+
+    <section class="panel lead-model" aria-label="Lead model">
+      <div>
+        <p class="eyebrow">Lead Model</p>
+        <h2>What Gets Added Here</h2>
+      </div>
+      <p data-lead-model-target></p>
+      <div class="field-pills" data-lead-model-fields></div>
+    </section>
+
+    <section class="panel transcript-panel" aria-label="Transcript">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Relationship Transcript</p>
+          <h2 data-transcript-title>Scott / Jessa Transcript</h2>
+        </div>
+        <span data-transcript-status>Loading</span>
+      </div>
+      <div class="excerpt-list" data-transcript-excerpts></div>
+      <details>
+        <summary>Open transcript source</summary>
+        <pre data-transcript-text></pre>
+      </details>
+    </section>
+
+    <section class="panel" aria-label="Leads">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Convergence-Fit Leads</p>
+          <h2>Frisson Partner Imports</h2>
+        </div>
+        <span data-lead-sync-status>Waiting for approved partner imports</span>
+      </div>
+      <div class="lead-table-wrap">
+        <table class="lead-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Fit</th>
+              <th>Spend Signal</th>
+              <th>Decision Path</th>
+              <th>Scott Handoff</th>
+              <th>GHL</th>
+            </tr>
+          </thead>
+          <tbody data-leads-body>
+            <tr><td colspan="6">Loading dashboard leads...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="./scott-integrity-dashboard.js"></script>
+</body>
+</html>

@@ -28,7 +28,8 @@ test('Frisson CRM targets use the recovered pipeline and stage names',()=>{
 test('Frisson imports apply separated workflow trigger tags',()=>{
   assert.match(server,/function frissonWorkflowTag/);
   assert.match(server,/return frissonMode\(mode\)==='partners'\?'partner':'organization'/);
-  assert.match(server,/\['Frisson Lead',`Frisson \$\{frissonModeLabel\(currentMode\)\}`,workflowTag,frissonModeLabel\(currentMode\)\]/);
+  assert.match(server,/const requestTags=Array\.isArray\(p\.tags\)\?p\.tags:\[\]/);
+  assert.match(server,/\['Frisson Lead',`Frisson \$\{frissonModeLabel\(currentMode\)\}`,workflowTag,frissonModeLabel\(currentMode\),\.\.\.convergenceTags,\.\.\.requestTags\]/);
 });
 
 test('Frisson has its own field contract instead of GOALL custom-field mapping',()=>{
@@ -42,6 +43,29 @@ test('Frisson has its own field contract instead of GOALL custom-field mapping',
   }
   assert.match(server,/function frissonCustomFieldsFromProspect/);
   assert.match(server,/Frisson Lead Intelligence/);
+});
+
+test('Frisson partner scraper targets nonprofit-facing Convergence prospects only',()=>{
+  for(const term of [
+    'nonprofit CRM SaaS platforms',
+    'grants management software companies',
+    'philanthropy technology platforms',
+    'nonprofit managed services providers'
+  ]){
+    assert.match(server,new RegExp(term));
+  }
+  assert.match(server,/function frissonPartnerConvergenceProfile/);
+  assert.match(server,/convergenceFitScore/);
+  assert.match(server,/estimatedAnnualItSpend/);
+  assert.match(server,/likelySavingsCategory/);
+  assert.match(server,/decisionMakerAccess/);
+  assert.match(server,/cloudDependency/);
+  assert.match(server,/dataRevenuePotential/);
+  assert.match(server,/aiGovernanceNeed/);
+  assert.match(server,/convergence-fit/);
+  assert.match(server,/nonprofit-facing/);
+  assert.match(server,/Why Scott should care/);
+  assert.match(cleanHtml,/also look right for Convergence Solutions/);
 });
 
 test('clean Jessa dashboard calls the Frisson endpoints directly',()=>{

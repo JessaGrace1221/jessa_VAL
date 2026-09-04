@@ -2065,7 +2065,7 @@ const leadScraperDefinitions = {
   partners: {
     scraperId: 'frisson_partners',
     userLabel: 'Partners',
-    purpose: 'Find companies, advisors, agencies, and platforms that can become Frisson referral or strategic partners.',
+    purpose: 'Find nonprofit-facing companies, advisors, platforms, and operators that also fit the Convergence Solutions savings and modernization profile.',
     clientTemplate: 'frisson',
     routeBase: '/api/frisson/partners',
     recommendedAction: 'Run partner scrape',
@@ -2078,16 +2078,17 @@ const leadScraperDefinitions = {
     },
     criteriaFields: [
       {key:'scraper_name',label:'Scraper name',value:'Partners'},
-      {key:'partner_type',label:'Partner type',type:'select',value:'Nonprofit consultants',options:['Nonprofit consultants','Grant writers','CSR consultants','Fundraising advisors','Referral partners']},
+      {key:'partner_type',label:'Partner type',type:'select',value:'Nonprofit-facing Convergence prospects',options:['Nonprofit-facing Convergence prospects','Fundraising / donor platforms','Grant or foundation platforms','CSR / impact platforms','Association or membership platforms','Nonprofit MSP / fractional CIO','Healthcare or education platforms']},
       {key:'market',label:'Market',value:'United States'},
-      {key:'category',label:'Category or keywords',value:'grant writers, nonprofit consultants, CSR consultants'},
+      {key:'category',label:'Category or keywords',value:'nonprofit CRM SaaS platforms, grants management software, philanthropy technology platforms, nonprofit managed services providers'},
       {key:'limit',label:'Preview count',type:'number',value:'12'},
-      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations that serve nonprofits and could refer, distribute, recommend, introduce, or partner with Frisson.'}
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find companies that serve nonprofits, foundations, healthcare, education, associations, or community markets and have enough cloud, data, infrastructure, vendor, licensing, AI, or multi-location complexity for Convergence Solutions to plausibly find savings.'}
     ],
     sourceReadiness: [
       ['Level 1 discovery', 'Outscraper/public business search'],
-      ['Level 2 decision maker', 'Partner contact and reach context'],
-      ['Level 3 confirmation/dedupe', 'CRM duplicate check + optional verification'],
+      ['Level 2 decision maker', 'CTO, CIO, CFO, IT, data, infrastructure, or partner-access context'],
+      ['Level 3 Convergence fit', 'Nonprofit-facing market + technology spend + modernization pressure'],
+      ['Level 4 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
   }

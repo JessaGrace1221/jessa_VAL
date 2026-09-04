@@ -618,6 +618,17 @@ const GHL_LEAD_FIELD_IDS = {
   number_of_offices: process.env.GHL_FIELD_NUMBER_OF_OFFICES || '',
   work_model: process.env.GHL_FIELD_WORK_MODEL || '',
   number_of_nonprofits_served: process.env.GHL_FIELD_NUMBER_OF_NONPROFITS_SERVED || '',
+  nonprofit_facing: process.env.GHL_FIELD_NONPROFIT_FACING || '',
+  mission_people_helping_signal: process.env.GHL_FIELD_MISSION_PEOPLE_HELPING_SIGNAL || '',
+  convergence_fit_score: process.env.GHL_FIELD_CONVERGENCE_FIT_SCORE || '',
+  convergence_fit_label: process.env.GHL_FIELD_CONVERGENCE_FIT_LABEL || '',
+  estimated_annual_it_spend: process.env.GHL_FIELD_ESTIMATED_ANNUAL_IT_SPEND || '',
+  likely_savings_category: process.env.GHL_FIELD_LIKELY_SAVINGS_CATEGORY || '',
+  decision_maker_access: process.env.GHL_FIELD_DECISION_MAKER_ACCESS || '',
+  cloud_dependency: process.env.GHL_FIELD_CLOUD_DEPENDENCY || '',
+  data_revenue_potential: process.env.GHL_FIELD_DATA_REVENUE_POTENTIAL || '',
+  ai_governance_need: process.env.GHL_FIELD_AI_GOVERNANCE_NEED || '',
+  scott_handoff_summary: process.env.GHL_FIELD_SCOTT_HANDOFF_SUMMARY || '',
   primary_contact: process.env.GHL_FIELD_PRIMARY_CONTACT || '',
   mission_statement_ai_summary: process.env.GHL_FIELD_MISSION_STATEMENT_AI_SUMMARY || '',
   cause_category: process.env.GHL_FIELD_CAUSE_CATEGORY || '',
@@ -767,6 +778,17 @@ const GHL_LEAD_FIELD_KEYS = {
   number_of_offices:'contact.number_of_offices',
   work_model:'contact.work_model',
   number_of_nonprofits_served:'contact.number_of_nonprofits_served',
+  nonprofit_facing:'contact.nonprofit_facing',
+  mission_people_helping_signal:'contact.mission_people_helping_signal',
+  convergence_fit_score:'contact.convergence_fit_score',
+  convergence_fit_label:'contact.convergence_fit_label',
+  estimated_annual_it_spend:'contact.estimated_annual_it_spend',
+  likely_savings_category:'contact.likely_savings_category',
+  decision_maker_access:'contact.decision_maker_access',
+  cloud_dependency:'contact.cloud_dependency',
+  data_revenue_potential:'contact.data_revenue_potential',
+  ai_governance_need:'contact.ai_governance_need',
+  scott_handoff_summary:'contact.scott_handoff_summary',
   primary_contact:'contact.primary_contact',
   mission_statement_ai_summary:'contact.mission_statement_ai_summary',
   cause_category:'contact.cause_category',
@@ -913,6 +935,17 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   number_of_offices:['number of offices','number_of_offices','offices'],
   work_model:['work model','work_model'],
   number_of_nonprofits_served:['number of nonprofits served','number_of_nonprofits_served','nonprofits served'],
+  nonprofit_facing:['nonprofit facing','nonprofit_facing','serves nonprofits','nonprofit market'],
+  mission_people_helping_signal:['mission people helping signal','people helping signal','mission signal','helps people signal'],
+  convergence_fit_score:['convergence fit score','convergence_fit_score'],
+  convergence_fit_label:['convergence fit label','convergence_fit_label'],
+  estimated_annual_it_spend:['estimated annual it spend','estimated_annual_it_spend','annual it spend','infrastructure spend'],
+  likely_savings_category:['likely savings category','likely_savings_category','savings category'],
+  decision_maker_access:['decision maker access','decision_maker_access','cto cfo access','it leadership access'],
+  cloud_dependency:['cloud dependency','cloud_dependency'],
+  data_revenue_potential:['data revenue potential','data_revenue_potential'],
+  ai_governance_need:['ai governance need','ai_governance_need'],
+  scott_handoff_summary:['scott handoff summary','scott_handoff_summary','convergence handoff summary'],
   primary_contact:['primary contact','primary_contact'],
   mission_statement_ai_summary:['mission statement ai summary','mission_statement_ai_summary','mission summary'],
   cause_category:['cause category','cause_category'],
@@ -8356,6 +8389,7 @@ function isPublicPath(req){
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/ghl/voice-turn'&&req.method==='POST') return true;
+  if(['/scott-integrity-dashboard','/scott-integrity-dashboard.html','/scott-integrity-dashboard.css','/scott-integrity-dashboard.js','/api/frisson/scott-integrity-dashboard','/api/frisson/convergence-assessment'].includes(p)) return true;
   return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
@@ -11334,6 +11368,7 @@ app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'hearth-prototype.html'));});
 app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
 app.get('/witnessing-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));});
+app.get('/scott-integrity-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'scott-integrity-dashboard.html'));});
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
@@ -17257,6 +17292,68 @@ app.get('/api/frisson/custom-fields/status',async(req,res)=>{
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
+app.get('/api/frisson/scott-integrity-dashboard',async(req,res)=>{
+  try{
+    res.json(await scottIntegrityDashboardData());
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/frisson/convergence-assessment',async(req,res)=>{
+  try{
+    const lead=convergenceAssessmentLeadFromBody(req.body||{});
+    const scored=applyFrissonScoring(lead,'partners');
+    let imported;
+    if(DEMO_MODE){
+      imported={
+        name:scored.organizationName||scored.name,
+        contactId:`demo_convergence_${draftLearningFingerprint([scored.email,scored.website,scored.organizationName].join('|')).slice(0,10)}`,
+        updated:false,
+        tags:['Frisson Lead','Frisson Partner','partner','convergence-assessment','hidden-budget-assessment','convergence-fit','nonprofit-facing'],
+        pipelineName:FRISSON_PARTNER_PIPELINE_NAME,
+        stageName:FRISSON_PARTNER_STAGE_NAME,
+        leadScore:scored.leadScore,
+        leadScoreReason:scored.leadScoreReason
+      };
+    }else{
+      imported=await upsertGhlFrissonLead(scored,'partners');
+    }
+    const dashboardLead=await saveScottIntegrityDashboardLead(scored,imported);
+    await saveMemoryItem({
+      kind:'frisson_convergence_assessment_submission',
+      summary:`Convergence assessment submitted: ${dashboardLead.companyName}`,
+      rawText:JSON.stringify({lead:scored,imported,dashboardLead},null,2),
+      importance:4,
+      metadata:{source:'frisson_find_the_budget_form',contactId:imported.contactId,companyName:dashboardLead.companyName,convergenceFitLabel:scored.convergenceFitLabel}
+    }).catch(()=>{});
+    res.json({
+      ok:true,
+      message:'Assessment received.',
+      contactId:imported.contactId,
+      updated:!!imported.updated,
+      scoring:{
+        leadScore:scored.leadScore,
+        leadScoreReason:scored.leadScoreReason,
+        convergenceFitScore:scored.convergenceFitScore,
+        convergenceFitLabel:scored.convergenceFitLabel,
+        estimatedAnnualItSpend:scored.estimatedAnnualItSpend,
+        likelySavingsCategory:scored.likelySavingsCategory
+      },
+      scottDashboard:{
+        added:1,
+        lead:{
+          companyName:dashboardLead.companyName,
+          contactId:dashboardLead.contactId,
+          scoring:dashboardLead.scoring,
+          handoff:dashboardLead.handoff
+        }
+      },
+      ghl:{pipelineName:imported.pipelineName,stageName:imported.stageName,tags:imported.tags||[]}
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message||'Convergence assessment could not be submitted.'});
+  }
+});
+
 app.get('/api/val/lead-scrapers',async(req,res)=>{
   try{
     const scrapers=await listGeneralLeadScrapers();
@@ -17354,7 +17451,8 @@ app.post('/api/frisson/partners/import-approved',async(req,res)=>{
   try{
     if(DEMO_MODE){
       const leads=(req.body?.leads||[]).map(lead=>applyFrissonScoring(lead,'partners'));
-      return res.json({ok:true,created:leads,failed:[],content:withDemoCta(`Pushed ${leads.length} approved demo Frisson partner prospect${leads.length===1?'':'s'} to Frisson Partners / New Partner Lead.\n\nWorkflow trigger tag: partner`)});
+      const dashboardLeads=leads.map(lead=>scottIntegrityLeadRecord(lead,{name:lead.organizationName||lead.name,tags:['Frisson Lead','Frisson Partner','partner','convergence-fit','nonprofit-facing']}));
+      return res.json({ok:true,created:leads,failed:[],scottDashboard:{added:dashboardLeads.length,leads:dashboardLeads},content:withDemoCta(`Pushed ${leads.length} approved demo Frisson partner prospect${leads.length===1?'':'s'} to Frisson Partners / New Partner Lead.\n\nWorkflow trigger tag: partner\nScott Integrity Dashboard: ${dashboardLeads.length} lead${dashboardLeads.length===1?'':'s'} added`)});
     }
     res.json(await importApprovedFrissonLeads(req.body||{},'partners'));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -31602,13 +31700,34 @@ async function importApprovedPartnerLeads(body={}){
 }
 
 const FRISSON_PARTNER_SEARCH_TERMS=[
-  'grant writers','grant consultants','nonprofit consultants','fundraising consultants','nonprofit marketing agencies','nonprofit event consultants','auction partners','corporate giving consultants','CSR consultants','matching gift advisors','volunteer engagement consultants','donor engagement consultants','planned giving consultants','peer-to-peer fundraising consultants','nonprofit technology consultants'
+  'nonprofit CRM SaaS platforms',
+  'fundraising software companies',
+  'donor management software companies',
+  'grants management software companies',
+  'volunteer management platforms',
+  'association management software companies',
+  'philanthropy technology platforms',
+  'corporate social responsibility software companies',
+  'impact measurement platforms',
+  'foundation management software companies',
+  'nonprofit data analytics platforms',
+  'nonprofit payment processing platforms',
+  'education nonprofit technology platforms',
+  'healthcare nonprofit technology providers',
+  'nonprofit managed services providers',
+  'fractional CIO nonprofit healthcare education',
+  'IT consulting nonprofits Azure AWS',
+  'community impact SaaS platforms',
+  'membership software associations nonprofits',
+  'multi location healthcare community services organizations'
 ];
 const FRISSON_ORGANIZATION_SEARCH_TERMS=[
   'animal rescues','youth programs','education nonprofits','food banks','healthcare nonprofits','mental health nonprofits','community support organizations','veteran organizations','domestic violence shelters','disability support organizations','environmental nonprofits','arts and culture nonprofits','family service nonprofits','local community nonprofits'
 ];
 const FRISSON_ORGANIZATION_CAUSES=['Animal Welfare','Education','Healthcare','Mental Health','Youth','Veterans','Disability Support','Food Security','Housing','Environment','Arts and Culture','Community Support','Family Services','Other'];
 const FRISSON_POPULATIONS=['Children','Families','Seniors','Veterans','Animals','People with Disabilities','Low-income Communities','Students','Survivors','Local Residents','Other'];
+const SCOTT_INTEGRITY_DASHBOARD_ID='scott-travis-convergence-solutions';
+const SCOTT_INTEGRITY_TRANSCRIPT_PATH=process.env.SCOTT_INTEGRITY_TRANSCRIPT_PATH || '/Users/jessagrace/Downloads/Scott Travis _ Jessa Grace_transcript.txt';
 
 function frissonMode(value){
   const raw=String(value||'').toLowerCase();
@@ -31721,22 +31840,141 @@ function frissonGeographicReach(p={}){
   return 'Unknown';
 }
 
-function scoreFrissonPartner(p={}){
-  const text=JSON.stringify(p).toLowerCase();
-  let score=4;
+function frissonPartnerText(p={}){
+  return [
+    p.organizationName,p.name,p.companyName,p.legalCompanyName,p.partnerType,p.organizationType,p.industry,p.category,
+    p.description,p.aiCompanySummary,p.linkedinCompanyDescription,p.missionStatement,p.missionSummary,
+    p.companySignals,p.signalsSummary,p.googleReviewsSnippet,p.rawCompanySignals,
+    Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals,
+    Array.isArray(p.sourceUrls)?p.sourceUrls.join(' '):p.sourceUrls
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function frissonPartnerNumber(...values){
+  for(const value of values){
+    if(value===undefined || value===null) continue;
+    const raw=String(value).trim().toLowerCase();
+    if(!raw) continue;
+    const match=raw.replace(/,/g,'').match(/(\d+(?:\.\d+)?)\s*(billion|million|thousand|[bmk])?\b/);
+    if(match){
+      const unit=String(match[2]||'');
+      const multiplier=/^b|billion/.test(unit)?1000000000:(/^m|million/.test(unit)?1000000:(/^k|thousand/.test(unit)?1000:1));
+      return Number(match[1])*multiplier;
+    }
+  }
+  return 0;
+}
+
+function frissonPartnerEmployeeEstimate(p={}){
+  return frissonPartnerNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
+}
+
+function frissonPartnerRevenueEstimate(p={}){
+  return frissonPartnerNumber(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue,p.estimatedAnnualRevenue);
+}
+
+function frissonPartnerScaleLabel(p={}){
+  const employees=frissonPartnerEmployeeEstimate(p);
+  const revenue=frissonPartnerRevenueEstimate(p);
+  if(employees>=2000 || revenue>=1000000000) return 'Enterprise scale';
+  if(employees>=200 || revenue>=100000000) return 'Convergence ICP scale';
+  if(employees>=50 || revenue>=50000000) return 'Mid-market, qualify spend';
+  if(/multi.?location|national|global|enterprise|chain|franchise|many clients|hundreds of|thousands of/.test(frissonPartnerText(p))) return 'Hidden-scale review';
+  return 'Scale unclear';
+}
+
+function frissonPartnerNonprofitFacingSignal(p={}){
+  const text=frissonPartnerText(p);
+  if(/nonprofit|non-profit|foundation|philanthropy|fundraising|donor|grant|volunteer|association|membership|csr|corporate social responsibility|impact|community|education|healthcare|public sector|mission/.test(text)) return 'Yes';
+  return 'Unknown';
+}
+
+function frissonPartnerSavingsCategories(p={}){
+  const text=frissonPartnerText(p);
+  const categories=[];
+  if(/aws|azure|cloud|compute|hosting|saas|platform|software|multi.?tenant|infrastructure/.test(text)) categories.push('cloud / infrastructure');
+  if(/data|analytics|warehouse|ai|machine learning|intelligence|insight|reporting/.test(text)) categories.push('data / AI workloads');
+  if(/payment|transaction|processing|donation|crm|erp|licensing|license|subscription/.test(text)) categories.push('enterprise licensing / vendor contracts');
+  if(/network|colocation|colo|cdn|global|multi.?region|multi.?site|locations/.test(text)) categories.push('network / colocation / CDN');
+  if(!categories.length && /technology|managed service|msp|cio|it consultant|digital/.test(text)) categories.push('IT services / vendor spend');
+  return [...new Set(categories)];
+}
+
+function frissonPartnerConvergenceProfile(p={}){
+  const text=frissonPartnerText(p);
+  const employees=frissonPartnerEmployeeEstimate(p);
+  const revenue=frissonPartnerRevenueEstimate(p);
+  const savingsCategories=frissonPartnerSavingsCategories(p);
   const reasons=[];
-  if(/nonprofit|non-profit|fundraising|grant|donor|volunteer|csr|corporate giving|planned giving|matching gift/.test(text)){ score=Math.min(score,1); reasons.push('clear nonprofit-service focus'); }
-  if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
-  if(/multiple nonprofits|nonprofits served|clients|portfolio|case studies|agency|consultant/.test(text)){ score=Math.min(score,2); reasons.push('evidence of serving multiple organizations'); }
-  if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public presence found, nonprofit fit needs review'); }
+  let economicFit=0;
+  if(revenue>=100000000 || employees>=200){ economicFit+=20; reasons.push('likely at or near Convergence ICP scale'); }
+  else if(revenue>=50000000 || employees>=50){ economicFit+=12; reasons.push('mid-market scale; qualify spend before handoff'); }
+  else if(/multi.?location|national|global|enterprise|chain|franchise|platform|portfolio|hundreds|thousands/.test(text)){ economicFit+=10; reasons.push('possible hidden scale'); }
+  if(savingsCategories.length){ economicFit+=10; reasons.push(`likely savings area: ${savingsCategories.join(', ')}`); }
+  if(/contract|renewal|vendor|procurement|reseller|licensing|license|enterprise agreement|microsoft|aws|azure/.test(text)){ economicFit+=5; reasons.push('vendor or contract complexity signal'); }
+
+  let missionFit=0;
+  if(frissonPartnerNonprofitFacingSignal(p)==='Yes'){ missionFit+=12; reasons.push('nonprofit-facing or mission-market signal'); }
+  if(/foundation|philanthropy|education|healthcare|community|public sector|association|donor|grants|volunteer/.test(text)){ missionFit+=5; reasons.push('serves people-helping markets'); }
+  if(/clients|customers|members|network|platform|marketplace|ecosystem|partners/.test(text)){ missionFit+=3; reasons.push('could reach multiple organizations'); }
+
+  let technicalFit=0;
+  if(/aws|azure|cloud|saas|platform|software|multi.?tenant|infrastructure|hosting/.test(text)){ technicalFit+=7; reasons.push('cloud-dependent operating model'); }
+  if(/data|analytics|warehouse|payment|transaction|donor|crm|intelligence|reporting/.test(text)){ technicalFit+=6; reasons.push('data-heavy business signal'); }
+  if(/ai|automation|modernization|governance|compliance|security|soc 2|hipaa|pci/.test(text)){ technicalFit+=5; reasons.push('AI, governance, compliance, or modernization pressure'); }
+  if(/global|multi.?region|multi.?location|enterprise|integrations/.test(text)) technicalFit+=2;
+
+  let accessFit=0;
+  if(/cto|cio|cfo|chief technology|chief information|chief financial|vp it|head of infrastructure|head of data/.test(text) || p.decisionMakerTitle){ accessFit+=7; reasons.push('decision-maker path appears available'); }
+  if(validEmail(p.email)||validPhone(p.phone)){ accessFit+=4; reasons.push('usable contact path'); }
+  if(/partner|referral|channel|consultant|advisor|agency|managed service|msp|fractional cio/.test(text)) accessFit+=4;
+
+  let dataRevenueFit=0;
+  if(/data|analytics|benchmark|market intelligence|transaction|usage|donor|payment|logistics|healthcare|performance/.test(text)){ dataRevenueFit+=7; reasons.push('possible data revenue screen candidate'); }
+  if(/aggregate|anonymized|marketplace|exchange|buyer|dataset|insights/.test(text)) dataRevenueFit+=3;
+
+  const total=Math.min(100,economicFit+missionFit+technicalFit+accessFit+dataRevenueFit);
+  const label=total>=85?'Perfect for Scott':total>=70?'Strong fit - prioritize qualification':total>=55?'Interesting - needs spend/access proof':total>=40?'Nurture or partner-adjacent':'Suppress';
+  return {
+    convergenceFitScore:total,
+    convergenceFitLabel:label,
+    nonprofitFacing:frissonPartnerNonprofitFacingSignal(p),
+    missionPeopleHelpingSignal:/help|support|community|healthcare|education|foundation|nonprofit|mission|impact|philanthropy/.test(text)?'Yes':'Unknown',
+    estimatedAnnualItSpend:p.estimatedAnnualItSpend||p.annualItSpend||p.infrastructureSpend||((revenue>=100000000||employees>=200)?'$1M+ likely; verify in intake':(savingsCategories.length?'Meaningful spend possible; qualify':'Unknown')),
+    likelySavingsCategory:savingsCategories.join(', ')||'Unknown',
+    decisionMakerAccess:p.decisionMakerAccess||p.decisionMakerTitle||(/cto|cio|cfo|vp it|head of infrastructure|head of data/.test(text)?'Likely':'Needs path'),
+    cloudDependency:/aws|azure|cloud|saas|platform|software|hosting|infrastructure/.test(text)?'Yes':'Unknown',
+    dataRevenuePotential:dataRevenueFit>=7?'Yes':(dataRevenueFit?'Unknown':'No'),
+    aiGovernanceNeed:/ai|automation|governance|compliance|security|soc 2|hipaa|pci|regulated/.test(text)?'Yes':'Unknown',
+    hiddenScaleReview:/multi.?location|national|global|chain|franchise|holding|portfolio|hundreds|thousands/.test(text) && employees<200 && revenue<100000000,
+    scoreReasons:reasons
+  };
+}
+
+function frissonPartnerLeadScoreFromConvergence(score){
+  const value=Number(score)||0;
+  if(value>=85) return 1;
+  if(value>=70) return 2;
+  if(value>=55) return 3;
+  return 4;
+}
+
+function scoreFrissonPartner(p={}){
+  const profile=frissonPartnerConvergenceProfile(p);
+  const reasons=profile.scoreReasons.length?profile.scoreReasons:['Nonprofit-facing Convergence fit needs human review.'];
+  const leadScore=frissonPartnerLeadScoreFromConvergence(profile.convergenceFitScore);
+  const reviewNeeded=profile.nonprofitFacing!=='Yes' || profile.hiddenScaleReview || profile.convergenceFitScore<70 || !/likely|cto|cio|cfo|vp|head|director/i.test(profile.decisionMakerAccess);
   const scored={
     ...p,
+    ...profile,
     leadProfile:'frisson',
     scraperType:'Partner',
-    leadScore:score,
-    leadScoreReason:reasons.join('; ') || 'Possible partner fit, but nonprofit connection needs review.',
-    aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This prospect'} may be useful to Frisson if its nonprofit reach and referral potential are confirmed.`,
-    recommendedOutreachAngle:p.recommendedOutreachAngle||'Lead with a practical partnership conversation around helping more nonprofits activate donor support, recurring community support, or adjacent revenue.'
+    leadScore,
+    leadScoreReason:`${profile.convergenceFitLabel}: ${reasons.join('; ')}`,
+    aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This prospect'} is a ${profile.convergenceFitLabel.toLowerCase()} because it appears ${profile.nonprofitFacing==='Yes'?'nonprofit-facing':'potentially nonprofit-facing'} and ${profile.likelySavingsCategory!=='Unknown'?'has Convergence savings signals around '+profile.likelySavingsCategory:'needs IT spend qualification'}.`,
+    recommendedOutreachAngle:p.recommendedOutreachAngle||'Lead with a low-risk, read-only review to see whether existing infrastructure, cloud, data, network, or licensing spend can fund modernization and the Frisson/Grace Intelligence work they already know they need.',
+    scottHandoffSummary:p.scottHandoffSummary||`Why Scott should care: ${profile.convergenceFitLabel}; estimated IT spend: ${profile.estimatedAnnualItSpend}; likely savings: ${profile.likelySavingsCategory}; decision-maker access: ${profile.decisionMakerAccess}.`,
+    reviewNeeded
   };
   return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'frisson',mode:'partner',previewOnly:true})};
 }
@@ -31765,6 +32003,217 @@ function scoreFrissonOrganization(p={}){
 function applyFrissonScoring(p={},mode='organizations'){
   const clean=sanitizeDecisionMaker(p);
   return frissonMode(mode)==='partners'?scoreFrissonPartner(clean):scoreFrissonOrganization(clean);
+}
+
+function convergenceAssessmentLeadFromBody(body={}){
+  const firstName=String(body.firstName||body.first_name||'').trim();
+  const lastName=String(body.lastName||body.last_name||'').trim();
+  const fullName=String(body.name||[firstName,lastName].filter(Boolean).join(' ')||'').trim();
+  const organizationName=String(body.company||body.companyName||body.organizationName||body.nameOfCompany||'').trim();
+  const employeeCount=frissonValue(body.employeeCount,body.numberOfEmployees,body.employees);
+  const revenueRange=frissonValue(body.revenueRange,body.annualRevenueRange,body.revenue);
+  const annualSpend=frissonValue(body.annualItSpend,body.estimatedAnnualItSpend,body.infrastructureSpend,body.itSpend);
+  const primaryVendors=Array.isArray(body.primaryVendors)?body.primaryVendors.join(', '):String(body.primaryVendors||body.vendors||'').trim();
+  const nonprofitMarket=frissonYesNoUnknown(body.nonprofitFacing||body.nonprofitMarket||body.servesNonprofits);
+  const modernizationGoal=String(body.modernizationGoal||body.aiModernizationGoal||body.growthGoal||'').trim();
+  const pain=String(body.currentPain||body.painpoint||body.painPoint||'').trim();
+  const role=String(body.title||body.role||body.jobTitle||'').trim();
+  const decisionAccess=/owner|founder|ceo|president|cfo|cto|cio|chief|vp|head|director/i.test(role)
+    ? `Likely via submitter: ${role}`
+    : frissonValue(body.decisionMakerAccess,role?'Needs executive confirmation':'Needs path');
+  const context=[
+    organizationName,
+    String(body.industry||''),
+    employeeCount?`${employeeCount} employees`:'',
+    revenueRange?`${revenueRange} revenue`:'',
+    annualSpend?`${annualSpend} annual IT/cloud/data spend`:'',
+    primaryVendors?`Vendors: ${primaryVendors}`:'',
+    String(body.renewalTiming||''),
+    pain,
+    modernizationGoal,
+    String(body.notes||'')
+  ].filter(Boolean).join('; ');
+  const cloudDependency=/aws|azure|gcp|google cloud|cloud|saas|hosting|snowflake|salesforce|hubspot|microsoft|office 365|365|netsuite|oracle|datacenter|data center|network/i.test(context)?'Yes':'Unknown';
+  const dataRevenuePotential=/data|analytics|benchmark|insight|usage|transaction|payment|donor|member|patient|student|logistics/i.test(context)?'Yes':'Unknown';
+  const aiGovernanceNeed=/ai|automation|governance|compliance|security|hipaa|pci|soc|regulated|modernization/i.test(context)?'Yes':'Unknown';
+  return {
+    organizationName,
+    legalCompanyName:organizationName,
+    website:String(body.website||'').trim(),
+    decisionMakerName:fullName,
+    primaryContact:fullName,
+    decisionMakerTitle:role,
+    email:String(body.email||'').trim(),
+    phone:String(body.phone||'').trim(),
+    industry:String(body.industry||'').trim(),
+    numberOfEmployees:employeeCount,
+    annualRevenueRange:revenueRange,
+    estimatedAnnualItSpend:annualSpend,
+    annualItSpend:annualSpend,
+    primaryVendors,
+    renewalTiming:String(body.renewalTiming||'').trim(),
+    currentPain:pain,
+    painpoint:pain,
+    modernizationGoal,
+    nonprofitFacing:nonprofitMarket,
+    missionPeopleHelpingSignal:nonprofitMarket==='Yes'?'Yes':'Unknown',
+    cloudDependency,
+    dataRevenuePotential,
+    aiGovernanceNeed,
+    decisionMakerAccess:decisionAccess,
+    sourceUrls:[String(body.website||'').trim()].filter(Boolean),
+    source:'Frisson Find the Budget assessment',
+    leadSourceSystem:'Frisson website',
+    leadIngestedAt:new Date().toISOString(),
+    scrapeDate:new Date().toISOString().slice(0,10),
+    tags:['convergence-assessment','hidden-budget-assessment','find-the-budget-form'],
+    forceUpdateCustomFields:true,
+    rawCompanyContextJson:JSON.stringify(body).slice(0,9000),
+    rawWebResultCount:0,
+    aiFitSummary:`${organizationName||'This company'} submitted the Find the Budget assessment. They may be a Convergence fit if the reported spend, vendor complexity, and mission-facing market are confirmed.`,
+    recommendedOutreachAngle:'Thank them for the assessment, frame the next step as a low-risk review of current technology, cloud, data, licensing, and vendor spend, and avoid promising savings before the review is complete.',
+    scottHandoffSummary:`Website assessment: ${organizationName||'Unknown company'}; spend: ${annualSpend||'not provided'}; employees: ${employeeCount||'not provided'}; revenue: ${revenueRange||'not provided'}; vendors: ${primaryVendors||'not provided'}; pain: ${pain||'not provided'}; goal: ${modernizationGoal||'not provided'}; decision access: ${decisionAccess}.`
+  };
+}
+
+function scottIntegrityDashboardTranscript(){
+  const fallback=[
+    'Transcript: Scott Travis / Jessa Grace relationship call',
+    '',
+    'Jessa and Scott aligned on Convergence Solutions becoming a white-label savings and modernization partner inside Grace Intelligence and Frisson relationships.',
+    'Scott said Convergence can be a tool in Jessa’s toolbox as long as the work remains honest and in-bounds.',
+    'The shared thesis: before budget blocks AI, leadership, modernization, or Frisson work, Convergence reviews current infrastructure/data/vendor spend and looks for recoverable money already being spent.',
+    'Scott described the normal Convergence threshold as roughly $1M annual spend, while leaving room for relationship-led exceptions and hidden-scale businesses.',
+    'Jessa described her relationship rule as helping people who help people: nonprofits, foundations, healthcare, medical, education, and community-facing businesses.',
+    'Jessa also described the Integrity Dashboard as the shared place where transcripts, texts, emails, trends, ICP, fit cues, and next actions can live so she and Scott do not have to bounce context back and forth.'
+  ].join('\n');
+  try{
+    if(fs.existsSync(SCOTT_INTEGRITY_TRANSCRIPT_PATH)){
+      return fs.readFileSync(SCOTT_INTEGRITY_TRANSCRIPT_PATH,'utf8').slice(0,120000);
+    }
+  }catch(e){}
+  return fallback;
+}
+
+function scottIntegrityDashboardPositioning(){
+  return {
+    graceIntelligence:[
+      'Grace Intelligence positions Convergence as a quiet capital-finding partner before budget becomes the blocker.',
+      'The promise is not another vendor handoff. Jessa keeps the relationship; Convergence helps find money already trapped in cloud, data, infrastructure, network, licensing, or vendor spend.',
+      'The first ask is practical: a low-risk review, decision-maker access, and enough spend context to see whether recovered budget can fund modernization, AI governance, and the deeper Grace Intelligence work.'
+    ],
+    frissonConsulting:[
+      'Frisson Consulting should route nonprofit-facing, mission-market companies to this dashboard when they also look like Convergence-fit accounts.',
+      'The partner profile is not small nonprofits. It is companies that serve nonprofits, foundations, healthcare, education, associations, or community markets and have real technology/economic complexity.',
+      'GHL remains the CRM/workflow layer. This dashboard is Scott’s relationship and opportunity intelligence layer.'
+    ],
+    convergence:[
+      'Best fit: 200-2000 employees, $100M-$1B revenue, cloud-dependent operations, regulated or compliance-sensitive industries, active AI/modernization pressure, and access to CFO/CTO/CIO/IT leadership.',
+      'Typical entry: one-hour discovery, read-only visibility or spend worksheet, 5-10 business day savings review, then a roadmap that can fund modernization when savings exist.',
+      'Avoid front-end promises of a fixed percentage. Use the dashboard to show evidence, confidence, and what still needs qualification.'
+    ]
+  };
+}
+
+function scottIntegrityLeadRecord(lead={},importResult={}){
+  const p=applyFrissonScoring(lead,'partners');
+  return {
+    dashboardId:SCOTT_INTEGRITY_DASHBOARD_ID,
+    addedAt:new Date().toISOString(),
+    companyName:p.organizationName||p.companyName||p.name||importResult.name||'Unnamed prospect',
+    website:p.website||'',
+    contactId:importResult.contactId||p.contactId||'',
+    pipelineName:importResult.pipelineName||FRISSON_PARTNER_PIPELINE_NAME,
+    stageName:importResult.stageName||FRISSON_PARTNER_STAGE_NAME,
+    tags:importResult.tags||[],
+    customFields:frissonCustomFieldsFromProspect(p,'partners'),
+    scoring:{
+      leadScore:p.leadScore,
+      leadScoreReason:p.leadScoreReason||'',
+      convergenceFitScore:p.convergenceFitScore||0,
+      convergenceFitLabel:p.convergenceFitLabel||'',
+      nonprofitFacing:p.nonprofitFacing||'Unknown',
+      missionPeopleHelpingSignal:p.missionPeopleHelpingSignal||'Unknown',
+      estimatedAnnualItSpend:p.estimatedAnnualItSpend||'',
+      likelySavingsCategory:p.likelySavingsCategory||'',
+      decisionMakerAccess:p.decisionMakerAccess||'',
+      cloudDependency:p.cloudDependency||'Unknown',
+      dataRevenuePotential:p.dataRevenuePotential||'Unknown',
+      aiGovernanceNeed:p.aiGovernanceNeed||'Unknown',
+      reviewNeeded:!!p.reviewNeeded
+    },
+    handoff:{
+      scottSummary:p.scottHandoffSummary||'Qualify annual IT spend and CTO/CFO access.',
+      outreachAngle:p.recommendedOutreachAngle||'',
+      fitSummary:p.aiFitSummary||''
+    },
+    sourceUrls:frissonSourceUrls(p),
+    rawLead:p
+  };
+}
+
+async function saveScottIntegrityDashboardLead(lead={},importResult={}){
+  const record=scottIntegrityLeadRecord(lead,importResult);
+  await saveMemoryItem({
+    id:`scott_dash_lead_${draftLearningFingerprint([record.companyName,record.website,record.contactId,record.addedAt].join('|'))}`,
+    kind:'scott_integrity_dashboard_lead',
+    summary:`Scott dashboard lead: ${record.companyName}`,
+    rawText:JSON.stringify(record,null,2),
+    importance:4,
+    metadata:{source:'frisson_partner_import',dashboardId:SCOTT_INTEGRITY_DASHBOARD_ID,contactId:record.contactId,companyName:record.companyName,convergenceFitLabel:record.scoring.convergenceFitLabel}
+  }).catch(error=>console.log('Scott Integrity Dashboard lead not saved',{name:record.companyName,error:error.message}));
+  return record;
+}
+
+async function scottIntegrityDashboardLeads(limit=100){
+  const rows=await recentMemoryItems(3650,Math.min(Math.max(Number(limit)||100,1),300)).catch(()=>[]);
+  return rows
+    .filter(row=>row.kind==='scott_integrity_dashboard_lead')
+    .map(row=>{
+      try{return {...JSON.parse(row.rawText||'{}'),memoryId:row.id,createdAt:row.createdAt};}
+      catch(e){return null;}
+    })
+    .filter(Boolean)
+    .sort((a,b)=>String(b.addedAt||b.createdAt||'').localeCompare(String(a.addedAt||a.createdAt||'')));
+}
+
+async function scottIntegrityDashboardData(){
+  const transcript=scottIntegrityDashboardTranscript();
+  const leads=await scottIntegrityDashboardLeads(150);
+  return {
+    ok:true,
+    dashboardId:SCOTT_INTEGRITY_DASHBOARD_ID,
+    generatedAt:new Date().toISOString(),
+    title:'Scott Travis Integrity Dashboard',
+    partner:'Convergence Solutions',
+    relationshipOwner:'Grace Intelligence / Frisson Consulting',
+    transcript:{
+      title:'Scott Travis / Jessa Grace transcript',
+      source:fs.existsSync(SCOTT_INTEGRITY_TRANSCRIPT_PATH)?SCOTT_INTEGRITY_TRANSCRIPT_PATH:'seeded relationship summary',
+      status:'seeded_now_automation_next',
+      rawText:transcript,
+      excerpts:[
+        'Convergence can be white-labeled inside Jessa’s work as a tool in her toolbox.',
+        'The relationship works when Convergence can reach the CTO, CFO, CIO, or IT decision-maker and review spend safely.',
+        'Jessa’s prospecting rule is people who help people: nonprofits, foundations, healthcare, medical, education, and community-facing businesses.',
+        'The Integrity Dashboard should hold transcripts, emails, texts, trends, ICP, fit cues, next actions, and legal/context protection.'
+      ]
+    },
+    positioning:scottIntegrityDashboardPositioning(),
+    leadModel:{
+      target:'Nonprofit-facing companies that also fit Convergence Solutions: cloud/data/infrastructure/vendor/licensing/AI or multi-location complexity.',
+      destination:'Frisson Partners / New Partner Lead',
+      addedWhen:'Every approved Frisson Partner import that writes to GHL also writes a scored row here.',
+      fields:['Company','Website','Contact ID','Convergence fit score','Convergence fit label','Nonprofit-facing','Estimated annual IT spend','Likely savings category','Decision-maker access','Cloud dependency','Data revenue potential','AI governance need','Scott handoff summary','Source URLs']
+    },
+    stats:{
+      leadCount:leads.length,
+      perfectForScott:leads.filter(lead=>lead.scoring?.convergenceFitLabel==='Perfect for Scott').length,
+      strongFit:leads.filter(lead=>/^Strong fit/.test(lead.scoring?.convergenceFitLabel||'')).length,
+      needsReview:leads.filter(lead=>lead.scoring?.reviewNeeded).length
+    },
+    leads
+  };
 }
 
 function frissonCustomFieldsFromProspect(raw={},mode='organizations'){
@@ -31805,7 +32254,18 @@ function frissonCustomFieldsFromProspect(raw={},mode='organizations'){
       annual_revenue_range:frissonValue(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue),
       number_of_offices:frissonValue(p.numberOfOffices,p.offices,p.locations),
       work_model:frissonValue(p.workModel),
-      number_of_nonprofits_served:frissonValue(p.numberOfNonprofitsServed,p.nonprofitsServed,p.clientsServed)
+      number_of_nonprofits_served:frissonValue(p.numberOfNonprofitsServed,p.nonprofitsServed,p.clientsServed),
+      nonprofit_facing:p.nonprofitFacing||'Unknown',
+      mission_people_helping_signal:p.missionPeopleHelpingSignal||'Unknown',
+      convergence_fit_score:String(p.convergenceFitScore||''),
+      convergence_fit_label:p.convergenceFitLabel||'',
+      estimated_annual_it_spend:p.estimatedAnnualItSpend||'',
+      likely_savings_category:p.likelySavingsCategory||'',
+      decision_maker_access:p.decisionMakerAccess||'',
+      cloud_dependency:p.cloudDependency||'Unknown',
+      data_revenue_potential:p.dataRevenuePotential||'Unknown',
+      ai_governance_need:p.aiGovernanceNeed||'Unknown',
+      scott_handoff_summary:p.scottHandoffSummary||''
     };
   }
   return {
@@ -32083,10 +32543,15 @@ function frissonPreviewText(discovered={},mode='organizations'){
     '',
     ...leads.map((p,i)=>{
       const sources=frissonSourceUrls(p);
+      const convergence=currentMode==='partners'?frissonPartnerConvergenceProfile(p):null;
       return [
         `${i+1}. ${p.organizationName||p.name||'Unnamed prospect'}`,
         `   Score: ${p.leadScore} (${p.leadScore===1?'strong Frisson fit':p.leadScore===2?'good fit':p.leadScore===3?'possible fit':'weak or unclear fit'})`,
         `   Reason: ${p.leadScoreReason||'Needs review'}`,
+        currentMode==='partners'?`   Convergence fit: ${p.convergenceFitScore||convergence.convergenceFitScore}/100 - ${p.convergenceFitLabel||convergence.convergenceFitLabel}`:'',
+        currentMode==='partners'?`   Scott handoff: ${p.scottHandoffSummary||convergence.scoreReasons.slice(0,4).join('; ')||'Qualify annual IT spend and CTO/CFO access.'}`:'',
+        currentMode==='partners'?`   Savings signal: ${p.likelySavingsCategory||convergence.likelySavingsCategory} | Estimated IT spend: ${p.estimatedAnnualItSpend||convergence.estimatedAnnualItSpend}`:'',
+        currentMode==='partners'?`   Nonprofit-facing: ${p.nonprofitFacing||convergence.nonprofitFacing} | Data revenue: ${p.dataRevenuePotential||convergence.dataRevenuePotential} | AI governance: ${p.aiGovernanceNeed||convergence.aiGovernanceNeed}`:'',
         `   Fit summary: ${p.aiFitSummary||'Needs Frisson review'}`,
         `   Outreach angle: ${p.recommendedOutreachAngle||'Needs review'}`,
         `   Location: ${p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear'}`,
@@ -32134,7 +32599,11 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
   const customFields=leadCustomFieldPayloads(ids,fields);
   const duplicate=await findExistingGhlLeadDuplicate(p);
   const workflowTag=frissonWorkflowTag(currentMode);
-  const tags=['Frisson Lead',`Frisson ${frissonModeLabel(currentMode)}`,workflowTag,frissonModeLabel(currentMode)].filter(Boolean);
+  const convergenceTags=currentMode==='partners'
+    ? ['convergence-fit','nonprofit-facing',p.dataRevenuePotential==='Yes'?'data-revenue-potential':'',p.aiGovernanceNeed==='Yes'?'ai-governance-potential':'',p.reviewNeeded?'human-review':'']
+    : [];
+  const requestTags=Array.isArray(p.tags)?p.tags:[];
+  const tags=['Frisson Lead',`Frisson ${frissonModeLabel(currentMode)}`,workflowTag,frissonModeLabel(currentMode),...convergenceTags,...requestTags].filter(Boolean);
   const decisionName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
   const contactPayload=compactObject({
@@ -32163,7 +32632,7 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
   if(contactId){
     const existing=await ghlStrict('GET',`/contacts/${contactId}`).catch(()=>null);
     const updatePayload=frissonMissingStandardPayload(existing,contactPayload);
-    const missingCustomFields=existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields;
+    const missingCustomFields=p.forceUpdateCustomFields?customFields:(existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields);
     if(missingCustomFields.length) updatePayload.customFields=missingCustomFields;
     if(Object.keys(updatePayload).length) await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
   }else{
@@ -32177,9 +32646,14 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
     `Score: ${p.leadScore} - ${p.leadScoreReason||'needs review'}`,
     `Fit summary: ${p.aiFitSummary||'needs review'}`,
     `Recommended outreach: ${p.recommendedOutreachAngle||'needs review'}`,
+    currentMode==='partners'?`Convergence fit: ${p.convergenceFitScore||0}/100 - ${p.convergenceFitLabel||'needs review'}`:'',
+    currentMode==='partners'?`Scott handoff: ${p.scottHandoffSummary||'Qualify annual IT spend and CTO/CFO access.'}`:'',
+    currentMode==='partners'?`Likely savings category: ${p.likelySavingsCategory||'Unknown'}`:'',
+    currentMode==='partners'?`Estimated annual IT spend: ${p.estimatedAnnualItSpend||'Unknown'}`:'',
+    currentMode==='partners'?`Decision-maker access: ${p.decisionMakerAccess||'Needs path'}`:'',
     `Workflow trigger tag: ${workflowTag}`,
     `Sources: ${frissonSourceUrls(p).join(', ')||'source review needed'}`
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
   const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'frisson',mode:currentMode}).catch(e=>{
     console.log('Frisson readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
@@ -32206,9 +32680,16 @@ async function importApprovedFrissonLeads(body={},mode='organizations'){
   const currentMode=frissonMode(mode||body.scraperType||body.prospectingMode);
   const leads=(Array.isArray(body.leads)?body.leads:[]).map(p=>applyFrissonScoring(p,currentMode));
   if(!leads.length) throw new Error(`No approved Frisson ${frissonModeLabel(currentMode).toLowerCase()} leads were provided for import.`);
-  const created=[],failed=[];
+  const created=[],failed=[],scottDashboardLeads=[];
   await mapWithConcurrency(leads,GOALL_LEAD_IMPORT_CONCURRENCY,async lead=>{
-    try{created.push(await upsertGhlFrissonLead(lead,currentMode));}catch(e){failed.push({name:lead.organizationName||lead.name,error:e.message});}
+    try{
+      const imported=await upsertGhlFrissonLead(lead,currentMode);
+      created.push(imported);
+      if(currentMode==='partners'){
+        const dashboardLead=await saveScottIntegrityDashboardLead(lead,imported);
+        scottDashboardLeads.push(dashboardLead);
+      }
+    }catch(e){failed.push({name:lead.organizationName||lead.name,error:e.message});}
   });
   const updated=created.filter(x=>x.updated).length;
   const content=[
@@ -32217,6 +32698,7 @@ async function importApprovedFrissonLeads(body={},mode='organizations'){
     `Pipeline: ${frissonPipelineName(currentMode)}`,
     `Stage: ${frissonStageName(currentMode)}`,
     `Workflow trigger tag: ${frissonWorkflowTag(currentMode)}`,
+    currentMode==='partners'?`Scott Integrity Dashboard: ${scottDashboardLeads.length} lead${scottDashboardLeads.length===1?'':'s'} added`:'',
     failed.length?`Failed: ${failed.length}`:''
   ].filter(Boolean).join('\n');
   await saveMemoryItem({
@@ -32224,14 +32706,14 @@ async function importApprovedFrissonLeads(body={},mode='organizations'){
     summary:`Imported ${created.length} Frisson ${currentMode} prospects`,
     rawText:content+'\n\nRaw leads:\n'+JSON.stringify(leads,null,2),
     importance:3,
-    metadata:{mode:currentMode,created,failed}
+    metadata:{mode:currentMode,created,failed,scottDashboardLeadCount:scottDashboardLeads.length}
   }).catch(()=>{});
-  return {ok:true,created,failed,content};
+  return {ok:true,created,failed,scottDashboard:{added:scottDashboardLeads.length,leads:scottDashboardLeads},content};
 }
 
 async function frissonCustomFieldStatus(){
   const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
-  const partnerKeys=['legal_company_name','dba_name','year_founded','years_in_business','headquarters','states_served','service_area_type','number_of_employees','number_of_contractors','annual_revenue_range','number_of_offices','work_model','number_of_nonprofits_served','linkedin_url','source_urls','ai_fit_summary','recommended_outreach_angle','scraper_type','scrape_date','review_needed'];
+  const partnerKeys=['legal_company_name','dba_name','year_founded','years_in_business','headquarters','states_served','service_area_type','number_of_employees','number_of_contractors','annual_revenue_range','number_of_offices','work_model','number_of_nonprofits_served','nonprofit_facing','mission_people_helping_signal','convergence_fit_score','convergence_fit_label','estimated_annual_it_spend','likely_savings_category','decision_maker_access','cloud_dependency','data_revenue_potential','ai_governance_need','scott_handoff_summary','linkedin_url','source_urls','ai_fit_summary','recommended_outreach_angle','scraper_type','scrape_date','review_needed'];
   const organizationKeys=['primary_contact','mission_statement_ai_summary','cause_category','population_served','geographic_reach','annual_revenue_range','number_of_employees','number_of_volunteers','number_of_donors','years_in_operation','accepts_online_donations','monthly_giving_program','corporate_sponsors_listed','annual_events','volunteer_program','grant_funded','planned_giving_available','facebook','instagram','linkedin_url','newsletter','recent_activity_last_90_days','source_urls','ai_fit_summary','recommended_outreach_angle','scraper_type','scrape_date','review_needed'];
   const mapKeys=keys=>keys.map(key=>({key,fieldKey:GHL_LEAD_FIELD_KEYS[key]||'',configured:!!ids[key],id:ids[key]||''}));
   return {ok:true,partner:mapKeys(partnerKeys),organization:mapKeys(organizationKeys)};
