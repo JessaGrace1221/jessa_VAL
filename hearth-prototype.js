@@ -2091,6 +2091,35 @@ const leadScraperDefinitions = {
       ['Level 4 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
+  },
+  grace: {
+    scraperId: 'grace_fit_engine',
+    userLabel: 'Grace Fit Engine',
+    purpose: 'Find B2B companies where a Grace Intelligence free data audit could uncover meaningful revenue leakage and generate VAL mirror outreach.',
+    clientTemplate: 'grace',
+    routeBase: '/api/grace/fit-engine',
+    recommendedAction: 'Run Fit Engine',
+    crmDestination: {
+      provider: 'ghl',
+      label: 'Grace Intelligence contacts / team-managed pipeline',
+      pipeline: '',
+      stage: '',
+      tags: ['Grace Intelligence', 'free-data-audit', 'revenue-leak-review', 'val-lead-intelligence']
+    },
+    criteriaFields: [
+      {key:'scraper_name',label:'Scraper name',value:'Grace Fit Engine'},
+      {key:'market',label:'Market',value:'United States'},
+      {key:'category',label:'B2B categories or keywords',value:'B2B marketing agencies, commercial HVAC companies, managed IT service providers, staffing agencies'},
+      {key:'limit',label:'Preview count',type:'number',value:'12'},
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find B2B companies with expensive lead flow, consultative sales, visible booking or quote motion, and enough complexity that slow response, generic follow-up, poor routing, or weak personalization could be costing real money.'}
+    ],
+    sourceReadiness: [
+      ['Level 1 discovery', 'Outscraper/public business search using Frisson provider variables'],
+      ['Level 2 enrichment', 'Decision-maker and contact enrichment when available'],
+      ['Level 3 VAL fit', 'Revenue leakage score + witness insight + prospect packet'],
+      ['Level 4 outreach drafts', 'Mirror email, 24-hour follow-up, 36-hour follow-up, and handoff notes'],
+      ['Import policy', 'Approved only; no automatic outreach']
+    ]
   }
 };
 
@@ -2366,6 +2395,13 @@ const scraperApiConfig = {
     importUrl: '/api/frisson/partners/import-approved',
     buildPayload(criteria){
       return leadScraperPayloadFromDefinition('partners', criteria);
+    }
+  },
+  grace: {
+    previewUrl: '/api/grace/fit-engine/discover-preview',
+    importUrl: '/api/grace/fit-engine/import-approved',
+    buildPayload(criteria){
+      return leadScraperPayloadFromDefinition('grace', criteria);
     }
   }
 };

@@ -651,7 +651,37 @@ const GHL_LEAD_FIELD_IDS = {
   ai_fit_summary: process.env.GHL_FIELD_AI_FIT_SUMMARY || '',
   scraper_type: process.env.GHL_FIELD_SCRAPER_TYPE || '',
   scrape_date: process.env.GHL_FIELD_SCRAPE_DATE || '',
-  review_needed: process.env.GHL_FIELD_REVIEW_NEEDED || ''
+  review_needed: process.env.GHL_FIELD_REVIEW_NEEDED || '',
+  gi_val_fit_score: process.env.GHL_FIELD_GI_VAL_FIT_SCORE || '',
+  gi_val_fit_tier: process.env.GHL_FIELD_GI_VAL_FIT_TIER || '',
+  gi_fit_confidence: process.env.GHL_FIELD_GI_FIT_CONFIDENCE || '',
+  gi_revenue_leak_potential: process.env.GHL_FIELD_GI_REVENUE_LEAK_POTENTIAL || '',
+  gi_audit_priority: process.env.GHL_FIELD_GI_AUDIT_PRIORITY || '',
+  gi_review_status: process.env.GHL_FIELD_GI_REVIEW_STATUS || '',
+  gi_source_urls: process.env.GHL_FIELD_GI_SOURCE_URLS || '',
+  gi_evidence_summary: process.env.GHL_FIELD_GI_EVIDENCE_SUMMARY || '',
+  gi_industry_pain_points: process.env.GHL_FIELD_GI_INDUSTRY_PAIN_POINTS || '',
+  gi_lead_leakage_hypothesis: process.env.GHL_FIELD_GI_LEAD_LEAKAGE_HYPOTHESIS || '',
+  gi_first_audit_angle: process.env.GHL_FIELD_GI_FIRST_AUDIT_ANGLE || '',
+  gi_why_this_company: process.env.GHL_FIELD_GI_WHY_THIS_COMPANY || '',
+  gi_decision_maker_linkedin: process.env.GHL_FIELD_GI_DECISION_MAKER_LINKEDIN || '',
+  gi_disc_estimate: process.env.GHL_FIELD_GI_DISC_ESTIMATE || '',
+  gi_communication_style: process.env.GHL_FIELD_GI_COMMUNICATION_STYLE || '',
+  gi_personalization_notes: process.env.GHL_FIELD_GI_PERSONALIZATION_NOTES || '',
+  gi_flattering_observation: process.env.GHL_FIELD_GI_FLATTERING_OBSERVATION || '',
+  gi_witness_insight: process.env.GHL_FIELD_GI_WITNESS_INSIGHT || '',
+  gi_prospect_packet: process.env.GHL_FIELD_GI_PROSPECT_PACKET || '',
+  gi_mirror_email: process.env.GHL_FIELD_GI_MIRROR_EMAIL || '',
+  gi_24_hour_followup: process.env.GHL_FIELD_GI_24_HOUR_FOLLOWUP || '',
+  gi_36_hour_followup: process.env.GHL_FIELD_GI_36_HOUR_FOLLOWUP || '',
+  gi_5_day_followup: process.env.GHL_FIELD_GI_5_DAY_FOLLOWUP || '',
+  gi_linkedin_dm: process.env.GHL_FIELD_GI_LINKEDIN_DM || '',
+  gi_call_opener: process.env.GHL_FIELD_GI_CALL_OPENER || '',
+  gi_internal_handoff_notes: process.env.GHL_FIELD_GI_INTERNAL_HANDOFF_NOTES || '',
+  gi_approved_to_contact: process.env.GHL_FIELD_GI_APPROVED_TO_CONTACT || '',
+  gi_do_not_contact_reason: process.env.GHL_FIELD_GI_DO_NOT_CONTACT_REASON || '',
+  gi_enrichment_status: process.env.GHL_FIELD_GI_ENRICHMENT_STATUS || '',
+  gi_last_enriched_at: process.env.GHL_FIELD_GI_LAST_ENRICHED_AT || ''
 };
 const GHL_LEAD_FIELD_KEYS = {
   lead_source_system:'contact.lead_source_system',
@@ -811,7 +841,37 @@ const GHL_LEAD_FIELD_KEYS = {
   ai_fit_summary:'contact.ai_fit_summary',
   scraper_type:'contact.scraper_type',
   scrape_date:'contact.scrape_date',
-  review_needed:'contact.review_needed'
+  review_needed:'contact.review_needed',
+  gi_val_fit_score:'contact.gi_val_fit_score',
+  gi_val_fit_tier:'contact.gi_val_fit_tier',
+  gi_fit_confidence:'contact.gi_fit_confidence',
+  gi_revenue_leak_potential:'contact.gi_revenue_leak_potential',
+  gi_audit_priority:'contact.gi_audit_priority',
+  gi_review_status:'contact.gi_review_status',
+  gi_source_urls:'contact.gi_source_urls',
+  gi_evidence_summary:'contact.gi_evidence_summary',
+  gi_industry_pain_points:'contact.gi_industry_pain_points',
+  gi_lead_leakage_hypothesis:'contact.gi_lead_leakage_hypothesis',
+  gi_first_audit_angle:'contact.gi_first_audit_angle',
+  gi_why_this_company:'contact.gi_why_this_company',
+  gi_decision_maker_linkedin:'contact.gi_decision_maker_linkedin',
+  gi_disc_estimate:'contact.gi_disc_estimate',
+  gi_communication_style:'contact.gi_communication_style',
+  gi_personalization_notes:'contact.gi_personalization_notes',
+  gi_flattering_observation:'contact.gi_flattering_observation',
+  gi_witness_insight:'contact.gi_witness_insight',
+  gi_prospect_packet:'contact.gi_prospect_packet',
+  gi_mirror_email:'contact.gi_mirror_email',
+  gi_24_hour_followup:'contact.gi_24_hour_followup',
+  gi_36_hour_followup:'contact.gi_36_hour_followup',
+  gi_5_day_followup:'contact.gi_5_day_followup',
+  gi_linkedin_dm:'contact.gi_linkedin_dm',
+  gi_call_opener:'contact.gi_call_opener',
+  gi_internal_handoff_notes:'contact.gi_internal_handoff_notes',
+  gi_approved_to_contact:'contact.gi_approved_to_contact',
+  gi_do_not_contact_reason:'contact.gi_do_not_contact_reason',
+  gi_enrichment_status:'contact.gi_enrichment_status',
+  gi_last_enriched_at:'contact.gi_last_enriched_at'
 };
 const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_source_system:['lead source system','lead_source_system'],
@@ -968,7 +1028,37 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   ai_fit_summary:['ai fit summary','ai_fit_summary','fit summary'],
   scraper_type:['scraper type','scraper_type'],
   scrape_date:['scrape date','scrape_date'],
-  review_needed:['review needed','review_needed']
+  review_needed:['review needed','review_needed'],
+  gi_val_fit_score:['val fit score','gi val fit score','gi_val_fit_score'],
+  gi_val_fit_tier:['val fit tier','gi val fit tier','gi_val_fit_tier'],
+  gi_fit_confidence:['fit confidence','gi fit confidence','gi_fit_confidence'],
+  gi_revenue_leak_potential:['revenue leak potential','gi revenue leak potential','gi_revenue_leak_potential'],
+  gi_audit_priority:['audit priority','gi audit priority','gi_audit_priority'],
+  gi_review_status:['review status','gi review status','gi_review_status'],
+  gi_source_urls:['source urls','gi source urls','gi_source_urls'],
+  gi_evidence_summary:['evidence summary','gi evidence summary','gi_evidence_summary'],
+  gi_industry_pain_points:['industry pain points','gi industry pain points','gi_industry_pain_points'],
+  gi_lead_leakage_hypothesis:['lead leakage hypothesis','gi lead leakage hypothesis','gi_lead_leakage_hypothesis'],
+  gi_first_audit_angle:['first audit angle','gi first audit angle','gi_first_audit_angle'],
+  gi_why_this_company:['why this company','gi why this company','gi_why_this_company'],
+  gi_decision_maker_linkedin:['decision maker linkedin','gi decision maker linkedin','gi_decision_maker_linkedin'],
+  gi_disc_estimate:['disc estimate','gi disc estimate','gi_disc_estimate'],
+  gi_communication_style:['communication style','gi communication style','gi_communication_style'],
+  gi_personalization_notes:['personalization notes','gi personalization notes','gi_personalization_notes'],
+  gi_flattering_observation:['flattering observation','gi flattering observation','gi_flattering_observation'],
+  gi_witness_insight:['witness insight','gi witness insight','gi_witness_insight'],
+  gi_prospect_packet:['prospect packet','gi prospect packet','gi_prospect_packet'],
+  gi_mirror_email:['mirror email','gi mirror email','gi_mirror_email'],
+  gi_24_hour_followup:['24 hour follow-up','24 hour followup','gi 24 hour follow-up','gi_24_hour_followup'],
+  gi_36_hour_followup:['36 hour follow-up','36 hour followup','gi 36 hour follow-up','gi_36_hour_followup'],
+  gi_5_day_followup:['5 day follow-up','5 day followup','gi 5 day follow-up','gi_5_day_followup'],
+  gi_linkedin_dm:['linkedin dm','gi linkedin dm','gi_linkedin_dm'],
+  gi_call_opener:['call opener','gi call opener','gi_call_opener'],
+  gi_internal_handoff_notes:['internal handoff notes','gi internal handoff notes','gi_internal_handoff_notes'],
+  gi_approved_to_contact:['approved to contact','gi approved to contact','gi_approved_to_contact'],
+  gi_do_not_contact_reason:['do not contact reason','gi do not contact reason','gi_do_not_contact_reason'],
+  gi_enrichment_status:['enrichment status','gi enrichment status','gi_enrichment_status'],
+  gi_last_enriched_at:['last enriched at','gi last enriched at','gi_last_enriched_at']
 };
 function projectSystemPrompt(){
   if(!isBookEditorProject()) return '';
@@ -17461,6 +17551,37 @@ app.post('/api/frisson/partners/import-approved',async(req,res)=>{
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
+app.get('/api/grace/fit-engine/custom-fields/status',async(req,res)=>{
+  try{
+    res.json(await graceCustomFieldStatus());
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/grace/fit-engine/discover-preview',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery({...req.body,leadProfile:'grace',organizationType:'B2B service businesses'});
+      const leads=(discovered.leads||[]).map(scoreGraceFitLead);
+      const result={...discovered,ok:true,leadProfile:'grace',prospectingMode:'grace_fit_engine',scraperType:'Grace Fit Engine',tag:'free-data-audit',leads,crmDestination:{status:'approval_required',tags:['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence']}};
+      result.content=withDemoCta(graceFitPreviewText(result));
+      return res.json(result);
+    }
+    res.json(await withTimeout(discoverGraceFitLeads(req.body||{}),GOALL_LEAD_DISCOVERY_TIMEOUT_MS,'Grace Fit Engine scrape timed out before results returned'));
+  }catch(e){
+    res.json({ok:false,leadProfile:'grace',prospectingMode:'grace_fit_engine',scraperType:'Grace Fit Engine',leads:[],error:e.message,content:`Grace Fit Engine could not complete.\n\n${cleanLeadLevelText(e.message)}`});
+  }
+});
+
+app.post('/api/grace/fit-engine/import-approved',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const leads=(req.body?.leads||[]).map(scoreGraceFitLead);
+      return res.json({ok:true,created:leads,failed:[],content:withDemoCta(`Pushed ${leads.length} approved demo Grace Fit Engine prospect${leads.length===1?'':'s'} to GHL contacts.\n\nPipeline: handled by Grace Intelligence team.\nOutreach: generated only; review required before contact.`)});
+    }
+    res.json(await importApprovedGraceLeads(req.body||{}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
 app.post('/api/val/partners/discover-preview',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -32712,6 +32833,488 @@ async function importApprovedFrissonLeads(body={},mode='organizations'){
     metadata:{mode:currentMode,created,failed,scottDashboardLeadCount:scottDashboardLeads.length}
   }).catch(()=>{});
   return {ok:true,created,failed,scottDashboard:{added:scottDashboardLeads.length,leads:scottDashboardLeads},content};
+}
+
+const GRACE_FIT_SEARCH_TERMS=[
+  'B2B marketing agencies',
+  'commercial HVAC companies',
+  'commercial roofing companies',
+  'managed IT service providers',
+  'business consulting firms',
+  'staffing and recruiting agencies',
+  'B2B sales training companies',
+  'commercial insurance agencies',
+  'wealth management firms',
+  'executive coaching companies',
+  'multi location home services companies',
+  'medical spa franchise groups',
+  'dental service organizations',
+  'commercial construction companies',
+  'SaaS implementation consultants',
+  'professional services firms lead generation'
+];
+
+function graceText(p={}){
+  return [
+    p.organizationName,p.name,p.companyName,p.legalCompanyName,p.industry,p.organizationType,p.category,
+    p.description,p.aiCompanySummary,p.linkedinCompanyDescription,p.missionStatement,p.companySignals,
+    p.signalsSummary,p.googleReviewsSnippet,p.rawCompanySignals,p.requestedPainPoints,p.qualificationRule,
+    Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals,
+    Array.isArray(p.sourceUrls)?p.sourceUrls.join(' '):p.sourceUrls
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function graceNumber(...values){
+  return frissonPartnerNumber(...values);
+}
+
+function graceSourceUrls(p={}){
+  return frissonSourceUrls(p);
+}
+
+function graceIndustryPainPoints(p={}){
+  const text=graceText(p);
+  const points=[];
+  if(/agency|marketing|consulting|coach|advisor|professional service/.test(text)) points.push('trust-heavy consultative sales; generic follow-up can flatten expertise');
+  if(/hvac|roof|plumb|construction|contractor|home service|commercial service/.test(text)) points.push('high-intent calls and quote requests can decay quickly when response is slow');
+  if(/medical|dental|wellness|clinic|spa|health/.test(text)) points.push('buyers often need reassurance, proof, and tone-sensitive follow-up before booking');
+  if(/insurance|financial|wealth|legal|accounting/.test(text)) points.push('credibility and timing matter; cautious prospects need precise trust-building');
+  if(/staffing|recruit|talent/.test(text)) points.push('speed, qualification, and candidate/client routing determine conversion quality');
+  if(/saas|software|implementation|managed it|msp|technology/.test(text)) points.push('complex buyer journeys need segmentation by urgency, role, and technical pain');
+  if(!points.length) points.push('B2B buying decisions usually need relevance, timing, proof, and human-feeling follow-up');
+  return [...new Set(points)];
+}
+
+function graceDiscEstimate(p={}){
+  const text=graceText(p);
+  if(/fast|growth|scale|revenue|performance|sales|roi|executive|enterprise|commercial/.test(text)) return 'D / Driver';
+  if(/community|relationship|care|wellness|people|service|family|client experience/.test(text)) return 'I / Relational';
+  if(/compliance|financial|insurance|legal|accounting|analytics|data|engineering|technical/.test(text)) return 'C / Analytical';
+  if(/support|operations|process|managed|service|implementation|customer success/.test(text)) return 'S / Steady';
+  return 'Unknown / mixed';
+}
+
+function graceCommunicationStyle(disc=''){
+  if(/^D/.test(disc)) return 'Concise, outcome-first, respectful of time, with a clear business case.';
+  if(/^I/.test(disc)) return 'Warm, affirming, energetic, and centered on people, trust, and momentum.';
+  if(/^C/.test(disc)) return 'Specific, evidence-backed, precise, and careful not to overclaim.';
+  if(/^S/.test(disc)) return 'Calm, reassuring, process-aware, and focused on reducing friction.';
+  return 'Mirror the public tone; lead with specific observation before any ask.';
+}
+
+function graceFitProfile(p={}){
+  const text=graceText(p);
+  const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
+  const revenue=graceNumber(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue,p.estimatedAnnualRevenue);
+  const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
+  const sources=graceSourceUrls(p);
+  const painPoints=graceIndustryPainPoints(p);
+  const reasons=[];
+  let score=0;
+
+  if(/b2b|commercial|enterprise|business|consulting|agency|professional|managed|implementation|staffing|insurance|financial|construction|contractor|medical|dental|home service/.test(text)){score+=18; reasons.push('B2B or high-value service model signal');}
+  if(/book|schedule|consult|quote|estimate|demo|call|appointment|assessment|contact us|request/.test(text)){score+=16; reasons.push('visible booking, quote, demo, or consultation motion');}
+  if(/sales|growth|lead|marketing|pipeline|client|customer|conversion|revenue/.test(text)){score+=12; reasons.push('revenue and lead-flow language appears publicly');}
+  if(/multi.?location|franchise|locations|national|regional|enterprise|team|staff|department/.test(text) || employees>=20){score+=12; reasons.push('operational complexity or team scale signal');}
+  if(/ads|facebook|google|paid|campaign|landing|funnel|webinar|event/.test(text)){score+=10; reasons.push('likely paid or campaign-driven lead flow');}
+  if(reviewCount>=50){score+=7; reasons.push('public review volume suggests active demand');}
+  if(validEmail(p.email)||validPhone(p.phone)){score+=6; reasons.push('usable contact path');}
+  if(sources.length>=2){score+=5; reasons.push('multiple public sources available for review');}
+  if(/crm|hubspot|salesforce|highlevel|gohighlevel|automation|workflow|calendar|booking/.test(text)){score+=6; reasons.push('current systems or automation language suggests audit readiness');}
+  if(revenue>=5000000 || employees>=50){score+=8; reasons.push('scale may support a premium audit/build conversation');}
+
+  const leakPotential=score>=75?'High':score>=58?'Meaningful':score>=42?'Possible':'Low / unclear';
+  const tier=score>=80?'Priority mirror outreach':score>=65?'Strong audit prospect':score>=50?'Qualified nurture':score>=35?'Needs human review':'Suppress';
+  const confidence=(sources.length>=2 && score>=60)?'High':(sources.length>=1 && score>=45?'Medium':'Low');
+  const auditPriority=score>=80?'A - review first':score>=65?'B - good candidate':score>=50?'C - nurture/research':'D - hold';
+  const disc=graceDiscEstimate(p);
+  const company=p.organizationName||p.companyName||p.name||'this company';
+  const industry=p.industry||p.organizationType||p.category||'B2B service';
+  const flattering=score>=65
+    ? `${company} appears to have the kind of trust-heavy, high-intent buyer journey where every response carries the brand.`
+    : `${company} shows early signals of a business where better lead understanding may matter, but the fit needs review.`;
+  const leakage=`VAL would first inspect speed-to-lead, channel handoffs, quote/demo follow-up, no-show recovery, and whether different buyer types are receiving the same generic message.`;
+  const why=`${company} fits the Grace Intelligence screen because ${reasons.slice(0,4).join('; ')||'it may have a consultative B2B sales motion worth reviewing'}.`;
+  const witness=`What stands out about ${company}: ${flattering} The public surface suggests the business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
+  const firstAudit=`Start with the last 30-90 days of inbound forms, calls, booking requests, source attribution, follow-up attempts, appointment/no-show data, and closed/won outcomes.`;
+  const communicationStyle=graceCommunicationStyle(disc);
+  const introSubject=`What VAL noticed about ${company}`;
+  const mirrorEmail=[
+    `Subject: ${introSubject}`,
+    '',
+    `Hi ${p.decisionMakerName?.split(/\s+/)[0]||'there'},`,
+    '',
+    `I spent time looking at ${company}, and what stood out is that you do not appear to sell a commodity. Your business seems to depend on trust, timing, and the feeling that the person on the other side understands what the buyer is actually trying to solve.`,
+    '',
+    `${witness}`,
+    '',
+    `That is exactly where Grace Intelligence is different. VAL does not treat every lead like the same form submission. It looks for buying intent, tone, likely objections, communication style, and the next best message.`,
+    '',
+    `VAL found this from the outside. Imagine if every lead coming through your forms, calls, ads, and follow-up history was witnessed this way before anyone on your team had to decide what to do next.`,
+    '',
+    `If useful, I can start with a free data audit to see where leads may be leaking before you invest in a build.`,
+    '',
+    `Jessa`
+  ].join('\n');
+  const follow24=[
+    `Subject: Re: ${company} lead follow-up`,
+    '',
+    `One specific reason I reached out: ${painPoints[0]}.`,
+    '',
+    `When a business has that kind of buyer journey, the leak is rarely just "not enough leads." It is usually response timing, tone, handoff, routing, or follow-up that does not match the buyer's state of mind.`,
+    '',
+    `That is what the free audit is designed to find.`
+  ].join('\n');
+  const follow36=[
+    `Subject: The part most teams cannot see`,
+    '',
+    `Most CRMs can show that a lead came in. They usually do not show whether the lead needed speed, reassurance, proof, authority, or a completely different next message.`,
+    '',
+    `That is the layer VAL adds. It turns the lead into a conversion profile before the follow-up happens.`
+  ].join('\n');
+  const follow5=[
+    `Subject: Should I close the loop?`,
+    '',
+    `I do not want to keep nudging if this is not relevant. My instinct is that ${company} is exactly the type of business where one missed or mismatched follow-up can be expensive.`,
+    '',
+    `If you want, we can start with the free audit and let the data decide whether there is enough leakage to justify anything larger.`
+  ].join('\n');
+
+  const packet=[
+    `Company: ${company}`,
+    `Website: ${p.website||'not found'}`,
+    `Industry: ${industry}`,
+    `VAL fit score: ${Math.min(100,score)}/100`,
+    `Tier: ${tier}`,
+    `Confidence: ${confidence}`,
+    `Revenue leak potential: ${leakPotential}`,
+    `Why this company: ${why}`,
+    `Witness insight: ${witness}`,
+    `Industry pain points: ${painPoints.join('; ')}`,
+    `Lead leakage hypothesis: ${leakage}`,
+    `DISC estimate: ${disc}`,
+    `Communication style: ${communicationStyle}`,
+    `First audit angle: ${firstAudit}`,
+    `Sources: ${sources.join(', ')||'source review needed'}`
+  ].join('\n');
+
+  return {
+    score:Math.min(100,score),
+    tier,
+    confidence,
+    leakPotential,
+    auditPriority,
+    reasons,
+    painPoints,
+    disc,
+    communicationStyle,
+    flattering,
+    leakage,
+    why,
+    witness,
+    firstAudit,
+    packet,
+    mirrorEmail,
+    follow24,
+    follow36,
+    follow5,
+    linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where lead follow-up probably needs more than generic automation. VAL mapped a few public signals and I think a free data audit could show whether leads are leaking in response, routing, or follow-up.`,
+    callOpener:`I reached out because VAL flagged ${company} as a business where leads likely need to be understood, not just answered. I wanted to see whether a free audit of lead response and follow-up would be useful.`,
+    handoff:`Review before contact. ${why} Suggested tone: ${communicationStyle} First audit: ${firstAudit}`,
+    reviewNeeded:score<65 || confidence==='Low'
+  };
+}
+
+function scoreGraceFitLead(raw={}){
+  const profile=graceFitProfile(raw);
+  const leadScore=profile.score>=80?1:profile.score>=65?2:profile.score>=50?3:4;
+  const scored={
+    ...raw,
+    leadProfile:'grace',
+    scraperType:'Grace Fit Engine',
+    source:'Grace Intelligence Fit Engine',
+    valFitScore:profile.score,
+    valFitTier:profile.tier,
+    fitConfidence:profile.confidence,
+    revenueLeakPotential:profile.leakPotential,
+    auditPriority:profile.auditPriority,
+    leadScore,
+    leadScoreReason:`${profile.tier}: ${profile.reasons.join('; ')||'needs human review'}`,
+    evidenceSummary:profile.reasons.join('; '),
+    industryPainPoints:profile.painPoints.join('\n'),
+    leadLeakageHypothesis:profile.leakage,
+    firstAuditAngle:profile.firstAudit,
+    whyThisCompany:profile.why,
+    discEstimate:profile.disc,
+    communicationStyle:profile.communicationStyle,
+    personalizationNotes:`Use the witness insight first, then connect it to how VAL would witness their own leads. ${profile.communicationStyle}`,
+    flatteringObservation:profile.flattering,
+    witnessInsight:profile.witness,
+    prospectPacket:profile.packet,
+    mirrorEmail:profile.mirrorEmail,
+    followup24:profile.follow24,
+    followup36:profile.follow36,
+    followup5Day:profile.follow5,
+    linkedinDm:profile.linkedinDm,
+    callOpener:profile.callOpener,
+    internalHandoffNotes:profile.handoff,
+    approvedToContact:false,
+    enrichmentStatus:raw.enrichmentStatus||raw.leadEnrichmentStatus||'preview_generated',
+    lastEnrichedAt:new Date().toISOString(),
+    reviewNeeded:profile.reviewNeeded,
+    aiFitSummary:profile.why,
+    recommendedOutreachAngle:profile.witness
+  };
+  return {...scored,readinessBrief:buildLeadReadinessBrief(scored,{profile:'grace',previewOnly:true})};
+}
+
+function graceFitPlan(body={}){
+  const requestedTerms=String(body.category||body.organizationType||body.businessTerms||body.keywords||body.criteria||'').split(/[,;\n]/).map(v=>v.trim()).filter(Boolean);
+  const searchTerms=(requestedTerms.length?requestedTerms:GRACE_FIT_SEARCH_TERMS).slice(0,Math.max(1,Math.min(Number(body.termLimit)||4,GRACE_FIT_SEARCH_TERMS.length)));
+  return {
+    market:String(body.market||body.location||'United States'),
+    searchTerms,
+    limit:Math.min(Math.max(Number(body.limit)||12,1),100),
+    enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
+    rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
+  };
+}
+
+async function discoverGraceFitLeads(body={}){
+  const plan=graceFitPlan(body);
+  const perSearch=Math.max(3,Math.ceil((plan.limit*1.5)/Math.max(1,plan.searchTerms.length)));
+  const raw=[];
+  const errors=[];
+  for(const term of plan.searchTerms){
+    const scraped=await discoverOutscraperProspects({
+      organizationType:term,
+      employeeMinimum:1,
+      market:plan.market,
+      limit:perSearch,
+      leadProfile:'grace'
+    }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+    if(!scraped.configured){
+      return {ok:false,leadProfile:'grace',prospectingMode:'grace_fit_engine',scraperType:'Grace Fit Engine',market:plan.market,organizationType:term,leads:[],error:scraped.error||'Outscraper is not configured',content:`Grace Fit Engine could not start.\n\n${scraped.error||'Outscraper is not configured'}`};
+    }
+    if(scraped.error) errors.push(`${term}: ${cleanLeadLevelText(scraped.error)}`);
+    raw.push(...(scraped.leads||[]).map(lead=>({...lead,organizationType:term,industry:term,leadProfile:'grace',scraperType:'Grace Fit Engine',source:'Grace Intelligence Fit Engine'})));
+  }
+  const deduped=[];
+  const seen=new Set();
+  for(const lead of raw){
+    const key=goallLeadKey(lead);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(lead);
+  }
+  const enriched=await mapWithConcurrency(deduped.slice(0,Math.min(deduped.length,plan.limit*2)),plan.rocketReachMode==='defer'?3:5,async lead=>{
+    const next=plan.enrichContacts
+      ? await enrichProspect(lead,{rocketReachMode:plan.rocketReachMode,fastPreview:false}).catch(e=>({...lead,enrichmentStatus:e.message}))
+      : {...lead,rocketReachStatus:'deferred until review'};
+    return scoreGraceFitLead(next);
+  });
+  const leads=enriched.sort((a,b)=>Number(a.leadScore||4)-Number(b.leadScore||4)||Number(b.valFitScore||0)-Number(a.valFitScore||0)).slice(0,plan.limit);
+  const result={
+    ok:!!leads.length,
+    leadProfile:'grace',
+    prospectingMode:'grace_fit_engine',
+    scraperType:'Grace Fit Engine',
+    market:plan.market,
+    searchTerms:plan.searchTerms,
+    organizationType:plan.searchTerms.join(', '),
+    tag:'free-data-audit',
+    leads,
+    errors,
+    crmDestination:{status:'approval_required',tags:['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence']},
+    report:{
+      requestedViableLeads:plan.limit,
+      viableLeadsFound:leads.length,
+      rawBusinessesSearched:raw.length,
+      priorityCount:leads.filter(l=>Number(l.leadScore)===1).length,
+      strongCount:leads.filter(l=>Number(l.leadScore)===2).length,
+      reviewCount:leads.filter(l=>l.reviewNeeded).length
+    },
+    outreachPolicy:{mode:'review_first',active:false}
+  };
+  result.content=graceFitPreviewText(result);
+  return result;
+}
+
+function graceFitPreviewText(discovered={}){
+  const leads=(discovered.leads||[]).map(scoreGraceFitLead);
+  return [
+    `Found ${leads.length} Grace Intelligence fit prospect${leads.length===1?'':'s'}.`,
+    'Review question: Could a free data audit plausibly uncover enough revenue leakage to justify a VAL-powered build?',
+    `Search: ${discovered.organizationType||discovered.searchTerms?.join(', ')||'Grace Fit Engine'} | ${discovered.market||'United States'}`,
+    'CRM destination: approved contacts only; pipeline handled by team.',
+    'Outreach policy: mirror email and follow-ups are generated but never sent automatically.',
+    '',
+    ...leads.map((p,i)=>[
+      `${i+1}. ${p.organizationName||p.name||'Unnamed prospect'}`,
+      `   VAL fit: ${p.valFitScore}/100 - ${p.valFitTier}`,
+      `   Confidence: ${p.fitConfidence} | Leak potential: ${p.revenueLeakPotential} | Audit priority: ${p.auditPriority}`,
+      `   Why this company: ${p.whyThisCompany||'Needs review'}`,
+      `   Witness insight: ${p.witnessInsight||'Needs review'}`,
+      `   DISC / style: ${p.discEstimate||'Unknown'} | ${p.communicationStyle||'mirror public tone'}`,
+      `   First audit angle: ${p.firstAuditAngle||'Lead response and follow-up review'}`,
+      `   Contact: ${p.decisionMakerName||p.primaryContact||'not identified'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''} | ${p.email||'email unavailable'} | ${p.phone||'phone unavailable'}`,
+      `   Website: ${p.website||'unclear'}`,
+      `   Sources (${graceSourceUrls(p).length}): ${graceSourceUrls(p).join(', ')||'source review needed'}`
+    ].join('\n')),
+    '',
+    'Approve before importing or contacting. Imported contacts are tagged for Grace review; no outreach is sent automatically.'
+  ].join('\n');
+}
+
+function graceCustomFieldsFromProspect(raw={}){
+  const p=scoreGraceFitLead(raw);
+  const sources=graceSourceUrls(p);
+  return {
+    lead_source_system:'Grace Intelligence Fit Engine',
+    lead_ingested_at:p.leadIngestedAt||new Date().toISOString(),
+    lead_processing_status:'reviewed_for_import',
+    lead_dedupe_key:goallLeadKey(p),
+    lead_score:String(p.leadScore||''),
+    lead_score_reason:p.leadScoreReason||'',
+    lead_scored_at:p.leadScoredAt||new Date().toISOString(),
+    lead_scoring_version:'grace-fit-engine-v1',
+    linkedin_url:p.linkedinPersonalUrl||p.linkedinCompanyUrl||p.linkedinUrl||'',
+    source_urls:sources.join('\n'),
+    ai_fit_summary:p.aiFitSummary||'',
+    recommended_outreach_angle:p.recommendedOutreachAngle||'',
+    scraper_type:'Grace Fit Engine',
+    scrape_date:p.scrapeDate||new Date().toISOString().slice(0,10),
+    review_needed:String(!!p.reviewNeeded),
+    date_added:p.dateAdded||new Date().toISOString(),
+    industry:p.industry||p.organizationType||'',
+    title:p.decisionMakerTitle||p.title||'',
+    gi_val_fit_score:String(p.valFitScore||''),
+    gi_val_fit_tier:p.valFitTier||'',
+    gi_fit_confidence:p.fitConfidence||'',
+    gi_revenue_leak_potential:p.revenueLeakPotential||'',
+    gi_audit_priority:p.auditPriority||'',
+    gi_review_status:'Needs review',
+    gi_source_urls:sources.join('\n'),
+    gi_evidence_summary:p.evidenceSummary||'',
+    gi_industry_pain_points:p.industryPainPoints||'',
+    gi_lead_leakage_hypothesis:p.leadLeakageHypothesis||'',
+    gi_first_audit_angle:p.firstAuditAngle||'',
+    gi_why_this_company:p.whyThisCompany||'',
+    gi_decision_maker_linkedin:p.linkedinPersonalUrl||p.linkedinUrl||'',
+    gi_disc_estimate:p.discEstimate||'',
+    gi_communication_style:p.communicationStyle||'',
+    gi_personalization_notes:p.personalizationNotes||'',
+    gi_flattering_observation:p.flatteringObservation||'',
+    gi_witness_insight:p.witnessInsight||'',
+    gi_prospect_packet:p.prospectPacket||'',
+    gi_mirror_email:p.mirrorEmail||'',
+    gi_24_hour_followup:p.followup24||'',
+    gi_36_hour_followup:p.followup36||'',
+    gi_5_day_followup:p.followup5Day||'',
+    gi_linkedin_dm:p.linkedinDm||'',
+    gi_call_opener:p.callOpener||'',
+    gi_internal_handoff_notes:p.internalHandoffNotes||'',
+    gi_approved_to_contact:'No',
+    gi_do_not_contact_reason:p.reviewNeeded?'Needs human review before outreach':'',
+    gi_enrichment_status:p.enrichmentStatus||'preview_generated',
+    gi_last_enriched_at:p.lastEnrichedAt||new Date().toISOString()
+  };
+}
+
+async function upsertGhlGraceLead(raw={}){
+  const p=scoreGraceFitLead(raw);
+  const fields=graceCustomFieldsFromProspect(p);
+  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const customFields=leadCustomFieldPayloads(ids,fields);
+  const duplicate=await findExistingGhlLeadDuplicate(p);
+  const tags=['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence','review-before-contact',...(Array.isArray(p.tags)?p.tags:[])].filter(Boolean);
+  const decisionName=String(p.decisionMakerName||p.primaryContact||'').trim();
+  const nameParts=decisionName.split(/\s+/).filter(Boolean);
+  const contactPayload=compactObject({
+    locationId:GHL_LOC || await resolveGhlLocationId(),
+    companyName:p.organizationName||p.name||'Unnamed Grace prospect',
+    website:p.website,
+    email:validEmail(p.email)?p.email:undefined,
+    phone:validPhone(p.phone)?p.phone:undefined,
+    address1:p.address1,
+    city:p.city,
+    state:p.state,
+    country:normalizeCountryCode(p.country),
+    postalCode:p.postalCode||p.postal_code,
+    timezone:p.timeZone||p.timezone,
+    source:'Grace Intelligence Fit Engine',
+    tags,
+    customFields:customFields.length?customFields:undefined
+  });
+  if(decisionName){
+    contactPayload.firstName=nameParts[0]||undefined;
+    contactPayload.lastName=nameParts.slice(1).join(' ')||undefined;
+    contactPayload.name=decisionName;
+  }
+  let contactId=duplicate?.id||'';
+  let updated=!!duplicate;
+  if(contactId){
+    const existing=await ghlStrict('GET',`/contacts/${contactId}`).catch(()=>null);
+    const updatePayload=frissonMissingStandardPayload(existing,contactPayload);
+    const missingCustomFields=p.forceUpdateCustomFields?customFields:(existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields);
+    if(missingCustomFields.length) updatePayload.customFields=missingCustomFields;
+    if(Object.keys(updatePayload).length) await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
+  }else{
+    const created=await ghlStrict('POST','/contacts',contactPayload);
+    contactId=(created.contact||created).id||created.contact?.id||'';
+  }
+  if(!contactId) throw new Error(`GHL contact upsert returned no contact id for ${p.organizationName||p.name||'Grace prospect'}`);
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  const note=[
+    `Grace Fit Engine score: ${p.valFitScore}/100 - ${p.valFitTier}`,
+    `Confidence: ${p.fitConfidence}`,
+    `Revenue leak potential: ${p.revenueLeakPotential}`,
+    `Witness insight: ${p.witnessInsight}`,
+    `First audit angle: ${p.firstAuditAngle}`,
+    `Mirror email:\n${p.mirrorEmail}`,
+    `24-hour follow-up:\n${p.followup24}`,
+    `36-hour follow-up:\n${p.followup36}`,
+    `5-day follow-up:\n${p.followup5Day}`,
+    `Sources: ${graceSourceUrls(p).join(', ')||'source review needed'}`
+  ].filter(Boolean).join('\n\n');
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  const readinessBrief=await saveLeadReadinessBrief(contactId,p,{profile:'grace',mode:'fit_engine'}).catch(e=>{
+    console.log('Grace readiness brief not saved',{contactId,name:p.organizationName||p.name,error:e.message});
+    return '';
+  });
+  return {name:p.organizationName||p.name,contactId,updated,tags,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,valFitScore:p.valFitScore,valFitTier:p.valFitTier,readinessBrief};
+}
+
+async function importApprovedGraceLeads(body={}){
+  const leads=(Array.isArray(body.leads)?body.leads:[]).map(scoreGraceFitLead);
+  if(!leads.length) throw new Error('No approved Grace Fit Engine leads were provided for import.');
+  const created=[],failed=[];
+  await mapWithConcurrency(leads,GOALL_LEAD_IMPORT_CONCURRENCY,async lead=>{
+    try{created.push(await upsertGhlGraceLead(lead));}
+    catch(e){failed.push({name:lead.organizationName||lead.name,error:e.message});}
+  });
+  const updated=created.filter(x=>x.updated).length;
+  const content=[
+    `Pushed ${created.length} approved Grace Fit Engine prospect${created.length===1?'':'s'} to GHL.`,
+    updated?`Updated ${updated} existing contact${updated===1?'':'s'} instead of creating duplicates.`:'',
+    'Pipeline: handled by Grace Intelligence team',
+    'Outreach: generated only; review required before contact',
+    failed.length?`Failed: ${failed.length}`:''
+  ].filter(Boolean).join('\n');
+  await saveMemoryItem({
+    kind:'grace_fit_engine_import',
+    summary:`Imported ${created.length} Grace Fit Engine prospects`,
+    rawText:content+'\n\nRaw leads:\n'+JSON.stringify(leads,null,2),
+    importance:3,
+    metadata:{created,failed}
+  }).catch(()=>{});
+  return {ok:true,created,failed,content};
+}
+
+async function graceCustomFieldStatus(){
+  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const keys=['gi_val_fit_score','gi_val_fit_tier','gi_fit_confidence','gi_revenue_leak_potential','gi_audit_priority','gi_review_status','gi_source_urls','gi_evidence_summary','gi_industry_pain_points','gi_lead_leakage_hypothesis','gi_first_audit_angle','gi_why_this_company','gi_decision_maker_linkedin','gi_disc_estimate','gi_communication_style','gi_personalization_notes','gi_flattering_observation','gi_witness_insight','gi_prospect_packet','gi_mirror_email','gi_24_hour_followup','gi_36_hour_followup','gi_5_day_followup','gi_linkedin_dm','gi_call_opener','gi_internal_handoff_notes','gi_approved_to_contact','gi_do_not_contact_reason','gi_enrichment_status','gi_last_enriched_at'];
+  return {ok:true,fields:keys.map(key=>({key,fieldKey:GHL_LEAD_FIELD_KEYS[key]||'',configured:!!ids[key],id:ids[key]||''}))};
 }
 
 async function frissonCustomFieldStatus(){
