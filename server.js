@@ -30521,6 +30521,7 @@ async function verifyGhlLeadScoreField(contactId,expectedScore,ids){
 }
 
 let leadFieldIdCache=null;
+let leadFieldIdCacheAt=0;
 let leadFieldIdPromise=null;
 async function discoverLeadFieldIds(){
   const resolved={...GHL_LEAD_FIELD_IDS};
@@ -30556,11 +30557,16 @@ async function discoverLeadFieldIds(){
     }
   }
   leadFieldIdCache=resolved;
+  leadFieldIdCacheAt=Date.now();
   return resolved;
 }
 
-async function resolveLeadFieldIds(){
-  if(leadFieldIdCache) return leadFieldIdCache;
+async function resolveLeadFieldIds(force=false){
+  if(force){
+    leadFieldIdCache=null;
+    leadFieldIdPromise=null;
+  }
+  if(leadFieldIdCache && Date.now()-leadFieldIdCacheAt<10*60*1000) return leadFieldIdCache;
   if(!leadFieldIdPromise){
     leadFieldIdPromise=discoverLeadFieldIds().finally(()=>{ leadFieldIdPromise=null; });
   }
@@ -33224,7 +33230,7 @@ function graceCustomFieldsFromProspect(raw={}){
 async function upsertGhlGraceLead(raw={}){
   const p=scoreGraceFitLead(raw);
   const fields=graceCustomFieldsFromProspect(p);
-  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
   const customFields=leadCustomFieldPayloads(ids,fields);
   const duplicate=await findExistingGhlLeadDuplicate(p);
   const tags=['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence','review-before-contact',...(Array.isArray(p.tags)?p.tags:[])].filter(Boolean);
@@ -33312,7 +33318,7 @@ async function importApprovedGraceLeads(body={}){
 }
 
 async function graceCustomFieldStatus(){
-  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
   const keys=['gi_val_fit_score','gi_val_fit_tier','gi_fit_confidence','gi_revenue_leak_potential','gi_audit_priority','gi_review_status','gi_source_urls','gi_evidence_summary','gi_industry_pain_points','gi_lead_leakage_hypothesis','gi_first_audit_angle','gi_why_this_company','gi_decision_maker_linkedin','gi_disc_estimate','gi_communication_style','gi_personalization_notes','gi_flattering_observation','gi_witness_insight','gi_prospect_packet','gi_mirror_email','gi_24_hour_followup','gi_36_hour_followup','gi_5_day_followup','gi_linkedin_dm','gi_call_opener','gi_internal_handoff_notes','gi_approved_to_contact','gi_do_not_contact_reason','gi_enrichment_status','gi_last_enriched_at'];
   return {ok:true,fields:keys.map(key=>({key,fieldKey:GHL_LEAD_FIELD_KEYS[key]||'',configured:!!ids[key],id:ids[key]||''}))};
 }
