@@ -2940,7 +2940,7 @@ async function resolveIntegrationSecret(provider,credentialType,fallback=''){
       console.error(`Credential read failed for ${provider}/${credentialType}:`,e.message);
     }
   }
-  return String(credentialType||'')==='api_key' ? (platformKeyFallbackAllowed() ? (fallback || '') : '') : (fallback || '');
+  return String(credentialType||'')==='api_key' ? (platformKeyFallbackAllowed(provider) ? (fallback || '') : '') : (fallback || '');
 }
 async function resolveOpenAIKey(){ return RUNTIME_OPENAI_KEY || resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
 async function resolveAnthropicKey(){ return resolveIntegrationSecret('anthropic','api_key',ANTHROPIC_KEY); }
@@ -3136,6 +3136,7 @@ function platformKeyFallbackAllowed(provider=''){
   if(/^(0|false|no)$/i.test(explicit)) return false;
   const p=String(provider||'').toLowerCase();
   if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
+  if(p==='ghl'&&GHL_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_GHL_KEY||''))) return true;
   if(['outscraper','apollo','rocketreach'].includes(p) && !/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_SCRAPER_KEYS||''))){
     return true;
   }
