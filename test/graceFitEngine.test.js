@@ -13,8 +13,10 @@ test('Grace Fit Engine exposes review-first preview and import routes',()=>{
   assert.match(server,/\/api\/grace\/fit-engine\/discover-preview/);
   assert.match(server,/\/api\/grace\/fit-engine\/import-approved/);
   assert.match(server,/\/api\/grace\/fit-engine\/custom-fields\/status/);
+  assert.match(server,/\/api\/grace\/revenue-audit/);
   assert.match(server,/function discoverGraceFitLeads/);
   assert.match(server,/function importApprovedGraceLeads/);
+  assert.match(server,/function upsertGhlGraceAuditIntake/);
 });
 
 test('Grace Fit Engine reuses lead discovery enrichment providers and does not create opportunities',()=>{
@@ -45,6 +47,18 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   }
   assert.match(server,/Imagine if every lead coming through your forms/);
   assert.match(server,/review-before-contact/);
+});
+
+test('Grace website audit intake maps form payloads into GHL review fields',()=>{
+  assert.match(server,/function graceAuditIntakeFromPayload/);
+  assert.match(server,/function graceAuditCustomFieldsFromIntake/);
+  assert.match(server,/lead_source_system:'Grace Intelligence Website Audit'/);
+  assert.match(server,/website-audit-intake/);
+  assert.match(server,/gi_review_status:'Needs audit review'/);
+  assert.match(server,/gi_approved_to_contact:'No'/);
+  assert.match(server,/Website audit intake requires team review before outreach/);
+  assert.match(server,/Grace Intelligence free data audit intake/);
+  assert.doesNotMatch(server.slice(server.indexOf('async function upsertGhlGraceAuditIntake'),server.indexOf('async function upsertGhlGraceLead')),/createGhlOpportunity/);
 });
 
 test('Hearth scraper UI includes Grace Fit Engine endpoints',()=>{

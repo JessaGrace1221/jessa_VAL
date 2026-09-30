@@ -17582,6 +17582,16 @@ app.post('/api/grace/fit-engine/import-approved',async(req,res)=>{
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
+app.post('/api/grace/revenue-audit',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const intake=graceAuditIntakeFromPayload(req.body||{});
+      return res.json({ok:true,demo:true,contact:{name:intake.decisionMakerName,company:intake.organizationName},content:withDemoCta(`Received Grace Intelligence audit intake for ${intake.organizationName||'new prospect'}.\n\nPipeline: handled by Grace Intelligence team.\nOutreach: review required before contact.`)});
+    }
+    res.json(await upsertGhlGraceAuditIntake(req.body||{}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
 app.post('/api/val/partners/discover-preview',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -33225,6 +33235,252 @@ function graceCustomFieldsFromProspect(raw={}){
     gi_enrichment_status:p.enrichmentStatus||'preview_generated',
     gi_last_enriched_at:p.lastEnrichedAt||new Date().toISOString()
   };
+}
+
+function graceArray(value){
+  if(Array.isArray(value)) return value.map(v=>String(v||'').trim()).filter(Boolean);
+  return String(value||'').split(/[,;\n]/).map(v=>v.trim()).filter(Boolean);
+}
+
+function graceAuditText(payload={}){
+  return [
+    payload.company,
+    payload.website,
+    payload.industry,
+    payload.averageDealValue,
+    payload.monthlyLeadVolume,
+    payload.salesMotion,
+    payload.currentCrm,
+    payload.adSpend,
+    graceArray(payload.leakSignals).join(' '),
+    payload.biggestLeak,
+    payload.auditAccess
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function graceAuditIntakeFromPayload(payload={}){
+  const leakSignals=graceArray(payload.leakSignals);
+  const name=String(payload.name||payload.fullName||payload.contactName||'').trim();
+  const company=String(payload.company||payload.companyName||payload.organizationName||'').trim();
+  const website=String(payload.website||payload.url||'').trim();
+  const industry=String(payload.industry||'').trim();
+  const avgDeal=String(payload.averageDealValue||payload.avgDealValue||'').trim();
+  const monthlyLeadVolume=String(payload.monthlyLeadVolume||payload.leadVolume||'').trim();
+  const salesMotion=String(payload.salesMotion||'').trim();
+  const currentCrm=String(payload.currentCrm||payload.crm||'').trim();
+  const adSpend=String(payload.adSpend||payload.monthlyAdSpend||'').trim();
+  const biggestLeak=String(payload.biggestLeak||payload.revenueOpportunity||payload.notes||'').trim();
+  const auditAccess=String(payload.auditAccess||payload.availableData||'').trim();
+  const text=graceAuditText({...payload,leakSignals});
+  const painPoints=graceIndustryPainPoints({industry,organizationType:industry,companySignals:text});
+  const disc=graceDiscEstimate({companySignals:text,industry,organizationType:industry});
+  const communicationStyle=graceCommunicationStyle(disc);
+  const sourceUrls=[website].filter(Boolean);
+  const urgency=/slow|no-show|reschedule|sales team|inconsistency|500|1000|50k|\$50/i.test([leakSignals.join(' '),monthlyLeadVolume,avgDeal,adSpend,biggestLeak].join(' '));
+  const leakHypothesis=[
+    leakSignals.length?`Suspected leak signals: ${leakSignals.join(', ')}.`:'',
+    monthlyLeadVolume?`Lead volume: ${monthlyLeadVolume}.`:'',
+    avgDeal?`Average deal value: ${avgDeal}.`:'',
+    salesMotion?`Sales motion: ${salesMotion}.`:'',
+    currentCrm?`Current tools: ${currentCrm}.`:'',
+    biggestLeak?`Known missed opportunity: ${biggestLeak}`:''
+  ].filter(Boolean).join(' ');
+  const firstAudit=[
+    'Start by reviewing the last 30-90 days of inbound lead flow, speed-to-lead, follow-up attempts, no-shows, stalled pipeline, source attribution, and closed/won outcomes.',
+    auditAccess?`Available audit data: ${auditAccess}`:'Request CRM export, call/text history, pipeline stage report, campaign/source report, and booking/no-show data.'
+  ].join('\n');
+  const fitScore=urgency?72:58;
+  const fitTier=urgency?'Strong audit prospect':'Qualified audit review';
+  const leakPotential=urgency?'Meaningful to high':'Possible to meaningful';
+  const witness=[
+    `${company||'This company'} is not starting from zero. The intake suggests demand, conversations, and operational motion already exist.`,
+    'The opportunity is to find where that motion is not converting cleanly, then give every lead and handoff a visible next move.'
+  ].join(' ');
+  const packet=[
+    `Company: ${company||'not provided'}`,
+    `Contact: ${name||'not provided'}`,
+    `Email: ${payload.email||'not provided'}`,
+    `Phone: ${payload.phone||'not provided'}`,
+    `Website: ${website||'not provided'}`,
+    `Industry: ${industry||'not provided'}`,
+    `Average deal value: ${avgDeal||'not provided'}`,
+    `Monthly lead volume: ${monthlyLeadVolume||'not provided'}`,
+    `Sales motion: ${salesMotion||'not provided'}`,
+    `Current CRM/tools: ${currentCrm||'not provided'}`,
+    `Ad/lead spend: ${adSpend||'not provided'}`,
+    `Suspected leaks or waiting money: ${leakSignals.join(', ')||'not provided'}`,
+    `Known missed opportunity: ${biggestLeak||'not provided'}`,
+    `Audit data available: ${auditAccess||'not provided'}`,
+    `VAL first read: ${witness}`,
+    `First audit angle: ${firstAudit}`
+  ].join('\n');
+  const mirrorEmail=[
+    `Subject: Free data audit for ${company||'your revenue motion'}`,
+    '',
+    `Hi ${name?name.split(/\s+/)[0]:'there'},`,
+    '',
+    `I read through what you shared, and my first instinct is that ${company||'the business'} may already have more revenue potential than the system is currently capturing.`,
+    '',
+    `The audit should start with the places where money can quietly disappear: lead response, follow-up consistency, stalled pipeline, no-shows, routing, and whether high-value prospects are getting the same generic next step as everyone else.`,
+    '',
+    `If the data supports it, VAL can turn those gaps into a clearer operating layer: who needs attention, what should be sent next, what should be escalated, and where leadership should intervene before opportunity goes cold.`,
+    '',
+    `Jessa`
+  ].join('\n');
+  const handoff=[
+    `Grace website audit intake. Review before contact.`,
+    `Priority: ${urgency?'High':'Standard'}.`,
+    `Company: ${company||'not provided'}.`,
+    `Known missed opportunity: ${biggestLeak||'not provided'}.`,
+    `Suggested tone: ${communicationStyle}`,
+    `First audit: ${firstAudit}`
+  ].join('\n');
+  return {
+    ...payload,
+    leadProfile:'grace',
+    scraperType:'Grace Website Audit Intake',
+    source:'Grace Intelligence Free Data Audit',
+    organizationName:company,
+    companyName:company,
+    name:company||name||'Grace audit intake',
+    decisionMakerName:name,
+    primaryContact:name,
+    title:String(payload.title||'').trim(),
+    email:String(payload.email||'').trim(),
+    phone:String(payload.phone||'').trim(),
+    website,
+    industry,
+    organizationType:industry,
+    averageDealValue:avgDeal,
+    monthlyLeadVolume,
+    salesMotion,
+    currentCrm,
+    adSpend,
+    leakSignals,
+    biggestLeak,
+    auditAccess,
+    valFitScore:fitScore,
+    valFitTier:fitTier,
+    fitConfidence:'Intake submitted',
+    revenueLeakPotential:leakPotential,
+    auditPriority:urgency?'A - review first':'B - audit review',
+    leadScore:urgency?1:2,
+    leadScoreReason:leakHypothesis||'Website audit intake submitted.',
+    evidenceSummary:leakHypothesis,
+    industryPainPoints:painPoints.join('\n'),
+    leadLeakageHypothesis:leakHypothesis,
+    firstAuditAngle:firstAudit,
+    whyThisCompany:`${company||'This company'} requested a free Grace Intelligence data audit and identified possible missed revenue or conversion upside.`,
+    discEstimate:disc,
+    communicationStyle,
+    personalizationNotes:`Respond to the specific suspected missed opportunity first. ${communicationStyle}`,
+    flatteringObservation:`${company||'This business'} appears to be looking at the right question: not just how to get more leads, but how to convert more of what already exists.`,
+    witnessInsight:witness,
+    prospectPacket:packet,
+    mirrorEmail,
+    followup24:`Subject: One place I would look first\n\nBased on your intake, I would first inspect ${leakSignals[0]||'speed-to-lead and follow-up consistency'}. That is often where existing demand turns into invisible loss.`,
+    followup36:`Subject: The audit path\n\nThe goal is not to add another tool. It is to see whether your existing lead flow, pipeline, and team execution are leaving enough money on the table to justify a VAL operating layer.`,
+    followup5Day:`Subject: Should we start the audit?\n\nIf the missed opportunity you described is still active, the next step is to review the data and let the numbers tell us whether a larger build is warranted.`,
+    linkedinDm:`I saw your Grace Intelligence audit request. My first read is that this is a conversion and visibility question, not just a lead volume question.`,
+    callOpener:`I am calling because you requested the Grace Intelligence audit. I want to understand where you feel revenue is being missed and what data we can review first.`,
+    internalHandoffNotes:handoff,
+    approvedToContact:false,
+    enrichmentStatus:'website_audit_intake',
+    lastEnrichedAt:new Date().toISOString(),
+    sourceUrls,
+    reviewNeeded:true,
+    aiFitSummary:witness,
+    recommendedOutreachAngle:firstAudit,
+    tags:['Grace Intelligence','free-data-audit','website-audit-intake','revenue-leak-review','val-lead-intelligence','review-before-contact']
+  };
+}
+
+function graceAuditCustomFieldsFromIntake(raw={}){
+  const p=graceAuditIntakeFromPayload(raw);
+  return {
+    ...graceCustomFieldsFromProspect(p),
+    lead_source_system:'Grace Intelligence Website Audit',
+    lead_processing_status:'audit_intake_received',
+    lead_scoring_version:'grace-audit-intake-v1',
+    scraper_type:'Grace Website Audit Intake',
+    review_needed:'true',
+    gi_review_status:'Needs audit review',
+    gi_enrichment_status:'website_audit_intake',
+    gi_approved_to_contact:'No',
+    gi_do_not_contact_reason:'Website audit intake requires team review before outreach',
+    gi_source_urls:p.sourceUrls.join('\n'),
+    gi_evidence_summary:p.evidenceSummary,
+    gi_lead_leakage_hypothesis:p.leadLeakageHypothesis,
+    gi_first_audit_angle:p.firstAuditAngle,
+    gi_why_this_company:p.whyThisCompany,
+    gi_witness_insight:p.witnessInsight,
+    gi_prospect_packet:p.prospectPacket,
+    gi_mirror_email:p.mirrorEmail,
+    gi_24_hour_followup:p.followup24,
+    gi_36_hour_followup:p.followup36,
+    gi_5_day_followup:p.followup5Day,
+    gi_internal_handoff_notes:p.internalHandoffNotes
+  };
+}
+
+async function upsertGhlGraceAuditIntake(body={}){
+  const p=graceAuditIntakeFromPayload(body);
+  if(!validEmail(p.email) && !validPhone(p.phone)) throw new Error('Please provide a valid email or phone number.');
+  if(!p.organizationName) throw new Error('Company is required.');
+  const fields=graceAuditCustomFieldsFromIntake(p);
+  const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
+  const customFields=leadCustomFieldPayloads(ids,fields);
+  const duplicate=await findExistingGhlLeadDuplicate(p);
+  const tags=[...new Set(['Grace Intelligence','free-data-audit','website-audit-intake','revenue-leak-review','val-lead-intelligence','review-before-contact',...(Array.isArray(p.tags)?p.tags:[])].filter(Boolean))];
+  const nameParts=String(p.decisionMakerName||'').split(/\s+/).filter(Boolean);
+  const contactPayload=compactObject({
+    locationId:GHL_LOC || await resolveGhlLocationId(),
+    firstName:nameParts[0]||undefined,
+    lastName:nameParts.slice(1).join(' ')||undefined,
+    name:p.decisionMakerName||undefined,
+    companyName:p.organizationName,
+    website:p.website,
+    email:validEmail(p.email)?p.email:undefined,
+    phone:validPhone(p.phone)?p.phone:undefined,
+    source:'Grace Intelligence Free Data Audit',
+    tags,
+    customFields:customFields.length?customFields:undefined
+  });
+  let contactId=duplicate?.id||'';
+  let updated=!!duplicate;
+  if(contactId){
+    const existing=await ghlStrict('GET',`/contacts/${contactId}`).catch(()=>null);
+    const updatePayload=frissonMissingStandardPayload(existing,contactPayload);
+    const missingCustomFields=existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields;
+    if(missingCustomFields.length) updatePayload.customFields=missingCustomFields;
+    if(Object.keys(updatePayload).length) await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
+  }else{
+    const created=await ghlStrict('POST','/contacts',contactPayload);
+    contactId=(created.contact||created).id||created.contact?.id||'';
+  }
+  if(!contactId) throw new Error(`GHL contact upsert returned no contact id for ${p.organizationName}`);
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  const note=[
+    `Grace Intelligence free data audit intake`,
+    `Company: ${p.organizationName}`,
+    `Contact: ${p.decisionMakerName||'not provided'}${p.title?' - '+p.title:''}`,
+    `Email: ${p.email||'not provided'}`,
+    `Phone: ${p.phone||'not provided'}`,
+    `Website: ${p.website||'not provided'}`,
+    '',
+    p.prospectPacket,
+    '',
+    `Internal handoff:\n${p.internalHandoffNotes}`
+  ].filter(Boolean).join('\n');
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  await saveMemoryItem({
+    kind:'grace_revenue_audit_intake',
+    summary:`Grace Intelligence audit intake: ${p.organizationName}`,
+    rawText:note,
+    importance:3,
+    metadata:{contactId,updated,company:p.organizationName,email:p.email}
+  }).catch(()=>{});
+  return {ok:true,contactId,updated,tags,configuredCustomFields:customFields.length,content:`Grace Intelligence audit intake received for ${p.organizationName}. ${updated?'Updated existing GHL contact.':'Created GHL contact.'} Team review required before outreach.`};
 }
 
 async function upsertGhlGraceLead(raw={}){
