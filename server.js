@@ -33294,6 +33294,9 @@ function graceDisplayCompanyName(value=''){
 function graceCleanOutboundSentence(value='',fallback=''){
   let text=String(value||fallback||'').replace(/\s+/g,' ').trim();
   text=text
+    .replace(/^the safe claim is not that ([^,.;]+), but that /i,'I am not assuming $1. What looks worth testing is ')
+    .replace(/^the safe claim is that /i,'What looks worth testing is ')
+    .replace(/^safe claim:\s*/i,'')
     .replace(/\bthe public (site|journey|surface) suggests\b/ig,'it looks like')
     .replace(/\bthe public acquisition layer\b/ig,'the front door')
     .replace(/\bvisible front-end path\b/ig,'front door')
@@ -33307,11 +33310,48 @@ function graceCleanOutboundSentence(value='',fallback=''){
   return text;
 }
 
+function graceTrimSentenceEnd(value=''){
+  return String(value||'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'');
+}
+
 function graceShortOutbound(value='',fallback='',max=260){
   const text=graceCleanOutboundSentence(value,fallback);
   if(text.length<=max) return text;
   const first=text.split(/(?<=[.!?])\s+/)[0]||text;
   return first.length<=max ? first : `${text.slice(0,max-3).trim()}...`;
+}
+
+function graceCleanSubjectLine(value='',fallback=''){
+  let text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text) text=String(fallback||'').trim();
+  if(/^(reference|mention|use|speak to|focus on|lead with|write|subject line|angle|direction)\b/i.test(text)){
+    text=String(fallback||'').trim();
+  }
+  text=text.replace(/^subject:\s*/i,'').replace(/[.?!]+$/,'').trim();
+  if(text.length>62){
+    const clipped=text.slice(0,62).replace(/\s+\S*$/,'').trim();
+    text=clipped||text.slice(0,62).trim();
+  }
+  return text;
+}
+
+function graceEvidencePs({personName='',personTitle='',displayCompany='',prospectTheory={},evidenceLedger=[],aiOutreach={},kind='mirror'}={}){
+  const cleanStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
+  const dmEvidence=evidenceLedger.find(row=>/decision maker|founder|ceo|owner|president|principal/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const businessEvidence=evidenceLedger.find(row=>/lead|call|book|job|revenue|growth|portal|assessment|consult|quote|demo|inbound|service|offer/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const personPiece=personName
+    ? `${personName}${personTitle?` appears to sit in the ${personTitle} seat`:''}`
+    : `the person in this seat matters`;
+  const personProof=dmEvidence?.evidence||`${personTitle||'the role'} connects directly to growth, reputation, and follow-through`;
+  const businessPiece=businessEvidence?.claim||prospectTheory.bestOpening||`${displayCompany} has visible buyer-intent signals`;
+  const businessProof=businessEvidence?.evidence||prospectTheory.bestProof||prospectTheory.bestAuditQuestion||'the available public path shows consultation, assessment, booking, or follow-up complexity';
+  const usePiece=kind==='mirror'
+    ? `I used that to frame this around buyer-state follow-up instead of generic lead generation`
+    : kind==='proof'
+      ? `I used that to point the audit at proof: source, speed, routing, show rate, stalled conversations, and outcomes`
+      : `I used that to separate the business case from the message they should receive next`;
+  const strategicPiece=cleanStrategy ? ` ${graceTrimSentenceEnd(cleanStrategy)}.` : '';
+  return `P.S. I am reaching out because ${graceTrimSentenceEnd(personPiece)}; evidence: ${graceTrimSentenceEnd(personProof)}. I focused on ${displayCompany} because ${graceTrimSentenceEnd(businessPiece)}; evidence: ${graceTrimSentenceEnd(businessProof)}. ${usePiece}.${strategicPiece}`;
 }
 
 function graceFitProfile(p={}){
@@ -33387,15 +33427,17 @@ function graceFitProfile(p={}){
 	  const cleanPsStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
 	  const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
 	  const openingLine=graceShortOutbound(demonstrationLine,prospectTheory.bestOpening,240);
-	  const tensionLine=graceShortOutbound(aiCommercialTension,`different buyer states may be entering through the same front door`,260);
-	  const safeClaimLine=graceShortOutbound(aiSafeClaim||evidenceLine,`that looks worth testing before assuming the answer is more leads`,240);
-	  const consequenceLine=graceShortOutbound(prospectTheory.potentialConsequence,`if the theory is right, good demand can slow down before anyone sees where it stalled`,240);
-	  const auditLine=graceShortOutbound(auditQuestionClean,`whether different kinds of inquiries are being recognized, routed, and followed up differently`,260);
+	  const tensionLine=graceTrimSentenceEnd(graceShortOutbound(aiCommercialTension,`different buyer states may be entering through the same front door`,260));
+	  const safeClaimLine=graceTrimSentenceEnd(graceShortOutbound(aiSafeClaim||evidenceLine,`that looks worth testing before assuming the answer is more leads`,240));
+	  const consequenceLine=graceTrimSentenceEnd(graceShortOutbound(prospectTheory.potentialConsequence,`if the theory is right, good demand can slow down before anyone sees where it stalled`,240));
+	  const auditLine=graceTrimSentenceEnd(graceShortOutbound(auditQuestionClean,`whether different kinds of inquiries are being recognized, routed, and followed up differently`,260));
 	  const firstAuditFinal=aiAuditQuestion
 	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
 	    : firstAudit;
-	  const quietPs=personName && cleanPsStrategy ? `P.S. ${graceShortOutbound(cleanPsStrategy,'',190)}` : '';
-	  const mirrorEmailSubject=hasPersonForOutbound?(aiOutreach.subject_line_direction && !/subject line/i.test(String(aiOutreach.subject_line_direction))?String(aiOutreach.subject_line_direction).slice(0,90):`A buyer-state question for ${displayCompany}`):'';
+	  const mirrorPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'mirror'}):'';
+	  const proofPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'proof'}):'';
+	  const followPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'follow'}):'';
+	  const mirrorEmailSubject=hasPersonForOutbound?graceCleanSubjectLine(aiOutreach.subject_line_direction,`A buyer-state question for ${displayCompany}`):'';
 	  const follow24Subject=hasPersonForOutbound?'The cost of same-path follow-up':'';
 	  const follow36Subject=hasPersonForOutbound?'What the audit would prove':'';
 	  const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
@@ -33412,9 +33454,9 @@ function graceFitProfile(p={}){
 	    '',
 	    `The free audit would test that against the last 30-90 days of real inquiry and follow-up data.`,
 	    '',
-		    `The first question would be simple: ${auditLine}.`,
+	    `The first question would be simple: ${auditLine}.`,
 	    '',
-	    quietPs,
+	    mirrorPs,
 	    '',
     `Jessa`
   ].join('\n').replace(/\n{3,}/g,'\n\n'):'';
@@ -33425,7 +33467,9 @@ function graceFitProfile(p={}){
 	    '',
 	    consequenceLine,
 	    '',
-	    `That is why I would not start by changing your sales process. I would start by finding the moments where the buyer state was visible, but the follow-up did not change.`
+	    `That is why I would not start by changing your sales process. I would start by finding the moments where the buyer state was visible, but the follow-up did not change.`,
+	    '',
+	    followPs
 	  ].join('\n'):'';
 	  const follow36=hasPersonForOutbound?[
 	    `The audit is useful because it can prove the theory wrong quickly.`,
@@ -33434,7 +33478,9 @@ function graceFitProfile(p={}){
 	    '',
 		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
 	    '',
-	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`
+	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`,
+	    '',
+	    proofPs
 	  ].join('\n'):'';
 	  const follow5=hasPersonForOutbound?[
 	    `I will close the loop here unless this is worth checking.`,
@@ -33443,7 +33489,9 @@ function graceFitProfile(p={}){
 	    '',
 	    `If that is wrong, the audit will show it. If it is right, the upside should be obvious in the data.`,
 	    '',
-	    `Either way, it is a clean thing to know.`
+	    `Either way, it is a clean thing to know.`,
+	    '',
+	    followPs
 	  ].join('\n'):'';
 
   const packet=[
