@@ -35045,12 +35045,14 @@ function graceAiDecisionPerson(decision={}){
   const best=decision.bestPersonToSpeakTo||decision.bestDecisionMaker||decision.recommendedContact||preferred||{};
   if(best&&typeof best==='object'){
     const name=best.name||best.fullName||decision.decisionMakerName||[preferred.first_name,preferred.last_name].filter(Boolean).join(' ');
+    const evidence=best.reason||best.evidence||best.why_this_person||decision.decisionMakerEvidence||decision.notes||'';
+    const linkedinEvidence=Array.isArray(best.evidence)?best.evidence.find(row=>/linkedin/i.test(JSON.stringify(row)))||{}:{};
     return {
       name,
       title:best.title||decision.decisionMakerTitle||'',
       confidence:best.confidence||decision.decisionMakerConfidence||'',
-      evidence:best.reason||best.evidence||decision.decisionMakerEvidence||decision.notes||'',
-      linkedinUrl:best.linkedinUrl||best.personalLinkedInUrl||decision.personalLinkedInUrl||''
+      evidence:typeof evidence==='string'?evidence:graceUsefulJsonText(evidence),
+      linkedinUrl:best.linkedinUrl||best.personalLinkedInUrl||decision.personalLinkedInUrl||linkedinEvidence.source_url||linkedinEvidence.sourceUrl||''
     };
   }
   return {
@@ -35121,8 +35123,8 @@ async function researchGraceDecisionMakerWithAi(p={}){
     '- Never allow Research Hold language, identity uncertainty, internal scoring, DISC labels, or scraped/source terminology into customer-facing language.',
     '- Return only valid JSON. No markdown.',
     '',
-    'Return JSON with this exact shape:',
-    '{"company_identity":{"company_name":"","website":"","location":"","identity_confidence":"","identity_notes":""},"qualification":{"status":"","outbound_ready":false,"hold_reason":null,"fit_score":null,"fit_tier":"","fit_confidence":"","annual_unlock_assessment":"","annual_unlock_estimate":null,"annual_unlock_reasoning":""},"business_model":{"what_they_sell":"","who_buys":"","sales_motion":[],"visible_conversion_paths":[],"business_characteristics":[]},"brand_analysis":{"voice":[],"recurring_language":[],"promises":[],"proof_points":[],"differentiators":[],"brand_belief":"","buyer_emotional_requirement":"","language_to_mirror":[],"language_to_avoid":[]},"buyer_journey":{"summary":"","buyer_states":[],"likely_leakage_points":[]},"commercial_theories":[{"theory":"","evidence":[],"confidence":"","likely_commercial_consequence":"","internal_data_to_confirm_or_disprove":""}],"prospect_theory":{"dominant_argument":"","observed":"","likely_commercial_problem":"","why":"","commercial_tension":"","potential_consequence":"","val_hypothesis":"","best_proof":"","best_audit_question":"","best_cta":"","demonstration_idea":""},"counterargument":{"strongest_counterargument":"","evidence_that_would_disprove_theory":[],"safe_claim":""},"decision_maker":{"preferred_person":{"name":null,"title":null,"source_urls":[],"confidence":"","why_this_person":"","evidence":[]},"alternates":[]},"role_motivation":{"professional_priorities":[],"most_relevant_motivation":"","evidence_or_role_basis":""},"communication_style":{"primary_disc_hypothesis":null,"secondary_disc_hypothesis":null,"confidence":"","evidence":[],"opening_tone":"","sentence_length":"","proof_style":"","cta_style":"","pace":"","avoid":[]},"witness_insight":{"observation":"","evidence":[],"surprise_rating":""},"outreach_strategy":{"first_email_objective":"","strongest_opening_angle":"","subject_line_direction":"","core_argument":"","proof_mechanism":"","cta_strategy":"","ps_strategy":"","follow_up_roles":[]},"audit_strategy":{"primary_question":"","data_to_inspect":[],"what_success_would_reveal":""},"evidence_ledger":[{"claim":"","evidence":"","source_url":"","confidence":"","fact_or_inference":""}],"research_gaps":[],"source_urls":[],"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"peopleToAvoid":[{"nameOrRole":"","reason":""}],"businessSignals":"","linkedinSignals":"","rolePainSignals":"","notes":"","exactCompanyMatched":true,"possibleConfusionWarnings":[]}'
+    'Return ONLY this rich JSON shape. Use null for unknown values. Do not add legacy fields outside this shape:',
+    '{"company_identity":{"company_name":"","website":"","location":"","identity_confidence":"","identity_notes":"","exact_company_matched":true,"possible_confusion_warnings":[]},"qualification":{"status":"","outbound_ready":false,"hold_reason":null,"fit_score":null,"fit_tier":"","fit_confidence":"","annual_unlock_assessment":"","annual_unlock_estimate":null,"annual_unlock_reasoning":""},"business_model":{"what_they_sell":"","who_buys":"","sales_motion":[],"visible_conversion_paths":[],"business_characteristics":[]},"brand_analysis":{"voice":[],"recurring_language":[],"promises":[],"proof_points":[],"differentiators":[],"brand_belief":"","buyer_emotional_requirement":"","language_to_mirror":[],"language_to_avoid":[]},"buyer_journey":{"summary":"","buyer_states":[],"likely_leakage_points":[]},"commercial_theories":[{"theory":"","evidence":[],"confidence":"","likely_commercial_consequence":"","internal_data_to_confirm_or_disprove":""}],"prospect_theory":{"dominant_argument":"","observed":"","likely_commercial_problem":"","why":"","commercial_tension":"","potential_consequence":"","val_hypothesis":"","best_proof":"","best_audit_question":"","best_cta":"","demonstration_idea":""},"counterargument":{"strongest_counterargument":"","evidence_that_would_disprove_theory":[],"safe_claim":""},"decision_maker":{"preferred_person":{"name":null,"title":null,"source_urls":[],"confidence":"","why_this_person":"","email":null,"phone":null,"linkedin_url":null,"evidence":[]},"alternates":[]},"role_motivation":{"professional_priorities":[],"most_relevant_motivation":"","evidence_or_role_basis":""},"communication_style":{"primary_disc_hypothesis":null,"secondary_disc_hypothesis":null,"confidence":"","evidence":[],"opening_tone":"","sentence_length":"","proof_style":"","cta_style":"","pace":"","avoid":[]},"witness_insight":{"observation":"","evidence":[],"surprise_rating":""},"outreach_strategy":{"first_email_objective":"","strongest_opening_angle":"","subject_line_direction":"","core_argument":"","proof_mechanism":"","cta_strategy":"","ps_strategy":"","follow_up_roles":[]},"audit_strategy":{"primary_question":"","data_to_inspect":[],"what_success_would_reveal":""},"evidence_ledger":[{"claim":"","evidence":"","source_url":"","confidence":"","fact_or_inference":""}],"research_gaps":[],"source_urls":[],"notes":""}'
   ].join('\n');
   const system=[
     'You are a careful public-web business researcher for Grace Intelligence.',
@@ -35139,12 +35141,15 @@ async function researchGraceDecisionMakerWithAi(p={}){
     }catch(error){
       const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:3200,temperature:0.1,timeoutMs:GRACE_AI_RESEARCH_TIMEOUT_MS});
       const parsed=extractJsonObject(raw);
+      if(!Object.keys(parsed||{}).length) return {geminiGrounded:false,openAiFallbackAfterGemini:true,geminiError:error.message,notes:`Gemini unavailable; OpenAI web fallback returned no parseable research JSON. Raw preview: ${String(raw||'').slice(0,900)}`};
       const notes=[parsed.notes,`Gemini unavailable; OpenAI web fallback used. Gemini error: ${error.message}`].filter(Boolean).join(' ');
       return {...parsed,geminiGrounded:false,openAiFallbackAfterGemini:true,geminiError:error.message,notes};
     }
   }
   const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:3200,temperature:0.1,timeoutMs:GRACE_AI_RESEARCH_TIMEOUT_MS});
-  return {...extractJsonObject(raw),geminiGrounded:false};
+  const parsed=extractJsonObject(raw);
+  if(!Object.keys(parsed||{}).length) return {geminiGrounded:false,notes:`OpenAI web research returned no parseable research JSON. Raw preview: ${String(raw||'').slice(0,900)}`};
+  return {...parsed,geminiGrounded:false};
 }
 
 async function enrichProspectWithGraceAiResearch(p={},opts={}){
@@ -35155,23 +35160,28 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   try{
     const decision=await researchGraceDecisionMakerWithAi(next);
     const person=graceAiDecisionPerson(decision);
-    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
-    next.aiDecisionMakerResearch=decision;
-    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
-    next.decisionMakerSourceUrls=graceUsefulJsonArray(decision.sourceUrls);
-    next.keyDecisionMakers=decision.keyDecisionMakers||[];
-    next.peopleToAvoid=decision.peopleToAvoid||[];
-    next.linkedinSignals=graceUsefulJsonText(decision.linkedinSignals||'');
-    next.rolePainSignals=graceUsefulJsonText(decision.rolePainSignals||'');
-    if(decision.companyLinkedInUrl && !next.linkedinCompanyUrl) next.linkedinCompanyUrl=decision.companyLinkedInUrl;
-    if((confidence==='high'||confidence==='medium') && person.name){
-      next.decisionMakerName=person.name;
-      next.decisionMakerTitle=person.title||next.decisionMakerTitle||'';
-      next.linkedinPersonalUrl=person.linkedinUrl||next.linkedinPersonalUrl||'';
-      next.decisionMakerFirstName=decision.decisionMakerFirstName||graceDecisionMakerNameParts(person.name).firstName;
-      next.decisionMakerLastName=decision.decisionMakerLastName||graceDecisionMakerNameParts(person.name).lastName;
-      if(decision.personEmail && isLikelyPersonEmail(decision.personEmail)) next.email=decision.personEmail;
-      if(decision.personPhone && validPhone(decision.personPhone)) next.phone=decision.personPhone;
+	    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
+	    const preferred=decision.decision_maker?.preferred_person||{};
+	    next.aiDecisionMakerResearch=decision;
+	    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
+	    next.decisionMakerSourceUrls=[
+	      ...graceUsefulJsonArray(decision.sourceUrls),
+	      ...graceUsefulJsonArray(decision.source_urls),
+	      ...graceUsefulJsonArray(preferred.source_urls)
+	    ];
+	    next.keyDecisionMakers=decision.keyDecisionMakers||decision.decision_maker?.alternates||[];
+	    next.peopleToAvoid=decision.peopleToAvoid||[];
+	    next.linkedinSignals=graceUsefulJsonText(decision.linkedinSignals||'');
+	    next.rolePainSignals=graceUsefulJsonText(decision.rolePainSignals||'');
+	    if((decision.companyLinkedInUrl||decision.company_linkedin_url) && !next.linkedinCompanyUrl) next.linkedinCompanyUrl=decision.companyLinkedInUrl||decision.company_linkedin_url;
+	    if((confidence==='high'||confidence==='medium') && person.name){
+	      next.decisionMakerName=person.name;
+	      next.decisionMakerTitle=person.title||next.decisionMakerTitle||'';
+	      next.linkedinPersonalUrl=person.linkedinUrl||preferred.linkedin_url||next.linkedinPersonalUrl||'';
+	      next.decisionMakerFirstName=decision.decisionMakerFirstName||graceDecisionMakerNameParts(person.name).firstName;
+	      next.decisionMakerLastName=decision.decisionMakerLastName||graceDecisionMakerNameParts(person.name).lastName;
+	      if((decision.personEmail||preferred.email) && isLikelyPersonEmail(decision.personEmail||preferred.email)) next.email=decision.personEmail||preferred.email;
+	      if((decision.personPhone||preferred.phone) && validPhone(decision.personPhone||preferred.phone)) next.phone=decision.personPhone||preferred.phone;
       next.decisionMakerSource=decision.geminiGrounded?'Gemini grounded search':'AI grounded web research';
       next.decisionMakerConfidence=confidence;
       next.linkedinMatchConfidence=confidence;
