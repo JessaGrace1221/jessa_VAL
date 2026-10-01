@@ -30329,7 +30329,7 @@ function geminiErrorIsRetryable(status,message=''){
   return [404,500,502,503,504].includes(Number(status)) || /(high demand|unavailable|not found|try again|temporar)/i.test(text);
 }
 
-async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation',timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS}){
+async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation',timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS,responseMimeType=''}){
   if(!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
   const errors=[];
   for(const candidateModel of geminiModelCandidates(model)){
@@ -30337,6 +30337,7 @@ async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2
       contents:[{role:'user',parts:[{text:String(input||'')}]}],
       generationConfig:{temperature,maxOutputTokens:maxTokens}
     };
+    if(responseMimeType) body.generationConfig.responseMimeType=responseMimeType;
     if(grounded) body.tools=[{google_search:{}}];
     const response=await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,{
       method:'POST',
@@ -30356,8 +30357,8 @@ async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2
   throw new Error(`${label} failed: ${errors.join(' | ')}`);
 }
 
-async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS}){
-  return callGeminiGenerate({input,model,maxTokens,temperature,grounded:true,label:'Gemini grounded search',timeoutMs});
+async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS,responseMimeType=''}){
+  return callGeminiGenerate({input,model,maxTokens,temperature,grounded:true,label:'Gemini grounded search',timeoutMs,responseMimeType});
 }
 
 const GOALL_LEADS_SYSTEM_PROMPT = `
@@ -35124,9 +35125,9 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
     'Return JSON shape:',
     schema
   ].join('\n');
-  const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000)});
+  const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
   const parsed=extractJsonObject(result.text);
-  if(!Object.keys(parsed||{}).length) throw new Error(`${stage} returned no parseable JSON`);
+  if(!Object.keys(parsed||{}).length) throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
   return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
 }
 
