@@ -67,6 +67,10 @@ test('Grace Fit Engine uses Gemini-style decision-maker research before outreach
   assert.match(server,/const GEMINI_API_KEY = process\.env\.GEMINI_API_KEY \|\| process\.env\.GOOGLE_AI_API_KEY \|\| process\.env\.GOOGLE_GENAI_API_KEY/);
   assert.match(server,/function geminiInteractionSourceUrls/);
   assert.match(server,/async function callGeminiGroundedSearch/);
+  assert.match(server,/async function researchGraceWithGeminiStages/);
+  assert.match(server,/identity_and_decision_maker/);
+  assert.match(server,/commercial_theory_and_evidence/);
+  assert.match(server,/prospect_theory_and_outreach_strategy/);
   assert.match(server,/async function researchGraceDecisionMakerWithAi/);
   assert.match(server,/You are VAL’s Grace Intelligence Research Layer/);
   assert.match(server,/Commercial theories/);

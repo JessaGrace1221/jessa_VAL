@@ -30329,7 +30329,7 @@ function geminiErrorIsRetryable(status,message=''){
   return [404,500,502,503,504].includes(Number(status)) || /(high demand|unavailable|not found|try again|temporar)/i.test(text);
 }
 
-async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation'}){
+async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation',timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS}){
   if(!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
   const errors=[];
   for(const candidateModel of geminiModelCandidates(model)){
@@ -30342,7 +30342,7 @@ async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body)
-    },OPENAI_WEB_RESEARCH_TIMEOUT_MS,label).catch(e=>({ok:false,status:0,_timeoutError:e}));
+    },timeoutMs,label).catch(e=>({ok:false,status:0,_timeoutError:e}));
     if(response._timeoutError){
       errors.push(`${candidateModel}: ${response._timeoutError.message}`);
       continue;
@@ -30356,8 +30356,8 @@ async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2
   throw new Error(`${label} failed: ${errors.join(' | ')}`);
 }
 
-async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1}){
-  return callGeminiGenerate({input,model,maxTokens,temperature,grounded:true,label:'Gemini grounded search'});
+async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS}){
+  return callGeminiGenerate({input,model,maxTokens,temperature,grounded:true,label:'Gemini grounded search',timeoutMs});
 }
 
 const GOALL_LEADS_SYSTEM_PROMPT = `
@@ -35095,6 +35095,93 @@ function graceAiDecisionPerson(decision={}){
   };
 }
 
+function graceGeminiBaseContext(p={}){
+  return [
+    `Company: ${p.organizationName||p.name||''}`,
+    `Website: ${p.website||''}`,
+    `Location: ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ')}`,
+    'Known facts:',
+    graceLeadResearchFacts(p),
+    '',
+    'Grace Intelligence is a premium AI revenue operations, lead intelligence, communication, buyer-state analysis, and data-audit system.',
+    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`
+  ].join('\n');
+}
+
+async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){
+  const input=[
+    'You are VAL’s Grace Intelligence Research Layer.',
+    'Return only valid compact JSON. No markdown. No prose outside JSON.',
+    'Use grounded public web search. Match the exact company/domain/location. Do not guess.',
+    'Keep arrays to the strongest 3 items. Keep strings concise.',
+    '',
+    `Stage: ${stage}`,
+    '',
+    graceGeminiBaseContext(p),
+    '',
+    instructions,
+    '',
+    'Return JSON shape:',
+    schema
+  ].join('\n');
+  const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000)});
+  const parsed=extractJsonObject(result.text);
+  if(!Object.keys(parsed||{}).length) throw new Error(`${stage} returned no parseable JSON`);
+  return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
+}
+
+async function researchGraceWithGeminiStages(p={}){
+  const stage1=await callGraceGeminiStage({
+    p,
+    stage:'identity_and_decision_maker',
+    maxTokens:1900,
+    instructions:[
+      'Confirm exact company identity and identify the strongest verified decision maker.',
+      'Prefer founder, owner, CEO, president, COO, CRO, head of sales/growth/revenue, head of operations, CIO, CTO, or executive with authority over revenue systems, customer communication, growth, operations, or data.',
+      'Do not use a generic inbox as a person. If no reliable person is found, set qualification.status to Research Hold and outbound_ready false.',
+      'Also capture top brand language signals from the website.'
+    ].join('\n'),
+    schema:'{"company_identity":{"company_name":"","website":"","location":"","identity_confidence":"","identity_notes":"","exact_company_matched":true,"possible_confusion_warnings":[]},"qualification":{"status":"","outbound_ready":false,"hold_reason":null,"fit_score":null,"fit_tier":"","fit_confidence":"","annual_unlock_assessment":"","annual_unlock_estimate":null,"annual_unlock_reasoning":""},"decision_maker":{"preferred_person":{"name":null,"title":null,"source_urls":[],"confidence":"","why_this_person":"","email":null,"phone":null,"linkedin_url":null,"evidence":[]},"alternates":[]},"brand_analysis":{"voice":[],"recurring_language":[],"promises":[],"proof_points":[],"differentiators":[],"brand_belief":"","buyer_emotional_requirement":"","language_to_mirror":[],"language_to_avoid":[]},"source_urls":[],"notes":""}'
+  });
+  const stage2=await callGraceGeminiStage({
+    p,
+    stage:'commercial_theory_and_evidence',
+    maxTokens:2200,
+    instructions:[
+      'Analyze business model, buyer journey, visible conversion paths, possible leakage points, and commercial theories.',
+      'Generate multiple possible theories, then keep only the strongest 3.',
+      'Each theory must include evidence, confidence, likely consequence, and internal data to confirm or disprove it.',
+      'Assess the $100K annual unlock plausibility without inventing deal values, lead volume, conversion rates, spend, or LTV.'
+    ].join('\n'),
+    schema:'{"business_model":{"what_they_sell":"","who_buys":"","sales_motion":[],"visible_conversion_paths":[],"business_characteristics":[]},"buyer_journey":{"summary":"","buyer_states":[],"likely_leakage_points":[]},"commercial_theories":[{"theory":"","evidence":[],"confidence":"","likely_commercial_consequence":"","internal_data_to_confirm_or_disprove":""}],"evidence_ledger":[{"claim":"","evidence":"","source_url":"","confidence":"","fact_or_inference":""}],"qualification":{"annual_unlock_assessment":"","annual_unlock_estimate":null,"annual_unlock_reasoning":""},"source_urls":[],"research_gaps":[],"notes":""}'
+  });
+  const stage3=await callGraceGeminiStage({
+    p,
+    stage:'prospect_theory_and_outreach_strategy',
+    maxTokens:2400,
+    instructions:[
+      'Use the exact company plus the likely theories to select ONE dominant Prospect Theory.',
+      'Actively include the counterargument and safe claim.',
+      'Create communication guidance using DISC only as an internal hypothesis, not a diagnosis.',
+      'Create a witness insight that shows intelligent respect, not forced flattery.',
+      'Recommend outreach strategy, audit strategy, and distinct follow-up roles.',
+      'Do not write final outreach. Do not include internal language that should leak to the customer.'
+    ].join('\n'),
+    schema:'{"prospect_theory":{"dominant_argument":"","observed":"","likely_commercial_problem":"","why":"","commercial_tension":"","potential_consequence":"","val_hypothesis":"","best_proof":"","best_audit_question":"","best_cta":"","demonstration_idea":""},"counterargument":{"strongest_counterargument":"","evidence_that_would_disprove_theory":[],"safe_claim":""},"role_motivation":{"professional_priorities":[],"most_relevant_motivation":"","evidence_or_role_basis":""},"communication_style":{"primary_disc_hypothesis":null,"secondary_disc_hypothesis":null,"confidence":"","evidence":[],"opening_tone":"","sentence_length":"","proof_style":"","cta_style":"","pace":"","avoid":[]},"witness_insight":{"observation":"","evidence":[],"surprise_rating":""},"outreach_strategy":{"first_email_objective":"","strongest_opening_angle":"","subject_line_direction":"","core_argument":"","proof_mechanism":"","cta_strategy":"","ps_strategy":"","follow_up_roles":["Initial email - Recognition","Follow-up 1 - Consequence","Follow-up 2 - Proof","Final follow-up - Risk reversal"]},"audit_strategy":{"primary_question":"","data_to_inspect":[],"what_success_would_reveal":""},"source_urls":[],"notes":""}'
+  });
+  const sourceUrls=[...new Set([...(stage1.sourceUrls||[]),...(stage2.sourceUrls||[]),...(stage3.sourceUrls||[]),...graceUsefulJsonArray(stage1.parsed.source_urls),...graceUsefulJsonArray(stage2.parsed.source_urls),...graceUsefulJsonArray(stage3.parsed.source_urls)])];
+  return {
+    ...stage1.parsed,
+    ...stage2.parsed,
+    ...stage3.parsed,
+    qualification:{...(stage1.parsed.qualification||{}),...(stage2.parsed.qualification||{})},
+    source_urls:sourceUrls,
+    geminiGrounded:true,
+    geminiModel:[stage1.model,stage2.model,stage3.model].filter(Boolean).join(' + '),
+    notes:[stage1.parsed.notes,stage2.parsed.notes,stage3.parsed.notes,'Gemini staged research completed.'].filter(Boolean).join(' ')
+  };
+}
+
 async function researchGraceDecisionMakerWithAi(p={}){
   const prompt=[
     'You are VAL’s Grace Intelligence Research Layer.',
@@ -35170,10 +35257,7 @@ async function researchGraceDecisionMakerWithAi(p={}){
   ].join('\n');
   if(GEMINI_API_KEY){
     try{
-      const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:2400,temperature:0.1});
-      const parsed=extractJsonObject(gemini.text);
-      const sourceUrls=[...new Set([...graceUsefulJsonArray(parsed.sourceUrls),...gemini.sourceUrls])];
-      return {...parsed,sourceUrls,geminiGrounded:true,geminiModel:gemini.model};
+      return await researchGraceWithGeminiStages(p);
     }catch(error){
       const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:GRACE_AI_RESEARCH_MAX_TOKENS,temperature:0.1,timeoutMs:GRACE_AI_RESEARCH_TIMEOUT_MS});
       const parsed=extractJsonObject(raw);
