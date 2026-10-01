@@ -33012,6 +33012,95 @@ function graceLedgerText(ledger=[]){
   ].join('\n')).join('\n');
 }
 
+function graceEvidenceInterpretations(p={},reasons=[],painPoints=[],ledger=[]){
+  const text=graceText(p);
+  const interpretations=[];
+  if(reasons.includes('visible booking, quote, demo, or consultation motion')) interpretations.push('You already have multiple ways for prospective clients to raise their hand.');
+  if(reasons.includes('public review volume suggests active demand') || Number(p.googleReviewCount||p.reviewCount||0)>=50) interpretations.push('You have enough reputation signal that this is probably not a simple visibility problem.');
+  if(reasons.includes('likely paid or campaign-driven lead flow')) interpretations.push('If paid or campaign-driven demand is part of the mix, the real question is how much of that demand is protected after the click.');
+  if(/managed it|msp|it support|technology|cyber|cloud|infrastructure|network|security/i.test(text)) interpretations.push('A CFO comparing providers, an IT director dealing with recurring issues, and an owner with an outage should not receive the same conversation.');
+  if(/medical|dental|clinic|wellness|care/i.test(text)) interpretations.push('A cautious patient, an urgent buyer, and a price-comparing prospect each need a different kind of reassurance before they book.');
+  if(/financial|insurance|legal|accounting|tax|compliance/i.test(text)) interpretations.push('A buyer trying to reduce risk needs proof and clarity at a very different pace than someone already ready to move.');
+  if(/construction|contractor|roof|hvac|plumb|home service|commercial service/i.test(text)) interpretations.push('A high-urgency request and a planned-project inquiry decay at different speeds and need different next steps.');
+  if(painPoints[0]) interpretations.push(painPoints[0].replace(/; /g,'. ')+'.');
+  for(const row of (ledger||[]).filter(r=>r.usedInEmail).slice(0,2)){
+    if(/trust-heavy|high-value/.test(row.claim)) interpretations.push('The first response has to carry credibility, not just speed.');
+    if(/timing/.test(row.claim)) interpretations.push('The risk is not only whether someone replies. It is whether the next message matches the buyer state.');
+  }
+  return [...new Set(interpretations)].slice(0,5);
+}
+
+function graceProspectTheory({p={},company='this company',industry='B2B service',reasons=[],painPoints=[],evidenceLedger=[],qualification={}}={}){
+  const text=graceText(p);
+  const interpretations=graceEvidenceInterpretations(p,reasons,painPoints,evidenceLedger);
+  const managedIt=/managed it|msp|it support|technology|cyber|cloud|infrastructure|network|security/i.test(text);
+  const healthcare=/medical|dental|clinic|wellness|care/i.test(text);
+  const riskHeavy=/financial|insurance|legal|accounting|tax|compliance/i.test(text);
+  const fieldService=/construction|contractor|roof|hvac|plumb|home service|commercial service/i.test(text);
+  const demandSignal=reasons.includes('public review volume suggests active demand') || reasons.includes('likely paid or campaign-driven lead flow') || reasons.includes('visible booking, quote, demo, or consultation motion');
+  let dominantAngle='protect-existing-demand';
+  if(managedIt) dominantAngle='buyer-state-complexity';
+  else if(healthcare) dominantAngle='reassurance-before-booking';
+  else if(riskHeavy) dominantAngle='risk-and-proof';
+  else if(fieldService) dominantAngle='urgency-and-speed';
+  else if(demandSignal) dominantAngle='protect-existing-demand';
+  const buyerStates=managedIt
+    ? 'Someone reaching out because a server is down is not in the same buying state as someone comparing providers six months before renewal.'
+    : healthcare
+      ? 'Someone ready to book is not in the same state as someone who still needs reassurance that they will be cared for well.'
+      : riskHeavy
+        ? 'Someone trying to prevent a costly mistake is not in the same state as someone simply comparing options.'
+        : fieldService
+          ? 'Someone with an urgent problem is not in the same state as someone planning a future project.'
+          : 'A high-intent buyer, a cautious evaluator, and someone who only needs the next clear step should not be treated like the same lead.';
+  const likelyProblem=managedIt
+    ? 'not lead volume first, but whether the system recognizes urgency, technical pain, authority level, and risk before follow-up happens'
+    : healthcare
+      ? 'not awareness first, but whether follow-up gives the right reassurance at the exact moment a prospect is deciding whether to book'
+      : riskHeavy
+        ? 'not visibility first, but whether the follow-up gives enough proof and clarity for a cautious buyer to keep moving'
+        : fieldService
+          ? 'not demand first, but whether speed, routing, and follow-up match the urgency and value of the inquiry'
+          : 'not more activity first, but whether existing demand is being converted with enough precision after a prospect raises their hand';
+  const observed=[
+    `${company} shows a ${industry} motion with ${reasons.slice(0,3).join(', ')||'public signals worth review'}.`,
+    interpretations[0]||'The public footprint suggests there is enough buyer intent to justify looking closely at what happens after interest.'
+  ].join(' ');
+  const consequence=qualification.estimatedAnnualUnlock>=GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK
+    ? 'At this apparent demand level, it does not take many missed or mismatched conversations for follow-up leakage to become a six-figure problem.'
+    : 'The risk is that qualified interest is present, but the system is not making enough of it visible or recoverable.';
+  const hypothesis='Segmentation, individualized response, and follow-up sequencing could recover demand that already exists instead of simply asking the business to buy more leads.';
+  const bestOpening=buyerStates;
+  const bestProof='Demonstrate that VAL can recognize the buyer states and commercial friction before asking for access to internal data.';
+  const bestCta='Offer to inspect 30-90 days of inbound activity, response timing, routing, follow-up attempts, booked appointments, no-shows, and closed/won outcomes.';
+  return {
+    dominantAngle,
+    observed,
+    likelyCommercialProblem:likelyProblem,
+    why:buyerStates,
+    potentialConsequence:consequence,
+    valHypothesis:hypothesis,
+    bestOpening,
+    bestProof,
+    bestCta,
+    interpretations
+  };
+}
+
+function graceProspectTheoryText(theory={}){
+  return [
+    `Dominant argument: ${theory.dominantAngle||'needs review'}`,
+    `Observed: ${theory.observed||'needs review'}`,
+    `Likely commercial problem: ${theory.likelyCommercialProblem||'needs review'}`,
+    `Why: ${theory.why||'needs review'}`,
+    `Potential consequence: ${theory.potentialConsequence||'needs review'}`,
+    `VAL hypothesis: ${theory.valHypothesis||'needs review'}`,
+    `Best opening: ${theory.bestOpening||'needs review'}`,
+    `Best proof: ${theory.bestProof||'needs review'}`,
+    `Best CTA: ${theory.bestCta||'needs review'}`
+  ].join('\n');
+}
+
 function graceFitProfile(p={}){
   const text=graceText(p);
   const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
@@ -33040,16 +33129,6 @@ function graceFitProfile(p={}){
   const disc=graceDiscEstimate(p);
   const company=p.organizationName||p.companyName||p.name||'this company';
   const industry=p.industry||p.organizationType||p.category||'B2B service';
-  const buyerMoment=/account|bookkeep|payroll|tax|financial|insurance|legal|compliance/.test(text)
-    ? 'They are trying to feel organized, protected, and less exposed.'
-    : /home service|contractor|construction|medical|dental|wellness|care/.test(text)
-      ? 'They are trying to feel safe, understood, and confident that the next step will be handled correctly.'
-      : 'They are trying to feel that someone capable understands what they need and can move them toward the right next step.';
-  const serviceMoment=/account|bookkeep|payroll|tax|financial|insurance|legal|compliance/.test(text)
-    ? 'work sits in a moment where confusion can become expensive'
-    : /consult|professional|agency|managed|implementation|service/.test(text)
-      ? 'work depends on trust, timing, expertise, and the confidence that the person responding actually understands the problem'
-      : 'buyer journey depends on trust, timing, and the feeling that the next response is precise';
   const flattering=score>=65
     ? `${company} appears to have the kind of trust-heavy, high-intent buyer journey where every response carries the brand.`
     : `${company} appears to have a trust-heavy buyer journey where the right response can matter as much as the original inquiry.`;
@@ -33060,75 +33139,81 @@ function graceFitProfile(p={}){
   const communicationStyle=graceCommunicationStyle(disc);
   const qualification=graceQualificationProfile(p,reasons,painPoints);
   const evidenceLedger=graceEvidenceLedger(p,reasons,painPoints);
-  const emailProof=evidenceLedger.filter(row=>row.usedInEmail).slice(0,3).map(row=>row.evidence.replace(/\.$/,'')).join('; ');
   const personName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const personTitle=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
-  const roleText=[personName,personTitle].filter(Boolean).join(' - ');
-  const rolePressure=personTitle
+  const prospectTheory=graceProspectTheory({p,company,industry,reasons,painPoints,evidenceLedger,qualification});
+  const prospectTheoryText=graceProspectTheoryText(prospectTheory);
+  const firstName=personName.split(/\s+/)[0]||'there';
+  const roleFrame=personTitle
     ? /owner|founder|ceo|president|principal|partner/i.test(personTitle)
-      ? 'that you are likely protecting both growth and reputation, not just managing inquiries'
+      ? 'I am guessing this matters because you are protecting reputation and growth at the same time.'
       : /sales|growth|revenue|business development|marketing/i.test(personTitle)
-        ? 'that your role likely depends on turning interest into qualified conversations without flattening the buyer'
+        ? 'I am guessing this matters because your seat is close to the moment interest becomes pipeline.'
         : /operations|coo|service|delivery|success|support/i.test(personTitle)
-          ? 'that your role likely depends on clean handoffs, fast triage, and fewer leads disappearing between teams'
+          ? 'I am guessing this matters because handoffs, triage, and follow-through decide whether demand becomes real execution.'
           : /it|technology|technical|security|cio|cto/i.test(personTitle)
-            ? 'that your role likely values specificity, urgency, and proof before anyone asks for time'
-            : 'that your role likely sits close to whether interest becomes a real next step'
-    : 'that I could not verify the right individual yet, so I treated this as a company-level read instead of pretending to know more than the data supports';
-  const psBusinessRead=emailProof||[
-    reasons[0]||'a consultative sales motion',
-    reasons[1]||'visible buyer entry points',
-    painPoints[0]||'a trust-heavy buyer journey'
-  ].filter(Boolean).join('; ');
-  const systemUse=`used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence instead of sending a generic lead-gen message.`;
-  const witnessPs=`P.S. What VAL found: ${roleText?`on the person side, ${roleText} suggests ${rolePressure}`:`on the person side, ${rolePressure}`}. On the business side, I am saying this because VAL saw ${psBusinessRead}. It then ${systemUse} That is the difference: the message is shaped by what the system can actually see about the person and the business.`;
-  const mirrorEmailSubject=`What VAL noticed about ${company}`;
-  const follow24Subject=`Re: ${company} lead follow-up`;
-  const follow36Subject='The gap between interest and booked business';
+            ? 'I am guessing this matters because technical buyers can feel generic follow-up immediately.'
+            : 'I am guessing this matters because your role sits close to the moment interest either gets momentum or goes quiet.'
+    : '';
+  const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
+  const quietPs=personName
+    ? `P.S. I am not guessing from a list. I used the public signals around ${company} to decide which buyer-state problem to lead with, which proof to use, and what the audit should inspect first.`
+    : `P.S. I could not verify the right person yet, so this should stay in research hold. The company-level read is strong enough to review, but not enough to pretend this is ready for live outbound.`;
+  const mirrorEmailSubject=`A buyer-state question for ${company}`;
+  const follow24Subject='The part most CRMs miss';
+  const follow36Subject='Where the audit would start';
   const follow5Subject='Should I close the loop?';
   const mirrorEmail=[
-    `Hi ${p.decisionMakerName?.split(/\s+/)[0]||'there'},`,
+    `Hi ${firstName},`,
     '',
-    `I was looking at ${company}, and what stood out is that your ${serviceMoment}.`,
+    prospectTheory.bestOpening,
     '',
-    `A lead may come in asking a simple question, but underneath that question is often urgency, hesitation, comparison, or the need to know someone competent is paying attention. ${buyerMoment}`,
+    `That is the part I would want to look at inside ${company}: whether your follow-up can tell the difference before the next message goes out.`,
     '',
-    `That is where I think there may be hidden profit in your current lead flow.`,
+    evidenceLine,
     '',
-    `If every new inquiry gets the same basic follow-up, the highest-value prospects may never feel the precision your actual work provides. Grace Intelligence looks at the lead before the response happens: intent, tone, likely hesitation, urgency, decision style, and the next message most likely to move them forward.`,
+    `My read is that the opportunity is ${prospectTheory.likelyCommercialProblem}.`,
     '',
-    `In other words, VAL does for your leads what your best person would do if they had time to read the room perfectly every time.`,
+    prospectTheory.potentialConsequence,
     '',
-    `I would like to run a free data audit and show you where follow-up, routing, timing, or message mismatch may be costing you qualified business.`,
+    `Grace Intelligence is built for that moment. VAL reads the lead before the response happens, then shapes the next email, text, routing decision, proof point, and follow-up path around what the buyer is actually showing.`,
     '',
-    witnessPs,
+    `The free audit would simply test the theory against your last 30-90 days of inbound activity: who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet.`,
+    '',
+    roleFrame,
+    '',
+    quietPs,
     '',
     `Jessa`
-  ].join('\n');
+  ].join('\n').replace(/\n{3,}/g,'\n\n');
   const follow24=[
-    `The reason I keep thinking about ${company}: ${painPoints[0]}.`,
+    `The part most CRMs miss is not the form submission.`,
     '',
-    `When a business has that kind of buyer journey, the leak is rarely lead volume. It is usually the moment after interest: response timing, tone, handoff, routing, or a follow-up that does not match the buyer's state of mind.`,
+    `It is the state of the buyer behind it.`,
     '',
-    `That is exactly what the free audit is designed to find: where qualified demand is already present, but the system is not converting it as cleanly as it could.`,
+    prospectTheory.bestOpening,
     '',
-    witnessPs
+    `If those buyers receive the same first response, the system is asking automation to do something your best person would never do: ignore context.`,
+    '',
+    `That is why I would start the audit with response timing, routing, first follow-up, and stalled conversations. Not to add more noise, but to see where the existing demand is not being converted with enough precision.`
   ].join('\n');
   const follow36=[
-    `Most systems can show that a lead came in. They usually cannot show whether that lead needed speed, reassurance, proof, authority, a softer touch, or a more direct next step.`,
+    `If we did the audit, I would not start by asking you to believe in Grace Intelligence.`,
     '',
-    `That gap is where good prospects quietly disappear.`,
+    `I would start by proving or disproving this theory: ${prospectTheory.likelyCommercialProblem}.`,
     '',
-    `VAL turns the lead into a conversion profile before follow-up happens, so the response feels less like automation and more like someone actually understood the buyer.`,
+    `The first pass would look at the last 30-90 days of inquiries, source, speed-to-lead, first response, follow-up sequence, appointments, no-shows, stale pipeline, and closed/won outcomes.`,
     '',
-    witnessPs
+    `If there is no meaningful gap, you know quickly. If there is, the next step becomes obvious: build the system that makes that profit easier to capture every day.`
   ].join('\n');
   const follow5=[
-    `I do not want to keep nudging if this is not relevant. My read is that ${company} is the kind of business where one missed or mismatched follow-up can cost more than it looks like on a report.`,
+    `I will close the loop here unless this is worth checking.`,
     '',
-    `The cleanest next step is the free audit. If the data does not show a meaningful gap, we stop there. If it does, you will know exactly where the profit is waiting and what system would make it easier to capture.`,
+    `My read is simple: ${company} may not need another lead source as much as it needs a clearer conversion layer around the demand already showing up.`,
     '',
-    witnessPs
+    `At your apparent demand level, a few mismatched handoffs or generic follow-ups can become much larger than they look in the CRM.`,
+    '',
+    `The free audit is the cleanest way to find out.`
   ].join('\n');
 
   const packet=[
@@ -33143,6 +33228,7 @@ function graceFitProfile(p={}){
     `Witness insight: ${witness}`,
     `Industry pain points: ${painPoints.join('; ')}`,
     `Lead leakage hypothesis: ${leakage}`,
+    `Prospect theory:\n${prospectTheoryText}`,
     `DISC estimate: ${disc}`,
     `Communication style: ${communicationStyle}`,
     `Qualification status: ${qualification.qualificationStatus}`,
@@ -33170,7 +33256,8 @@ function graceFitProfile(p={}){
     why,
     witness,
     firstAudit,
-    witnessPs,
+    prospectTheory,
+    prospectTheoryText,
     evidenceLedger,
     evidenceLedgerText:graceLedgerText(evidenceLedger),
     qualification,
@@ -33183,9 +33270,9 @@ function graceFitProfile(p={}){
     follow36,
     follow5Subject,
     follow5,
-    linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where generic follow-up may flatten the value of the actual service. I think a free data audit could show whether qualified prospects are getting lost in timing, routing, or message mismatch.`,
-    callOpener:`I reached out because ${company} looks like a business where a lead's first response needs to create trust quickly. I wanted to see whether a free audit of response, routing, and follow-up would show any hidden profit in the current system.`,
-    handoff:`Review before contact. ${why} Suggested tone: ${communicationStyle} First audit: ${firstAudit}`,
+    linkedinDm:`I looked at ${company} and had a specific buyer-state question: ${prospectTheory.bestOpening} I think a free audit could show whether follow-up is adapting to that difference or treating every inquiry the same.`,
+    callOpener:`I reached out because ${company} looks like a business where the follow-up needs to recognize the buyer state quickly. I wanted to see whether a free audit could test where existing demand is stalling after the first hand raise.`,
+    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\nSuggested tone: ${communicationStyle}\nFirst audit: ${firstAudit}`,
     reviewNeeded:score<65 || confidence==='Low' || qualification.qualificationStatus!=='Qualified for Import'
   };
 }
