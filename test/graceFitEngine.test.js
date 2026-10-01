@@ -80,6 +80,8 @@ test('Grace Fit Engine uses Gemini-style decision-maker research before outreach
   assert.match(server,/commercial_theory_and_evidence/);
   assert.match(server,/prospect_theory_and_outreach_strategy/);
   assert.match(server,/async function researchGraceDecisionMakerWithAi/);
+  assert.match(server,/function graceAiDecisionConfidence/);
+  assert.match(server,/\(medium\|moderate\|likely\|probable\)/);
   assert.match(server,/You are VAL’s Grace Intelligence Research Layer/);
   assert.match(server,/Commercial theories/);
   assert.match(server,/safe claim Grace can make/);

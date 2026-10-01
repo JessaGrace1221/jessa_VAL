@@ -35296,6 +35296,14 @@ function graceAiDecisionPerson(decision={}){
   };
 }
 
+function graceAiDecisionConfidence(value=''){
+  const text=String(value||'').toLowerCase();
+  if(/\b(high|verified|strong)\b/.test(text)) return 'high';
+  if(/\b(medium|moderate|likely|probable)\b/.test(text)) return 'medium';
+  if(/\b(low|weak|uncertain)\b/.test(text)) return 'low';
+  return text.trim();
+}
+
 function graceGeminiBaseContext(p={}){
   return [
     `Company: ${p.organizationName||p.name||''}`,
@@ -35479,18 +35487,18 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   let next=sanitizeDecisionMaker({...p});
   if(next.decisionMakerName || !(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
   try{
-    const decision=await researchGraceDecisionMakerWithAi(next);
-    const person=graceAiDecisionPerson(decision);
-	    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
-	    const preferred=decision.decision_maker?.preferred_person||{};
-	    next.aiDecisionMakerResearch=decision;
-	    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
+	    const decision=await researchGraceDecisionMakerWithAi(next);
+	    const person=graceAiDecisionPerson(decision);
+		    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
+		    const preferred=decision.decision_maker?.preferred_person||{};
+		    next.aiDecisionMakerResearch=decision;
+		    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
 	    next.decisionMakerSourceUrls=[
 	      ...graceUsefulJsonArray(decision.sourceUrls),
 	      ...graceUsefulJsonArray(decision.source_urls),
 	      ...graceUsefulJsonArray(preferred.source_urls)
 	    ];
-	    next.keyDecisionMakers=decision.keyDecisionMakers||decision.decision_maker?.alternates||[];
+		    next.keyDecisionMakers=decision.keyDecisionMakers||[preferred,...(decision.decision_maker?.alternates||[])].filter(person=>person&&person.name);
 	    next.peopleToAvoid=decision.peopleToAvoid||[];
 	    next.linkedinSignals=graceUsefulJsonText(decision.linkedinSignals||'');
 	    next.rolePainSignals=graceUsefulJsonText(decision.rolePainSignals||'');
