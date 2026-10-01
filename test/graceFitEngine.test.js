@@ -56,6 +56,15 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/hidden profit in your current lead flow/);
   assert.match(fitProfile,/what your best person would do if they had time to read the room perfectly every time/);
   assert.match(fitProfile,/free data audit and show you where follow-up, routing, timing, or message mismatch/);
+  assert.match(fitProfile,/const witnessPs=`P\.S\. What VAL found:/);
+  assert.match(fitProfile,/on the person side/);
+  assert.match(fitProfile,/On the business side, VAL saw/);
+  assert.match(fitProfile,/used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence/);
+  assert.match(fitProfile,/shaped by what the system can actually see about the person and the business/);
+  assert.match(fitProfile,/mirrorEmail=\[[\s\S]*witnessPs[\s\S]*`Jessa`/);
+  assert.match(fitProfile,/const follow24=\[[\s\S]*witnessPs[\s\S]*\]\.join/);
+  assert.match(fitProfile,/const follow36=\[[\s\S]*witnessPs[\s\S]*\]\.join/);
+  assert.match(fitProfile,/const follow5=\[[\s\S]*witnessPs[\s\S]*\]\.join/);
   assert.doesNotMatch(fitProfile,/fit needs review/);
   assert.doesNotMatch(fitProfile,/public surface/);
   assert.doesNotMatch(fitProfile,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);

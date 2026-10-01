@@ -32977,6 +32977,27 @@ function graceFitProfile(p={}){
   const witness=`What stands out about ${company}: ${flattering} The business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
   const firstAudit=`Start with the last 30-90 days of inbound forms, calls, booking requests, source attribution, follow-up attempts, appointment/no-show data, and closed/won outcomes.`;
   const communicationStyle=graceCommunicationStyle(disc);
+  const personName=String(p.decisionMakerName||p.primaryContact||'').trim();
+  const personTitle=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
+  const roleText=[personName,personTitle].filter(Boolean).join(' - ');
+  const rolePressure=personTitle
+    ? /owner|founder|ceo|president|principal|partner/i.test(personTitle)
+      ? 'that you are likely protecting both growth and reputation, not just managing inquiries'
+      : /sales|growth|revenue|business development|marketing/i.test(personTitle)
+        ? 'that your role likely depends on turning interest into qualified conversations without flattening the buyer'
+        : /operations|coo|service|delivery|success|support/i.test(personTitle)
+          ? 'that your role likely depends on clean handoffs, fast triage, and fewer leads disappearing between teams'
+          : /it|technology|technical|security|cio|cto/i.test(personTitle)
+            ? 'that your role likely values specificity, urgency, and proof before anyone asks for time'
+            : 'that your role likely sits close to whether interest becomes a real next step'
+    : 'that I could not verify the right individual yet, so I treated this as a company-level read instead of pretending to know more than the data supports';
+  const psBusinessRead=[
+    reasons[0]||'a consultative sales motion',
+    reasons[1]||'visible buyer entry points',
+    painPoints[0]||'a trust-heavy buyer journey'
+  ].filter(Boolean).join('; ');
+  const systemUse=`used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence instead of sending a generic lead-gen message.`;
+  const witnessPs=`P.S. What VAL found: ${roleText?`on the person side, ${roleText} suggests ${rolePressure}`:`on the person side, ${rolePressure}`}. On the business side, VAL saw ${psBusinessRead}. It then ${systemUse} That is the difference: the message is shaped by what the system can actually see about the person and the business.`;
   const mirrorEmailSubject=`What VAL noticed about ${company}`;
   const follow24Subject=`Re: ${company} lead follow-up`;
   const follow36Subject='The gap between interest and booked business';
@@ -32996,6 +33017,8 @@ function graceFitProfile(p={}){
     '',
     `I would like to run a free data audit and show you where follow-up, routing, timing, or message mismatch may be costing you qualified business.`,
     '',
+    witnessPs,
+    '',
     `Jessa`
   ].join('\n');
   const follow24=[
@@ -33003,19 +33026,25 @@ function graceFitProfile(p={}){
     '',
     `When a business has that kind of buyer journey, the leak is rarely lead volume. It is usually the moment after interest: response timing, tone, handoff, routing, or a follow-up that does not match the buyer's state of mind.`,
     '',
-    `That is exactly what the free audit is designed to find: where qualified demand is already present, but the system is not converting it as cleanly as it could.`
+    `That is exactly what the free audit is designed to find: where qualified demand is already present, but the system is not converting it as cleanly as it could.`,
+    '',
+    witnessPs
   ].join('\n');
   const follow36=[
     `Most systems can show that a lead came in. They usually cannot show whether that lead needed speed, reassurance, proof, authority, a softer touch, or a more direct next step.`,
     '',
     `That gap is where good prospects quietly disappear.`,
     '',
-    `VAL turns the lead into a conversion profile before follow-up happens, so the response feels less like automation and more like someone actually understood the buyer.`
+    `VAL turns the lead into a conversion profile before follow-up happens, so the response feels less like automation and more like someone actually understood the buyer.`,
+    '',
+    witnessPs
   ].join('\n');
   const follow5=[
     `I do not want to keep nudging if this is not relevant. My read is that ${company} is the kind of business where one missed or mismatched follow-up can cost more than it looks like on a report.`,
     '',
-    `The cleanest next step is the free audit. If the data does not show a meaningful gap, we stop there. If it does, you will know exactly where the profit is waiting and what system would make it easier to capture.`
+    `The cleanest next step is the free audit. If the data does not show a meaningful gap, we stop there. If it does, you will know exactly where the profit is waiting and what system would make it easier to capture.`,
+    '',
+    witnessPs
   ].join('\n');
 
   const packet=[
@@ -33051,6 +33080,7 @@ function graceFitProfile(p={}){
     why,
     witness,
     firstAudit,
+    witnessPs,
     packet,
     mirrorEmailSubject,
     mirrorEmail,
