@@ -32946,22 +32946,22 @@ async function importApprovedFrissonLeads(body={},mode='organizations'){
 }
 
 const GRACE_FIT_SEARCH_TERMS=[
-  'B2B marketing agencies',
-  'commercial HVAC companies',
-  'commercial roofing companies',
-  'managed IT service providers',
-  'business consulting firms',
-  'staffing and recruiting agencies',
-  'B2B sales training companies',
-  'commercial insurance agencies',
-  'wealth management firms',
-  'executive coaching companies',
-  'multi location home services companies',
-  'medical spa franchise groups',
-  'dental service organizations',
-  'commercial construction companies',
-  'SaaS implementation consultants',
-  'professional services firms lead generation'
+  'managed IT provider schedule assessment',
+  'cybersecurity company schedule consultation',
+  'commercial roofing company request estimate',
+  'commercial HVAC company request quote',
+  'staffing agency employer solutions consultation',
+  'commercial insurance agency request quote',
+  'fractional CFO firm consultation',
+  'business consulting firm schedule consultation',
+  'B2B marketing agency growth call',
+  'SaaS implementation consultant book demo',
+  'commercial construction company request proposal',
+  'multi location home services company estimate',
+  'dental service organization consultation',
+  'medical spa franchise consultation',
+  'wealth management firm schedule consultation',
+  'professional services firm request consultation'
 ];
 
 function graceText(p={}){
@@ -32969,6 +32969,7 @@ function graceText(p={}){
     p.organizationName,p.name,p.companyName,p.legalCompanyName,p.industry,p.organizationType,p.category,
     p.description,p.aiCompanySummary,p.linkedinCompanyDescription,p.missionStatement,p.companySignals,
     p.signalsSummary,p.googleReviewsSnippet,p.rawCompanySignals,p.requestedPainPoints,p.qualificationRule,
+    p.growthActivity,p.operationalIndicators,p.employeeEstimateBasis,p.donorEstimateBasis,p.googleRaw,p.rawCompanyContextJson,
     Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals,
     Array.isArray(p.sourceUrls)?p.sourceUrls.join(' '):p.sourceUrls
   ].filter(Boolean).join(' ').toLowerCase();
@@ -33081,6 +33082,62 @@ function graceQualificationProfile(p={},reasons=[],painPoints=[]){
   const qualificationStatus=holdReasons.length?'Research Hold':'Qualified for Import';
   const researchHoldReason=holdReasons.join('; ');
   return {hasDecisionMaker,contactPath:!!contactPath,revenueCaptureSignals,convergenceSignals,dualFit,estimatedAnnualUnlock,qualificationStatus,researchHoldReason,minimumUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK};
+}
+
+const GRACE_SURFACE_FIT_MIN_SCORE=Number(process.env.GRACE_SURFACE_FIT_MIN_SCORE)||48;
+
+function graceSurfaceFitGate(p={}){
+  const text=graceText(p);
+  const sources=graceSourceUrls(p);
+  const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
+  const hasWebsite=!!String(p.website||'').trim();
+  const hasContact=validEmail(p.email)||validPhone(p.phone);
+  const reasons=[];
+  const concerns=[];
+  let score=0;
+  const add=(points,reason)=>{score+=points; reasons.push(reason);};
+  const concern=(reason)=>concerns.push(reason);
+
+  if(/b2b|commercial|enterprise|business|managed it|cyber|consulting|agency|professional|staffing|insurance|financial|wealth|construction|contractor|medical|dental|saas|implementation|technology|security|roof|hvac/.test(text)) add(18,'high-value B2B or consultative service category');
+  if(/book|schedule|consult|quote|estimate|demo|assessment|growth call|proposal|request|appointment|contact us/.test(text)) add(18,'visible consultation, quote, demo, assessment, or booking motion');
+  if(/lead|pipeline|growth|sales|revenue|conversion|roi|marketing|campaign|paid|ppc|ads|funnel|attribution|tracking|analytics|crm|automation|workflow/.test(text)) add(14,'commercial motion or lead-flow language visible before enrichment');
+  if(/cloud|aws|azure|data|infrastructure|network|security|compliance|software|saas|managed it|technology|vendor|licensing|procurement|erp|multi.?location|franchise|locations|regional|national|enterprise|distributed/.test(text)) add(16,'Convergence-compatible cost, data, technology, or operational complexity signal');
+  if(reviewCount>=100) add(10,'public demand volume signal: 100+ reviews');
+  else if(reviewCount>=35) add(6,'public demand volume signal: 35+ reviews');
+  if(hasWebsite) add(8,'active website available for research');
+  if(hasContact) add(6,'usable contact path visible before enrichment');
+  if(/about|team|leadership|founder|ceo|president|principal|partner|linkedin/.test(text)||p.linkedinCompanyUrl) add(8,'decision-maker discoverability signal');
+  if(/case stud|client|industries|portfolio|results|testimonial|pricing|monthly|retainer|recurring|managed service/.test(text)) add(8,'high-ticket or recurring offer signal');
+
+  if(/restaurant|coffee|bar\b|retail|boutique|salon|spa\b|pizza|bakery|store\b|shop\b|gym\b|yoga|photographer|wedding|artist|personal trainer/i.test(text)){
+    score-=28;
+    concern('likely consumer/local low-ticket category');
+  }
+  if(/gmail\.com|yahoo\.com|hotmail\.com|outlook\.com/i.test(String(p.email||''))){
+    score-=8;
+    concern('generic email may indicate weaker operational maturity');
+  }
+  if(!hasWebsite){
+    score-=18;
+    concern('no website available for evidence-based research');
+  }
+  if(!/book|schedule|consult|quote|estimate|demo|assessment|growth call|proposal|request|appointment|contact/i.test(text)){
+    concern('no clear consult/quote/demo/assessment motion visible');
+  }
+  if(!/cloud|aws|azure|data|infrastructure|network|security|compliance|software|saas|managed it|technology|vendor|licensing|procurement|erp|multi.?location|franchise|locations|regional|national|enterprise|distributed/i.test(text)){
+    concern('weak initial Convergence/dual-fit signal');
+  }
+
+  const annualUnlockPlausibility=score>=82?'Strong':score>=64?'Plausible':score>=48?'Needs enrichment':'Weak';
+  const passed=score>=GRACE_SURFACE_FIT_MIN_SCORE && hasWebsite && reasons.length>=3;
+  return {
+    score:Math.max(0,Math.min(100,score)),
+    passed,
+    annualUnlockPlausibility,
+    reasons,
+    concerns,
+    sourceCount:sources.length
+  };
 }
 
 function graceLedgerText(ledger=[]){
@@ -33671,18 +33728,20 @@ function scoreGraceFitLead(raw={}){
 function graceFitPlan(body={}){
   const requestedTerms=String(body.category||body.organizationType||body.businessTerms||body.keywords||body.criteria||'').split(/[,;\n]/).map(v=>v.trim()).filter(Boolean);
   const searchTerms=(requestedTerms.length?requestedTerms:GRACE_FIT_SEARCH_TERMS).slice(0,Math.max(1,Math.min(Number(body.termLimit)||4,GRACE_FIT_SEARCH_TERMS.length)));
+  const surfaceGate=body.surfaceGate!==false && body.initialFitGate!==false && body.preEnrichmentGate!==false;
   return {
     market:String(body.market||body.location||'United States'),
     searchTerms,
     limit:Math.min(Math.max(Number(body.limit)||12,1),100),
     enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
-    rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
+    rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer'),
+    surfaceGate
   };
 }
 
 async function discoverGraceFitLeads(body={}){
   const plan=graceFitPlan(body);
-  const perSearch=Math.max(3,Math.ceil((plan.limit*1.5)/Math.max(1,plan.searchTerms.length)));
+  const perSearch=Math.max(6,Math.ceil((plan.limit*(plan.surfaceGate?4:1.5))/Math.max(1,plan.searchTerms.length)));
   const raw=[];
   const errors=[];
   for(const term of plan.searchTerms){
@@ -33707,7 +33766,22 @@ async function discoverGraceFitLeads(body={}){
     seen.add(key);
     deduped.push(lead);
   }
-  const enriched=await mapWithConcurrency(deduped.slice(0,Math.min(deduped.length,plan.limit*2)),plan.rocketReachMode==='defer'?3:5,async lead=>{
+  const screened=deduped.map(lead=>{
+    const surfaceFit=graceSurfaceFitGate(lead);
+    return {
+      ...lead,
+      surfaceFitScore:surfaceFit.score,
+      surfaceFitPassed:surfaceFit.passed,
+      surfaceUnlockPlausibility:surfaceFit.annualUnlockPlausibility,
+      surfaceFitReasons:surfaceFit.reasons.join('; '),
+      surfaceFitConcerns:surfaceFit.concerns.join('; ')
+    };
+  });
+  const gated=plan.surfaceGate ? screened.filter(lead=>lead.surfaceFitPassed) : screened;
+  const candidatePool=(gated.length?gated:screened)
+    .sort((a,b)=>Number(b.surfaceFitScore||0)-Number(a.surfaceFitScore||0));
+  const enrichPool=candidatePool.slice(0,Math.min(candidatePool.length,plan.limit*2));
+  const enriched=await mapWithConcurrency(enrichPool,plan.rocketReachMode==='defer'?3:5,async lead=>{
     const next=plan.enrichContacts
       ? await enrichProspect(lead,{rocketReachMode:plan.rocketReachMode,fastPreview:false}).catch(e=>({...lead,enrichmentStatus:e.message}))
       : {...lead,rocketReachStatus:'deferred until review'};
@@ -33728,6 +33802,15 @@ async function discoverGraceFitLeads(body={}){
     searchTerms:plan.searchTerms,
     organizationType:plan.searchTerms.join(', '),
     tag:'free-data-audit',
+    surfaceGate:plan.surfaceGate,
+    surfaceGateSummary:{
+      raw:raw.length,
+      deduped:deduped.length,
+      passed:gated.length,
+      enriched:enrichPool.length,
+      rejected:Math.max(0,deduped.length-gated.length),
+      minimumScore:GRACE_SURFACE_FIT_MIN_SCORE
+    },
     leads,
     errors,
     crmDestination:{status:'approval_required',tags:['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence']},
@@ -33735,6 +33818,9 @@ async function discoverGraceFitLeads(body={}){
       requestedViableLeads:plan.limit,
       viableLeadsFound:leads.length,
       rawBusinessesSearched:raw.length,
+      surfaceGatePassed:gated.length,
+      surfaceGateRejected:Math.max(0,deduped.length-gated.length),
+      surfaceGateMinimumScore:GRACE_SURFACE_FIT_MIN_SCORE,
       priorityCount:leads.filter(l=>Number(l.leadScore)===1).length,
       strongCount:leads.filter(l=>Number(l.leadScore)===2).length,
       reviewCount:leads.filter(l=>l.reviewNeeded).length,
