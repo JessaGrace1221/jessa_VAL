@@ -30322,7 +30322,9 @@ function geminiModelCandidates(primary){
 }
 
 function geminiErrorIsRetryable(status,message=''){
-  return [404,429,500,502,503,504].includes(Number(status)) || /(high demand|quota|rate|unavailable|not found|try again|temporar)/i.test(String(message||''));
+  const text=String(message||'');
+  if(Number(status)===429 && /(quota|billing|rate-limit|rate limit|too many requests)/i.test(text)) return false;
+  return [404,500,502,503,504].includes(Number(status)) || /(high demand|unavailable|not found|try again|temporar)/i.test(text);
 }
 
 async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation'}){
