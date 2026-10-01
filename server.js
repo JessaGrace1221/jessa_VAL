@@ -34975,20 +34975,27 @@ async function researchGraceDecisionMakerWithAi(p={}){
     'Return JSON with this exact shape:',
     '{"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"peopleToAvoid":[{"nameOrRole":"","reason":""}],"businessSignals":"","linkedinSignals":"","rolePainSignals":"","sourceUrls":[],"notes":"","exactCompanyMatched":true,"possibleConfusionWarnings":[]}'
   ].join('\n');
-  if(GEMINI_API_KEY){
-    const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:2400,temperature:0.1});
-    const parsed=extractJsonObject(gemini.text);
-    const sourceUrls=[...new Set([...graceUsefulJsonArray(parsed.sourceUrls),...gemini.sourceUrls])];
-    return {...parsed,sourceUrls,geminiGrounded:true,geminiModel:gemini.model};
-  }
   const system=[
     'You are a careful public-web business researcher for Grace Intelligence.',
     'Identify the best decision maker for a premium B2B revenue, lead-response, AI communication, and data audit conversation.',
     'Use the exact company name, website, and location together. Do not match a different branch, similarly named company, or unrelated business.',
     'Return only JSON. Do not guess.'
   ].join('\n');
+  if(GEMINI_API_KEY){
+    try{
+      const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:2400,temperature:0.1});
+      const parsed=extractJsonObject(gemini.text);
+      const sourceUrls=[...new Set([...graceUsefulJsonArray(parsed.sourceUrls),...gemini.sourceUrls])];
+      return {...parsed,sourceUrls,geminiGrounded:true,geminiModel:gemini.model};
+    }catch(error){
+      const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1,timeoutMs:30000});
+      const parsed=extractJsonObject(raw);
+      const notes=[parsed.notes,`Gemini unavailable; OpenAI web fallback used. Gemini error: ${error.message}`].filter(Boolean).join(' ');
+      return {...parsed,geminiGrounded:false,openAiFallbackAfterGemini:true,geminiError:error.message,notes};
+    }
+  }
   const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1,timeoutMs:30000});
-  return extractJsonObject(raw);
+  return {...extractJsonObject(raw),geminiGrounded:false};
 }
 
 async function enrichProspectWithGraceAiResearch(p={},opts={}){
