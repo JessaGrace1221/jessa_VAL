@@ -33496,6 +33496,7 @@ function graceCleanSubjectLine(value='',fallback=''){
     const clipped=text.slice(0,62).replace(/\s+\S*$/,'').trim();
     text=clipped||text.slice(0,62).trim();
   }
+  text=text.replace(/\s+(and|or|with|across|for|to|of|in|on|at|by)$/i,'').trim();
   return text;
 }
 
