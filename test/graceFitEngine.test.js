@@ -59,6 +59,10 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(graceUpsert,/Evidence ledger:\\n/);
 });
 
+test('Grace Fit Engine accepts Apollo key alias used in Railway variables',()=>{
+  assert.match(server,/const APOLLO_API_KEY = process\.env\.APOLLO_API_KEY \|\| process\.env\.APPOLLO_API_KEY \|\| process\.env\.APPOLO_API_KEY/);
+});
+
 test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   for(const key of [
     'gi_witness_insight',
