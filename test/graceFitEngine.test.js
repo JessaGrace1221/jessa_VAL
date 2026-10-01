@@ -51,7 +51,12 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/Below \$100K plausible annual unlock threshold/);
   assert.match(server,/Needs dual-fit evidence/);
   assert.match(server,/Missing verified decision maker/);
+  assert.match(server,/Missing decision-maker email address/);
+  assert.match(server,/Only generic email found; missing decision-maker email/);
+  assert.match(server,/hasDecisionMakerEmail/);
+  assert.match(server,/contactReadiness/);
   assert.match(server,/Number\(!!b\.dualFit\)-Number\(!!a\.dualFit\)/);
+  assert.match(server,/Number\(!!b\.hasDecisionMakerEmail\)-Number\(!!a\.hasDecisionMakerEmail\)/);
   assert.match(server,/surfaceGateSummary/);
   assert.match(server,/surfaceGateRejected/);
   assert.match(server,/surfaceFitScore/);

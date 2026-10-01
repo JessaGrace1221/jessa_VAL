@@ -33051,7 +33051,19 @@ function graceQualificationProfile(p={},reasons=[],painPoints=[]){
   const revenue=graceNumber(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue,p.estimatedAnnualRevenue);
   const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
   const hasDecisionMaker=graceHasDecisionMaker(p);
-  const contactPath=validEmail(p.email)||validPhone(p.phone)||p.linkedinPersonalUrl;
+  const hasAnyEmail=validEmail(p.email);
+  const hasPersonEmail=isLikelyPersonEmail(p.email);
+  const hasPhone=validPhone(p.phone);
+  const contactPath=hasPersonEmail;
+  const contactReadiness=hasPersonEmail&&hasPhone
+    ? 'Full contactability'
+    : hasPersonEmail
+      ? 'Decision-maker email only'
+      : hasAnyEmail
+        ? 'Generic email only - needs person email'
+        : hasPhone
+          ? 'Phone found - needs decision-maker email'
+          : 'No usable email or phone';
   const revenueCaptureSignals=[
     reasons.includes('B2B or high-value service model signal'),
     reasons.includes('visible booking, quote, demo, or consultation motion'),
@@ -33076,12 +33088,12 @@ function graceQualificationProfile(p={},reasons=[],painPoints=[]){
         : 0;
   const holdReasons=[];
   if(!hasDecisionMaker) holdReasons.push('Missing verified decision maker');
-  if(!contactPath) holdReasons.push('Missing usable contact path');
+  if(!hasPersonEmail) holdReasons.push(hasAnyEmail?'Only generic email found; missing decision-maker email':'Missing decision-maker email address');
   if(!dualFit) holdReasons.push('Needs dual-fit evidence');
   if(estimatedAnnualUnlock<GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK) holdReasons.push('Below $100K plausible annual unlock threshold');
   const qualificationStatus=holdReasons.length?'Research Hold':'Qualified for Import';
   const researchHoldReason=holdReasons.join('; ');
-  return {hasDecisionMaker,contactPath:!!contactPath,revenueCaptureSignals,convergenceSignals,dualFit,estimatedAnnualUnlock,qualificationStatus,researchHoldReason,minimumUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK};
+  return {hasDecisionMaker,contactPath:!!contactPath,hasPersonEmail,hasAnyEmail,hasPhone,contactReadiness,revenueCaptureSignals,convergenceSignals,dualFit,estimatedAnnualUnlock,qualificationStatus,researchHoldReason,minimumUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK};
 }
 
 const GRACE_SURFACE_FIT_MIN_SCORE=Number(process.env.GRACE_SURFACE_FIT_MIN_SCORE)||68;
@@ -33744,13 +33756,17 @@ function scoreGraceFitLead(raw={}){
     evidenceSummary:[profile.reasons.join('; '),`Qualification status: ${qualificationStatus}`,`Dual fit: ${qualification.dualFit?'Yes':'No'}`,`Estimated annual unlock: $${Number(qualification.estimatedAnnualUnlock||0).toLocaleString()}`,researchHoldReason?`Research hold reason: ${researchHoldReason}`:''].filter(Boolean).join('\n'),
     evidenceLedger:profile.evidenceLedger,
     evidenceLedgerText:profile.evidenceLedgerText,
-    qualificationStatus,
-    researchHoldReason,
-    dualFit:!!qualification.dualFit,
-    estimatedAnnualUnlock:qualification.estimatedAnnualUnlock||0,
-    minimumUnlockThreshold:qualification.minimumUnlockThreshold||GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK,
-    hasDecisionMaker:!!qualification.hasDecisionMaker,
-    industryPainPoints:profile.painPoints.join('\n'),
+	    qualificationStatus,
+	    researchHoldReason,
+	    dualFit:!!qualification.dualFit,
+	    estimatedAnnualUnlock:qualification.estimatedAnnualUnlock||0,
+	    minimumUnlockThreshold:qualification.minimumUnlockThreshold||GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK,
+	    hasDecisionMaker:!!qualification.hasDecisionMaker,
+	    hasDecisionMakerEmail:!!qualification.hasPersonEmail,
+	    hasAnyEmail:!!qualification.hasAnyEmail,
+	    hasPhone:!!qualification.hasPhone,
+	    contactReadiness:qualification.contactReadiness||'No usable email or phone',
+	    industryPainPoints:profile.painPoints.join('\n'),
     leadLeakageHypothesis:profile.leakage,
     firstAuditAngle:profile.firstAudit,
     whyThisCompany:profile.why,
@@ -33849,12 +33865,14 @@ async function discoverGraceFitLeads(body={}){
       : {...lead,rocketReachStatus:'deferred until review'};
     return scoreGraceFitLead(next);
   });
-  const leads=enriched.sort((a,b)=>
-    Number(!!b.dualFit)-Number(!!a.dualFit)
-    || Number(b.estimatedAnnualUnlock||0)-Number(a.estimatedAnnualUnlock||0)
-    || Number(a.leadScore||4)-Number(b.leadScore||4)
-    || Number(b.valFitScore||0)-Number(a.valFitScore||0)
-  ).slice(0,plan.limit);
+	  const leads=enriched.sort((a,b)=>
+	    Number(!!b.dualFit)-Number(!!a.dualFit)
+	    || Number(b.estimatedAnnualUnlock||0)-Number(a.estimatedAnnualUnlock||0)
+	    || Number(!!b.hasDecisionMakerEmail)-Number(!!a.hasDecisionMakerEmail)
+	    || Number(!!b.hasPhone)-Number(!!a.hasPhone)
+	    || Number(a.leadScore||4)-Number(b.leadScore||4)
+	    || Number(b.valFitScore||0)-Number(a.valFitScore||0)
+	  ).slice(0,plan.limit);
   const result={
     ok:!!leads.length,
     leadProfile:'grace',
@@ -33886,8 +33904,11 @@ async function discoverGraceFitLeads(body={}){
       priorityCount:leads.filter(l=>Number(l.leadScore)===1).length,
       strongCount:leads.filter(l=>Number(l.leadScore)===2).length,
       reviewCount:leads.filter(l=>l.reviewNeeded).length,
-      dualFitCount:leads.filter(l=>l.dualFit).length,
-      qualifiedForImportCount:leads.filter(l=>l.qualificationStatus==='Qualified for Import').length,
+	      dualFitCount:leads.filter(l=>l.dualFit).length,
+	      decisionMakerEmailCount:leads.filter(l=>l.hasDecisionMakerEmail).length,
+	      phoneCount:leads.filter(l=>l.hasPhone).length,
+	      fullContactabilityCount:leads.filter(l=>l.hasDecisionMakerEmail&&l.hasPhone).length,
+	      qualifiedForImportCount:leads.filter(l=>l.qualificationStatus==='Qualified for Import').length,
       researchHoldCount:leads.filter(l=>l.qualificationStatus==='Research Hold').length,
       minimumAnnualUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK
     },
