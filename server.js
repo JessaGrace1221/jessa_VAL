@@ -33451,6 +33451,7 @@ function graceLowerOpeningArticle(value=''){
 
 function graceAuditLookupPhrase(value=''){
   let text=graceTrimSentenceEnd(value)
+    .replace(/^when\s+(.+?),\s*can you see[-–—]?\s*(.+)$/i,'whether, when $1, you can see $2')
     .replace(/^when\s+(.+?),\s*can you see\s+(.+)$/i,'whether, when $1, you can see $2')
     .replace(/^can you see,\s*/i,'whether ')
     .replace(/^can you see\s+/i,'whether ')
