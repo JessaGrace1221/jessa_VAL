@@ -33718,7 +33718,8 @@ async function upsertGhlGraceLead(raw={}){
 }
 
 async function importApprovedGraceLeads(body={}){
-  const leads=(Array.isArray(body.leads)?body.leads:[]).map(scoreGraceFitLead);
+  const forceUpdateCustomFields=!!body.forceUpdateCustomFields;
+  const leads=(Array.isArray(body.leads)?body.leads:[]).map(lead=>scoreGraceFitLead({...lead,forceUpdateCustomFields:forceUpdateCustomFields||!!lead.forceUpdateCustomFields}));
   if(!leads.length) throw new Error('No approved Grace Fit Engine leads were provided for import.');
   const created=[],failed=[];
   await mapWithConcurrency(leads,GOALL_LEAD_IMPORT_CONCURRENCY,async lead=>{

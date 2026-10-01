@@ -30,6 +30,13 @@ test('Grace Fit Engine reuses lead discovery enrichment providers and does not c
   assert.ok(upsertEnd>upsertStart);
   const graceUpsert=server.slice(upsertStart,upsertEnd);
   assert.doesNotMatch(graceUpsert,/createGhlOpportunity/);
+  const importStart=server.indexOf('async function importApprovedGraceLeads');
+  const importEnd=server.indexOf('async function graceCustomFieldStatus');
+  assert.ok(importStart>0);
+  assert.ok(importEnd>importStart);
+  const graceImport=server.slice(importStart,importEnd);
+  assert.match(graceImport,/const forceUpdateCustomFields=!!body\.forceUpdateCustomFields/);
+  assert.match(graceImport,/forceUpdateCustomFields:forceUpdateCustomFields\|\|!!lead\.forceUpdateCustomFields/);
 });
 
 test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
