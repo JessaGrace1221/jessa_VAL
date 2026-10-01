@@ -33335,6 +33335,7 @@ function graceLowerOpeningArticle(value=''){
 
 function graceAuditLookupPhrase(value=''){
   let text=graceTrimSentenceEnd(value)
+    .replace(/^when\s+(.+?),\s*can you see\s+(.+)$/i,'whether, when $1, you can see $2')
     .replace(/^can you see,\s*/i,'whether ')
     .replace(/^can you see\s+/i,'whether ')
     .replace(/^which\s+/i,'which ')
@@ -33344,6 +33345,21 @@ function graceAuditLookupPhrase(value=''){
     text=`whether ${graceLowerOpeningArticle(text)}`;
   }
   return graceLowerOpeningArticle(text);
+}
+
+function graceQuestionLine(value=''){
+  const text=graceTrimSentenceEnd(value);
+  if(/^(can|could|would|will|should|is|are|do|does|did|when|where|what|which|who|how)\b/i.test(text)){
+    return `${text}?`;
+  }
+  return `${text}.`;
+}
+
+function graceAuditDataItem(value=''){
+  const text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  if(/^[A-Z]{2,}\b/.test(text)) return text;
+  return text.charAt(0).toLowerCase()+text.slice(1);
 }
 
 function graceShortOutbound(value='',fallback='',max=260){
@@ -33489,7 +33505,7 @@ function graceFitProfile(p={}){
 	    '',
 	    `The free audit would test that against the last 30-90 days of real inquiry and follow-up data.`,
 	    '',
-	    `The first question would be simple: ${auditLine}.`,
+	    `The first question would be simple: ${graceQuestionLine(auditLine)}`,
 	    '',
 	    mirrorPs,
 	    '',
@@ -33511,7 +33527,7 @@ function graceFitProfile(p={}){
 	    '',
 		    `I would look for ${auditLookupLine}.`,
 	    '',
-		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).map(item=>graceLowerOpeningArticle(item)).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
+		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).map(item=>graceAuditDataItem(item)).filter(Boolean).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
 	    '',
 	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`,
 	    '',
