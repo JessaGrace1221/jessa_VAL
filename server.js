@@ -671,9 +671,13 @@ const GHL_LEAD_FIELD_IDS = {
   gi_flattering_observation: process.env.GHL_FIELD_GI_FLATTERING_OBSERVATION || '',
   gi_witness_insight: process.env.GHL_FIELD_GI_WITNESS_INSIGHT || '',
   gi_prospect_packet: process.env.GHL_FIELD_GI_PROSPECT_PACKET || '',
+  gi_mirror_email_subject: process.env.GHL_FIELD_GI_MIRROR_EMAIL_SUBJECT || '',
   gi_mirror_email: process.env.GHL_FIELD_GI_MIRROR_EMAIL || '',
+  gi_24_hour_followup_subject: process.env.GHL_FIELD_GI_24_HOUR_FOLLOWUP_SUBJECT || '',
   gi_24_hour_followup: process.env.GHL_FIELD_GI_24_HOUR_FOLLOWUP || '',
+  gi_36_hour_followup_subject: process.env.GHL_FIELD_GI_36_HOUR_FOLLOWUP_SUBJECT || '',
   gi_36_hour_followup: process.env.GHL_FIELD_GI_36_HOUR_FOLLOWUP || '',
+  gi_5_day_followup_subject: process.env.GHL_FIELD_GI_5_DAY_FOLLOWUP_SUBJECT || '',
   gi_5_day_followup: process.env.GHL_FIELD_GI_5_DAY_FOLLOWUP || '',
   gi_linkedin_dm: process.env.GHL_FIELD_GI_LINKEDIN_DM || '',
   gi_call_opener: process.env.GHL_FIELD_GI_CALL_OPENER || '',
@@ -861,9 +865,13 @@ const GHL_LEAD_FIELD_KEYS = {
   gi_flattering_observation:'contact.gi_flattering_observation',
   gi_witness_insight:'contact.gi_witness_insight',
   gi_prospect_packet:'contact.gi_prospect_packet',
+  gi_mirror_email_subject:'contact.gi_mirror_email_subject',
   gi_mirror_email:'contact.gi_mirror_email',
+  gi_24_hour_followup_subject:'contact.gi_24_hour_followup_subject',
   gi_24_hour_followup:'contact.gi_24_hour_followup',
+  gi_36_hour_followup_subject:'contact.gi_36_hour_followup_subject',
   gi_36_hour_followup:'contact.gi_36_hour_followup',
+  gi_5_day_followup_subject:'contact.gi_5_day_followup_subject',
   gi_5_day_followup:'contact.gi_5_day_followup',
   gi_linkedin_dm:'contact.gi_linkedin_dm',
   gi_call_opener:'contact.gi_call_opener',
@@ -1048,9 +1056,13 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   gi_flattering_observation:['flattering observation','gi flattering observation','gi_flattering_observation'],
   gi_witness_insight:['witness insight','gi witness insight','gi_witness_insight'],
   gi_prospect_packet:['prospect packet','gi prospect packet','gi_prospect_packet'],
+  gi_mirror_email_subject:['mirror email subject','gi mirror email subject','gi_mirror_email_subject'],
   gi_mirror_email:['mirror email','gi mirror email','gi_mirror_email'],
+  gi_24_hour_followup_subject:['24 hour follow-up subject','24 hour followup subject','gi 24 hour follow-up subject','gi_24_hour_followup_subject'],
   gi_24_hour_followup:['24 hour follow-up','24 hour followup','gi 24 hour follow-up','gi_24_hour_followup'],
+  gi_36_hour_followup_subject:['36 hour follow-up subject','36 hour followup subject','gi 36 hour follow-up subject','gi_36_hour_followup_subject'],
   gi_36_hour_followup:['36 hour follow-up','36 hour followup','gi 36 hour follow-up','gi_36_hour_followup'],
+  gi_5_day_followup_subject:['5 day follow-up subject','5 day followup subject','gi 5 day follow-up subject','gi_5_day_followup_subject'],
   gi_5_day_followup:['5 day follow-up','5 day followup','gi 5 day follow-up','gi_5_day_followup'],
   gi_linkedin_dm:['linkedin dm','gi linkedin dm','gi_linkedin_dm'],
   gi_call_opener:['call opener','gi call opener','gi_call_opener'],
@@ -32955,10 +32967,11 @@ function graceFitProfile(p={}){
   const witness=`What stands out about ${company}: ${flattering} The public surface suggests the business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
   const firstAudit=`Start with the last 30-90 days of inbound forms, calls, booking requests, source attribution, follow-up attempts, appointment/no-show data, and closed/won outcomes.`;
   const communicationStyle=graceCommunicationStyle(disc);
-  const introSubject=`What VAL noticed about ${company}`;
+  const mirrorEmailSubject=`What VAL noticed about ${company}`;
+  const follow24Subject=`Re: ${company} lead follow-up`;
+  const follow36Subject='The part most teams cannot see';
+  const follow5Subject='Should I close the loop?';
   const mirrorEmail=[
-    `Subject: ${introSubject}`,
-    '',
     `Hi ${p.decisionMakerName?.split(/\s+/)[0]||'there'},`,
     '',
     `I spent time looking at ${company}, and what stood out is that you do not appear to sell a commodity. Your business seems to depend on trust, timing, and the feeling that the person on the other side understands what the buyer is actually trying to solve.`,
@@ -32974,8 +32987,6 @@ function graceFitProfile(p={}){
     `Jessa`
   ].join('\n');
   const follow24=[
-    `Subject: Re: ${company} lead follow-up`,
-    '',
     `One specific reason I reached out: ${painPoints[0]}.`,
     '',
     `When a business has that kind of buyer journey, the leak is rarely just "not enough leads." It is usually response timing, tone, handoff, routing, or follow-up that does not match the buyer's state of mind.`,
@@ -32983,15 +32994,11 @@ function graceFitProfile(p={}){
     `That is what the free audit is designed to find.`
   ].join('\n');
   const follow36=[
-    `Subject: The part most teams cannot see`,
-    '',
     `Most CRMs can show that a lead came in. They usually do not show whether the lead needed speed, reassurance, proof, authority, or a completely different next message.`,
     '',
     `That is the layer VAL adds. It turns the lead into a conversion profile before the follow-up happens.`
   ].join('\n');
   const follow5=[
-    `Subject: Should I close the loop?`,
-    '',
     `I do not want to keep nudging if this is not relevant. My instinct is that ${company} is exactly the type of business where one missed or mismatched follow-up can be expensive.`,
     '',
     `If you want, we can start with the free audit and let the data decide whether there is enough leakage to justify anything larger.`
@@ -33031,9 +33038,13 @@ function graceFitProfile(p={}){
     witness,
     firstAudit,
     packet,
+    mirrorEmailSubject,
     mirrorEmail,
+    follow24Subject,
     follow24,
+    follow36Subject,
     follow36,
+    follow5Subject,
     follow5,
     linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where lead follow-up probably needs more than generic automation. VAL mapped a few public signals and I think a free data audit could show whether leads are leaking in response, routing, or follow-up.`,
     callOpener:`I reached out because VAL flagged ${company} as a business where leads likely need to be understood, not just answered. I wanted to see whether a free audit of lead response and follow-up would be useful.`,
@@ -33068,9 +33079,13 @@ function scoreGraceFitLead(raw={}){
     flatteringObservation:profile.flattering,
     witnessInsight:profile.witness,
     prospectPacket:profile.packet,
+    mirrorEmailSubject:profile.mirrorEmailSubject,
     mirrorEmail:profile.mirrorEmail,
+    followup24Subject:profile.follow24Subject,
     followup24:profile.follow24,
+    followup36Subject:profile.follow36Subject,
     followup36:profile.follow36,
+    followup5DaySubject:profile.follow5Subject,
     followup5Day:profile.follow5,
     linkedinDm:profile.linkedinDm,
     callOpener:profile.callOpener,
@@ -33224,9 +33239,13 @@ function graceCustomFieldsFromProspect(raw={}){
     gi_flattering_observation:p.flatteringObservation||'',
     gi_witness_insight:p.witnessInsight||'',
     gi_prospect_packet:p.prospectPacket||'',
+    gi_mirror_email_subject:p.mirrorEmailSubject||'',
     gi_mirror_email:p.mirrorEmail||'',
+    gi_24_hour_followup_subject:p.followup24Subject||'',
     gi_24_hour_followup:p.followup24||'',
+    gi_36_hour_followup_subject:p.followup36Subject||'',
     gi_36_hour_followup:p.followup36||'',
+    gi_5_day_followup_subject:p.followup5DaySubject||'',
     gi_5_day_followup:p.followup5Day||'',
     gi_linkedin_dm:p.linkedinDm||'',
     gi_call_opener:p.callOpener||'',
@@ -33315,9 +33334,11 @@ function graceAuditIntakeFromPayload(payload={}){
     `VAL first read: ${witness}`,
     `First audit angle: ${firstAudit}`
   ].join('\n');
+  const mirrorEmailSubject=`Free data audit for ${company||'your revenue motion'}`;
+  const followup24Subject='One place I would look first';
+  const followup36Subject='The audit path';
+  const followup5DaySubject='Should we start the audit?';
   const mirrorEmail=[
-    `Subject: Free data audit for ${company||'your revenue motion'}`,
-    '',
     `Hi ${name?name.split(/\s+/)[0]:'there'},`,
     '',
     `I read through what you shared, and my first instinct is that ${company||'the business'} may already have more revenue potential than the system is currently capturing.`,
@@ -33378,10 +33399,14 @@ function graceAuditIntakeFromPayload(payload={}){
     flatteringObservation:`${company||'This business'} appears to be looking at the right question: not just how to get more leads, but how to convert more of what already exists.`,
     witnessInsight:witness,
     prospectPacket:packet,
+    mirrorEmailSubject,
     mirrorEmail,
-    followup24:`Subject: One place I would look first\n\nBased on your intake, I would first inspect ${leakSignals[0]||'speed-to-lead and follow-up consistency'}. That is often where existing demand turns into invisible loss.`,
-    followup36:`Subject: The audit path\n\nThe goal is not to add another tool. It is to see whether your existing lead flow, pipeline, and team execution are leaving enough money on the table to justify a VAL operating layer.`,
-    followup5Day:`Subject: Should we start the audit?\n\nIf the missed opportunity you described is still active, the next step is to review the data and let the numbers tell us whether a larger build is warranted.`,
+    followup24Subject,
+    followup24:`Based on your intake, I would first inspect ${leakSignals[0]||'speed-to-lead and follow-up consistency'}. That is often where existing demand turns into invisible loss.`,
+    followup36Subject,
+    followup36:`The goal is not to add another tool. It is to see whether your existing lead flow, pipeline, and team execution are leaving enough money on the table to justify a VAL operating layer.`,
+    followup5DaySubject,
+    followup5Day:`If the missed opportunity you described is still active, the next step is to review the data and let the numbers tell us whether a larger build is warranted.`,
     linkedinDm:`I saw your Grace Intelligence audit request. My first read is that this is a conversion and visibility question, not just a lead volume question.`,
     callOpener:`I am calling because you requested the Grace Intelligence audit. I want to understand where you feel revenue is being missed and what data we can review first.`,
     internalHandoffNotes:handoff,
@@ -33416,9 +33441,13 @@ function graceAuditCustomFieldsFromIntake(raw={}){
     gi_why_this_company:p.whyThisCompany,
     gi_witness_insight:p.witnessInsight,
     gi_prospect_packet:p.prospectPacket,
+    gi_mirror_email_subject:p.mirrorEmailSubject,
     gi_mirror_email:p.mirrorEmail,
+    gi_24_hour_followup_subject:p.followup24Subject,
     gi_24_hour_followup:p.followup24,
+    gi_36_hour_followup_subject:p.followup36Subject,
     gi_36_hour_followup:p.followup36,
+    gi_5_day_followup_subject:p.followup5DaySubject,
     gi_5_day_followup:p.followup5Day,
     gi_internal_handoff_notes:p.internalHandoffNotes
   };
@@ -33495,13 +33524,17 @@ async function upsertGhlGraceAuditIntake(body={}){
     '',
     `First audit angle:\n${p.firstAuditAngle||'needs review'}`,
     '',
-    `Mirror email:\n${p.mirrorEmail||'not generated'}`,
+    `Mirror email subject: ${p.mirrorEmailSubject||'not generated'}`,
+    `Mirror email body:\n${p.mirrorEmail||'not generated'}`,
     '',
-    `24-hour follow-up:\n${p.followup24||'not generated'}`,
+    `24-hour follow-up subject: ${p.followup24Subject||'not generated'}`,
+    `24-hour follow-up body:\n${p.followup24||'not generated'}`,
     '',
-    `36-hour follow-up:\n${p.followup36||'not generated'}`,
+    `36-hour follow-up subject: ${p.followup36Subject||'not generated'}`,
+    `36-hour follow-up body:\n${p.followup36||'not generated'}`,
     '',
-    `5-day follow-up:\n${p.followup5Day||'not generated'}`,
+    `5-day follow-up subject: ${p.followup5DaySubject||'not generated'}`,
+    `5-day follow-up body:\n${p.followup5Day||'not generated'}`,
     '',
     `LinkedIn DM:\n${p.linkedinDm||'not generated'}`,
     '',
@@ -33603,13 +33636,17 @@ async function upsertGhlGraceLead(raw={}){
     '',
     `First audit angle:\n${p.firstAuditAngle||'needs review'}`,
     '',
-    `Mirror email:\n${p.mirrorEmail}`,
+    `Mirror email subject: ${p.mirrorEmailSubject||'not generated'}`,
+    `Mirror email body:\n${p.mirrorEmail}`,
     '',
-    `24-hour follow-up:\n${p.followup24}`,
+    `24-hour follow-up subject: ${p.followup24Subject||'not generated'}`,
+    `24-hour follow-up body:\n${p.followup24}`,
     '',
-    `36-hour follow-up:\n${p.followup36}`,
+    `36-hour follow-up subject: ${p.followup36Subject||'not generated'}`,
+    `36-hour follow-up body:\n${p.followup36}`,
     '',
-    `5-day follow-up:\n${p.followup5Day}`,
+    `5-day follow-up subject: ${p.followup5DaySubject||'not generated'}`,
+    `5-day follow-up body:\n${p.followup5Day}`,
     '',
     `LinkedIn DM:\n${p.linkedinDm||'not generated'}`,
     '',
@@ -33655,7 +33692,7 @@ async function importApprovedGraceLeads(body={}){
 
 async function graceCustomFieldStatus(){
   const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
-  const keys=['gi_val_fit_score','gi_val_fit_tier','gi_fit_confidence','gi_revenue_leak_potential','gi_audit_priority','gi_review_status','gi_source_urls','gi_evidence_summary','gi_industry_pain_points','gi_lead_leakage_hypothesis','gi_first_audit_angle','gi_why_this_company','gi_decision_maker_linkedin','gi_disc_estimate','gi_communication_style','gi_personalization_notes','gi_flattering_observation','gi_witness_insight','gi_prospect_packet','gi_mirror_email','gi_24_hour_followup','gi_36_hour_followup','gi_5_day_followup','gi_linkedin_dm','gi_call_opener','gi_internal_handoff_notes','gi_approved_to_contact','gi_do_not_contact_reason','gi_enrichment_status','gi_last_enriched_at'];
+  const keys=['gi_val_fit_score','gi_val_fit_tier','gi_fit_confidence','gi_revenue_leak_potential','gi_audit_priority','gi_review_status','gi_source_urls','gi_evidence_summary','gi_industry_pain_points','gi_lead_leakage_hypothesis','gi_first_audit_angle','gi_why_this_company','gi_decision_maker_linkedin','gi_disc_estimate','gi_communication_style','gi_personalization_notes','gi_flattering_observation','gi_witness_insight','gi_prospect_packet','gi_mirror_email_subject','gi_mirror_email','gi_24_hour_followup_subject','gi_24_hour_followup','gi_36_hour_followup_subject','gi_36_hour_followup','gi_5_day_followup_subject','gi_5_day_followup','gi_linkedin_dm','gi_call_opener','gi_internal_handoff_notes','gi_approved_to_contact','gi_do_not_contact_reason','gi_enrichment_status','gi_last_enriched_at'];
   return {ok:true,fields:keys.map(key=>({key,fieldKey:GHL_LEAD_FIELD_KEYS[key]||'',configured:!!ids[key],id:ids[key]||''}))};
 }
 
