@@ -33084,7 +33084,7 @@ function graceQualificationProfile(p={},reasons=[],painPoints=[]){
   return {hasDecisionMaker,contactPath:!!contactPath,revenueCaptureSignals,convergenceSignals,dualFit,estimatedAnnualUnlock,qualificationStatus,researchHoldReason,minimumUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK};
 }
 
-const GRACE_SURFACE_FIT_MIN_SCORE=Number(process.env.GRACE_SURFACE_FIT_MIN_SCORE)||48;
+const GRACE_SURFACE_FIT_MIN_SCORE=Number(process.env.GRACE_SURFACE_FIT_MIN_SCORE)||68;
 
 function graceSurfaceFitGate(p={}){
   const text=graceText(p);
@@ -33092,22 +33092,29 @@ function graceSurfaceFitGate(p={}){
   const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
   const hasWebsite=!!String(p.website||'').trim();
   const hasContact=validEmail(p.email)||validPhone(p.phone);
+  const highValueCategory=/b2b|commercial|enterprise|business|managed it|cyber|consulting|agency|professional|staffing|insurance|financial|wealth|construction|contractor|medical|dental|saas|implementation|technology|security|roof|hvac/.test(text);
+  const consultMotion=/book|schedule|consult|quote|estimate|demo|assessment|growth call|proposal|request|appointment|contact us/.test(text);
+  const commercialMotion=/lead|pipeline|growth|sales|revenue|conversion|roi|marketing|campaign|paid|ppc|ads|funnel|attribution|tracking|analytics|crm|automation|workflow/.test(text);
+  const convergenceSignal=/cloud|aws|azure|data|infrastructure|network|security|compliance|software|saas|managed it|technology|vendor|licensing|procurement|erp|multi.?location|franchise|locations|regional|national|enterprise|distributed/.test(text);
+  const decisionMakerSignal=/about|team|leadership|founder|ceo|president|principal|partner|linkedin/.test(text)||!!p.linkedinCompanyUrl;
+  const highTicketSignal=/case stud|client|industries|portfolio|results|testimonial|pricing|monthly|retainer|recurring|managed service/.test(text);
   const reasons=[];
   const concerns=[];
+  const mustHaveMisses=[];
   let score=0;
   const add=(points,reason)=>{score+=points; reasons.push(reason);};
   const concern=(reason)=>concerns.push(reason);
 
-  if(/b2b|commercial|enterprise|business|managed it|cyber|consulting|agency|professional|staffing|insurance|financial|wealth|construction|contractor|medical|dental|saas|implementation|technology|security|roof|hvac/.test(text)) add(18,'high-value B2B or consultative service category');
-  if(/book|schedule|consult|quote|estimate|demo|assessment|growth call|proposal|request|appointment|contact us/.test(text)) add(18,'visible consultation, quote, demo, assessment, or booking motion');
-  if(/lead|pipeline|growth|sales|revenue|conversion|roi|marketing|campaign|paid|ppc|ads|funnel|attribution|tracking|analytics|crm|automation|workflow/.test(text)) add(14,'commercial motion or lead-flow language visible before enrichment');
-  if(/cloud|aws|azure|data|infrastructure|network|security|compliance|software|saas|managed it|technology|vendor|licensing|procurement|erp|multi.?location|franchise|locations|regional|national|enterprise|distributed/.test(text)) add(16,'Convergence-compatible cost, data, technology, or operational complexity signal');
+  if(highValueCategory) add(18,'high-value B2B or consultative service category');
+  if(consultMotion) add(18,'visible consultation, quote, demo, assessment, or booking motion');
+  if(commercialMotion) add(14,'commercial motion or lead-flow language visible before enrichment');
+  if(convergenceSignal) add(16,'Convergence-compatible cost, data, technology, or operational complexity signal');
   if(reviewCount>=100) add(10,'public demand volume signal: 100+ reviews');
   else if(reviewCount>=35) add(6,'public demand volume signal: 35+ reviews');
   if(hasWebsite) add(8,'active website available for research');
   if(hasContact) add(6,'usable contact path visible before enrichment');
-  if(/about|team|leadership|founder|ceo|president|principal|partner|linkedin/.test(text)||p.linkedinCompanyUrl) add(8,'decision-maker discoverability signal');
-  if(/case stud|client|industries|portfolio|results|testimonial|pricing|monthly|retainer|recurring|managed service/.test(text)) add(8,'high-ticket or recurring offer signal');
+  if(decisionMakerSignal) add(8,'decision-maker discoverability signal');
+  if(highTicketSignal) add(8,'high-ticket or recurring offer signal');
 
   if(/restaurant|coffee|bar\b|retail|boutique|salon|spa\b|pizza|bakery|store\b|shop\b|gym\b|yoga|photographer|wedding|artist|personal trainer/i.test(text)){
     score-=28;
@@ -33121,21 +33128,61 @@ function graceSurfaceFitGate(p={}){
     score-=18;
     concern('no website available for evidence-based research');
   }
-  if(!/book|schedule|consult|quote|estimate|demo|assessment|growth call|proposal|request|appointment|contact/i.test(text)){
+  if(!consultMotion){
     concern('no clear consult/quote/demo/assessment motion visible');
   }
-  if(!/cloud|aws|azure|data|infrastructure|network|security|compliance|software|saas|managed it|technology|vendor|licensing|procurement|erp|multi.?location|franchise|locations|regional|national|enterprise|distributed/i.test(text)){
+  if(!convergenceSignal){
     concern('weak initial Convergence/dual-fit signal');
   }
+  if(!highValueCategory) mustHaveMisses.push('no high-value B2B/category signal');
+  if(!consultMotion) mustHaveMisses.push('no consult/quote/demo/assessment motion');
+  if(!convergenceSignal) mustHaveMisses.push('no Convergence/data/IT/ops complexity signal');
+  if(!hasWebsite) mustHaveMisses.push('no researchable website');
+  if(!decisionMakerSignal && !highTicketSignal) mustHaveMisses.push('no decision-maker discoverability or high-ticket/recurring signal');
 
-  const annualUnlockPlausibility=score>=82?'Strong':score>=64?'Plausible':score>=48?'Needs enrichment':'Weak';
-  const passed=score>=GRACE_SURFACE_FIT_MIN_SCORE && hasWebsite && reasons.length>=3;
+  let industryGate='General B2B';
+  const industryMisses=[];
+  if(/managed it|msp|it support|cyber|technology|cloud|security|network|microsoft|infrastructure/i.test(text)){
+    industryGate='Managed IT / Technology';
+    if(!/managed it|msp|it support|cyber|security|cloud|microsoft|network|infrastructure|compliance|backup|disaster recovery|business continuity/i.test(text)) industryMisses.push('technology-specific service signal');
+  }else if(/roof|hvac|plumb|contractor|construction|home service|commercial service/i.test(text)){
+    industryGate='Commercial Services';
+    if(!/quote|estimate|emergency|repair|maintenance|commercial|multi.?location|service area|request/i.test(text)) industryMisses.push('quote volume, emergency/service-area, or commercial-project signal');
+  }else if(/agency|marketing|consulting|coach|advisor|professional service/i.test(text)){
+    industryGate='Agency / Consulting';
+    if(!/growth call|audit|assessment|case stud|retainer|pipeline|conversion|attribution|roi|client results/i.test(text)) industryMisses.push('audit, case-study, retainer, or pipeline signal');
+  }else if(/staffing|recruit|talent|workforce/i.test(text)){
+    industryGate='Staffing / Recruiting';
+    if(!/employer|workforce|placement|hiring|talent|enterprise|staffing solution|recruiting solution/i.test(text)) industryMisses.push('employer solution or recurring workforce demand signal');
+  }else if(/insurance|financial|wealth|legal|accounting|tax|compliance/i.test(text)){
+    industryGate='Trust / Financial / Regulated';
+    if(!/consult|quote|assessment|risk|compliance|portfolio|business owner|commercial|advisory/i.test(text)) industryMisses.push('trust-heavy advisory or commercial quote signal');
+  }
+  for(const miss of industryMisses) mustHaveMisses.push(`industry gate missing: ${miss}`);
+
+  const basePassed=score>=GRACE_SURFACE_FIT_MIN_SCORE && reasons.length>=4 && mustHaveMisses.length===0;
+  const initialFitTier=basePassed && score>=88?'Prime':basePassed && score>=76?'Strong':score>=GRACE_SURFACE_FIT_MIN_SCORE?'Research':'Reject';
+  const annualUnlockPlausibility=score>=88?'Strong':score>=76?'Plausible':score>=68?'Needs proof':'Weak';
+  const passed=initialFitTier==='Prime' || initialFitTier==='Strong';
+  const whyPassed=reasons.length?`Initial gate ${passed?'passed':'did not pass'} as ${initialFitTier}: ${reasons.slice(0,5).join('; ')}.`:`Initial gate did not find enough public evidence.`;
+  const whyCouldBeWrong=[
+    !hasContact?'public contact path may still be weak':'',
+    !decisionMakerSignal?'decision-maker evidence may require AI/web confirmation':'',
+    reviewCount<35?'public demand volume is not obvious from reviews':'',
+    sources.length<2?'only one public source was available before enrichment':'',
+    'public signals cannot prove internal leakage, lead volume, contract value, or conversion loss'
+  ].filter(Boolean).join('; ');
   return {
     score:Math.max(0,Math.min(100,score)),
     passed,
+    initialFitTier,
+    industryGate,
     annualUnlockPlausibility,
     reasons,
     concerns,
+    mustHaveMisses,
+    whyPassed,
+    whyCouldBeWrong,
     sourceCount:sources.length
   };
 }
@@ -33675,9 +33722,19 @@ function scoreGraceFitLead(raw={}){
   const scored={
     ...raw,
     leadProfile:'grace',
-    scraperType:'Grace Fit Engine',
-    source:'Grace Intelligence Fit Engine',
-    valFitScore:profile.score,
+	    scraperType:'Grace Fit Engine',
+	    source:'Grace Intelligence Fit Engine',
+	    initialFitTier:raw.initialFitTier||'',
+	    initialIndustryGate:raw.initialIndustryGate||'',
+	    surfaceFitScore:raw.surfaceFitScore||0,
+	    surfaceFitPassed:!!raw.surfaceFitPassed,
+	    surfaceUnlockPlausibility:raw.surfaceUnlockPlausibility||'',
+	    surfaceFitReasons:raw.surfaceFitReasons||'',
+	    surfaceFitConcerns:raw.surfaceFitConcerns||'',
+	    surfaceGateMustHaveMisses:raw.surfaceGateMustHaveMisses||'',
+	    initialGateWhyPassed:raw.initialGateWhyPassed||'',
+	    initialGateWhyCouldBeWrong:raw.initialGateWhyCouldBeWrong||'',
+	    valFitScore:profile.score,
     valFitTier:profile.tier,
     fitConfidence:profile.confidence,
     revenueLeakPotential:profile.leakPotential,
@@ -33741,7 +33798,7 @@ function graceFitPlan(body={}){
 
 async function discoverGraceFitLeads(body={}){
   const plan=graceFitPlan(body);
-  const perSearch=Math.max(6,Math.ceil((plan.limit*(plan.surfaceGate?4:1.5))/Math.max(1,plan.searchTerms.length)));
+  const perSearch=Math.max(12,Math.ceil((plan.limit*(plan.surfaceGate?10:1.5))/Math.max(1,plan.searchTerms.length)));
   const raw=[];
   const errors=[];
   for(const term of plan.searchTerms){
@@ -33772,15 +33829,20 @@ async function discoverGraceFitLeads(body={}){
       ...lead,
       surfaceFitScore:surfaceFit.score,
       surfaceFitPassed:surfaceFit.passed,
+      initialFitTier:surfaceFit.initialFitTier,
+      initialIndustryGate:surfaceFit.industryGate,
       surfaceUnlockPlausibility:surfaceFit.annualUnlockPlausibility,
       surfaceFitReasons:surfaceFit.reasons.join('; '),
-      surfaceFitConcerns:surfaceFit.concerns.join('; ')
+      surfaceFitConcerns:surfaceFit.concerns.join('; '),
+      surfaceGateMustHaveMisses:surfaceFit.mustHaveMisses.join('; '),
+      initialGateWhyPassed:surfaceFit.whyPassed,
+      initialGateWhyCouldBeWrong:surfaceFit.whyCouldBeWrong
     };
   });
   const gated=plan.surfaceGate ? screened.filter(lead=>lead.surfaceFitPassed) : screened;
-  const candidatePool=(gated.length?gated:screened)
+  const candidatePool=(plan.surfaceGate?gated:screened)
     .sort((a,b)=>Number(b.surfaceFitScore||0)-Number(a.surfaceFitScore||0));
-  const enrichPool=candidatePool.slice(0,Math.min(candidatePool.length,plan.limit*2));
+  const enrichPool=candidatePool.slice(0,Math.min(candidatePool.length,Math.max(6,plan.limit*5)));
   const enriched=await mapWithConcurrency(enrichPool,plan.rocketReachMode==='defer'?3:5,async lead=>{
     const next=plan.enrichContacts
       ? await enrichProspect(lead,{rocketReachMode:plan.rocketReachMode,fastPreview:false}).catch(e=>({...lead,enrichmentStatus:e.message}))
