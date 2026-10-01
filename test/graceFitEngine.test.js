@@ -63,6 +63,18 @@ test('Grace Fit Engine accepts Apollo key alias used in Railway variables',()=>{
   assert.match(server,/const APOLLO_API_KEY = process\.env\.APOLLO_API_KEY \|\| process\.env\.APPOLLO_API_KEY \|\| process\.env\.APPOLO_API_KEY/);
 });
 
+test('Grace Fit Engine uses Gemini-style decision-maker research before outreach',()=>{
+  assert.match(server,/const GEMINI_API_KEY = process\.env\.GEMINI_API_KEY \|\| process\.env\.GOOGLE_AI_API_KEY \|\| process\.env\.GOOGLE_GENAI_API_KEY/);
+  assert.match(server,/function geminiInteractionSourceUrls/);
+  assert.match(server,/async function callGeminiGroundedSearch/);
+  assert.match(server,/async function researchGraceDecisionMakerWithAi/);
+  assert.match(server,/Use grounded public web search to identify the best person/);
+  assert.match(server,/async function enrichProspectWithGraceAiResearch/);
+  assert.match(server,/next=await enrichProspectWithGraceAiResearch/);
+  assert.match(server,/Apollo AI decision-maker verification/);
+  assert.match(server,/shouldVerifyAiPerson/);
+});
+
 test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   for(const key of [
     'gi_witness_insight',
@@ -90,6 +102,10 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/whether your follow-up can tell the difference before the next message goes out/);
   assert.match(fitProfile,/I am not guessing from a list/);
   assert.match(fitProfile,/this should stay in research hold/);
+  assert.match(fitProfile,/const hasPersonForOutbound=!!personName/);
+  assert.match(fitProfile,/No prospect-facing copy generated because no decision maker was verified/);
+  assert.match(fitProfile,/const mirrorEmailSubject=hasPersonForOutbound\?/);
+  assert.match(fitProfile,/const mirrorEmail=hasPersonForOutbound\?/);
   assert.match(fitProfile,/The part most CRMs miss is not the form submission/);
   assert.match(fitProfile,/I would start by proving or disproving this theory/);
   assert.match(fitProfile,/may not need another lead source as much as it needs a clearer conversion layer/);

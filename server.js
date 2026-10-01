@@ -271,6 +271,9 @@ const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/ap
 const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
 const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
 const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),50);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || '';
+const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest').split(',').map(v=>v.trim()).filter(Boolean);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -15714,6 +15717,7 @@ async function lookupApolloDecisionMaker(lead={}){
   if(!apolloKey) return {configured:false,error:'APOLLO_API_KEY is not set'};
   const domain=leadDomain(lead.website||'');
   const company=lead.organizationName||lead.name||'';
+  const personName=String(lead.decisionMakerName||'').trim();
   const headers={
     accept:'application/json',
     'Content-Type':'application/json',
@@ -15756,6 +15760,13 @@ async function lookupApolloDecisionMaker(lead={}){
     .sort((a,b)=>b.matchScore-a.matchScore);
   let rawPeople=[];
   let companySearchError='';
+  if(personName){
+    try{
+      const aiMatched=await searchPeople({'person_names[]':personName},'Apollo AI decision-maker verification');
+      const rankedAi=rankPeople(aiMatched);
+      if(rankedAi.length) return {configured:true,data:rankedAi[0],candidates:rankedAi.slice(0,3),rawCount:aiMatched.length,label:'ai decision-maker'};
+    }catch(_error){}
+  }
   try{
     rawPeople=await searchPeople({},'Apollo decision-maker lookup');
   }catch(error){
@@ -15793,7 +15804,8 @@ async function lookupApolloDecisionMaker(lead={}){
 }
 
 async function enrichProspectWithApollo(p){
-  if(p.decisionMakerName || p.linkedinPersonalUrl) return p;
+  const shouldVerifyAiPerson=!!p.decisionMakerName && !p.apollo && /\b(ai|gemini|web research|research)\b/i.test(String(p.decisionMakerSource||p.decisionMakerSourceType||''));
+  if((p.decisionMakerName || p.linkedinPersonalUrl) && !shouldVerifyAiPerson) return p;
   const apollo=await lookupApolloDecisionMaker(p).catch(e=>({configured:!!APOLLO_API_KEY,error:e.message}));
   const data=apollo?.data||{};
   if(!data.name && !data.linkedinUrl){
@@ -30280,6 +30292,70 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
   return responseText(d);
 }
 
+function geminiInteractionText(data={}){
+  const candidateParts=data?.candidates?.[0]?.content?.parts;
+  if(Array.isArray(candidateParts)){
+    const text=candidateParts.map(part=>part.text||'').filter(Boolean).join('\n');
+    if(text) return text;
+  }
+  if(typeof data.output_text==='string') return data.output_text;
+  const chunks=[];
+  for(const block of data.output||data.content||[]){
+    if(block.text) chunks.push(block.text);
+  }
+  return chunks.join('\n');
+}
+
+function geminiInteractionSourceUrls(data={}){
+  const urls=[];
+  const groundingChunks=data?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+  if(Array.isArray(groundingChunks)){
+    for(const chunk of groundingChunks){
+      if(chunk?.web?.uri) urls.push(chunk.web.uri);
+    }
+  }
+  return [...new Set(urls.filter(Boolean))];
+}
+
+function geminiModelCandidates(primary){
+  return [...new Set([primary,GEMINI_GROUNDED_MODEL,...GEMINI_FALLBACK_MODELS].map(v=>String(v||'').trim()).filter(Boolean))];
+}
+
+function geminiErrorIsRetryable(status,message=''){
+  return [404,429,500,502,503,504].includes(Number(status)) || /(high demand|quota|rate|unavailable|not found|try again|temporar)/i.test(String(message||''));
+}
+
+async function callGeminiGenerate({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1,grounded=false,label='Gemini generation'}){
+  if(!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
+  const errors=[];
+  for(const candidateModel of geminiModelCandidates(model)){
+    const body={
+      contents:[{role:'user',parts:[{text:String(input||'')}]}],
+      generationConfig:{temperature,maxOutputTokens:maxTokens}
+    };
+    if(grounded) body.tools=[{google_search:{}}];
+    const response=await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    },OPENAI_WEB_RESEARCH_TIMEOUT_MS,label).catch(e=>({ok:false,status:0,_timeoutError:e}));
+    if(response._timeoutError){
+      errors.push(`${candidateModel}: ${response._timeoutError.message}`);
+      continue;
+    }
+    const data=await readJsonResponse(response);
+    if(response.ok) return {raw:data,text:geminiInteractionText(data),sourceUrls:grounded?geminiInteractionSourceUrls(data):[],model:candidateModel};
+    const message=data.error?.message||data.raw||'upstream error';
+    errors.push(`${candidateModel}: ${response.status} ${message}`);
+    if(!geminiErrorIsRetryable(response.status,message)) break;
+  }
+  throw new Error(`${label} failed: ${errors.join(' | ')}`);
+}
+
+async function callGeminiGroundedSearch({input,model=GEMINI_GROUNDED_MODEL,maxTokens=2200,temperature=0.1}){
+  return callGeminiGenerate({input,model,maxTokens,temperature,grounded:true,label:'Gemini grounded search'});
+}
+
 const GOALL_LEADS_SYSTEM_PROMPT = `
 You are Leads MCP GOALL, a focused lead generation and growth strategy specialist for the GOALL Agency.
 
@@ -33141,6 +33217,7 @@ function graceFitProfile(p={}){
   const evidenceLedger=graceEvidenceLedger(p,reasons,painPoints);
   const personName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const personTitle=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
+  const hasPersonForOutbound=!!personName;
   const prospectTheory=graceProspectTheory({p,company,industry,reasons,painPoints,evidenceLedger,qualification});
   const prospectTheoryText=graceProspectTheoryText(prospectTheory);
   const firstName=personName.split(/\s+/)[0]||'there';
@@ -33159,11 +33236,11 @@ function graceFitProfile(p={}){
   const quietPs=personName
     ? `P.S. I am not guessing from a list. I used the public signals around ${company} to decide which buyer-state problem to lead with, which proof to use, and what the audit should inspect first.`
     : `P.S. I could not verify the right person yet, so this should stay in research hold. The company-level read is strong enough to review, but not enough to pretend this is ready for live outbound.`;
-  const mirrorEmailSubject=`A buyer-state question for ${company}`;
-  const follow24Subject='The part most CRMs miss';
-  const follow36Subject='Where the audit would start';
-  const follow5Subject='Should I close the loop?';
-  const mirrorEmail=[
+  const mirrorEmailSubject=hasPersonForOutbound?`A buyer-state question for ${company}`:'';
+  const follow24Subject=hasPersonForOutbound?'The part most CRMs miss':'';
+  const follow36Subject=hasPersonForOutbound?'Where the audit would start':'';
+  const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
+  const mirrorEmail=hasPersonForOutbound?[
     `Hi ${firstName},`,
     '',
     prospectTheory.bestOpening,
@@ -33185,8 +33262,8 @@ function graceFitProfile(p={}){
     quietPs,
     '',
     `Jessa`
-  ].join('\n').replace(/\n{3,}/g,'\n\n');
-  const follow24=[
+  ].join('\n').replace(/\n{3,}/g,'\n\n'):'';
+  const follow24=hasPersonForOutbound?[
     `The part most CRMs miss is not the form submission.`,
     '',
     `It is the state of the buyer behind it.`,
@@ -33196,8 +33273,8 @@ function graceFitProfile(p={}){
     `If those buyers receive the same first response, the system is asking automation to do something your best person would never do: ignore context.`,
     '',
     `That is why I would start the audit with response timing, routing, first follow-up, and stalled conversations. Not to add more noise, but to see where the existing demand is not being converted with enough precision.`
-  ].join('\n');
-  const follow36=[
+  ].join('\n'):'';
+  const follow36=hasPersonForOutbound?[
     `If we did the audit, I would not start by asking you to believe in Grace Intelligence.`,
     '',
     `I would start by proving or disproving this theory: ${prospectTheory.likelyCommercialProblem}.`,
@@ -33205,8 +33282,8 @@ function graceFitProfile(p={}){
     `The first pass would look at the last 30-90 days of inquiries, source, speed-to-lead, first response, follow-up sequence, appointments, no-shows, stale pipeline, and closed/won outcomes.`,
     '',
     `If there is no meaningful gap, you know quickly. If there is, the next step becomes obvious: build the system that makes that profit easier to capture every day.`
-  ].join('\n');
-  const follow5=[
+  ].join('\n'):'';
+  const follow5=hasPersonForOutbound?[
     `I will close the loop here unless this is worth checking.`,
     '',
     `My read is simple: ${company} may not need another lead source as much as it needs a clearer conversion layer around the demand already showing up.`,
@@ -33214,7 +33291,7 @@ function graceFitProfile(p={}){
     `At your apparent demand level, a few mismatched handoffs or generic follow-ups can become much larger than they look in the CRM.`,
     '',
     `The free audit is the cleanest way to find out.`
-  ].join('\n');
+  ].join('\n'):'';
 
   const packet=[
     `Company: ${company}`,
@@ -33270,9 +33347,9 @@ function graceFitProfile(p={}){
     follow36,
     follow5Subject,
     follow5,
-    linkedinDm:`I looked at ${company} and had a specific buyer-state question: ${prospectTheory.bestOpening} I think a free audit could show whether follow-up is adapting to that difference or treating every inquiry the same.`,
-    callOpener:`I reached out because ${company} looks like a business where the follow-up needs to recognize the buyer state quickly. I wanted to see whether a free audit could test where existing demand is stalling after the first hand raise.`,
-    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\nSuggested tone: ${communicationStyle}\nFirst audit: ${firstAudit}`,
+    linkedinDm:hasPersonForOutbound?`I looked at ${company} and had a specific buyer-state question: ${prospectTheory.bestOpening} I think a free audit could show whether follow-up is adapting to that difference or treating every inquiry the same.`:'',
+    callOpener:hasPersonForOutbound?`I reached out because ${company} looks like a business where the follow-up needs to recognize the buyer state quickly. I wanted to see whether a free audit could test where existing demand is stalling after the first hand raise.`:'',
+    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\n${hasPersonForOutbound?'Prospect-facing copy generated.':'No prospect-facing copy generated because no decision maker was verified.'}\nSuggested tone: ${communicationStyle}\nFirst audit: ${firstAudit}`,
     reviewNeeded:score<65 || confidence==='Low' || qualification.qualificationStatus!=='Qualified for Import'
   };
 }
@@ -34820,6 +34897,142 @@ async function importApprovedHbsLeads(discovered){
   return {ok:true,created,failed,skipped,content:summary};
 }
 
+function graceLeadResearchFacts(p={}){
+  return [
+    `Company name: ${p.organizationName||p.name||''}`,
+    `Address: ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ')}`,
+    `Website: ${p.website||''}`,
+    `Phone: ${p.phone||''}`,
+    `Industry/category: ${p.industry||p.organizationType||p.category||p.cause||''}`,
+    `Google description/reviews snippet: ${p.googleReviewsSnippet||''}`,
+    `Google rating: ${p.googleRating||''}`,
+    `Google review count: ${p.googleReviewCount||''}`,
+    `Google Maps URL: ${p.googleMapsUrl||''}`,
+    `Evidence signals: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):(p.evidenceSignals||'')}`,
+    `Operational indicators: ${p.operationalIndicators||''}`,
+    `Website email found: ${p.email||''}`,
+    `Existing decision maker: ${[p.decisionMakerName,p.decisionMakerTitle].filter(Boolean).join(', ')}`,
+    `Source URLs: ${graceSourceUrls(p).join(', ')}`
+  ].join('\n');
+}
+
+function graceUsefulJsonArray(value){
+  return Array.isArray(value)?value.map(v=>String(v||'').trim()).filter(Boolean):[];
+}
+
+function graceUsefulJsonText(value){
+  if(value===undefined||value===null||value==='') return '';
+  if(typeof value==='string') return value.replace(/\s+/g,' ').trim();
+  try{return JSON.stringify(value).slice(0,1600);}catch(_){return String(value).slice(0,1600);}
+}
+
+function graceDecisionMakerNameParts(value=''){
+  const parts=String(value||'').trim().split(/\s+/).filter(Boolean);
+  return {firstName:parts[0]||'',lastName:parts.slice(1).join(' ')};
+}
+
+function graceAiDecisionPerson(decision={}){
+  const best=decision.bestPersonToSpeakTo||decision.bestDecisionMaker||decision.recommendedContact||{};
+  if(best&&typeof best==='object'){
+    return {
+      name:best.name||decision.decisionMakerName||'',
+      title:best.title||decision.decisionMakerTitle||'',
+      confidence:best.confidence||decision.decisionMakerConfidence||'',
+      evidence:best.reason||best.evidence||decision.decisionMakerEvidence||decision.notes||'',
+      linkedinUrl:best.linkedinUrl||best.personalLinkedInUrl||decision.personalLinkedInUrl||''
+    };
+  }
+  return {
+    name:decision.decisionMakerName||'',
+    title:decision.decisionMakerTitle||'',
+    confidence:decision.decisionMakerConfidence||'',
+    evidence:decision.decisionMakerEvidence||decision.notes||'',
+    linkedinUrl:decision.personalLinkedInUrl||''
+  };
+}
+
+async function researchGraceDecisionMakerWithAi(p={}){
+  const prompt=[
+    'You are the Grace Intelligence decision-maker research step.',
+    '',
+    'Use grounded public web search to identify the best person for a premium B2B revenue, lead-response, AI communication, and data audit conversation.',
+    '',
+    `Research this exact company: ${p.organizationName||p.name||'this company'} at ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ')}`,
+    '',
+    'Business facts:',
+    graceLeadResearchFacts(p),
+    '',
+    'Requirements:',
+    '- Match the exact company/domain/location. Do not confuse similarly named businesses.',
+    '- Prefer owner, founder, CEO, president, COO, CRO, head of sales/growth/revenue, head of operations, CIO, CTO, IT/technology leader, or another executive with authority over revenue operations, lead conversion, customer communication, systems, or data.',
+    '- If you find a person, return first name and last name separately.',
+    '- If you find no reliable person, set decisionMakerFirstName to "Unverified", leave last name empty, and explain why.',
+    '- If you find a person but no direct person contact info, leave email and phone empty. Do not use generic company emails as person emails.',
+    '- Include source URLs and a short evidence sentence for the person match.',
+    '- Include public LinkedIn profile URLs only when the URL appears to be a person profile, not just a company page.',
+    '- Return only valid JSON. No markdown.',
+    '',
+    'Return JSON with this exact shape:',
+    '{"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"peopleToAvoid":[{"nameOrRole":"","reason":""}],"businessSignals":"","linkedinSignals":"","rolePainSignals":"","sourceUrls":[],"notes":"","exactCompanyMatched":true,"possibleConfusionWarnings":[]}'
+  ].join('\n');
+  if(GEMINI_API_KEY){
+    const gemini=await callGeminiGroundedSearch({input:prompt,maxTokens:2400,temperature:0.1});
+    const parsed=extractJsonObject(gemini.text);
+    const sourceUrls=[...new Set([...graceUsefulJsonArray(parsed.sourceUrls),...gemini.sourceUrls])];
+    return {...parsed,sourceUrls,geminiGrounded:true,geminiModel:gemini.model};
+  }
+  const system=[
+    'You are a careful public-web business researcher for Grace Intelligence.',
+    'Identify the best decision maker for a premium B2B revenue, lead-response, AI communication, and data audit conversation.',
+    'Use the exact company name, website, and location together. Do not match a different branch, similarly named company, or unrelated business.',
+    'Return only JSON. Do not guess.'
+  ].join('\n');
+  const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1});
+  return extractJsonObject(raw);
+}
+
+async function enrichProspectWithGraceAiResearch(p={},opts={}){
+  if(String(p.leadProfile||'').toLowerCase()!=='grace' && !/Grace Fit Engine/i.test(String(p.scraperType||''))) return p;
+  if(opts.decisionMakerResearch===false) return p;
+  let next=sanitizeDecisionMaker({...p});
+  if(next.decisionMakerName || !(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
+  try{
+    const decision=await researchGraceDecisionMakerWithAi(next);
+    const person=graceAiDecisionPerson(decision);
+    const confidence=String(person.confidence||decision.decisionMakerConfidence||'').toLowerCase();
+    next.aiDecisionMakerResearch=decision;
+    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
+    next.decisionMakerSourceUrls=graceUsefulJsonArray(decision.sourceUrls);
+    next.keyDecisionMakers=decision.keyDecisionMakers||[];
+    next.peopleToAvoid=decision.peopleToAvoid||[];
+    next.linkedinSignals=graceUsefulJsonText(decision.linkedinSignals||'');
+    next.rolePainSignals=graceUsefulJsonText(decision.rolePainSignals||'');
+    if(decision.companyLinkedInUrl && !next.linkedinCompanyUrl) next.linkedinCompanyUrl=decision.companyLinkedInUrl;
+    if((confidence==='high'||confidence==='medium') && person.name){
+      next.decisionMakerName=person.name;
+      next.decisionMakerTitle=person.title||next.decisionMakerTitle||'';
+      next.linkedinPersonalUrl=person.linkedinUrl||next.linkedinPersonalUrl||'';
+      next.decisionMakerFirstName=decision.decisionMakerFirstName||graceDecisionMakerNameParts(person.name).firstName;
+      next.decisionMakerLastName=decision.decisionMakerLastName||graceDecisionMakerNameParts(person.name).lastName;
+      if(decision.personEmail && isLikelyPersonEmail(decision.personEmail)) next.email=decision.personEmail;
+      if(decision.personPhone && validPhone(decision.personPhone)) next.phone=decision.personPhone;
+      next.decisionMakerSource=decision.geminiGrounded?'Gemini grounded search':'AI grounded web research';
+      next.decisionMakerConfidence=confidence;
+      next.linkedinMatchConfidence=confidence;
+      next.linkedinMatchNotes=`AI research matched ${person.name}${person.title?' - '+person.title:''}. ${person.evidence||decision.notes||''}`.trim();
+    }else{
+      next.decisionMakerFirstName='Unverified';
+      next.decisionMakerLastName='';
+      next.decisionMakerConfidence=confidence||'none';
+      next.decisionMakerSource='AI grounded web research';
+      next.aiDecisionMakerStatus=`AI decision-maker research did not return a confident person${decision.notes?': '+decision.notes:''}`;
+    }
+  }catch(e){
+    next.aiDecisionMakerStatus=`AI decision-maker research failed: ${e.message}`;
+  }
+  return sanitizeDecisionMaker(next);
+}
+
 async function enrichProspectWithRocketReach(p,options={}){
   const rocketReachKey=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
   if(!rocketReachKey) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
@@ -34872,6 +35085,9 @@ async function enrichProspect(p,opts={}){
       next.decisionMakerTitle = publicContact.leader.title || next.decisionMakerTitle || '';
       next.decisionMakerSource = publicContact.leader.source || '';
     }
+  }
+  if(String(next.leadProfile||'').toLowerCase()==='grace' || /Grace Fit Engine/i.test(String(next.scraperType||''))){
+    next=await enrichProspectWithGraceAiResearch(next,{decisionMakerResearch:opts.decisionMakerResearch!==false});
   }
   if(mode==='defer'){
     next = await enrichProspectWithApollo(next);
