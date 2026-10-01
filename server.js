@@ -272,8 +272,8 @@ const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) 
 const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
 const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),50);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || '';
-const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
-const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest').split(',').map(v=>v.trim()).filter(Boolean);
+const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3-flash-preview').split(',').map(v=>v.trim()).filter(Boolean);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
