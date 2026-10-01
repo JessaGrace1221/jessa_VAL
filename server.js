@@ -274,6 +274,7 @@ const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLL
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || '';
 const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3-flash-preview').split(',').map(v=>v.trim()).filter(Boolean);
+const GRACE_AI_RESEARCH_TIMEOUT_MS = Math.max(Number(process.env.GRACE_AI_RESEARCH_TIMEOUT_MS)||75000,30000);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -35136,13 +35137,13 @@ async function researchGraceDecisionMakerWithAi(p={}){
       const sourceUrls=[...new Set([...graceUsefulJsonArray(parsed.sourceUrls),...gemini.sourceUrls])];
       return {...parsed,sourceUrls,geminiGrounded:true,geminiModel:gemini.model};
     }catch(error){
-      const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1,timeoutMs:30000});
+      const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:3200,temperature:0.1,timeoutMs:GRACE_AI_RESEARCH_TIMEOUT_MS});
       const parsed=extractJsonObject(raw);
       const notes=[parsed.notes,`Gemini unavailable; OpenAI web fallback used. Gemini error: ${error.message}`].filter(Boolean).join(' ');
       return {...parsed,geminiGrounded:false,openAiFallbackAfterGemini:true,geminiError:error.message,notes};
     }
   }
-  const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1,timeoutMs:30000});
+  const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:3200,temperature:0.1,timeoutMs:GRACE_AI_RESEARCH_TIMEOUT_MS});
   return {...extractJsonObject(raw),geminiGrounded:false};
 }
 
