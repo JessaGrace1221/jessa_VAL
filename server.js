@@ -32931,6 +32931,87 @@ function graceCommunicationStyle(disc=''){
   return 'Mirror the public tone; lead with specific observation before any ask.';
 }
 
+const GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK=100000;
+const GRACE_DECISION_MAKER_TITLE_RE=/\b(owner|founder|co-?founder|chief|ceo|president|principal|partner|coo|cfo|cio|cto|vp|vice president|head of|director of|director,|revenue|growth|sales|operations|it|technology|information technology)\b/i;
+
+function graceHasDecisionMaker(p={}){
+  const name=String(p.decisionMakerName||p.primaryContact||'').trim();
+  const title=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
+  return !!(name && GRACE_DECISION_MAKER_TITLE_RE.test(title));
+}
+
+function graceEvidenceLedger(p={},reasons=[],painPoints=[]){
+  const text=graceText(p);
+  const sources=graceSourceUrls(p);
+  const source=sources[0]||p.website||p.googleMapsUrl||'source review needed';
+  const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
+  const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
+  const revenue=graceNumber(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue,p.estimatedAnnualRevenue);
+  const ledger=[];
+  const add=(claim,evidence,confidence='Medium',usedInEmail=true)=>ledger.push({claim,evidence,source,confidence,usedInEmail});
+  if(reasons.includes('B2B or high-value service model signal')) add('The business appears to sell a trust-heavy or high-value service.','Public category/service language matches B2B, commercial, enterprise, professional, managed, implementation, financial, healthcare, contractor, or other high-value service terms.');
+  if(reasons.includes('visible booking, quote, demo, or consultation motion')) add('The buyer journey likely depends on timing and next-step clarity.','Public text or listing includes booking, schedule, consult, quote, estimate, demo, call, appointment, assessment, contact, or request language.');
+  if(reasons.includes('operational complexity or team scale signal')) add('The company may have operational complexity worth auditing.','Public footprint indicates multi-location, franchise, regional/national, department/team language, or employee count at or above 20.');
+  if(reasons.includes('likely paid or campaign-driven lead flow')) add('There may be paid or campaign-driven demand to protect.','Public language references ads, paid campaigns, funnels, webinars, events, or similar acquisition motion.');
+  if(reviewCount>=50) add('There is visible demand volume.','Google/public review volume is at least 50 reviews.');
+  if(/cloud|aws|azure|data|infrastructure|network|colocation|storage|compute|security|compliance|saas|software|managed it|technology|it support|cyber/i.test(text)) add('Convergence may be able to inspect recoverable IT, data, cloud, or infrastructure spend.','Public language indicates cloud, AWS, Azure, data, infrastructure, network, storage, compute, security, compliance, SaaS, software, managed IT, or technology dependency.','High');
+  if(/multi.?location|franchise|locations|national|regional|enterprise|business units|distributed/i.test(text)) add('Fragmented operations may create savings or routing opportunities.','Public language indicates multi-location, franchise, regional/national, enterprise, business-unit, or distributed operations.');
+  if(employees>=200) add('The company appears large enough for a $100K+ annual unlock to be plausible.','Employee signal is at or above 200, matching the lower bound of the Convergence ideal client profile.','High');
+  if(revenue>=100000000) add('The company appears large enough for enterprise-level savings or conversion lift.','Revenue signal is at or above $100M, matching the lower bound of the Convergence ideal client profile.','High');
+  if(validEmail(p.email)||validPhone(p.phone)) add('There is a usable contact path for review or verification.','A public email or phone number was found.','Medium',false);
+  for(const point of painPoints.slice(0,2)) add('The likely sales friction can be personalized without guessing.',point,'Medium');
+  return ledger;
+}
+
+function graceQualificationProfile(p={},reasons=[],painPoints=[]){
+  const text=graceText(p);
+  const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
+  const revenue=graceNumber(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue,p.estimatedAnnualRevenue);
+  const reviewCount=Number(p.googleReviewCount||p.reviewCount||0);
+  const hasDecisionMaker=graceHasDecisionMaker(p);
+  const contactPath=validEmail(p.email)||validPhone(p.phone)||p.linkedinPersonalUrl;
+  const revenueCaptureSignals=[
+    reasons.includes('B2B or high-value service model signal'),
+    reasons.includes('visible booking, quote, demo, or consultation motion'),
+    /sales|growth|lead|marketing|pipeline|client|customer|conversion|book|quote|demo|consult|appointment/i.test(text),
+    reviewCount>=50,
+    reasons.includes('likely paid or campaign-driven lead flow')
+  ].filter(Boolean).length;
+  const convergenceSignals=[
+    /cloud|aws|azure|data|infrastructure|network|colocation|storage|compute|security|compliance|saas|software|managed it|technology|it support|cyber/i.test(text),
+    /multi.?location|franchise|locations|national|regional|enterprise|business units|distributed/i.test(text),
+    employees>=200,
+    revenue>=100000000,
+    /vendor|licensing|procurement|contract|data center|datacenter|cdn|erp/i.test(text)
+  ].filter(Boolean).length;
+  const dualFit=revenueCaptureSignals>=2 && convergenceSignals>=1;
+  const estimatedAnnualUnlock=dualFit
+    ? Math.max(GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK,(employees>=200||revenue>=100000000?150000:100000))
+    : revenueCaptureSignals>=3
+      ? 75000
+      : convergenceSignals>=2
+        ? 75000
+        : 0;
+  const holdReasons=[];
+  if(!hasDecisionMaker) holdReasons.push('Missing verified decision maker');
+  if(!contactPath) holdReasons.push('Missing usable contact path');
+  if(!dualFit) holdReasons.push('Needs dual-fit evidence');
+  if(estimatedAnnualUnlock<GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK) holdReasons.push('Below $100K plausible annual unlock threshold');
+  const qualificationStatus=holdReasons.length?'Research Hold':'Qualified for Import';
+  const researchHoldReason=holdReasons.join('; ');
+  return {hasDecisionMaker,contactPath:!!contactPath,revenueCaptureSignals,convergenceSignals,dualFit,estimatedAnnualUnlock,qualificationStatus,researchHoldReason,minimumUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK};
+}
+
+function graceLedgerText(ledger=[]){
+  return (ledger||[]).map((row,i)=>[
+    `${i+1}. Claim: ${row.claim}`,
+    `   Evidence: ${row.evidence}`,
+    `   Source: ${row.source}`,
+    `   Confidence: ${row.confidence}`,
+    `   Used in email: ${row.usedInEmail?'Yes':'No'}`
+  ].join('\n')).join('\n');
+}
+
 function graceFitProfile(p={}){
   const text=graceText(p);
   const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
@@ -32977,6 +33058,9 @@ function graceFitProfile(p={}){
   const witness=`What stands out about ${company}: ${flattering} The business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
   const firstAudit=`Start with the last 30-90 days of inbound forms, calls, booking requests, source attribution, follow-up attempts, appointment/no-show data, and closed/won outcomes.`;
   const communicationStyle=graceCommunicationStyle(disc);
+  const qualification=graceQualificationProfile(p,reasons,painPoints);
+  const evidenceLedger=graceEvidenceLedger(p,reasons,painPoints);
+  const emailProof=evidenceLedger.filter(row=>row.usedInEmail).slice(0,3).map(row=>row.evidence.replace(/\.$/,'')).join('; ');
   const personName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const personTitle=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
   const roleText=[personName,personTitle].filter(Boolean).join(' - ');
@@ -32991,13 +33075,13 @@ function graceFitProfile(p={}){
             ? 'that your role likely values specificity, urgency, and proof before anyone asks for time'
             : 'that your role likely sits close to whether interest becomes a real next step'
     : 'that I could not verify the right individual yet, so I treated this as a company-level read instead of pretending to know more than the data supports';
-  const psBusinessRead=[
+  const psBusinessRead=emailProof||[
     reasons[0]||'a consultative sales motion',
     reasons[1]||'visible buyer entry points',
     painPoints[0]||'a trust-heavy buyer journey'
   ].filter(Boolean).join('; ');
   const systemUse=`used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence instead of sending a generic lead-gen message.`;
-  const witnessPs=`P.S. What VAL found: ${roleText?`on the person side, ${roleText} suggests ${rolePressure}`:`on the person side, ${rolePressure}`}. On the business side, VAL saw ${psBusinessRead}. It then ${systemUse} That is the difference: the message is shaped by what the system can actually see about the person and the business.`;
+  const witnessPs=`P.S. What VAL found: ${roleText?`on the person side, ${roleText} suggests ${rolePressure}`:`on the person side, ${rolePressure}`}. On the business side, I am saying this because VAL saw ${psBusinessRead}. It then ${systemUse} That is the difference: the message is shaped by what the system can actually see about the person and the business.`;
   const mirrorEmailSubject=`What VAL noticed about ${company}`;
   const follow24Subject=`Re: ${company} lead follow-up`;
   const follow36Subject='The gap between interest and booked business';
@@ -33061,6 +33145,12 @@ function graceFitProfile(p={}){
     `Lead leakage hypothesis: ${leakage}`,
     `DISC estimate: ${disc}`,
     `Communication style: ${communicationStyle}`,
+    `Qualification status: ${qualification.qualificationStatus}`,
+    `Research hold reason: ${qualification.researchHoldReason||'none'}`,
+    `Dual fit: ${qualification.dualFit?'Yes':'No'}`,
+    `Estimated annual unlock: $${qualification.estimatedAnnualUnlock.toLocaleString()}`,
+    `Minimum annual unlock threshold: $${qualification.minimumUnlockThreshold.toLocaleString()}`,
+    `Evidence ledger:\n${graceLedgerText(evidenceLedger)||'source review needed'}`,
     `First audit angle: ${firstAudit}`,
     `Sources: ${sources.join(', ')||'source review needed'}`
   ].join('\n');
@@ -33081,6 +33171,9 @@ function graceFitProfile(p={}){
     witness,
     firstAudit,
     witnessPs,
+    evidenceLedger,
+    evidenceLedgerText:graceLedgerText(evidenceLedger),
+    qualification,
     packet,
     mirrorEmailSubject,
     mirrorEmail,
@@ -33093,13 +33186,16 @@ function graceFitProfile(p={}){
     linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where generic follow-up may flatten the value of the actual service. I think a free data audit could show whether qualified prospects are getting lost in timing, routing, or message mismatch.`,
     callOpener:`I reached out because ${company} looks like a business where a lead's first response needs to create trust quickly. I wanted to see whether a free audit of response, routing, and follow-up would show any hidden profit in the current system.`,
     handoff:`Review before contact. ${why} Suggested tone: ${communicationStyle} First audit: ${firstAudit}`,
-    reviewNeeded:score<65 || confidence==='Low'
+    reviewNeeded:score<65 || confidence==='Low' || qualification.qualificationStatus!=='Qualified for Import'
   };
 }
 
 function scoreGraceFitLead(raw={}){
   const profile=graceFitProfile(raw);
   const leadScore=profile.score>=80?1:profile.score>=65?2:profile.score>=50?3:4;
+  const qualification=profile.qualification||{};
+  const qualificationStatus=qualification.qualificationStatus||'Research Hold';
+  const researchHoldReason=qualification.researchHoldReason||'Needs human review before outreach';
   const scored={
     ...raw,
     leadProfile:'grace',
@@ -33111,8 +33207,16 @@ function scoreGraceFitLead(raw={}){
     revenueLeakPotential:profile.leakPotential,
     auditPriority:profile.auditPriority,
     leadScore,
-    leadScoreReason:`${profile.tier}: ${profile.reasons.join('; ')||'needs human review'}`,
-    evidenceSummary:profile.reasons.join('; '),
+    leadScoreReason:`${qualificationStatus}: ${profile.tier}: ${profile.reasons.join('; ')||'needs human review'}`,
+    evidenceSummary:[profile.reasons.join('; '),`Qualification status: ${qualificationStatus}`,`Dual fit: ${qualification.dualFit?'Yes':'No'}`,`Estimated annual unlock: $${Number(qualification.estimatedAnnualUnlock||0).toLocaleString()}`,researchHoldReason?`Research hold reason: ${researchHoldReason}`:''].filter(Boolean).join('\n'),
+    evidenceLedger:profile.evidenceLedger,
+    evidenceLedgerText:profile.evidenceLedgerText,
+    qualificationStatus,
+    researchHoldReason,
+    dualFit:!!qualification.dualFit,
+    estimatedAnnualUnlock:qualification.estimatedAnnualUnlock||0,
+    minimumUnlockThreshold:qualification.minimumUnlockThreshold||GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK,
+    hasDecisionMaker:!!qualification.hasDecisionMaker,
     industryPainPoints:profile.painPoints.join('\n'),
     leadLeakageHypothesis:profile.leakage,
     firstAuditAngle:profile.firstAudit,
@@ -33135,6 +33239,7 @@ function scoreGraceFitLead(raw={}){
     callOpener:profile.callOpener,
     internalHandoffNotes:profile.handoff,
     approvedToContact:false,
+    doNotContactReason:qualificationStatus==='Qualified for Import'?'Review required before outbound approval':researchHoldReason,
     enrichmentStatus:raw.enrichmentStatus||raw.leadEnrichmentStatus||'preview_generated',
     lastEnrichedAt:new Date().toISOString(),
     reviewNeeded:profile.reviewNeeded,
@@ -33189,7 +33294,12 @@ async function discoverGraceFitLeads(body={}){
       : {...lead,rocketReachStatus:'deferred until review'};
     return scoreGraceFitLead(next);
   });
-  const leads=enriched.sort((a,b)=>Number(a.leadScore||4)-Number(b.leadScore||4)||Number(b.valFitScore||0)-Number(a.valFitScore||0)).slice(0,plan.limit);
+  const leads=enriched.sort((a,b)=>
+    Number(!!b.dualFit)-Number(!!a.dualFit)
+    || Number(b.estimatedAnnualUnlock||0)-Number(a.estimatedAnnualUnlock||0)
+    || Number(a.leadScore||4)-Number(b.leadScore||4)
+    || Number(b.valFitScore||0)-Number(a.valFitScore||0)
+  ).slice(0,plan.limit);
   const result={
     ok:!!leads.length,
     leadProfile:'grace',
@@ -33208,7 +33318,11 @@ async function discoverGraceFitLeads(body={}){
       rawBusinessesSearched:raw.length,
       priorityCount:leads.filter(l=>Number(l.leadScore)===1).length,
       strongCount:leads.filter(l=>Number(l.leadScore)===2).length,
-      reviewCount:leads.filter(l=>l.reviewNeeded).length
+      reviewCount:leads.filter(l=>l.reviewNeeded).length,
+      dualFitCount:leads.filter(l=>l.dualFit).length,
+      qualifiedForImportCount:leads.filter(l=>l.qualificationStatus==='Qualified for Import').length,
+      researchHoldCount:leads.filter(l=>l.qualificationStatus==='Research Hold').length,
+      minimumAnnualUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK
     },
     outreachPolicy:{mode:'review_first',active:false}
   };
@@ -33227,9 +33341,11 @@ function graceFitPreviewText(discovered={}){
     '',
     ...leads.map((p,i)=>[
       `${i+1}. ${p.organizationName||p.name||'Unnamed prospect'}`,
-      `   VAL fit: ${p.valFitScore}/100 - ${p.valFitTier}`,
-      `   Confidence: ${p.fitConfidence} | Leak potential: ${p.revenueLeakPotential} | Audit priority: ${p.auditPriority}`,
-      `   Why this company: ${p.whyThisCompany||'Needs review'}`,
+	    `   VAL fit: ${p.valFitScore}/100 - ${p.valFitTier}`,
+	    `   Confidence: ${p.fitConfidence} | Leak potential: ${p.revenueLeakPotential} | Audit priority: ${p.auditPriority}`,
+	    `   Qualification: ${p.qualificationStatus||'Research Hold'} | Dual fit: ${p.dualFit?'Yes':'No'} | Plausible annual unlock: $${Number(p.estimatedAnnualUnlock||0).toLocaleString()}`,
+	    p.researchHoldReason?`   Hold reason: ${p.researchHoldReason}`:'',
+	    `   Why this company: ${p.whyThisCompany||'Needs review'}`,
       `   Witness insight: ${p.witnessInsight||'Needs review'}`,
       `   DISC / style: ${p.discEstimate||'Unknown'} | ${p.communicationStyle||'mirror public tone'}`,
       `   First audit angle: ${p.firstAuditAngle||'Lead response and follow-up review'}`,
@@ -33269,9 +33385,9 @@ function graceCustomFieldsFromProspect(raw={}){
     gi_fit_confidence:p.fitConfidence||'',
     gi_revenue_leak_potential:p.revenueLeakPotential||'',
     gi_audit_priority:p.auditPriority||'',
-    gi_review_status:'Needs review',
+    gi_review_status:p.qualificationStatus||'Needs review',
     gi_source_urls:sources.join('\n'),
-    gi_evidence_summary:p.evidenceSummary||'',
+    gi_evidence_summary:[p.evidenceSummary,p.evidenceLedgerText?`Evidence ledger:\n${p.evidenceLedgerText}`:''].filter(Boolean).join('\n\n'),
     gi_industry_pain_points:p.industryPainPoints||'',
     gi_lead_leakage_hypothesis:p.leadLeakageHypothesis||'',
     gi_first_audit_angle:p.firstAuditAngle||'',
@@ -33295,7 +33411,7 @@ function graceCustomFieldsFromProspect(raw={}){
     gi_call_opener:p.callOpener||'',
     gi_internal_handoff_notes:p.internalHandoffNotes||'',
     gi_approved_to_contact:'No',
-    gi_do_not_contact_reason:p.reviewNeeded?'Needs human review before outreach':'',
+    gi_do_not_contact_reason:p.doNotContactReason||p.researchHoldReason||(p.reviewNeeded?'Needs human review before outreach':'Review required before outbound approval'),
     gi_enrichment_status:p.enrichmentStatus||'preview_generated',
     gi_last_enriched_at:p.lastEnrichedAt||new Date().toISOString()
   };
@@ -33612,7 +33728,19 @@ async function upsertGhlGraceLead(raw={}){
   const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
   const customFields=leadCustomFieldPayloads(ids,fields);
   const duplicate=await findExistingGhlLeadDuplicate(p);
-  const tags=['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence','review-before-contact',...(Array.isArray(p.tags)?p.tags:[])].filter(Boolean);
+  const qualificationStatus=p.qualificationStatus||'Research Hold';
+  const researchHold=qualificationStatus==='Research Hold';
+  const tags=[
+    'Grace Intelligence',
+    'free-data-audit',
+    'revenue-leak-review',
+    'val-lead-intelligence',
+    'review-before-contact',
+    p.dualFit?'GI Dual Fit':'',
+    researchHold?'GI Research Hold':'GI Qualified For Import',
+    researchHold?'Email Jessa - Research Hold':'',
+    ...(Array.isArray(p.tags)?p.tags:[])
+  ].filter(Boolean);
   const decisionName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
   const contactPayload=compactObject({
@@ -33662,15 +33790,21 @@ async function upsertGhlGraceLead(raw={}){
     `Fit confidence: ${p.fitConfidence}`,
     `Revenue leak potential: ${p.revenueLeakPotential}`,
     `Audit priority: ${p.auditPriority}`,
-    `Review status: Needs review`,
+    `Review status: ${qualificationStatus}`,
     `Approved to contact: No`,
-    `Do not contact reason: ${p.reviewNeeded?'Needs human review before outreach':'not set'}`,
+    `Do not contact reason: ${p.doNotContactReason||p.researchHoldReason||(p.reviewNeeded?'Needs human review before outreach':'Review required before outbound approval')}`,
+    `Dual fit: ${p.dualFit?'Yes':'No'}`,
+    `Estimated annual unlock: $${Number(p.estimatedAnnualUnlock||0).toLocaleString()}`,
+    `Minimum annual unlock threshold: $${Number(p.minimumUnlockThreshold||GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK).toLocaleString()}`,
+    `Research hold reason: ${p.researchHoldReason||'none'}`,
     `Enrichment status: ${p.enrichmentStatus||'preview_generated'}`,
     `Last enriched at: ${p.lastEnrichedAt||new Date().toISOString()}`,
     '',
     `Prospect packet:\n${p.prospectPacket||'not generated'}`,
     '',
     `Evidence summary:\n${p.evidenceSummary||'needs review'}`,
+    '',
+    `Evidence ledger:\n${p.evidenceLedgerText||'source review needed'}`,
     '',
     `Industry pain points:\n${p.industryPainPoints||'needs review'}`,
     '',

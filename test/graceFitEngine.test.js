@@ -39,6 +39,26 @@ test('Grace Fit Engine reuses lead discovery enrichment providers and does not c
   assert.match(graceImport,/forceUpdateCustomFields:forceUpdateCustomFields\|\|!!lead\.forceUpdateCustomFields/);
 });
 
+test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100K unlock',()=>{
+  assert.match(server,/const GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK=100000/);
+  assert.match(server,/const GRACE_DECISION_MAKER_TITLE_RE=/);
+  assert.match(server,/function graceHasDecisionMaker/);
+  assert.match(server,/function graceEvidenceLedger/);
+  assert.match(server,/function graceQualificationProfile/);
+  assert.match(server,/qualificationStatus=holdReasons\.length\?'Research Hold':'Qualified for Import'/);
+  assert.match(server,/Below \$100K plausible annual unlock threshold/);
+  assert.match(server,/Needs dual-fit evidence/);
+  assert.match(server,/Missing verified decision maker/);
+  assert.match(server,/Number\(!!b\.dualFit\)-Number\(!!a\.dualFit\)/);
+  const upsertStart=server.indexOf('async function upsertGhlGraceLead');
+  const upsertEnd=server.indexOf('async function importApprovedGraceLeads');
+  const graceUpsert=server.slice(upsertStart,upsertEnd);
+  assert.match(graceUpsert,/'GI Research Hold'/);
+  assert.match(graceUpsert,/'Email Jessa - Research Hold'/);
+  assert.match(graceUpsert,/'GI Dual Fit'/);
+  assert.match(graceUpsert,/Evidence ledger:\\n/);
+});
+
 test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   for(const key of [
     'gi_witness_insight',
@@ -65,9 +85,10 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/free data audit and show you where follow-up, routing, timing, or message mismatch/);
   assert.match(fitProfile,/const witnessPs=`P\.S\. What VAL found:/);
   assert.match(fitProfile,/on the person side/);
-  assert.match(fitProfile,/On the business side, VAL saw/);
+  assert.match(fitProfile,/On the business side, I am saying this because VAL saw/);
   assert.match(fitProfile,/used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence/);
   assert.match(fitProfile,/shaped by what the system can actually see about the person and the business/);
+  assert.match(fitProfile,/Evidence ledger:\\n/);
   assert.match(fitProfile,/mirrorEmail=\[[\s\S]*witnessPs[\s\S]*`Jessa`/);
   assert.match(fitProfile,/const follow24=\[[\s\S]*witnessPs[\s\S]*\]\.join/);
   assert.match(fitProfile,/const follow36=\[[\s\S]*witnessPs[\s\S]*\]\.join/);
