@@ -33430,6 +33430,11 @@ function graceAuditCustomFieldsFromIntake(raw={}){
     lead_scoring_version:'grace-audit-intake-v1',
     scraper_type:'Grace Website Audit Intake',
     review_needed:'true',
+    gi_val_fit_score:String(p.valFitScore||''),
+    gi_val_fit_tier:p.valFitTier,
+    gi_fit_confidence:p.fitConfidence,
+    gi_revenue_leak_potential:p.revenueLeakPotential,
+    gi_audit_priority:p.auditPriority,
     gi_review_status:'Needs audit review',
     gi_enrichment_status:'website_audit_intake',
     gi_approved_to_contact:'No',
@@ -33439,6 +33444,11 @@ function graceAuditCustomFieldsFromIntake(raw={}){
     gi_lead_leakage_hypothesis:p.leadLeakageHypothesis,
     gi_first_audit_angle:p.firstAuditAngle,
     gi_why_this_company:p.whyThisCompany,
+    gi_industry_pain_points:p.industryPainPoints,
+    gi_disc_estimate:p.discEstimate,
+    gi_communication_style:p.communicationStyle,
+    gi_personalization_notes:p.personalizationNotes,
+    gi_flattering_observation:p.flatteringObservation,
     gi_witness_insight:p.witnessInsight,
     gi_prospect_packet:p.prospectPacket,
     gi_mirror_email_subject:p.mirrorEmailSubject,
@@ -33457,7 +33467,7 @@ async function upsertGhlGraceAuditIntake(body={}){
   const p=graceAuditIntakeFromPayload(body);
   if(!validEmail(p.email) && !validPhone(p.phone)) throw new Error('Please provide a valid email or phone number.');
   if(!p.organizationName) throw new Error('Company is required.');
-  const fields=graceAuditCustomFieldsFromIntake(p);
+  const fields=graceAuditCustomFieldsFromIntake(body);
   const ids=await resolveLeadFieldIds(true).catch(()=>GHL_LEAD_FIELD_IDS);
   const customFields=leadCustomFieldPayloads(ids,fields);
   const duplicate=await findExistingGhlLeadDuplicate(p);
@@ -33481,8 +33491,7 @@ async function upsertGhlGraceAuditIntake(body={}){
   if(contactId){
     const existing=await ghlStrict('GET',`/contacts/${contactId}`).catch(()=>null);
     const updatePayload=frissonMissingStandardPayload(existing,contactPayload);
-    const missingCustomFields=existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields;
-    if(missingCustomFields.length) updatePayload.customFields=missingCustomFields;
+    if(customFields.length) updatePayload.customFields=customFields;
     if(Object.keys(updatePayload).length) await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
   }else{
     const created=await ghlStrict('POST','/contacts',contactPayload);

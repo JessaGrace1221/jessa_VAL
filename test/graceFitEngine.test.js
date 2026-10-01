@@ -68,13 +68,21 @@ test('Grace website audit intake maps form payloads into GHL review fields',()=>
   assert.match(server,/gi_approved_to_contact:'No'/);
   assert.match(server,/Website audit intake requires team review before outreach/);
   assert.match(server,/Grace Intelligence free data audit intake/);
+  assert.match(server,/const fields=graceAuditCustomFieldsFromIntake\(body\)/);
+  assert.match(server,/gi_val_fit_score:String\(p\.valFitScore/);
+  assert.match(server,/gi_val_fit_tier:p\.valFitTier/);
+  assert.match(server,/gi_fit_confidence:p\.fitConfidence/);
+  assert.match(server,/gi_audit_priority:p\.auditPriority/);
   const auditIntake=server.slice(server.indexOf('function graceAuditIntakeFromPayload'),server.indexOf('function graceAuditCustomFieldsFromIntake'));
   assert.match(auditIntake,/mirrorEmailSubject=`Free data audit for/);
   assert.doesNotMatch(auditIntake,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);
   assert.doesNotMatch(auditIntake,/followup24:`Subject:/);
   assert.doesNotMatch(auditIntake,/followup36:`Subject:/);
   assert.doesNotMatch(auditIntake,/followup5Day:`Subject:/);
-  assert.doesNotMatch(server.slice(server.indexOf('async function upsertGhlGraceAuditIntake'),server.indexOf('async function upsertGhlGraceLead')),/createGhlOpportunity/);
+  const auditUpsert=server.slice(server.indexOf('async function upsertGhlGraceAuditIntake'),server.indexOf('async function upsertGhlGraceLead'));
+  assert.doesNotMatch(auditUpsert,/createGhlOpportunity/);
+  assert.match(auditUpsert,/if\(customFields\.length\) updatePayload\.customFields=customFields/);
+  assert.doesNotMatch(auditUpsert,/missingCustomFields/);
 });
 
 test('Hearth scraper UI includes Grace Fit Engine endpoints',()=>{
