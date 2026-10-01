@@ -33268,7 +33268,13 @@ function graceCustomerFacingDemonstration(value='',fallback=''){
 }
 
 function graceOutboundQuestion(value=''){
-  const text=String(value||'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'');
+  const text=String(value||'')
+    .replace(/\s+/g,' ')
+    .trim()
+    .replace(/^not more activity first,\s*but\s*/i,'')
+    .replace(/^not that you need more activity,\s*but\s*/i,'')
+    .replace(/^the real question is\s*/i,'')
+    .replace(/[.?!]+$/,'');
   if(!text) return 'whether existing demand is being converted with enough precision after someone raises their hand';
   if(/^whether\b/i.test(text)) return text.charAt(0).toLowerCase()+text.slice(1);
   return `whether ${text.charAt(0).toLowerCase()+text.slice(1)}`;
@@ -33314,6 +33320,12 @@ function graceTrimSentenceEnd(value=''){
   return String(value||'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'');
 }
 
+function graceLowerLead(value=''){
+  const text=String(value||'').trim();
+  if(!text) return '';
+  return text.charAt(0).toLowerCase()+text.slice(1);
+}
+
 function graceShortOutbound(value='',fallback='',max=260){
   const text=graceCleanOutboundSentence(value,fallback);
   if(text.length<=max) return text;
@@ -33338,12 +33350,14 @@ function graceCleanSubjectLine(value='',fallback=''){
 function graceEvidencePs({personName='',personTitle='',displayCompany='',prospectTheory={},evidenceLedger=[],aiOutreach={},kind='mirror'}={}){
   const cleanStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
   const dmEvidence=evidenceLedger.find(row=>/decision maker|founder|ceo|owner|president|principal/i.test(`${row.claim||''} ${row.evidence||''}`));
-  const businessEvidence=evidenceLedger.find(row=>/lead|call|book|job|revenue|growth|portal|assessment|consult|quote|demo|inbound|service|offer/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const specificBusinessEvidence=evidenceLedger.find(row=>/lead|call|book|job|revenue|growth|portal|assessment|consult|quote|demo|inbound|offer/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const serviceBusinessEvidence=evidenceLedger.find(row=>/service|b2b|commercial|professional|trust-heavy|high-value/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const businessEvidence=specificBusinessEvidence||serviceBusinessEvidence;
   const personPiece=personName
     ? `${personName}${personTitle?` appears to sit in the ${personTitle} seat`:''}`
     : `the person in this seat matters`;
   const personProof=dmEvidence?.evidence||`${personTitle||'the role'} connects directly to growth, reputation, and follow-through`;
-  const businessPiece=businessEvidence?.claim||prospectTheory.bestOpening||`${displayCompany} has visible buyer-intent signals`;
+  const businessPiece=graceLowerLead(businessEvidence?.claim||prospectTheory.bestOpening||`${displayCompany} has visible buyer-intent signals`);
   const businessProof=businessEvidence?.evidence||prospectTheory.bestProof||prospectTheory.bestAuditQuestion||'the available public path shows consultation, assessment, booking, or follow-up complexity';
   const usePiece=kind==='mirror'
     ? `I used that to frame this around buyer-state follow-up instead of generic lead generation`
@@ -33448,7 +33462,7 @@ function graceFitProfile(p={}){
 		    '',
 		    `That is the question I would want to test at ${displayCompany}: ${tensionLine}.`,
 		    '',
-		    safeClaimLine,
+		    `${safeClaimLine}.`,
 		    '',
 		    `My read is not that you need more activity. It is ${opportunityQuestion}.`,
 	    '',
@@ -33465,7 +33479,7 @@ function graceFitProfile(p={}){
 	    '',
 	    `It usually looks like a good inquiry that gets an ordinary next step.`,
 	    '',
-	    consequenceLine,
+	    `${consequenceLine}.`,
 	    '',
 	    `That is why I would not start by changing your sales process. I would start by finding the moments where the buyer state was visible, but the follow-up did not change.`,
 	    '',
