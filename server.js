@@ -33171,12 +33171,86 @@ function graceProspectTheoryText(theory={}){
     `Observed: ${theory.observed||'needs review'}`,
     `Likely commercial problem: ${theory.likelyCommercialProblem||'needs review'}`,
     `Why: ${theory.why||'needs review'}`,
+    theory.commercialTension?`Commercial tension: ${theory.commercialTension}`:'',
+    theory.safeClaim?`Safe claim: ${theory.safeClaim}`:'',
+    theory.counterargument?`Counterargument: ${theory.counterargument}`:'',
     `Potential consequence: ${theory.potentialConsequence||'needs review'}`,
     `VAL hypothesis: ${theory.valHypothesis||'needs review'}`,
     `Best opening: ${theory.bestOpening||'needs review'}`,
     `Best proof: ${theory.bestProof||'needs review'}`,
+    theory.bestAuditQuestion?`Best audit question: ${theory.bestAuditQuestion}`:'',
+    theory.demonstrationIdea?`Demonstration idea: ${theory.demonstrationIdea}`:'',
     `Best CTA: ${theory.bestCta||'needs review'}`
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+function graceNestedValue(obj,path,fallback=''){
+  let cur=obj;
+  for(const key of path){
+    if(cur && typeof cur==='object' && Object.prototype.hasOwnProperty.call(cur,key)) cur=cur[key];
+    else return fallback;
+  }
+  return cur===undefined||cur===null||cur===''?fallback:cur;
+}
+
+function graceResearchArray(value){
+  if(Array.isArray(value)) return value.map(item=>graceUsefulJsonText(item)).filter(Boolean);
+  if(typeof value==='string' && value.trim()) return value.split(/[;\n]/).map(v=>v.trim()).filter(Boolean);
+  return [];
+}
+
+function graceResearchEvidenceText(items=[]){
+  const rows=Array.isArray(items)?items:[];
+  return rows.map(item=>{
+    if(typeof item==='string') return item.trim();
+    if(!item || typeof item!=='object') return '';
+    return [
+      item.claim?`Claim: ${item.claim}`:'',
+      item.evidence?`Evidence: ${item.evidence}`:'',
+      item.source_url||item.sourceUrl?`Source: ${item.source_url||item.sourceUrl}`:'',
+      item.confidence?`Confidence: ${item.confidence}`:'',
+      item.fact_or_inference?`Type: ${item.fact_or_inference}`:''
+    ].filter(Boolean).join(' | ');
+  }).filter(Boolean).join('\n');
+}
+
+function graceAiResearchProspectTheory(ai={},localTheory={}){
+  const pt=ai.prospect_theory||{};
+  const counter=ai.counterargument||{};
+  const outreach=ai.outreach_strategy||{};
+  const audit=ai.audit_strategy||{};
+  return {
+    ...localTheory,
+    dominantAngle:pt.dominant_argument||localTheory.dominantAngle,
+    observed:pt.observed||localTheory.observed,
+    likelyCommercialProblem:pt.likely_commercial_problem||localTheory.likelyCommercialProblem,
+    why:pt.why||localTheory.why,
+    commercialTension:pt.commercial_tension||localTheory.commercialTension||'',
+    potentialConsequence:pt.potential_consequence||localTheory.potentialConsequence,
+    valHypothesis:pt.val_hypothesis||localTheory.valHypothesis,
+    bestOpening:outreach.strongest_opening_angle||pt.demonstration_idea||localTheory.bestOpening,
+    bestProof:pt.best_proof||outreach.proof_mechanism||localTheory.bestProof,
+    bestAuditQuestion:pt.best_audit_question||audit.primary_question||localTheory.bestAuditQuestion||'',
+    bestCta:pt.best_cta||outreach.cta_strategy||localTheory.bestCta,
+    demonstrationIdea:pt.demonstration_idea||outreach.proof_mechanism||localTheory.demonstrationIdea||'',
+    safeClaim:counter.safe_claim||localTheory.safeClaim||'',
+    counterargument:counter.strongest_counterargument||localTheory.counterargument||'',
+    followUpRoles:Array.isArray(outreach.follow_up_roles)?outreach.follow_up_roles:[],
+    interpretations:localTheory.interpretations||[]
+  };
+}
+
+function graceAiCommunicationStyle(ai={},fallback=''){
+  const cs=ai.communication_style||{};
+  const pieces=[
+    cs.opening_tone?`Opening tone: ${cs.opening_tone}`:'',
+    cs.sentence_length?`Sentence length: ${cs.sentence_length}`:'',
+    cs.proof_style?`Proof style: ${cs.proof_style}`:'',
+    cs.cta_style?`CTA style: ${cs.cta_style}`:'',
+    cs.pace?`Pace: ${cs.pace}`:'',
+    Array.isArray(cs.avoid)&&cs.avoid.length?`Avoid: ${cs.avoid.join('; ')}`:''
+  ].filter(Boolean);
+  return pieces.length?pieces.join(' | '):fallback;
 }
 
 function graceFitProfile(p={}){
@@ -33217,12 +33291,37 @@ function graceFitProfile(p={}){
   const communicationStyle=graceCommunicationStyle(disc);
   const qualification=graceQualificationProfile(p,reasons,painPoints);
   const evidenceLedger=graceEvidenceLedger(p,reasons,painPoints);
+  const aiResearch=p.aiDecisionMakerResearch&&typeof p.aiDecisionMakerResearch==='object'?p.aiDecisionMakerResearch:{};
+  const aiLedger=Array.isArray(aiResearch.evidence_ledger)?aiResearch.evidence_ledger:[];
+  const mergedEvidenceLedger=aiLedger.length
+    ? aiLedger.map(row=>({
+      claim:row.claim||'AI research claim',
+      evidence:row.evidence||row.evidenceText||'Evidence needs review',
+      source:row.source_url||row.sourceUrl||sources[0]||p.website||'source review needed',
+      confidence:row.confidence||'Medium',
+      usedInEmail:row.usedInEmail!==false,
+      factOrInference:row.fact_or_inference||''
+    }))
+    : evidenceLedger;
   const personName=String(p.decisionMakerName||p.primaryContact||'').trim();
   const personTitle=String(p.decisionMakerTitle||p.title||p.contactTitle||'').trim();
   const hasPersonForOutbound=!!personName;
-  const prospectTheory=graceProspectTheory({p,company,industry,reasons,painPoints,evidenceLedger,qualification});
+  const prospectTheory=graceAiResearchProspectTheory(aiResearch,graceProspectTheory({p,company,industry,reasons,painPoints,evidenceLedger:mergedEvidenceLedger,qualification}));
   const prospectTheoryText=graceProspectTheoryText(prospectTheory);
   const firstName=personName.split(/\s+/)[0]||'there';
+  const aiWitness=graceNestedValue(aiResearch,['witness_insight','observation'],'');
+  const aiSafeClaim=prospectTheory.safeClaim||'';
+  const aiCommercialTension=prospectTheory.commercialTension||'';
+  const aiAuditQuestion=prospectTheory.bestAuditQuestion||graceNestedValue(aiResearch,['audit_strategy','primary_question'],'');
+  const aiAuditData=graceResearchArray(graceNestedValue(aiResearch,['audit_strategy','data_to_inspect'],[]));
+  const aiCommunicationStyle=graceAiCommunicationStyle(aiResearch,communicationStyle);
+  const aiDisc=graceNestedValue(aiResearch,['communication_style','primary_disc_hypothesis'],'') || disc;
+  const aiOutreach=aiResearch.outreach_strategy||{};
+  const witnessFinal=aiWitness || witness;
+  const leakageFinal=prospectTheory.valHypothesis || leakage;
+  const firstAuditFinal=aiAuditQuestion
+    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
+    : firstAudit;
   const roleFrame=personTitle
     ? /owner|founder|ceo|president|principal|partner/i.test(personTitle)
       ? 'I am guessing this matters because you are protecting reputation and growth at the same time.'
@@ -33236,28 +33335,32 @@ function graceFitProfile(p={}){
     : '';
   const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
   const quietPs=personName
-    ? `P.S. I am not guessing from a list. I used the public signals around ${company} to decide which buyer-state problem to lead with, which proof to use, and what the audit should inspect first.`
+    ? (aiOutreach.ps_strategy && !/research process|scrap|score|confidence|disc|qualification|research hold/i.test(String(aiOutreach.ps_strategy))
+      ? `P.S. ${String(aiOutreach.ps_strategy).replace(/^p\.?s\.?\s*/i,'').trim()}`
+      : `P.S. The cleanest place to start would be one narrow question: ${aiAuditQuestion||'are different buyer states receiving different follow-up, or are they being pushed through the same path?'}`)
     : `P.S. I could not verify the right person yet, so this should stay in research hold. The company-level read is strong enough to review, but not enough to pretend this is ready for live outbound.`;
-  const mirrorEmailSubject=hasPersonForOutbound?`A buyer-state question for ${company}`:'';
+  const mirrorEmailSubject=hasPersonForOutbound?(aiOutreach.subject_line_direction && !/subject line/i.test(String(aiOutreach.subject_line_direction))?String(aiOutreach.subject_line_direction).slice(0,90):`A buyer-state question for ${company}`):'';
   const follow24Subject=hasPersonForOutbound?'The part most CRMs miss':'';
   const follow36Subject=hasPersonForOutbound?'Where the audit would start':'';
   const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
   const mirrorEmail=hasPersonForOutbound?[
     `Hi ${firstName},`,
-    '',
-    prospectTheory.bestOpening,
-    '',
-    `That is the part I would want to look at inside ${company}: whether your follow-up can tell the difference before the next message goes out.`,
-    '',
-    evidenceLine,
-    '',
-    `My read is that the opportunity is ${prospectTheory.likelyCommercialProblem}.`,
+	    '',
+	    prospectTheory.demonstrationIdea||prospectTheory.bestOpening,
+	    '',
+	    aiCommercialTension
+	      ? `That is the commercial tension I would want to test inside ${company}: ${aiCommercialTension}`
+	      : `That is the part I would want to look at inside ${company}: whether your follow-up can tell the difference before the next message goes out.`,
+	    '',
+	    aiSafeClaim || evidenceLine,
+	    '',
+	    `My read is that the opportunity is ${prospectTheory.likelyCommercialProblem}.`,
     '',
     prospectTheory.potentialConsequence,
     '',
     `Grace Intelligence is built for that moment. VAL reads the lead before the response happens, then shapes the next email, text, routing decision, proof point, and follow-up path around what the buyer is actually showing.`,
     '',
-    `The free audit would simply test the theory against your last 30-90 days of inbound activity: who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet.`,
+	    `The free audit would simply test the theory against your last 30-90 days of inbound activity: ${aiAuditQuestion||'who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet'}.`,
     '',
     roleFrame,
     '',
@@ -33269,8 +33372,8 @@ function graceFitProfile(p={}){
     `The part most CRMs miss is not the form submission.`,
     '',
     `It is the state of the buyer behind it.`,
-    '',
-    prospectTheory.bestOpening,
+	    '',
+	    prospectTheory.demonstrationIdea||prospectTheory.bestOpening,
     '',
     `If those buyers receive the same first response, the system is asking automation to do something your best person would never do: ignore context.`,
     '',
@@ -33279,9 +33382,9 @@ function graceFitProfile(p={}){
   const follow36=hasPersonForOutbound?[
     `If we did the audit, I would not start by asking you to believe in Grace Intelligence.`,
     '',
-    `I would start by proving or disproving this theory: ${prospectTheory.likelyCommercialProblem}.`,
+	    `I would start by proving or disproving this theory: ${aiSafeClaim||prospectTheory.likelyCommercialProblem}.`,
     '',
-    `The first pass would look at the last 30-90 days of inquiries, source, speed-to-lead, first response, follow-up sequence, appointments, no-shows, stale pipeline, and closed/won outcomes.`,
+	    `The first pass would look at ${aiAuditData.length?aiAuditData.slice(0,10).join(', '):'the last 30-90 days of inquiries, source, speed-to-lead, first response, follow-up sequence, appointments, no-shows, stale pipeline, and closed/won outcomes'}.`,
     '',
     `If there is no meaningful gap, you know quickly. If there is, the next step becomes obvious: build the system that makes that profit easier to capture every day.`
   ].join('\n'):'';
@@ -33304,21 +33407,24 @@ function graceFitProfile(p={}){
     `Confidence: ${confidence}`,
     `Revenue leak potential: ${leakPotential}`,
     `Why this company: ${why}`,
-    `Witness insight: ${witness}`,
-    `Industry pain points: ${painPoints.join('; ')}`,
-    `Lead leakage hypothesis: ${leakage}`,
-    `Prospect theory:\n${prospectTheoryText}`,
-    `DISC estimate: ${disc}`,
-    `Communication style: ${communicationStyle}`,
+	    `Witness insight: ${witnessFinal}`,
+	    `Industry pain points: ${painPoints.join('; ')}`,
+	    `Lead leakage hypothesis: ${leakageFinal}`,
+	    aiResearch.commercial_theories?`Commercial theories:\n${graceResearchEvidenceText(aiResearch.commercial_theories)}`:'',
+	    `Prospect theory:\n${prospectTheoryText}`,
+	    `Counterargument: ${prospectTheory.counterargument||'needs review'}`,
+	    `DISC estimate: ${aiDisc}`,
+	    `Communication style: ${aiCommunicationStyle}`,
     `Qualification status: ${qualification.qualificationStatus}`,
     `Research hold reason: ${qualification.researchHoldReason||'none'}`,
     `Dual fit: ${qualification.dualFit?'Yes':'No'}`,
     `Estimated annual unlock: $${qualification.estimatedAnnualUnlock.toLocaleString()}`,
     `Minimum annual unlock threshold: $${qualification.minimumUnlockThreshold.toLocaleString()}`,
-    `Evidence ledger:\n${graceLedgerText(evidenceLedger)||'source review needed'}`,
-    `First audit angle: ${firstAudit}`,
-    `Sources: ${sources.join(', ')||'source review needed'}`
-  ].join('\n');
+	    `Evidence ledger:\n${graceLedgerText(mergedEvidenceLedger)||'source review needed'}`,
+	    aiLedger.length?`AI evidence ledger:\n${graceResearchEvidenceText(aiLedger)}`:'',
+	    `First audit angle: ${firstAuditFinal}`,
+	    `Sources: ${sources.join(', ')||'source review needed'}`
+	  ].filter(Boolean).join('\n');
 
   return {
     score:Math.min(100,score),
@@ -33328,17 +33434,17 @@ function graceFitProfile(p={}){
     auditPriority,
     reasons,
     painPoints,
-    disc,
-    communicationStyle,
-    flattering,
-    leakage,
-    why,
-    witness,
-    firstAudit,
-    prospectTheory,
-    prospectTheoryText,
-    evidenceLedger,
-    evidenceLedgerText:graceLedgerText(evidenceLedger),
+	    disc:aiDisc,
+	    communicationStyle:aiCommunicationStyle,
+	    flattering,
+	    leakage:leakageFinal,
+	    why,
+	    witness:witnessFinal,
+	    firstAudit:firstAuditFinal,
+	    prospectTheory,
+	    prospectTheoryText,
+	    evidenceLedger:mergedEvidenceLedger,
+	    evidenceLedgerText:graceLedgerText(mergedEvidenceLedger),
     qualification,
     packet,
     mirrorEmailSubject,
@@ -33351,7 +33457,7 @@ function graceFitProfile(p={}){
     follow5,
     linkedinDm:hasPersonForOutbound?`I looked at ${company} and had a specific buyer-state question: ${prospectTheory.bestOpening} I think a free audit could show whether follow-up is adapting to that difference or treating every inquiry the same.`:'',
     callOpener:hasPersonForOutbound?`I reached out because ${company} looks like a business where the follow-up needs to recognize the buyer state quickly. I wanted to see whether a free audit could test where existing demand is stalling after the first hand raise.`:'',
-    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\n${hasPersonForOutbound?'Prospect-facing copy generated.':'No prospect-facing copy generated because no decision maker was verified.'}\nSuggested tone: ${communicationStyle}\nFirst audit: ${firstAudit}`,
+	    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\n${hasPersonForOutbound?'Prospect-facing copy generated.':'No prospect-facing copy generated because no decision maker was verified.'}\nSuggested tone: ${aiCommunicationStyle}\nFirst audit: ${firstAuditFinal}`,
     reviewNeeded:score<65 || confidence==='Low' || qualification.qualificationStatus!=='Qualified for Import'
   };
 }
@@ -34934,10 +35040,12 @@ function graceDecisionMakerNameParts(value=''){
 }
 
 function graceAiDecisionPerson(decision={}){
-  const best=decision.bestPersonToSpeakTo||decision.bestDecisionMaker||decision.recommendedContact||{};
+  const preferred=decision.decision_maker?.preferred_person||{};
+  const best=decision.bestPersonToSpeakTo||decision.bestDecisionMaker||decision.recommendedContact||preferred||{};
   if(best&&typeof best==='object'){
+    const name=best.name||best.fullName||decision.decisionMakerName||[preferred.first_name,preferred.last_name].filter(Boolean).join(' ');
     return {
-      name:best.name||decision.decisionMakerName||'',
+      name,
       title:best.title||decision.decisionMakerTitle||'',
       confidence:best.confidence||decision.decisionMakerConfidence||'',
       evidence:best.reason||best.evidence||decision.decisionMakerEvidence||decision.notes||'',
@@ -34955,27 +35063,65 @@ function graceAiDecisionPerson(decision={}){
 
 async function researchGraceDecisionMakerWithAi(p={}){
   const prompt=[
-    'You are the Grace Intelligence decision-maker research step.',
+    'You are VAL’s Grace Intelligence Research Layer.',
     '',
-    'Use grounded public web search to identify the best person for a premium B2B revenue, lead-response, AI communication, and data audit conversation.',
+    'Your job is NOT to write outreach.',
+    '',
+    'Your job is to investigate the exact company and likely decision maker deeply enough that Grace Intelligence can build highly specific, emotionally intelligent, commercially useful, evidence-backed communication.',
+    '',
+    'You are a researcher, commercial analyst, buyer-journey analyst, and evidence judge. Research first, reason second, and only then recommend outreach strategy.',
     '',
     `Research this exact company: ${p.organizationName||p.name||'this company'} at ${[p.address1,p.city,p.state,p.postalCode].filter(Boolean).join(', ')}`,
+    '',
+    'Company website/domain:',
+    p.website||'',
     '',
     'Business facts:',
     graceLeadResearchFacts(p),
     '',
-    'Requirements:',
+    'Grace Intelligence context:',
+    '- Grace Intelligence is a premium AI revenue operations, lead intelligence, communication, buyer-state analysis, and data-audit system.',
+    '- Grace Intelligence is most valuable where meaningful profit may already exist in the pipeline but is being lost, delayed, under-converted, poorly routed, inadequately nurtured, or handled without enough buyer-specific intelligence.',
+    `- The target standard is a company where it is plausible that at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually could be recovered, protected, or expanded through better response, segmentation, routing, follow-up, attribution, reactivation, renewal protection, referral activation, cross-sell/upsell, or use of existing prospect/customer data.`,
+    '- Do not assume this threshold merely because the company is large or sells expensive services. Determine whether visible evidence makes it commercially plausible.',
+    '',
+    'Research principles:',
+    '- Separate directly observed facts, strong inferences, weak hypotheses, and unknowns.',
+    '- Never present an inference as a verified fact.',
+    '- Do not manufacture pain. Identify a commercially meaningful theory worth testing.',
+    '- One strong argument beats five weak ones. Select one dominant commercial theory for outreach.',
+    '- Look for tension between two true or likely conditions in the company’s buyer journey, service model, acquisition strategy, customer expectations, conversion process, communication, or economics.',
+    '- Every significant factual claim needs a source URL, evidence description, and confidence.',
+    '',
+    'Tasks:',
     '- Match the exact company/domain/location. Do not confuse similarly named businesses.',
-    '- Prefer owner, founder, CEO, president, COO, CRO, head of sales/growth/revenue, head of operations, CIO, CTO, IT/technology leader, or another executive with authority over revenue operations, lead conversion, customer communication, systems, or data.',
-    '- If you find a person, return first name and last name separately.',
-    '- If you find no reliable person, set decisionMakerFirstName to "Unverified", leave last name empty, and explain why.',
-    '- If you find a person but no direct person contact info, leave email and phone empty. Do not use generic company emails as person emails.',
-    '- Include source URLs and a short evidence sentence for the person match.',
-    '- Include public LinkedIn profile URLs only when the URL appears to be a person profile, not just a company page.',
+    '- Confirm company identity, business model, buyer type, service complexity, sales motion, and visible conversion paths.',
+    '- Study website language: recurring phrases, promises, proof points, differentiators, values, trust signals, emotional language, authority language, and what the company wants prospects to believe.',
+    '- Map the likely buyer journey and where different buyer states may need different communication.',
+    '- Generate multiple possible commercial theories where Grace Intelligence may create value. Consider buyer-state complexity, speed-to-lead, generic follow-up, high-CAC protection, lead prioritization, routing failure, sales handoff gaps, quote/proposal abandonment, no-show recovery, long-cycle nurture, stale pipeline, reactivation, referral underutilization, attribution gaps, multi-service routing, cross-sell/upsell gaps, renewal/churn risk, decision-maker mismatch, inconsistent rep follow-up, and message mismatch.',
+    '- For each plausible theory include evidence, confidence, likely commercial consequence, and the internal data that would confirm or disprove it.',
+    '- Select ONE dominant theory: the most specific, evidence-supported, economically meaningful reason Grace Intelligence should speak with this company.',
+    '- Build a Prospect Theory with observed evidence, likely commercial problem, why, commercial tension, potential consequence, VAL hypothesis, best proof, best audit question, and best CTA.',
+    '- Actively attempt to prove the Prospect Theory wrong. Return the strongest counterargument, what evidence would disprove it, and the safe claim Grace can make without pretending the hypothesis is already proven.',
+    '- Assess whether at least $100,000 annually in recoverable, protected, or expandable revenue is strongly plausible, plausible, possible but unproven, unlikely, or unsupported. Do not invent deal values, lead volume, conversion rates, marketing spend, or customer lifetime value.',
+    '- Identify the strongest verified decision maker. Prioritize authority over accessibility: founder, owner, CEO, president, COO, CRO, head of sales/growth/revenue, head of operations, CIO, CTO, or other executive responsible for revenue systems, customer communication, growth, operations, or data.',
+    '- Do not choose junior employees, individual sales reps, support staff, assistants, generic marketers without authority, or generic inboxes as if they were people.',
+    '- If no reliable decision maker is found, set qualification.status to "Research Hold", outbound_ready false, and hold_reason "Missing verified decision maker". Continue producing company-level strategy, but do not treat the lead as outbound-ready.',
+    '- Infer role-based motivation only from the person’s role, company context, public statements, or documented responsibilities. Do not invent personal facts.',
+    '- Estimate communication style using DISC only as an internal communication hypothesis, not a personality diagnosis. Do not mention DISC in customer-facing guidance.',
+    '- Create a witness insight: a concise, credible, specific observation that shows intelligent respect for the company. It may be positive, neutral, or identify an interesting tension. Do not manufacture praise.',
+    '- Apply a surprise test: would a knowledgeable executive find the observation at least slightly interesting or unexpected? Rate obvious, moderately insightful, highly specific and insightful, or unsupported / trying too hard.',
+    '- Apply a genericity test: if the company name changed, could this exact insight be sent to dozens of unrelated companies? If yes, lower confidence or rewrite.',
+    '- Identify one opportunity for future outreach to demonstrate intelligence rather than describe it. Example: do not say VAL understands buyer states; show the buyer-state difference in a specific sentence.',
+    '- Keep internal research terminology separate from customer-facing language. Translate what the evidence means into natural executive language.',
+    '- Recommend outreach strategy only after the Prospect Theory, counterargument, safe claim, and demonstration idea are complete.',
+    '- Assign each email in the future sequence a distinct job: Initial email = Recognition; Follow-up 1 = Consequence; Follow-up 2 = Proof/audit mechanism; Final follow-up = Risk reversal/close loop.',
+    '- Recommend whether a P.S. is useful at all. If used, it should add a new insight, proof point, or low-friction reason to respond. Never use the P.S. to explain VAL research process, scraping, evidence collection, internal scoring, confidence levels, DISC estimate, or qualification status.',
+    '- Never allow Research Hold language, identity uncertainty, internal scoring, DISC labels, or scraped/source terminology into customer-facing language.',
     '- Return only valid JSON. No markdown.',
     '',
     'Return JSON with this exact shape:',
-    '{"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"peopleToAvoid":[{"nameOrRole":"","reason":""}],"businessSignals":"","linkedinSignals":"","rolePainSignals":"","sourceUrls":[],"notes":"","exactCompanyMatched":true,"possibleConfusionWarnings":[]}'
+    '{"company_identity":{"company_name":"","website":"","location":"","identity_confidence":"","identity_notes":""},"qualification":{"status":"","outbound_ready":false,"hold_reason":null,"fit_score":null,"fit_tier":"","fit_confidence":"","annual_unlock_assessment":"","annual_unlock_estimate":null,"annual_unlock_reasoning":""},"business_model":{"what_they_sell":"","who_buys":"","sales_motion":[],"visible_conversion_paths":[],"business_characteristics":[]},"brand_analysis":{"voice":[],"recurring_language":[],"promises":[],"proof_points":[],"differentiators":[],"brand_belief":"","buyer_emotional_requirement":"","language_to_mirror":[],"language_to_avoid":[]},"buyer_journey":{"summary":"","buyer_states":[],"likely_leakage_points":[]},"commercial_theories":[{"theory":"","evidence":[],"confidence":"","likely_commercial_consequence":"","internal_data_to_confirm_or_disprove":""}],"prospect_theory":{"dominant_argument":"","observed":"","likely_commercial_problem":"","why":"","commercial_tension":"","potential_consequence":"","val_hypothesis":"","best_proof":"","best_audit_question":"","best_cta":"","demonstration_idea":""},"counterargument":{"strongest_counterargument":"","evidence_that_would_disprove_theory":[],"safe_claim":""},"decision_maker":{"preferred_person":{"name":null,"title":null,"source_urls":[],"confidence":"","why_this_person":"","evidence":[]},"alternates":[]},"role_motivation":{"professional_priorities":[],"most_relevant_motivation":"","evidence_or_role_basis":""},"communication_style":{"primary_disc_hypothesis":null,"secondary_disc_hypothesis":null,"confidence":"","evidence":[],"opening_tone":"","sentence_length":"","proof_style":"","cta_style":"","pace":"","avoid":[]},"witness_insight":{"observation":"","evidence":[],"surprise_rating":""},"outreach_strategy":{"first_email_objective":"","strongest_opening_angle":"","subject_line_direction":"","core_argument":"","proof_mechanism":"","cta_strategy":"","ps_strategy":"","follow_up_roles":[]},"audit_strategy":{"primary_question":"","data_to_inspect":[],"what_success_would_reveal":""},"evidence_ledger":[{"claim":"","evidence":"","source_url":"","confidence":"","fact_or_inference":""}],"research_gaps":[],"source_urls":[],"decisionMakerFirstName":"","decisionMakerLastName":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerConfidence":"high|medium|low|none","decisionMakerEvidence":"","personalLinkedInUrl":"","personEmail":"","personPhone":"","companyLinkedInUrl":"","keyDecisionMakers":[{"name":"","title":"","reason":"","sourceUrl":""}],"bestPersonToSpeakTo":{"name":"","title":"","reason":"","confidence":"high|medium|low|none","linkedinUrl":""},"peopleToAvoid":[{"nameOrRole":"","reason":""}],"businessSignals":"","linkedinSignals":"","rolePainSignals":"","notes":"","exactCompanyMatched":true,"possibleConfusionWarnings":[]}'
   ].join('\n');
   const system=[
     'You are a careful public-web business researcher for Grace Intelligence.',

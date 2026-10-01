@@ -68,7 +68,9 @@ test('Grace Fit Engine uses Gemini-style decision-maker research before outreach
   assert.match(server,/function geminiInteractionSourceUrls/);
   assert.match(server,/async function callGeminiGroundedSearch/);
   assert.match(server,/async function researchGraceDecisionMakerWithAi/);
-  assert.match(server,/Use grounded public web search to identify the best person/);
+  assert.match(server,/You are VAL’s Grace Intelligence Research Layer/);
+  assert.match(server,/Commercial theories/);
+  assert.match(server,/safe claim Grace can make/);
   assert.match(server,/async function enrichProspectWithGraceAiResearch/);
   assert.match(server,/next=await enrichProspectWithGraceAiResearch/);
   assert.match(server,/Apollo AI decision-maker verification/);
@@ -96,11 +98,13 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   const fitProfile=server.slice(server.indexOf('function graceFitProfile'),server.indexOf('function scoreGraceFitLead'));
   assert.match(server,/function graceProspectTheory/);
   assert.match(server,/function graceProspectTheoryText/);
-  assert.match(fitProfile,/const prospectTheory=graceProspectTheory/);
+  assert.match(fitProfile,/const prospectTheory=graceAiResearchProspectTheory/);
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(fitProfile,/A buyer-state question for/);
   assert.match(fitProfile,/whether your follow-up can tell the difference before the next message goes out/);
-  assert.match(fitProfile,/I am not guessing from a list/);
+  assert.match(fitProfile,/The cleanest place to start would be one narrow question/);
+  assert.match(fitProfile,/aiSafeClaim/);
+  assert.match(fitProfile,/aiCommercialTension/);
   assert.match(fitProfile,/this should stay in research hold/);
   assert.match(fitProfile,/const hasPersonForOutbound=!!personName/);
   assert.match(fitProfile,/No prospect-facing copy generated because no decision maker was verified/);
@@ -110,7 +114,9 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/I would start by proving or disproving this theory/);
   assert.match(fitProfile,/may not need another lead source as much as it needs a clearer conversion layer/);
   assert.match(fitProfile,/Evidence ledger:\\n/);
+  assert.match(fitProfile,/Counterargument:/);
   assert.doesNotMatch(fitProfile,/const witnessPs=/);
+  assert.doesNotMatch(fitProfile,/I am not guessing from a list/);
   assert.doesNotMatch(fitProfile,/P\.S\. What VAL found:/);
   assert.doesNotMatch(fitProfile,/On the business side, I am saying this because VAL saw/);
   assert.doesNotMatch(fitProfile,/used that read to choose the opening angle, tone, likely friction, audit path, and follow-up sequence/);
