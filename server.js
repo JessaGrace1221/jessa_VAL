@@ -33255,6 +33255,32 @@ function graceAiCommunicationStyle(ai={},fallback=''){
   return pieces.length?pieces.join(' | '):fallback;
 }
 
+function graceCustomerFacingDemonstration(value='',fallback=''){
+  const text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text) return fallback;
+  if(/urgent compliance exposure.*routine managed-?it evaluation/i.test(text)){
+    return 'An urgent compliance exposure and a routine managed-IT evaluation should not receive the same response, routing, proof, or follow-up.';
+  }
+  if(/^(show|demonstrate|explain|use|lead with|write|create|compare)\b/i.test(text)) return fallback;
+  if(/future outreach|recipient|email|message/i.test(text) && /should|must|use|show|demonstrate/i.test(text)) return fallback;
+  return text;
+}
+
+function graceOutboundQuestion(value=''){
+  const text=String(value||'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'');
+  if(!text) return 'whether existing demand is being converted with enough precision after someone raises their hand';
+  if(/^whether\b/i.test(text)) return text.charAt(0).toLowerCase()+text.slice(1);
+  return `whether ${text.charAt(0).toLowerCase()+text.slice(1)}`;
+}
+
+function graceCleanPsStrategy(value=''){
+  const text=String(value||'').replace(/^p\.?s\.?\s*/i,'').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  if(/useful only|otherwise omit|omit|do not use|internal|research process|scrap|score|confidence|disc|qualification|research hold/i.test(text)) return '';
+  if(/^(recommend|add|use|include|mention|explain|show)\b/i.test(text)) return '';
+  return text;
+}
+
 function graceFitProfile(p={}){
   const text=graceText(p);
   const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
@@ -33321,6 +33347,10 @@ function graceFitProfile(p={}){
   const aiOutreach=aiResearch.outreach_strategy||{};
   const witnessFinal=aiWitness || witness;
   const leakageFinal=prospectTheory.valHypothesis || leakage;
+  const demonstrationLine=graceCustomerFacingDemonstration(prospectTheory.demonstrationIdea,prospectTheory.bestOpening);
+  const opportunityQuestion=graceOutboundQuestion(prospectTheory.likelyCommercialProblem);
+  const auditQuestionClean=String(aiAuditQuestion||'who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet').replace(/[.?!]+$/,'');
+  const cleanPsStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
   const firstAuditFinal=aiAuditQuestion
     ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
     : firstAudit;
@@ -33337,8 +33367,8 @@ function graceFitProfile(p={}){
     : '';
   const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
   const quietPs=personName
-    ? (aiOutreach.ps_strategy && !/research process|scrap|score|confidence|disc|qualification|research hold/i.test(String(aiOutreach.ps_strategy))
-      ? `P.S. ${String(aiOutreach.ps_strategy).replace(/^p\.?s\.?\s*/i,'').trim()}`
+    ? (cleanPsStrategy
+      ? `P.S. ${cleanPsStrategy}`
       : `P.S. The cleanest place to start would be one narrow question: ${aiAuditQuestion||'are different buyer states receiving different follow-up, or are they being pushed through the same path?'}`)
     : `P.S. I could not verify the right person yet, so this should stay in research hold. The company-level read is strong enough to review, but not enough to pretend this is ready for live outbound.`;
   const mirrorEmailSubject=hasPersonForOutbound?(aiOutreach.subject_line_direction && !/subject line/i.test(String(aiOutreach.subject_line_direction))?String(aiOutreach.subject_line_direction).slice(0,90):`A buyer-state question for ${company}`):'';
@@ -33348,7 +33378,7 @@ function graceFitProfile(p={}){
   const mirrorEmail=hasPersonForOutbound?[
     `Hi ${firstName},`,
 	    '',
-	    prospectTheory.demonstrationIdea||prospectTheory.bestOpening,
+	    demonstrationLine,
 	    '',
 	    aiCommercialTension
 	      ? `That is the commercial tension I would want to test inside ${company}: ${aiCommercialTension}`
@@ -33356,13 +33386,13 @@ function graceFitProfile(p={}){
 	    '',
 	    aiSafeClaim || evidenceLine,
 	    '',
-	    `My read is that the opportunity is ${prospectTheory.likelyCommercialProblem}.`,
+	    `My read is that the opportunity is ${opportunityQuestion}.`,
     '',
     prospectTheory.potentialConsequence,
     '',
     `Grace Intelligence is built for that moment. VAL reads the lead before the response happens, then shapes the next email, text, routing decision, proof point, and follow-up path around what the buyer is actually showing.`,
     '',
-	    `The free audit would simply test the theory against your last 30-90 days of inbound activity: ${aiAuditQuestion||'who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet'}.`,
+	    `The free audit would simply test the theory against your last 30-90 days of inbound activity: ${auditQuestionClean}.`,
     '',
     roleFrame,
     '',
@@ -33375,7 +33405,7 @@ function graceFitProfile(p={}){
     '',
     `It is the state of the buyer behind it.`,
 	    '',
-	    prospectTheory.demonstrationIdea||prospectTheory.bestOpening,
+	    demonstrationLine,
     '',
     `If those buyers receive the same first response, the system is asking automation to do something your best person would never do: ignore context.`,
     '',
