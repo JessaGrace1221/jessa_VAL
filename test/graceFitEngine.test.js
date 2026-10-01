@@ -49,10 +49,15 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   ]){
     assert.match(server,new RegExp(`${key}:`));
   }
-  assert.match(server,/Imagine if every lead coming through your forms/);
+  assert.match(server,/VAL does for your leads what your best person would do/);
   assert.match(server,/review-before-contact/);
   const fitProfile=server.slice(server.indexOf('function graceFitProfile'),server.indexOf('function scoreGraceFitLead'));
   assert.match(fitProfile,/mirrorEmailSubject=`What VAL noticed about/);
+  assert.match(fitProfile,/hidden profit in your current lead flow/);
+  assert.match(fitProfile,/what your best person would do if they had time to read the room perfectly every time/);
+  assert.match(fitProfile,/free data audit and show you where follow-up, routing, timing, or message mismatch/);
+  assert.doesNotMatch(fitProfile,/fit needs review/);
+  assert.doesNotMatch(fitProfile,/public surface/);
   assert.doesNotMatch(fitProfile,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);
   assert.doesNotMatch(fitProfile,/const follow24=\[[\s\S]{0,120}`Subject:/);
   assert.doesNotMatch(fitProfile,/const follow36=\[[\s\S]{0,120}`Subject:/);

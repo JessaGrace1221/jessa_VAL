@@ -32959,49 +32959,63 @@ function graceFitProfile(p={}){
   const disc=graceDiscEstimate(p);
   const company=p.organizationName||p.companyName||p.name||'this company';
   const industry=p.industry||p.organizationType||p.category||'B2B service';
+  const buyerMoment=/account|bookkeep|payroll|tax|financial|insurance|legal|compliance/.test(text)
+    ? 'They are trying to feel organized, protected, and less exposed.'
+    : /home service|contractor|construction|medical|dental|wellness|care/.test(text)
+      ? 'They are trying to feel safe, understood, and confident that the next step will be handled correctly.'
+      : 'They are trying to feel that someone capable understands what they need and can move them toward the right next step.';
+  const serviceMoment=/account|bookkeep|payroll|tax|financial|insurance|legal|compliance/.test(text)
+    ? 'work sits in a moment where confusion can become expensive'
+    : /consult|professional|agency|managed|implementation|service/.test(text)
+      ? 'work depends on trust, timing, expertise, and the confidence that the person responding actually understands the problem'
+      : 'buyer journey depends on trust, timing, and the feeling that the next response is precise';
   const flattering=score>=65
     ? `${company} appears to have the kind of trust-heavy, high-intent buyer journey where every response carries the brand.`
-    : `${company} shows early signals of a business where better lead understanding may matter, but the fit needs review.`;
+    : `${company} appears to have a trust-heavy buyer journey where the right response can matter as much as the original inquiry.`;
   const leakage=`VAL would first inspect speed-to-lead, channel handoffs, quote/demo follow-up, no-show recovery, and whether different buyer types are receiving the same generic message.`;
   const why=`${company} fits the Grace Intelligence screen because ${reasons.slice(0,4).join('; ')||'it may have a consultative B2B sales motion worth reviewing'}.`;
-  const witness=`What stands out about ${company}: ${flattering} The public surface suggests the business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
+  const witness=`What stands out about ${company}: ${flattering} The business is not merely collecting leads; it is asking prospects to trust timing, expertise, and follow-through.`;
   const firstAudit=`Start with the last 30-90 days of inbound forms, calls, booking requests, source attribution, follow-up attempts, appointment/no-show data, and closed/won outcomes.`;
   const communicationStyle=graceCommunicationStyle(disc);
   const mirrorEmailSubject=`What VAL noticed about ${company}`;
   const follow24Subject=`Re: ${company} lead follow-up`;
-  const follow36Subject='The part most teams cannot see';
+  const follow36Subject='The gap between interest and booked business';
   const follow5Subject='Should I close the loop?';
   const mirrorEmail=[
     `Hi ${p.decisionMakerName?.split(/\s+/)[0]||'there'},`,
     '',
-    `I spent time looking at ${company}, and what stood out is that you do not appear to sell a commodity. Your business seems to depend on trust, timing, and the feeling that the person on the other side understands what the buyer is actually trying to solve.`,
+    `I was looking at ${company}, and what stood out is that your ${serviceMoment}.`,
     '',
-    `${witness}`,
+    `A lead may come in asking a simple question, but underneath that question is often urgency, hesitation, comparison, or the need to know someone competent is paying attention. ${buyerMoment}`,
     '',
-    `That is exactly where Grace Intelligence is different. VAL does not treat every lead like the same form submission. It looks for buying intent, tone, likely objections, communication style, and the next best message.`,
+    `That is where I think there may be hidden profit in your current lead flow.`,
     '',
-    `VAL found this from the outside. Imagine if every lead coming through your forms, calls, ads, and follow-up history was witnessed this way before anyone on your team had to decide what to do next.`,
+    `If every new inquiry gets the same basic follow-up, the highest-value prospects may never feel the precision your actual work provides. Grace Intelligence looks at the lead before the response happens: intent, tone, likely hesitation, urgency, decision style, and the next message most likely to move them forward.`,
     '',
-    `If useful, I can start with a free data audit to see where leads may be leaking before you invest in a build.`,
+    `In other words, VAL does for your leads what your best person would do if they had time to read the room perfectly every time.`,
+    '',
+    `I would like to run a free data audit and show you where follow-up, routing, timing, or message mismatch may be costing you qualified business.`,
     '',
     `Jessa`
   ].join('\n');
   const follow24=[
-    `One specific reason I reached out: ${painPoints[0]}.`,
+    `The reason I keep thinking about ${company}: ${painPoints[0]}.`,
     '',
-    `When a business has that kind of buyer journey, the leak is rarely just "not enough leads." It is usually response timing, tone, handoff, routing, or follow-up that does not match the buyer's state of mind.`,
+    `When a business has that kind of buyer journey, the leak is rarely lead volume. It is usually the moment after interest: response timing, tone, handoff, routing, or a follow-up that does not match the buyer's state of mind.`,
     '',
-    `That is what the free audit is designed to find.`
+    `That is exactly what the free audit is designed to find: where qualified demand is already present, but the system is not converting it as cleanly as it could.`
   ].join('\n');
   const follow36=[
-    `Most CRMs can show that a lead came in. They usually do not show whether the lead needed speed, reassurance, proof, authority, or a completely different next message.`,
+    `Most systems can show that a lead came in. They usually cannot show whether that lead needed speed, reassurance, proof, authority, a softer touch, or a more direct next step.`,
     '',
-    `That is the layer VAL adds. It turns the lead into a conversion profile before the follow-up happens.`
+    `That gap is where good prospects quietly disappear.`,
+    '',
+    `VAL turns the lead into a conversion profile before follow-up happens, so the response feels less like automation and more like someone actually understood the buyer.`
   ].join('\n');
   const follow5=[
-    `I do not want to keep nudging if this is not relevant. My instinct is that ${company} is exactly the type of business where one missed or mismatched follow-up can be expensive.`,
+    `I do not want to keep nudging if this is not relevant. My read is that ${company} is the kind of business where one missed or mismatched follow-up can cost more than it looks like on a report.`,
     '',
-    `If you want, we can start with the free audit and let the data decide whether there is enough leakage to justify anything larger.`
+    `The cleanest next step is the free audit. If the data does not show a meaningful gap, we stop there. If it does, you will know exactly where the profit is waiting and what system would make it easier to capture.`
   ].join('\n');
 
   const packet=[
@@ -33046,8 +33060,8 @@ function graceFitProfile(p={}){
     follow36,
     follow5Subject,
     follow5,
-    linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where lead follow-up probably needs more than generic automation. VAL mapped a few public signals and I think a free data audit could show whether leads are leaking in response, routing, or follow-up.`,
-    callOpener:`I reached out because VAL flagged ${company} as a business where leads likely need to be understood, not just answered. I wanted to see whether a free audit of lead response and follow-up would be useful.`,
+    linkedinDm:`I looked at ${company} and noticed a trust-heavy buyer journey where generic follow-up may flatten the value of the actual service. I think a free data audit could show whether qualified prospects are getting lost in timing, routing, or message mismatch.`,
+    callOpener:`I reached out because ${company} looks like a business where a lead's first response needs to create trust quickly. I wanted to see whether a free audit of response, routing, and follow-up would show any hidden profit in the current system.`,
     handoff:`Review before contact. ${why} Suggested tone: ${communicationStyle} First audit: ${firstAudit}`,
     reviewNeeded:score<65 || confidence==='Low'
   };
