@@ -33282,6 +33282,38 @@ function graceCleanPsStrategy(value=''){
   return text;
 }
 
+function graceDisplayCompanyName(value=''){
+  let name=String(value||'').replace(/\s+/g,' ').trim();
+  if(!name) return 'your company';
+  name=name.split('|')[0].trim();
+  name=name.replace(/\s+-\s+.*?(managed it|it support|services company|company in|near me|chicago|provo|utah|illinois).*/i,'').trim();
+  name=name.replace(/\s+(managed it services company|it support company|services company)\b.*$/i,'').trim();
+  return name || String(value||'your company').trim();
+}
+
+function graceCleanOutboundSentence(value='',fallback=''){
+  let text=String(value||fallback||'').replace(/\s+/g,' ').trim();
+  text=text
+    .replace(/\bthe public (site|journey|surface) suggests\b/ig,'it looks like')
+    .replace(/\bthe public acquisition layer\b/ig,'the front door')
+    .replace(/\bvisible front-end path\b/ig,'front door')
+    .replace(/\bcommercial tension\b/ig,'question')
+    .replace(/\btestable opportunity\b/ig,'question worth testing')
+    .replace(/\bwe can augment\b/ig,'the audit could support')
+    .replace(/\bGrace Intelligence can augment\b/ig,'Grace Intelligence could support')
+    .replace(/\bmanual strategic reviews typically overlook\b/ig,'manual reviews often miss')
+    .replace(/\s+\.\s*$/,'')
+    .replace(/\.\.+/g,'.');
+  return text;
+}
+
+function graceShortOutbound(value='',fallback='',max=260){
+  const text=graceCleanOutboundSentence(value,fallback);
+  if(text.length<=max) return text;
+  const first=text.split(/(?<=[.!?])\s+/)[0]||text;
+  return first.length<=max ? first : `${text.slice(0,max-3).trim()}...`;
+}
+
 function graceFitProfile(p={}){
   const text=graceText(p);
   const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
@@ -33307,9 +33339,10 @@ function graceFitProfile(p={}){
   const tier=score>=80?'Priority mirror outreach':score>=65?'Strong audit prospect':score>=50?'Qualified nurture':score>=35?'Needs human review':'Suppress';
   const confidence=(sources.length>=2 && score>=60)?'High':(sources.length>=1 && score>=45?'Medium':'Low');
   const auditPriority=score>=80?'A - review first':score>=65?'B - good candidate':score>=50?'C - nurture/research':'D - hold';
-  const disc=graceDiscEstimate(p);
-  const company=p.organizationName||p.companyName||p.name||'this company';
-  const industry=p.industry||p.organizationType||p.category||'B2B service';
+	  const disc=graceDiscEstimate(p);
+	  const company=p.organizationName||p.companyName||p.name||'this company';
+	  const displayCompany=graceDisplayCompanyName(company);
+	  const industry=p.industry||p.organizationType||p.category||'B2B service';
   const flattering=score>=65
     ? `${company} appears to have the kind of trust-heavy, high-intent buyer journey where every response carries the brand.`
     : `${company} appears to have a trust-heavy buyer journey where the right response can matter as much as the original inquiry.`;
@@ -33348,88 +33381,70 @@ function graceFitProfile(p={}){
   const aiOutreach=aiResearch.outreach_strategy||{};
   const witnessFinal=aiWitness || witness;
   const leakageFinal=prospectTheory.valHypothesis || leakage;
-  const demonstrationLine=graceCustomerFacingDemonstration(prospectTheory.demonstrationIdea,prospectTheory.bestOpening);
-  const opportunityQuestion=graceOutboundQuestion(prospectTheory.likelyCommercialProblem);
-  const auditQuestionClean=String(aiAuditQuestion||'who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet').replace(/[.?!]+$/,'');
-  const cleanPsStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
-  const firstAuditFinal=aiAuditQuestion
-    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
-    : firstAudit;
-  const roleFrame=personTitle
-    ? /owner|founder|ceo|president|principal|partner/i.test(personTitle)
-      ? 'I am guessing this matters because you are protecting reputation and growth at the same time.'
-      : /sales|growth|revenue|business development|marketing/i.test(personTitle)
-        ? 'I am guessing this matters because your seat is close to the moment interest becomes pipeline.'
-        : /operations|coo|service|delivery|success|support/i.test(personTitle)
-          ? 'I am guessing this matters because handoffs, triage, and follow-through decide whether demand becomes real execution.'
-          : /it|technology|technical|security|cio|cto/i.test(personTitle)
-            ? 'I am guessing this matters because technical buyers can feel generic follow-up immediately.'
-            : 'I am guessing this matters because your role sits close to the moment interest either gets momentum or goes quiet.'
-    : '';
-  const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
-  const quietPs=personName
-    ? (cleanPsStrategy
-      ? `P.S. ${cleanPsStrategy}`
-      : `P.S. The cleanest place to start would be one narrow question: ${aiAuditQuestion||'are different buyer states receiving different follow-up, or are they being pushed through the same path?'}`)
-    : `P.S. I could not verify the right person yet, so this should stay in research hold. The company-level read is strong enough to review, but not enough to pretend this is ready for live outbound.`;
-  const mirrorEmailSubject=hasPersonForOutbound?(aiOutreach.subject_line_direction && !/subject line/i.test(String(aiOutreach.subject_line_direction))?String(aiOutreach.subject_line_direction).slice(0,90):`A buyer-state question for ${company}`):'';
-  const follow24Subject=hasPersonForOutbound?'The part most CRMs miss':'';
-  const follow36Subject=hasPersonForOutbound?'Where the audit would start':'';
-  const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
-  const mirrorEmail=hasPersonForOutbound?[
-    `Hi ${firstName},`,
+	  const demonstrationLine=graceCustomerFacingDemonstration(prospectTheory.demonstrationIdea,prospectTheory.bestOpening);
+	  const opportunityQuestion=graceOutboundQuestion(prospectTheory.likelyCommercialProblem);
+	  const auditQuestionClean=String(aiAuditQuestion||'who raised their hand, how fast they were answered, what they received next, which conversations stalled, and where qualified demand went quiet').replace(/[.?!]+$/,'');
+	  const cleanPsStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
+	  const evidenceLine=prospectTheory.interpretations.slice(0,2).join(' ');
+	  const openingLine=graceShortOutbound(demonstrationLine,prospectTheory.bestOpening,240);
+	  const tensionLine=graceShortOutbound(aiCommercialTension,`different buyer states may be entering through the same front door`,260);
+	  const safeClaimLine=graceShortOutbound(aiSafeClaim||evidenceLine,`that looks worth testing before assuming the answer is more leads`,240);
+	  const consequenceLine=graceShortOutbound(prospectTheory.potentialConsequence,`if the theory is right, good demand can slow down before anyone sees where it stalled`,240);
+	  const auditLine=graceShortOutbound(auditQuestionClean,`whether different kinds of inquiries are being recognized, routed, and followed up differently`,260);
+	  const firstAuditFinal=aiAuditQuestion
+	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
+	    : firstAudit;
+	  const quietPs=personName && cleanPsStrategy ? `P.S. ${graceShortOutbound(cleanPsStrategy,'',190)}` : '';
+	  const mirrorEmailSubject=hasPersonForOutbound?(aiOutreach.subject_line_direction && !/subject line/i.test(String(aiOutreach.subject_line_direction))?String(aiOutreach.subject_line_direction).slice(0,90):`A buyer-state question for ${displayCompany}`):'';
+	  const follow24Subject=hasPersonForOutbound?'The cost of same-path follow-up':'';
+	  const follow36Subject=hasPersonForOutbound?'What the audit would prove':'';
+	  const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
+	  const mirrorEmail=hasPersonForOutbound?[
+	    `Hi ${firstName},`,
+		    '',
+		    openingLine,
+		    '',
+		    `That is the question I would want to test at ${displayCompany}: ${tensionLine}.`,
+		    '',
+		    safeClaimLine,
+		    '',
+		    `My read is not that you need more activity. It is ${opportunityQuestion}.`,
 	    '',
-	    demonstrationLine,
+	    `The free audit would test that against the last 30-90 days of real inquiry and follow-up data.`,
 	    '',
-	    aiCommercialTension
-	      ? `That is the commercial tension I would want to test inside ${company}: ${aiCommercialTension}`
-	      : `That is the part I would want to look at inside ${company}: whether your follow-up can tell the difference before the next message goes out.`,
+		    `The first question would be simple: ${auditLine}.`,
 	    '',
-	    aiSafeClaim || evidenceLine,
+	    quietPs,
 	    '',
-	    `My read is that the opportunity is ${opportunityQuestion}.`,
-    '',
-    prospectTheory.potentialConsequence,
-    '',
-    `Grace Intelligence is built for that moment. VAL reads the lead before the response happens, then shapes the next email, text, routing decision, proof point, and follow-up path around what the buyer is actually showing.`,
-    '',
-	    `The free audit would simply test the theory against your last 30-90 days of inbound activity: ${auditQuestionClean}.`,
-    '',
-    roleFrame,
-    '',
-    quietPs,
-    '',
     `Jessa`
   ].join('\n').replace(/\n{3,}/g,'\n\n'):'';
-  const follow24=hasPersonForOutbound?[
-    `The part most CRMs miss is not the form submission.`,
-    '',
-    `It is the state of the buyer behind it.`,
+	  const follow24=hasPersonForOutbound?[
+	    `The consequence is rarely dramatic at first.`,
 	    '',
-	    demonstrationLine,
-    '',
-    `If those buyers receive the same first response, the system is asking automation to do something your best person would never do: ignore context.`,
-    '',
-    `That is why I would start the audit with response timing, routing, first follow-up, and stalled conversations. Not to add more noise, but to see where the existing demand is not being converted with enough precision.`
-  ].join('\n'):'';
-  const follow36=hasPersonForOutbound?[
-    `If we did the audit, I would not start by asking you to believe in Grace Intelligence.`,
-    '',
-	    `I would start by proving or disproving this theory: ${aiSafeClaim||prospectTheory.likelyCommercialProblem}.`,
-    '',
-	    `The first pass would look at ${aiAuditData.length?aiAuditData.slice(0,10).join(', '):'the last 30-90 days of inquiries, source, speed-to-lead, first response, follow-up sequence, appointments, no-shows, stale pipeline, and closed/won outcomes'}.`,
-    '',
-    `If there is no meaningful gap, you know quickly. If there is, the next step becomes obvious: build the system that makes that profit easier to capture every day.`
-  ].join('\n'):'';
-  const follow5=hasPersonForOutbound?[
-    `I will close the loop here unless this is worth checking.`,
-    '',
-    `My read is simple: ${company} may not need another lead source as much as it needs a clearer conversion layer around the demand already showing up.`,
-    '',
-    `At your apparent demand level, a few mismatched handoffs or generic follow-ups can become much larger than they look in the CRM.`,
-    '',
-    `The free audit is the cleanest way to find out.`
-  ].join('\n'):'';
+	    `It usually looks like a good inquiry that gets an ordinary next step.`,
+	    '',
+	    consequenceLine,
+	    '',
+	    `That is why I would not start by changing your sales process. I would start by finding the moments where the buyer state was visible, but the follow-up did not change.`
+	  ].join('\n'):'';
+	  const follow36=hasPersonForOutbound?[
+	    `The audit is useful because it can prove the theory wrong quickly.`,
+	    '',
+		    `I would look for ${auditLine}.`,
+	    '',
+		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
+	    '',
+	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`
+	  ].join('\n'):'';
+	  const follow5=hasPersonForOutbound?[
+	    `I will close the loop here unless this is worth checking.`,
+	    '',
+	    `My read is simple: ${displayCompany} may not need another lead source as much as it needs a clearer conversion layer around the demand already showing up.`,
+	    '',
+	    `If that is wrong, the audit will show it. If it is right, the upside should be obvious in the data.`,
+	    '',
+	    `Either way, it is a clean thing to know.`
+	  ].join('\n'):'';
 
   const packet=[
     `Company: ${company}`,
