@@ -33323,7 +33323,27 @@ function graceTrimSentenceEnd(value=''){
 function graceLowerLead(value=''){
   const text=String(value||'').trim();
   if(!text) return '';
-  return text.charAt(0).toLowerCase()+text.slice(1);
+  if(/^(The|A|An)\s+[a-z]/.test(text)) return text.charAt(0).toLowerCase()+text.slice(1);
+  return text;
+}
+
+function graceLowerOpeningArticle(value=''){
+  const text=String(value||'').trim();
+  if(!text) return '';
+  return text.replace(/^(The|A|An)\s+/,(m)=>m.toLowerCase());
+}
+
+function graceAuditLookupPhrase(value=''){
+  let text=graceTrimSentenceEnd(value)
+    .replace(/^can you see,\s*/i,'whether ')
+    .replace(/^can you see\s+/i,'whether ')
+    .replace(/^which\s+/i,'which ')
+    .replace(/^what\s+/i,'what ')
+    .trim();
+  if(!/^(whether|which|what|where|how|who)\b/i.test(text)){
+    text=`whether ${graceLowerOpeningArticle(text)}`;
+  }
+  return graceLowerOpeningArticle(text);
 }
 
 function graceShortOutbound(value='',fallback='',max=260){
@@ -33357,7 +33377,7 @@ function graceEvidencePs({personName='',personTitle='',displayCompany='',prospec
     ? `${personName}${personTitle?` appears to sit in the ${personTitle} seat`:''}`
     : `the person in this seat matters`;
   const personProof=dmEvidence?.evidence||`${personTitle||'the role'} connects directly to growth, reputation, and follow-through`;
-  const businessPiece=graceLowerLead(businessEvidence?.claim||prospectTheory.bestOpening||`${displayCompany} has visible buyer-intent signals`);
+  const businessPiece=graceLowerOpeningArticle(businessEvidence?.claim||prospectTheory.bestOpening||`${displayCompany} has visible buyer-intent signals`);
   const businessProof=businessEvidence?.evidence||prospectTheory.bestProof||prospectTheory.bestAuditQuestion||'the available public path shows consultation, assessment, booking, or follow-up complexity';
   const usePiece=kind==='mirror'
     ? `I used that to frame this around buyer-state follow-up instead of generic lead generation`
@@ -33445,6 +33465,7 @@ function graceFitProfile(p={}){
 	  const safeClaimLine=graceTrimSentenceEnd(graceShortOutbound(aiSafeClaim||evidenceLine,`that looks worth testing before assuming the answer is more leads`,240));
 	  const consequenceLine=graceTrimSentenceEnd(graceShortOutbound(prospectTheory.potentialConsequence,`if the theory is right, good demand can slow down before anyone sees where it stalled`,240));
 	  const auditLine=graceTrimSentenceEnd(graceShortOutbound(auditQuestionClean,`whether different kinds of inquiries are being recognized, routed, and followed up differently`,260));
+	  const auditLookupLine=graceAuditLookupPhrase(auditLine);
 	  const firstAuditFinal=aiAuditQuestion
 	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
 	    : firstAudit;
@@ -33460,7 +33481,7 @@ function graceFitProfile(p={}){
 		    '',
 		    openingLine,
 		    '',
-		    `That is the question I would want to test at ${displayCompany}: ${tensionLine}.`,
+		    `That is what I would want to test at ${displayCompany}: ${tensionLine}.`,
 		    '',
 		    `${safeClaimLine}.`,
 		    '',
@@ -33488,9 +33509,9 @@ function graceFitProfile(p={}){
 	  const follow36=hasPersonForOutbound?[
 	    `The audit is useful because it can prove the theory wrong quickly.`,
 	    '',
-		    `I would look for ${auditLine}.`,
+		    `I would look for ${auditLookupLine}.`,
 	    '',
-		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
+		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).map(item=>graceLowerOpeningArticle(item)).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
 	    '',
 	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`,
 	    '',

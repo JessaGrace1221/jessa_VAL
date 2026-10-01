@@ -105,7 +105,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const prospectTheory=graceAiResearchProspectTheory/);
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(fitProfile,/A buyer-state question for/);
-  assert.match(fitProfile,/That is the question I would want to test at/);
+  assert.match(fitProfile,/That is what I would want to test at/);
   assert.match(fitProfile,/The first question would be simple/);
   assert.match(fitProfile,/aiSafeClaim/);
   assert.match(fitProfile,/aiCommercialTension/);
