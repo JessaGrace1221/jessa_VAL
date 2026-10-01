@@ -30257,7 +30257,7 @@ async function callBoardNanoModel({system,user,maxTokens=1000,json=false,jsonSch
   }
 }
 
-async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
+async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1,timeoutMs=OPENAI_WEB_RESEARCH_TIMEOUT_MS}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -30275,7 +30275,7 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
     body:JSON.stringify(body)
-  },OPENAI_WEB_RESEARCH_TIMEOUT_MS,'OpenAI web research');
+  },timeoutMs,'OpenAI web research');
   let d=await readJsonResponse(r);
   if(!r.ok && !d.error) throw new Error(`OpenAI web research failed (${r.status}): ${d.raw||'upstream error'}`);
   if(d.error && /temperature/i.test(d.error.message||'')){
@@ -30284,7 +30284,7 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify(body)
-    },OPENAI_WEB_RESEARCH_TIMEOUT_MS,'OpenAI web research');
+    },timeoutMs,'OpenAI web research');
     d=await readJsonResponse(r);
     if(!r.ok && !d.error) throw new Error(`OpenAI web research failed (${r.status}): ${d.raw||'upstream error'}`);
   }
@@ -34987,7 +34987,7 @@ async function researchGraceDecisionMakerWithAi(p={}){
     'Use the exact company name, website, and location together. Do not match a different branch, similarly named company, or unrelated business.',
     'Return only JSON. Do not guess.'
   ].join('\n');
-  const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1});
+  const raw=await callOpenAIWebResearch({system,user:prompt,maxTokens:2400,temperature:0.1,timeoutMs:30000});
   return extractJsonObject(raw);
 }
 
