@@ -35559,12 +35559,33 @@ function extractJsonObject(text){
     const parsed=JSON.parse(raw);
     return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
   }catch(_){}
-  const match=raw.match(/\{[\s\S]*\}/);
-  if(!match) return {};
-  try{
-    const parsed=JSON.parse(match[0]);
-    return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
-  }catch(_){return {};}
+  const start=raw.indexOf('{');
+  if(start<0) return {};
+  let depth=0;
+  let inString=false;
+  let escaped=false;
+  for(let i=start;i<raw.length;i++){
+    const ch=raw[i];
+    if(inString){
+      if(escaped){escaped=false; continue;}
+      if(ch==='\\'){escaped=true; continue;}
+      if(ch==='"') inString=false;
+      continue;
+    }
+    if(ch==='"'){inString=true; continue;}
+    if(ch==='{') depth++;
+    if(ch==='}'){
+      depth--;
+      if(depth===0){
+        const candidate=raw.slice(start,i+1);
+        try{
+          const parsed=JSON.parse(candidate);
+          return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+        }catch(_){return {};}
+      }
+    }
+  }
+  return {};
 }
 
 function ghlActionEnabled(){
