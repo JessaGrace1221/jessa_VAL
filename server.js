@@ -35773,7 +35773,9 @@ function graceGeminiBaseContext(p={}){
       `Location: ${candidate.location||[candidate.city,candidate.state].filter(Boolean).join(', ')||''}`,
       `Category: ${candidate.organizationType||candidate.industry||candidate.category||''}`,
       `Email: ${candidate.email||''}`,
+      `Email quality/source: ${[candidate.emailQuality,candidate.emailSource].filter(Boolean).join(' | ')}`,
       `Phone: ${candidate.phone||''}`,
+      `Decision maker: ${[candidate.decisionMakerName,candidate.decisionMakerTitle].filter(Boolean).join(' - ')}`,
       `Evidence: ${safeArray(candidate.evidenceSignals).join('; ')||candidate.operationalIndicators||candidate.googleReviewsSnippet||''}`,
       `Source: ${candidate.googleMapsUrl||candidate.website||''}`
     ].join('\n')).join('\n\n'):''
@@ -35813,12 +35815,31 @@ async function buildGraceGiftedLeadCandidatePool(p={},options={}){
     if(candidates.length>=6) break;
   }
   const seen=new Set();
-  return candidates.filter(candidate=>{
+  const deduped=candidates.filter(candidate=>{
     const key=goallLeadKey(candidate);
     if(seen.has(key)) return false;
     seen.add(key);
     return !!(candidate.organizationName||candidate.name);
   }).slice(0,6);
+  const enriched=await mapWithConcurrency(deduped,3,async candidate=>{
+    if(!candidate.website) return candidate;
+    const publicContact=await findPublicWebsiteContactData(candidate.website).catch(()=>null);
+    if(!publicContact) return candidate;
+    return {
+      ...candidate,
+      email:candidate.email||publicContact.email||'',
+      emailSource:candidate.emailSource||publicContact.source||'',
+      emailQuality:candidate.emailQuality||publicContact.quality||'',
+      decisionMakerName:candidate.decisionMakerName||publicContact.leader?.name||'',
+      decisionMakerTitle:candidate.decisionMakerTitle||publicContact.leader?.title||'',
+      decisionMakerSource:candidate.decisionMakerSource||publicContact.leader?.source||''
+    };
+  });
+  return enriched.sort((a,b)=>
+    Number(validEmail(b.email))-Number(validEmail(a.email))
+    || Number(!!b.decisionMakerName)-Number(!!a.decisionMakerName)
+    || Number(!!b.website)-Number(!!a.website)
+  ).slice(0,6);
 }
 
 async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){

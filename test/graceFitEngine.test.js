@@ -150,6 +150,10 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/Candidate gifted-lead pool/);
   assert.match(server,/leadProfile:'grace_gifted_packet'/);
   assert.match(server,/giftedLeadCandidatePool:candidatePool/);
+  assert.match(server,/findPublicWebsiteContactData\(candidate\.website\)/);
+  assert.match(server,/Email quality\/source:/);
+  assert.match(server,/Decision maker:/);
+  assert.match(server,/Number\(validEmail\(b\.email\)\)-Number\(validEmail\(a\.email\)\)/);
   assert.match(server,/Model output to repair:/);
   assert.match(server,/json-repair/);
   assert.match(server,/function graceShowcaseOpportunities/);
