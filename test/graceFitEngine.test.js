@@ -140,6 +140,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/function graceNormalizeShowcaseLeadPacket/);
   assert.match(server,/function graceShowcaseLeadPacketReady/);
   assert.match(server,/graceShowcaseLeadPacketReady\(giftedPacket,\{requireEmail:true\}\)/);
+  assert.match(server,/emailNeedsVerification/);
+  assert.match(server,/recommended before sending/);
   assert.match(server,/Hard requirement: the gifted lead should include at least one usable email address/);
   assert.match(server,/function enrichGraceShowcaseLeadPacket/);
   assert.match(server,/function researchGraceGiftedLeadPacketOnly/);

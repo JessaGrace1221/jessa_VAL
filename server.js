@@ -33628,7 +33628,9 @@ function graceNormalizeShowcaseLeadPacket(value={}){
 function graceShowcaseLeadPacketReady(packet={},options={}){
   const p=graceNormalizeShowcaseLeadPacket(packet);
   if(!p) return false;
-  const hasRequiredContact=options.requireEmail ? validEmail(p.decisionMakerEmail) : true;
+  const caveatText=String([p.caveats,p.confidence].filter(Boolean).join(' ')).toLowerCase();
+  const emailNeedsVerification=/\b(pattern|guessed|guess|unverified|not verified|verify|verification recommended|recommended before sending|cannot verify|not publicly listed)\b/.test(caveatText);
+  const hasRequiredContact=options.requireEmail ? validEmail(p.decisionMakerEmail) && !emailNeedsVerification : true;
   return !!(p.companyName && (p.trigger||p.whyNow) && p.whyItFitsProspect && (p.evidenceSummary||p.evidence.length) && hasRequiredContact);
 }
 
