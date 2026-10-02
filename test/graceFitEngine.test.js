@@ -138,7 +138,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(server,/function graceHumanOutboundCopy/);
   assert.match(server,/function graceShowcaseOpportunities/);
-  assert.match(server,/I pointed Grace Intelligence at \$\{displayCompany\}'s market to see what it would find/);
+  assert.match(server,/function gracePossessiveName/);
+  assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market to see what it would find/);
   assert.match(server,/If you want, I can walk you through the actual companies and why Grace selected them/);
   assert.match(server,/https:\/\/graceintelligence\.com\/meet/);
   assert.match(server,/https:\/\/graceintelligence\.com/);

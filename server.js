@@ -33582,20 +33582,27 @@ function graceShowcaseOpportunityLine(item={},index=0){
   const lead=index===0?'One':index===1?'Another':'The third';
   const trigger=item.trigger||item.reason||'is showing a change that may make the timing relevant';
   const reason=item.reason && item.reason!==trigger ? ` Grace flagged it because ${graceLowerOpeningArticle(item.reason)}.` : '';
-  return `${lead} is ${item.company}: ${graceTrimSentenceEnd(trigger)}.${reason}`;
+  return `${lead} is ${graceLowerOpeningArticle(item.company)}: ${graceTrimSentenceEnd(trigger)}.${reason}`;
+}
+
+function gracePossessiveName(value=''){
+  const text=String(value||'').trim();
+  if(!text) return 'the company\'s';
+  return /s$/i.test(text) ? `${text}'` : `${text}'s`;
 }
 
 function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[],showcaseOpportunities=[]}={}){
   const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
   const opportunities=graceShowcaseOpportunities(showcaseOpportunities);
   const hasShowcase=opportunities.length>0;
+  const possessiveCompany=gracePossessiveName(displayCompany);
   const subject=graceCleanSubjectLine(hasShowcase?`What Grace found for ${displayCompany}`:`A live Grace Intelligence pass for ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
   // First-touch rule: sell Grace Intelligence, not VAL. Could Jessa plausibly have typed this herself?
   const mirrorEmail=hasShowcase
     ? [
       `Hi ${firstName},`,
       '',
-      `I pointed Grace Intelligence at ${displayCompany}'s market to see what it would find.`,
+      `I pointed Grace Intelligence at ${possessiveCompany} market to see what it would find.`,
       '',
       `It came back with ${opportunities.length===1?'a company':`${opportunities.length} companies`} I would want to look at if I were responsible for growth at ${displayCompany}.`,
       '',
@@ -33613,7 +33620,7 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     : [
       `Hi ${firstName},`,
       '',
-      `I think the strongest way to understand Grace Intelligence is not a pitch deck. It is a live pass on ${displayCompany}'s market.`,
+      `I think the strongest way to understand Grace Intelligence is not a pitch deck. It is a live pass on ${possessiveCompany} market.`,
       '',
       `The first thing I would have Grace look for is companies entering the moments where ${ctx.serviceMoment} starts to matter: ${ctx.moments}.`,
       '',
@@ -33674,11 +33681,11 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     follow5Subject:'Should I close the loop?',
     follow5,
     linkedinDm:hasShowcase
-      ? `I pointed Grace Intelligence at ${displayCompany}'s market and found ${opportunities.length} compan${opportunities.length===1?'y':'ies'} I think would be worth looking at. Happy to show you why Grace selected them.`
-      : `I think the best way to show Grace Intelligence is a live pass on ${displayCompany}'s market: actual companies, why now, who owns the decision, and what Grace would say first.`,
+    ? `I pointed Grace Intelligence at ${possessiveCompany} market and found ${opportunities.length} compan${opportunities.length===1?'y':'ies'} I think would be worth looking at. Happy to show you why Grace selected them.`
+    : `I think the best way to show Grace Intelligence is a live pass on ${possessiveCompany} market: actual companies, why now, who owns the decision, and what Grace would say first.`,
     callOpener:hasShowcase
-      ? `I reached out because I pointed Grace Intelligence at ${displayCompany}'s market and found a few companies I think would be worth your attention. I wanted to show you why Grace selected them.`
-      : `I reached out because I think a live Grace Intelligence pass on ${displayCompany}'s market would show the system better than any pitch deck.`
+    ? `I reached out because I pointed Grace Intelligence at ${possessiveCompany} market and found a few companies I think would be worth your attention. I wanted to show you why Grace selected them.`
+    : `I reached out because I think a live Grace Intelligence pass on ${possessiveCompany} market would show the system better than any pitch deck.`
   };
 }
 
