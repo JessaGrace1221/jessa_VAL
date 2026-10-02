@@ -137,9 +137,11 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const prospectTheory=graceAiResearchProspectTheory/);
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(server,/function graceHumanOutboundCopy/);
-  assert.match(server,/Those \$\{ctx\.buyerWord\} exist before they become leads/);
-  assert.match(server,/the same intelligence can follow them through the rest of the journey/);
-  assert.match(server,/Could Jessa plausibly have typed this/);
+  assert.match(server,/I built a different kind of AI system called Grace Intelligence/);
+  assert.match(server,/Grace Intelligence can go looking/);
+  assert.match(server,/not another lead list/);
+  assert.match(server,/different from an AI agent or a campaign automation/);
+  assert.match(server,/First-touch rule: sell Grace Intelligence, not VAL/);
   assert.match(fitProfile,/aiSafeClaim/);
   assert.match(fitProfile,/aiCommercialTension/);
   assert.match(fitProfile,/qualification\.qualificationStatus!=='Qualified for Import'/);
@@ -164,6 +166,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.doesNotMatch(fitProfile,/buyer-state question/);
   assert.doesNotMatch(fitProfile,/The consequence is rarely dramatic at first/);
   assert.doesNotMatch(fitProfile,/prospect handling is equally state-specific/);
+  assert.doesNotMatch(server.slice(server.indexOf('function graceHumanOutboundCopy'),server.indexOf('function graceFitProfile')),/part of VAL|VAL is built|VAL might/);
   assert.ok(server.includes('a\\s+precise\\s+subject'));
   assert.ok(server.includes('connect|reference|mention|use|lead with|open with|frame|focus on|write|say|explain|describe'));
   assert.doesNotMatch(fitProfile,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);

@@ -33559,53 +33559,55 @@ function graceHumanOutboundContext({displayCompany='',industry='',painPoints=[],
 
 function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[]}={}){
   const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
-  const subject=graceCleanSubjectLine(`A thought for ${displayCompany}`,`A thought for ${displayCompany}`);
-  // Could Jessa plausibly have typed this herself after spending ten minutes looking at the company?
+  const subject=graceCleanSubjectLine(`Grace Intelligence and ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
+  // First-touch rule: sell Grace Intelligence, not VAL. Could Jessa plausibly have typed this herself?
   const mirrorEmail=[
     `Hi ${firstName},`,
     '',
-    `I was looking through ${displayCompany} and noticed something interesting.`,
+    `I built a different kind of AI system called Grace Intelligence, and ${displayCompany} caught my attention as a company where I think it could do something meaningful.`,
     '',
-    `You help ${ctx.buyerWord} in a few very different moments: ${ctx.moments}.`,
+    `Most AI systems still start after you tell them what to do.`,
     '',
-    `Those ${ctx.buyerWord} exist before they become leads.`,
+    `Grace Intelligence can go looking.`,
     '',
-    `That is the part of VAL I think could be interesting for ${displayCompany}. It can look for companies entering those situations, find the person who owns the decision, understand what is happening there, and help start the right conversation.`,
+    `For a company like ${displayCompany}, that means identifying ${ctx.buyerWord} entering the kinds of moments where ${ctx.serviceMoment} starts to matter: ${ctx.moments}.`,
     '',
-    `Then once someone raises their hand, the same intelligence can follow them through the rest of the journey.`,
+    `It can study what is happening inside those companies, find the person who owns the decision, understand why there may be a reason to talk now, and help shape the first conversation.`,
+    '',
+    `Then once someone raises their hand, Grace Intelligence keeps learning from what happens next.`,
     '',
     `I would be happy to show you what that could look like using ${displayCompany} as the example.`,
     '',
     `Jessa`
   ].join('\n');
   const follow24=[
-    `One example I would be curious about: the company that is starting to feel the problem before it starts shopping.`,
+    `The simplest way to think about Grace Intelligence is this: it is not another lead list.`,
     '',
-    `They may be hiring, expanding, changing systems, adding risk, opening a location, or quietly outgrowing the way things have worked so far.`,
+    `A lead list says, "Here are companies that match a filter."`,
     '',
-    `That is usually before a form fill. Before a search. Before the obvious buying moment.`,
+    `Grace Intelligence is built to ask a better question: which companies are entering a situation where this conversation may actually matter?`,
     '',
-    `VAL is built to notice those conditions early enough to start a smarter conversation.`,
+    `That could be a company hiring, expanding, changing systems, adding risk, opening a location, or quietly outgrowing the way things have worked so far.`,
     '',
-    `Worth a look?`,
+    `That is what I would want to show you with ${displayCompany}.`,
     '',
     `Jessa`
   ].join('\n');
   const follow36=[
-    `The other reason I thought of ${displayCompany}: once someone does raise their hand, the conversation should not flatten out.`,
+    `The other piece that matters: Grace Intelligence does not stop once it finds an opportunity.`,
     '',
-    `Someone with an urgent problem, someone comparing providers, and someone planning ahead are not really asking for the same thing.`,
+    `It can also watch what happens after someone responds, books, stalls, objects, disappears, or moves forward.`,
     '',
-    `The system should know the difference and help the next message feel like it was written for that moment.`,
+    `That is where this becomes different from an AI agent or a campaign automation. The system is meant to keep building intelligence around the business, the market, the people, the conversations, and the outcomes.`,
     '',
-    `That is the small sample I would want to show you.`,
+    `A small example using ${displayCompany} would make that much easier to see than a long explanation.`,
     '',
     `Jessa`
   ].join('\n');
   const follow5=[
     `I will close the loop here unless this is worth seeing.`,
     '',
-    `My hunch is simple: ${displayCompany} may have more opportunity around it than a normal lead list would ever show.`,
+    `My hunch is simple: ${displayCompany} may have more opportunity around it than a normal lead list, CRM workflow, or AI agent would ever show.`,
     '',
     `If I am wrong, that will be obvious quickly. If I am right, the example should make the value pretty easy to see.`,
     '',
@@ -33614,14 +33616,14 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
   return {
     mirrorEmailSubject:subject,
     mirrorEmail,
-    follow24Subject:'Before they become leads',
+    follow24Subject:'Not another lead list',
     follow24,
-    follow36Subject:'After they raise their hand',
+    follow36Subject:'Beyond an AI agent',
     follow36,
     follow5Subject:'Should I close the loop?',
     follow5,
-    linkedinDm:`I was looking at ${displayCompany} and had a thought about finding companies before they start actively looking for help. I can show you what that could look like using ${displayCompany} as the example.`,
-    callOpener:`I reached out because I was looking at ${displayCompany} and saw a way VAL might identify the right companies before they become obvious leads, then help shape the first conversation.`
+    linkedinDm:`I built a system called Grace Intelligence and thought ${displayCompany} would be a useful example. It is designed to find companies entering the right buying conditions before they become obvious leads, then help shape the right conversation.`,
+    callOpener:`I reached out because I built Grace Intelligence and thought ${displayCompany} would be a strong example of how it can find the right companies before they become obvious leads, then keep learning from what happens next.`
   };
 }
 
