@@ -143,6 +143,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/Hard requirement: the gifted lead should include at least one usable email address/);
   assert.match(server,/function enrichGraceShowcaseLeadPacket/);
   assert.match(server,/function researchGraceGiftedLeadPacketOnly/);
+  assert.match(server,/Model output to repair:/);
+  assert.match(server,/json-repair/);
   assert.match(server,/function graceShowcaseOpportunities/);
   assert.match(server,/A lead packet Grace built for \$\{displayCompany\}/);
   assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market and had it build one complete lead packet/);

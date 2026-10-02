@@ -35783,7 +35783,22 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
   ].join('\n');
   const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
   const parsed=extractJsonObject(result.text);
-  if(!Object.keys(parsed||{}).length) throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
+  if(!Object.keys(parsed||{}).length){
+    const repairInput=[
+      'Return only strict valid compact JSON. No markdown. No commentary.',
+      'Repair the following model output so it matches this JSON shape:',
+      schema,
+      '',
+      'Model output to repair:',
+      String(result.text||'').slice(0,12000)
+    ].join('\n');
+    const repaired=await callGeminiGroundedSearch({input:repairInput,maxTokens,temperature:0,timeoutMs:25000,responseMimeType:'application/json'}).catch(error=>({text:'',sourceUrls:[],model:`repair failed: ${error.message}`}));
+    const repairedParsed=extractJsonObject(repaired.text);
+    if(Object.keys(repairedParsed||{}).length){
+      return {parsed:repairedParsed,sourceUrls:[...(result.sourceUrls||[]),...(repaired.sourceUrls||[])],model:[result.model,repaired.model,'json-repair'].filter(Boolean).join(' + ')};
+    }
+    throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
+  }
   return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
 }
 
