@@ -35916,6 +35916,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
 	      'Use this strategy context. Find ONE real company showing the strongest pinpoint signal and build the gifted packet around that company.',
 	      strategyContext,
 	      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+	      'Do not leave showcase_lead_packet blank. If usable email is missing, still return the named company, website, trigger, evidence, likely buyer if known, first message, confidence, and a clear missing-email caveat.',
 	      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
 	      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
 	      'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
