@@ -33527,6 +33527,102 @@ function graceEvidencePs({personName='',personTitle='',displayCompany='',prospec
   return `P.S. I am reaching out because ${graceTrimSentenceEnd(personPiece)}; evidence: ${graceTrimSentenceEnd(personProof)}. I focused on ${displayCompany} because ${graceTrimSentenceEnd(businessPiece)}; evidence: ${graceTrimSentenceEnd(businessProof)}. ${usePiece}.${strategicPiece}`;
 }
 
+function graceHumanOutboundContext({displayCompany='',industry='',painPoints=[],prospectTheory={},evidenceLedger=[]}={}){
+  const text=[
+    displayCompany,
+    industry,
+    painPoints.join(' '),
+    prospectTheory.bestOpening,
+    prospectTheory.observed,
+    prospectTheory.likelyCommercialProblem,
+    evidenceLedger.map(row=>`${row.claim||''} ${row.evidence||''}`).join(' ')
+  ].filter(Boolean).join(' ').toLowerCase();
+  const isTech=/managed it|msp|it support|cyber|security|cloud|backup|infrastructure|technology|software|compliance|network|helpdesk/.test(text);
+  const isStaffing=/staff|recruit|talent|workforce|hiring/.test(text);
+  const isInsurance=/insurance|benefits|coverage|broker|risk/.test(text);
+  const isCommercialService=/roof|hvac|facility|fire protection|security integrator|construction|maintenance|contractor|restoration|janitorial|landscap/.test(text);
+  const moments=isTech
+    ? 'something is broken now, security is starting to feel risky, the team is growing, or the business is wondering if its current IT setup is still enough'
+    : isStaffing
+      ? 'they are hiring faster than expected, losing people, opening a new role, or realizing the current team cannot carry the next stage'
+      : isInsurance
+        ? 'they are growing, adding locations, changing leadership, hiring, buying equipment, or taking on new risk'
+        : isCommercialService
+          ? 'something needs repair, a facility is changing, a contract is coming up, or a replacement decision is getting harder to ignore'
+          : 'something changed inside the business and the need is becoming real before they have started looking for help';
+  const buyerWord=isTech?'companies':'businesses';
+  const serviceMoment=isTech?'IT help':isStaffing?'hiring help':isInsurance?'advice':isCommercialService?'service help':'help';
+  return {moments,buyerWord,serviceMoment};
+}
+
+function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[]}={}){
+  const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
+  const subject=graceCleanSubjectLine(`A thought for ${displayCompany}`,`A thought for ${displayCompany}`);
+  // Could Jessa plausibly have typed this herself after spending ten minutes looking at the company?
+  const mirrorEmail=[
+    `Hi ${firstName},`,
+    '',
+    `I was looking through ${displayCompany} and noticed something interesting.`,
+    '',
+    `You help ${ctx.buyerWord} in a few very different moments: ${ctx.moments}.`,
+    '',
+    `Those ${ctx.buyerWord} exist before they become leads.`,
+    '',
+    `That is the part of VAL I think could be interesting for ${displayCompany}. It can look for companies entering those situations, find the person who owns the decision, understand what is happening there, and help start the right conversation.`,
+    '',
+    `Then once someone raises their hand, the same intelligence can follow them through the rest of the journey.`,
+    '',
+    `I would be happy to show you what that could look like using ${displayCompany} as the example.`,
+    '',
+    `Jessa`
+  ].join('\n');
+  const follow24=[
+    `One example I would be curious about: the company that is starting to feel the problem before it starts shopping.`,
+    '',
+    `They may be hiring, expanding, changing systems, adding risk, opening a location, or quietly outgrowing the way things have worked so far.`,
+    '',
+    `That is usually before a form fill. Before a search. Before the obvious buying moment.`,
+    '',
+    `VAL is built to notice those conditions early enough to start a smarter conversation.`,
+    '',
+    `Worth a look?`,
+    '',
+    `Jessa`
+  ].join('\n');
+  const follow36=[
+    `The other reason I thought of ${displayCompany}: once someone does raise their hand, the conversation should not flatten out.`,
+    '',
+    `Someone with an urgent problem, someone comparing providers, and someone planning ahead are not really asking for the same thing.`,
+    '',
+    `The system should know the difference and help the next message feel like it was written for that moment.`,
+    '',
+    `That is the small sample I would want to show you.`,
+    '',
+    `Jessa`
+  ].join('\n');
+  const follow5=[
+    `I will close the loop here unless this is worth seeing.`,
+    '',
+    `My hunch is simple: ${displayCompany} may have more opportunity around it than a normal lead list would ever show.`,
+    '',
+    `If I am wrong, that will be obvious quickly. If I am right, the example should make the value pretty easy to see.`,
+    '',
+    `Jessa`
+  ].join('\n');
+  return {
+    mirrorEmailSubject:subject,
+    mirrorEmail,
+    follow24Subject:'Before they become leads',
+    follow24,
+    follow36Subject:'After they raise their hand',
+    follow36,
+    follow5Subject:'Should I close the loop?',
+    follow5,
+    linkedinDm:`I was looking at ${displayCompany} and had a thought about finding companies before they start actively looking for help. I can show you what that could look like using ${displayCompany} as the example.`,
+    callOpener:`I reached out because I was looking at ${displayCompany} and saw a way VAL might identify the right companies before they become obvious leads, then help shape the first conversation.`
+  };
+}
+
 function graceFitProfile(p={}){
   const text=graceText(p);
   const employees=graceNumber(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.organizationSize,p.companySize);
@@ -33608,65 +33704,17 @@ function graceFitProfile(p={}){
 	  const firstAuditFinal=aiAuditQuestion
 	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
 	    : firstAudit;
-	  const mirrorPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'mirror'}):'';
-	  const proofPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'proof'}):'';
-	  const followPs=hasPersonForOutbound?graceEvidencePs({personName,personTitle,displayCompany,prospectTheory,evidenceLedger:mergedEvidenceLedger,aiOutreach,kind:'follow'}):'';
-	  const mirrorEmailSubject=hasPersonForOutbound?graceCleanSubjectLine(aiOutreach.subject_line_direction,`A buyer-state question for ${displayCompany}`):'';
-	  const follow24Subject=hasPersonForOutbound?'The cost of same-path follow-up':'';
-	  const follow36Subject=hasPersonForOutbound?'What the audit would prove':'';
-	  const follow5Subject=hasPersonForOutbound?'Should I close the loop?':'';
-	  const mirrorEmail=hasPersonForOutbound?[
-	    `Hi ${firstName},`,
-		    '',
-		    openingLine,
-		    '',
-		    `That is what I would want to test at ${displayCompany}: ${tensionLine}.`,
-		    '',
-		    `${safeClaimLine}.`,
-		    '',
-		    `My read is not that you need more activity. It is ${opportunityQuestion}.`,
-	    '',
-	    `The free audit would test that against the last 30-90 days of real inquiry and follow-up data.`,
-	    '',
-	    `The first question would be simple: ${graceQuestionLine(auditLine)}`,
-	    '',
-	    mirrorPs,
-	    '',
-    `Jessa`
-  ].join('\n').replace(/\n{3,}/g,'\n\n'):'';
-	  const follow24=hasPersonForOutbound?[
-	    `The consequence is rarely dramatic at first.`,
-	    '',
-	    `It usually looks like a good inquiry that gets an ordinary next step.`,
-	    '',
-	    `${consequenceLine}.`,
-	    '',
-	    `That is why I would not start by changing your sales process. I would start by finding the moments where the buyer state was visible, but the follow-up did not change.`,
-	    '',
-	    followPs
-	  ].join('\n'):'';
-	  const follow36=hasPersonForOutbound?[
-	    `The audit is useful because it can prove the theory wrong quickly.`,
-	    '',
-		    `I would look for ${auditLookupLine}.`,
-	    '',
-		    `The first pass would use ${aiAuditData.length?aiAuditData.slice(0,6).map(item=>graceAuditDataItem(item)).filter(Boolean).join(', '):'inquiry source, timing, first response, follow-up sequence, appointments, stalled conversations, and closed/won outcomes'}.`,
-	    '',
-	    `If there is no meaningful gap, you know quickly. If there is, the next step is not guesswork. It is a system that makes the right next move easier to repeat.`,
-	    '',
-	    proofPs
-	  ].join('\n'):'';
-	  const follow5=hasPersonForOutbound?[
-	    `I will close the loop here unless this is worth checking.`,
-	    '',
-	    `My read is simple: ${displayCompany} may not need another lead source as much as it needs a clearer conversion layer around the demand already showing up.`,
-	    '',
-	    `If that is wrong, the audit will show it. If it is right, the upside should be obvious in the data.`,
-	    '',
-	    `Either way, it is a clean thing to know.`,
-	    '',
-	    followPs
-	  ].join('\n'):'';
+	  const humanCopy=hasPersonForOutbound
+	    ? graceHumanOutboundCopy({firstName,displayCompany,industry,painPoints,prospectTheory,evidenceLedger:mergedEvidenceLedger})
+	    : {};
+	  const mirrorEmailSubject=humanCopy.mirrorEmailSubject||'';
+	  const mirrorEmail=humanCopy.mirrorEmail||'';
+	  const follow24Subject=humanCopy.follow24Subject||'';
+	  const follow24=humanCopy.follow24||'';
+	  const follow36Subject=humanCopy.follow36Subject||'';
+	  const follow36=humanCopy.follow36||'';
+	  const follow5Subject=humanCopy.follow5Subject||'';
+	  const follow5=humanCopy.follow5||'';
 
   const packet=[
     `Company: ${company}`,
@@ -33725,8 +33773,8 @@ function graceFitProfile(p={}){
     follow36,
     follow5Subject,
     follow5,
-    linkedinDm:hasPersonForOutbound?`I looked at ${company} and had a specific buyer-state question: ${prospectTheory.bestOpening} I think a free audit could show whether follow-up is adapting to that difference or treating every inquiry the same.`:'',
-    callOpener:hasPersonForOutbound?`I reached out because ${company} looks like a business where the follow-up needs to recognize the buyer state quickly. I wanted to see whether a free audit could test where existing demand is stalling after the first hand raise.`:'',
+    linkedinDm:humanCopy.linkedinDm||'',
+    callOpener:humanCopy.callOpener||'',
 	    handoff:`Review before contact. ${why}\n\nProspect theory:\n${prospectTheoryText}\n\n${hasPersonForOutbound?'Prospect-facing copy generated.':'No prospect-facing copy generated because no decision maker was verified.'}\nSuggested tone: ${aiCommunicationStyle}\nFirst audit: ${firstAuditFinal}`,
     reviewNeeded:score<65 || confidence==='Low' || qualification.qualificationStatus!=='Qualified for Import'
   };
