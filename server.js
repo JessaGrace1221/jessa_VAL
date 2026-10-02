@@ -33811,6 +33811,7 @@ function scoreGraceFitLead(raw={}){
     evidenceSummary:[profile.reasons.join('; '),`Qualification status: ${qualificationStatus}`,`Dual fit: ${qualification.dualFit?'Yes':'No'}`,`Estimated annual unlock: $${Number(qualification.estimatedAnnualUnlock||0).toLocaleString()}`,researchHoldReason?`Research hold reason: ${researchHoldReason}`:''].filter(Boolean).join('\n'),
     evidenceLedger:profile.evidenceLedger,
     evidenceLedgerText:profile.evidenceLedgerText,
+	    emailQuality:raw.emailQuality||classifyEmail(raw.email),
 	    qualificationStatus,
 	    researchHoldReason,
 	    dualFit:!!qualification.dualFit,
@@ -33860,7 +33861,7 @@ function graceFitPlan(body={}){
   return {
     market:String(body.market||body.location||'United States'),
     searchTerms,
-    limit:Math.min(Math.max(Number(body.limit)||12,1),100),
+    limit:Math.min(Math.max(Number(body.limit)||GRACE_FIT_MAX_LEADS_PER_RUN,1),GRACE_FIT_MAX_LEADS_PER_RUN),
     enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
     rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer'),
     surfaceGate

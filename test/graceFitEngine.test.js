@@ -57,6 +57,9 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/Only generic email found; missing decision-maker email/);
   assert.match(server,/hasDecisionMakerEmail/);
   assert.match(server,/contactReadiness/);
+  assert.match(server,/emailQuality:raw\.emailQuality\|\|classifyEmail\(raw\.email\)/);
+  const gracePlan=server.slice(server.indexOf('function graceFitPlan'),server.indexOf('function graceSpecificBusinessLeadFromBody'));
+  assert.match(gracePlan,/limit:Math\.min\(Math\.max\(Number\(body\.limit\)\|\|GRACE_FIT_MAX_LEADS_PER_RUN,1\),GRACE_FIT_MAX_LEADS_PER_RUN\)/);
   assert.match(server,/next\.emailQuality=isLikelyPersonEmail\(next\.email\)\?'person'/);
   assert.match(server,/Number\(!!b\.dualFit\)-Number\(!!a\.dualFit\)/);
   assert.match(server,/Number\(!!b\.hasDecisionMakerEmail\)-Number\(!!a\.hasDecisionMakerEmail\)/);
@@ -70,7 +73,6 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/initialGateWhyCouldBeWrong/);
   assert.match(server,/mustHaveMisses\.length===0/);
   assert.match(server,/plan\.surfaceGate \? screened\.filter/);
-  assert.match(server,/limit:Math\.min\(Math\.max\(Number\(body\.limit\)\|\|GRACE_FIT_MAX_LEADS_PER_RUN,1\),GRACE_FIT_MAX_LEADS_PER_RUN\)/);
   assert.match(server,/const specificLead=graceSpecificBusinessLeadFromBody\(body\)/);
   assert.match(server,/prospectingMode:'grace_fit_engine_specific_business'/);
   assert.match(server,/specificBusinessMode:true/);
