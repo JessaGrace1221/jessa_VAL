@@ -36076,13 +36076,15 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				          }
 				        }
 				      }
-				      next.showcaseOpportunities=[{
-			        company:next.showcaseLeadPacket.companyName,
-			        trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
-			        reason:next.showcaseLeadPacket.whyItFitsProspect,
-			        decisionMaker:[next.showcaseLeadPacket.decisionMakerName,next.showcaseLeadPacket.decisionMakerTitle].filter(Boolean).join(' - ')
-			      }];
-			    }
+				      next.showcaseOpportunities=graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true})
+				        ? [{
+				          company:next.showcaseLeadPacket.companyName,
+				          trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
+				          reason:next.showcaseLeadPacket.whyItFitsProspect,
+				          decisionMaker:[next.showcaseLeadPacket.decisionMakerName,next.showcaseLeadPacket.decisionMakerTitle].filter(Boolean).join(' - ')
+				        }]
+				        : [];
+				    }
 			    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
 	    next.decisionMakerSourceUrls=[
 	      ...graceUsefulJsonArray(decision.sourceUrls),
