@@ -33585,6 +33585,97 @@ function graceShowcaseOpportunityLine(item={},index=0){
   return `${lead} is ${graceLowerOpeningArticle(item.company)}: ${graceTrimSentenceEnd(trigger)}.${reason}`;
 }
 
+function graceNormalizeShowcaseLeadPacket(value={}){
+  let raw=value;
+  if(typeof raw==='string'){
+    try{raw=JSON.parse(raw);}catch(_){return null;}
+  }
+  if(!raw || typeof raw!=='object') return null;
+  const decision=raw.decision_maker||raw.decisionMaker||raw.likely_buyer||raw.likelyBuyer||{};
+  const evidence=safeArray(raw.evidence||raw.evidence_items||raw.evidenceItems).map(item=>{
+    if(typeof item==='string') return {summary:item,url:''};
+    return {
+      summary:String(item.summary||item.evidence||item.note||item.claim||'').trim(),
+      url:String(item.url||item.source_url||item.sourceUrl||'').trim()
+    };
+  }).filter(item=>item.summary||item.url).slice(0,4);
+  const companyName=String(raw.companyName||raw.company_name||raw.organizationName||raw.name||'').trim();
+  const website=String(raw.website||raw.url||raw.domain||'').trim();
+  if(!companyName && !website) return null;
+  const packet={
+    companyName:companyName||leadDomain(website)||'Showcase lead',
+    website,
+    industry:String(raw.industry||raw.category||'').trim(),
+    location:String(raw.location||raw.market||[raw.city,raw.state].filter(Boolean).join(', ')||'').trim(),
+    trigger:String(raw.trigger||raw.why_now||raw.whyNow||raw.signal||'').trim(),
+    whyNow:String(raw.whyNow||raw.why_now||raw.timing_reason||raw.trigger||'').trim(),
+    whyItFitsProspect:String(raw.whyItFitsProspect||raw.why_it_fits_prospect||raw.why_it_fits||raw.fit_reason||'').trim(),
+    decisionMakerName:String(decision.name||raw.decisionMakerName||raw.decision_maker_name||'').trim(),
+    decisionMakerTitle:String(decision.title||raw.decisionMakerTitle||raw.decision_maker_title||'').trim(),
+    decisionMakerEmail:normalizeEmailAddress(decision.email||raw.decisionMakerEmail||raw.decision_maker_email||''),
+    decisionMakerPhone:normalizePhoneNumber(decision.phone||raw.decisionMakerPhone||raw.decision_maker_phone||''),
+    decisionMakerLinkedIn:String(decision.linkedin_url||decision.linkedinUrl||raw.decisionMakerLinkedIn||raw.linkedinPersonalUrl||'').trim(),
+    evidence,
+    evidenceSummary:String(raw.evidenceSummary||raw.evidence_summary||raw.evidence_note||'').trim(),
+    firstMessageGraceWouldSend:String(raw.firstMessageGraceWouldSend||raw.first_message_grace_would_send||raw.first_message||raw.opening_message||'').trim(),
+    confidence:String(raw.confidence||raw.fit_confidence||'').trim(),
+    caveats:String(raw.caveats||raw.risk||raw.uncertainty||'').trim()
+  };
+  if(!packet.evidenceSummary && packet.evidence.length) packet.evidenceSummary=packet.evidence.map(item=>item.summary||item.url).filter(Boolean).slice(0,2).join('; ');
+  return packet;
+}
+
+function graceShowcaseLeadPacketReady(packet={}){
+  const p=graceNormalizeShowcaseLeadPacket(packet);
+  if(!p) return false;
+  return !!(p.companyName && (p.trigger||p.whyNow) && p.whyItFitsProspect && (p.evidenceSummary||p.evidence.length));
+}
+
+function graceShowcaseLeadPacketText(packet={}){
+  const p=graceNormalizeShowcaseLeadPacket(packet);
+  if(!p) return '';
+  const buyer=[p.decisionMakerName,p.decisionMakerTitle].filter(Boolean).join(' - ') || 'decision maker to verify';
+  const contact=[p.decisionMakerEmail,p.decisionMakerPhone].filter(Boolean).join(' | ');
+  const evidenceLines=p.evidence.length
+    ? p.evidence.map(item=>`- ${item.summary||'Evidence'}${item.url?` (${item.url})`:''}`).join('\n')
+    : (p.evidenceSummary||'source review needed');
+  return [
+    `Gifted lead packet`,
+    `Company: ${p.companyName}`,
+    p.website?`Website: ${p.website}`:'',
+    p.location?`Location: ${p.location}`:'',
+    p.industry?`Industry: ${p.industry}`:'',
+    `Why Grace flagged it: ${p.trigger||p.whyNow||'timing signal needs review'}`,
+    `Likely buyer: ${buyer}`,
+    contact?`Contact: ${contact}`:'',
+    `Evidence:`,
+    evidenceLines,
+    `Why it fits this prospect: ${p.whyItFitsProspect||'needs review'}`,
+    p.firstMessageGraceWouldSend?`First message Grace would send: ${p.firstMessageGraceWouldSend}`:'',
+    p.confidence?`Confidence: ${p.confidence}`:'',
+    p.caveats?`Caveats: ${p.caveats}`:''
+  ].filter(Boolean).join('\n');
+}
+
+function graceShowcaseLeadPacketEmailBlock(packet={}){
+  const p=graceNormalizeShowcaseLeadPacket(packet);
+  if(!p) return '';
+  const buyer=[p.decisionMakerName,p.decisionMakerTitle].filter(Boolean).join(' - ') || 'likely decision maker to verify';
+  const contact=[p.decisionMakerEmail,p.decisionMakerPhone].filter(Boolean).join(' | ');
+  const evidence=p.evidenceSummary || p.evidence.map(item=>item.summary).filter(Boolean).slice(0,2).join('; ') || 'evidence attached in the research packet';
+  return [
+    `Company: ${p.companyName}`,
+    p.website?`Website: ${p.website}`:'',
+    `Why Grace flagged it: ${p.trigger||p.whyNow}`,
+    `Likely buyer: ${buyer}`,
+    contact?`Contact: ${contact}`:'',
+    `Evidence: ${evidence}`,
+    `Why it may matter: ${p.whyItFitsProspect}`,
+    p.firstMessageGraceWouldSend?`First move Grace would make: ${p.firstMessageGraceWouldSend}`:'',
+    p.confidence?`Confidence: ${p.confidence}`:''
+  ].filter(Boolean).join('\n');
+}
+
 function graceShowcaseUsesNamedCompanies(opportunities=[]){
   return safeArray(opportunities).length>0 && safeArray(opportunities).every(item=>!/^an?\s+/i.test(String(item?.company||'').trim()));
 }
@@ -33595,8 +33686,10 @@ function gracePossessiveName(value=''){
   return /s$/i.test(text) ? `${text}'` : `${text}'s`;
 }
 
-function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[],showcaseOpportunities=[]}={}){
+function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[],showcaseOpportunities=[],showcaseLeadPacket=null}={}){
   const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
+  const giftedPacket=graceNormalizeShowcaseLeadPacket(showcaseLeadPacket);
+  const hasGiftedPacket=graceShowcaseLeadPacketReady(giftedPacket);
   const opportunities=graceShowcaseOpportunities(showcaseOpportunities);
   const hasShowcase=opportunities.length>0;
   const possessiveCompany=gracePossessiveName(displayCompany);
@@ -33607,9 +33700,27 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
   const showcaseWalkthrough=showcaseUsesNamedCompanies
     ? `If you want, I can walk you through the actual companies and why Grace selected them: ${GRACE_MEET_URL}`
     : `If you want, I can walk you through this pass and run it against actual companies in ${possessiveCompany} market: ${GRACE_MEET_URL}`;
-  const subject=graceCleanSubjectLine(hasShowcase?`What Grace found for ${displayCompany}`:`A live Grace Intelligence pass for ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
+  const subject=graceCleanSubjectLine(hasGiftedPacket?`A lead packet Grace built for ${displayCompany}`:(hasShowcase?`What Grace found for ${displayCompany}`:`A live Grace Intelligence pass for ${displayCompany}`),`Grace Intelligence and ${displayCompany}`);
   // First-touch rule: sell Grace Intelligence, not VAL. Could Jessa plausibly have typed this herself?
-  const mirrorEmail=hasShowcase
+  const mirrorEmail=hasGiftedPacket
+    ? [
+      `Hi ${firstName},`,
+      '',
+      `I pointed Grace Intelligence at ${possessiveCompany} market and had it build one complete lead packet.`,
+      '',
+      `Here is the one I would put in front of you first:`,
+      '',
+      graceShowcaseLeadPacketEmailBlock(giftedPacket),
+      '',
+      `I wanted you to see the difference immediately.`,
+      '',
+      `This is not a lead list. It is the beginning of a sales conversation with context already attached.`,
+      '',
+      `If you want Grace Intelligence to build more of these around ${possessiveCompany} market, you can book here: ${GRACE_MEET_URL}`,
+      '',
+      `Jessa`
+    ].join('\n').replace(/\n{3,}/g,'\n\n')
+    : hasShowcase
     ? [
       `Hi ${firstName},`,
       '',
@@ -33646,13 +33757,17 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
       `Jessa`
     ].join('\n');
   const follow24=[
-    hasShowcase
+    hasGiftedPacket
+      ? `The reason I sent the lead packet instead of a pitch: that is the product.`
+      : hasShowcase
       ? (showcaseUsesNamedCompanies?`The reason I led with the companies Grace found: that is the product.`:`The reason I led with the opportunity patterns Grace found: that is the product.`)
       : `The reason I would start with a live market pass: that is the product.`,
     '',
     `A lead list says, "Here are companies that match a filter."`,
     '',
-    `Grace Intelligence asks a better question: which companies are entering a situation where this conversation may actually matter?`,
+    hasGiftedPacket
+      ? `Grace Intelligence asks: what changed, who likely owns the problem, what evidence supports the timing, and what should be said first?`
+      : `Grace Intelligence asks a better question: which companies are entering a situation where this conversation may actually matter?`,
     '',
     `Then it looks for the evidence, the person, the timing, and the first conversation that would make sense.`,
     '',
@@ -33693,10 +33808,14 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     follow36,
     follow5Subject:'Should I close the loop?',
     follow5,
-    linkedinDm:hasShowcase
+    linkedinDm:hasGiftedPacket
+    ? `I pointed Grace Intelligence at ${possessiveCompany} market and built one complete lead packet. Happy to send the context.`
+    : hasShowcase
     ? `I pointed Grace Intelligence at ${possessiveCompany} market and found ${showcaseCountPhrase} I think would be worth looking at. Happy to show you why Grace selected ${showcaseUsesNamedCompanies?'them':'those signals'}.`
     : `I think the best way to show Grace Intelligence is a live pass on ${possessiveCompany} market: actual companies, why now, who owns the decision, and what Grace would say first.`,
-    callOpener:hasShowcase
+    callOpener:hasGiftedPacket
+    ? `I reached out because I had Grace Intelligence build one complete lead packet around ${possessiveCompany} market and wanted to show you what it found.`
+    : hasShowcase
     ? `I reached out because I pointed Grace Intelligence at ${possessiveCompany} market and found ${showcaseUsesNamedCompanies?'a few companies':'a few opportunity patterns'} I think would be worth your attention. I wanted to show you why Grace selected ${showcaseUsesNamedCompanies?'them':'those signals'}.`
     : `I reached out because I think a live Grace Intelligence pass on ${possessiveCompany} market would show the system better than any pitch deck.`
   };
@@ -33783,9 +33902,10 @@ function graceFitProfile(p={}){
 	  const firstAuditFinal=aiAuditQuestion
 	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
 	    : firstAudit;
-	  const humanCopy=hasPersonForOutbound
-	    ? graceHumanOutboundCopy({firstName,displayCompany,industry,painPoints,prospectTheory,evidenceLedger:mergedEvidenceLedger,showcaseOpportunities:p.showcaseOpportunities})
-	    : {};
+		  const showcaseLeadPacket=graceNormalizeShowcaseLeadPacket(p.showcaseLeadPacket||p.giftedLeadPacket||p.showcase_lead_packet||aiResearch.showcase_lead_packet||aiResearch.showcaseLeadPacket);
+		  const humanCopy=hasPersonForOutbound
+		    ? graceHumanOutboundCopy({firstName,displayCompany,industry,painPoints,prospectTheory,evidenceLedger:mergedEvidenceLedger,showcaseOpportunities:p.showcaseOpportunities,showcaseLeadPacket})
+		    : {};
 	  const mirrorEmailSubject=humanCopy.mirrorEmailSubject||'';
 	  const mirrorEmail=humanCopy.mirrorEmail||'';
 	  const follow24Subject=humanCopy.follow24Subject||'';
@@ -33817,9 +33937,10 @@ function graceFitProfile(p={}){
     `Dual fit: ${qualification.dualFit?'Yes':'No'}`,
     `Estimated annual unlock: $${qualification.estimatedAnnualUnlock.toLocaleString()}`,
     `Minimum annual unlock threshold: $${qualification.minimumUnlockThreshold.toLocaleString()}`,
-	    `Evidence ledger:\n${graceLedgerText(mergedEvidenceLedger)||'source review needed'}`,
-	    aiLedger.length?`AI evidence ledger:\n${graceResearchEvidenceText(aiLedger)}`:'',
-	    `First audit angle: ${firstAuditFinal}`,
+		    `Evidence ledger:\n${graceLedgerText(mergedEvidenceLedger)||'source review needed'}`,
+		    aiLedger.length?`AI evidence ledger:\n${graceResearchEvidenceText(aiLedger)}`:'',
+		    showcaseLeadPacket?graceShowcaseLeadPacketText(showcaseLeadPacket):'',
+		    `First audit angle: ${firstAuditFinal}`,
 	    `Sources: ${sources.join(', ')||'source review needed'}`
 	  ].filter(Boolean).join('\n');
 
@@ -33840,9 +33961,11 @@ function graceFitProfile(p={}){
 	    firstAudit:firstAuditFinal,
 	    prospectTheory,
 	    prospectTheoryText,
-	    evidenceLedger:mergedEvidenceLedger,
-	    evidenceLedgerText:graceLedgerText(mergedEvidenceLedger),
-    qualification,
+		    evidenceLedger:mergedEvidenceLedger,
+		    evidenceLedgerText:graceLedgerText(mergedEvidenceLedger),
+		    showcaseLeadPacket,
+		    showcaseLeadPacketText:graceShowcaseLeadPacketText(showcaseLeadPacket),
+	    qualification,
     packet,
     mirrorEmailSubject,
     mirrorEmail,
@@ -33909,9 +34032,12 @@ function scoreGraceFitLead(raw={}){
     communicationStyle:profile.communicationStyle,
     personalizationNotes:`Use the witness insight first, then connect it to how VAL would witness their own leads. ${profile.communicationStyle}`,
     flatteringObservation:profile.flattering,
-    witnessInsight:profile.witness,
-    prospectPacket:profile.packet,
-    mirrorEmailSubject:profile.mirrorEmailSubject,
+	    witnessInsight:profile.witness,
+	    prospectPacket:profile.packet,
+	    showcaseLeadPacket:profile.showcaseLeadPacket,
+	    giftedLeadPacket:profile.showcaseLeadPacket,
+	    showcaseLeadPacketText:profile.showcaseLeadPacketText,
+	    mirrorEmailSubject:profile.mirrorEmailSubject,
     mirrorEmail:profile.mirrorEmail,
     followup24Subject:profile.follow24Subject,
     followup24:profile.follow24,
@@ -33975,9 +34101,10 @@ function graceSpecificBusinessLeadFromBody(body={}){
     primaryContact:String(body.decisionMakerName||body.primaryContact||body.contactName||body.fullName||'').trim(),
     email:String(body.email||'').trim(),
     phone:String(body.phone||'').trim(),
-    linkedinCompanyUrl:String(body.linkedinCompanyUrl||body.linkedin||'').trim(),
-    googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
-    showcaseOpportunities:body.showcaseOpportunities||body.opportunities||body.marketOpportunities||[],
+	    linkedinCompanyUrl:String(body.linkedinCompanyUrl||body.linkedin||'').trim(),
+	    googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
+	    showcaseLeadPacket:body.showcaseLeadPacket||body.giftedLeadPacket||body.showcase_lead_packet||null,
+	    showcaseOpportunities:body.showcaseOpportunities||body.opportunities||body.marketOpportunities||[],
     leadProfile:'grace',
     scraperType:'Grace Fit Engine',
     source:'Grace Intelligence Fit Engine - Specific Business',
@@ -35699,16 +35826,32 @@ async function researchGraceWithGeminiStages(p={}){
     ].join('\n'),
     schema:'{"prospect_theory":{"dominant_argument":"","observed":"","likely_commercial_problem":"","why":"","commercial_tension":"","potential_consequence":"","val_hypothesis":"","best_proof":"","best_audit_question":"","best_cta":"","demonstration_idea":""},"counterargument":{"strongest_counterargument":"","evidence_that_would_disprove_theory":[],"safe_claim":""},"role_motivation":{"professional_priorities":[],"most_relevant_motivation":"","evidence_or_role_basis":""},"communication_style":{"primary_disc_hypothesis":null,"secondary_disc_hypothesis":null,"confidence":"","evidence":[],"opening_tone":"","sentence_length":"","proof_style":"","cta_style":"","pace":"","avoid":[]},"witness_insight":{"observation":"","evidence":[],"surprise_rating":""},"outreach_strategy":{"first_email_objective":"","strongest_opening_angle":"","subject_line_direction":"","core_argument":"","proof_mechanism":"","cta_strategy":"","ps_strategy":"","follow_up_roles":["Initial email - Recognition","Follow-up 1 - Consequence","Follow-up 2 - Proof","Final follow-up - Risk reversal"]},"audit_strategy":{"primary_question":"","data_to_inspect":[],"what_success_would_reveal":""},"source_urls":[],"notes":""}'
   });
-  const sourceUrls=[...new Set([...(stage1.sourceUrls||[]),...(stage2.sourceUrls||[]),...(stage3.sourceUrls||[]),...graceUsefulJsonArray(stage1.parsed.source_urls),...graceUsefulJsonArray(stage2.parsed.source_urls),...graceUsefulJsonArray(stage3.parsed.source_urls)])];
+  const stage4=await callGraceGeminiStage({
+    p,
+    stage:'gifted_lead_packet_for_prospect',
+    maxTokens:2600,
+    instructions:[
+      'Build ONE complete gifted lead packet for the prospect.',
+      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
+      'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
+      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+      'Prefer a lead with a publicly supportable decision maker and at least one usable contact path. If no email or phone is found, still return the strongest packet but state the caveat clearly.',
+      'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
+      'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
+    ].join('\n'),
+    schema:'{"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
+  });
+  const sourceUrls=[...new Set([...(stage1.sourceUrls||[]),...(stage2.sourceUrls||[]),...(stage3.sourceUrls||[]),...(stage4.sourceUrls||[]),...graceUsefulJsonArray(stage1.parsed.source_urls),...graceUsefulJsonArray(stage2.parsed.source_urls),...graceUsefulJsonArray(stage3.parsed.source_urls),...graceUsefulJsonArray(stage4.parsed.source_urls)])];
   return {
     ...stage1.parsed,
     ...stage2.parsed,
     ...stage3.parsed,
+    ...stage4.parsed,
     qualification:{...(stage1.parsed.qualification||{}),...(stage2.parsed.qualification||{})},
     source_urls:sourceUrls,
     geminiGrounded:true,
-    geminiModel:[stage1.model,stage2.model,stage3.model].filter(Boolean).join(' + '),
-    notes:[stage1.parsed.notes,stage2.parsed.notes,stage3.parsed.notes,'Gemini staged research completed.'].filter(Boolean).join(' ')
+    geminiModel:[stage1.model,stage2.model,stage3.model,stage4.model].filter(Boolean).join(' + '),
+    notes:[stage1.parsed.notes,stage2.parsed.notes,stage3.parsed.notes,stage4.parsed.notes,'Gemini staged research completed.'].filter(Boolean).join(' ')
   };
 }
 
@@ -35802,18 +35945,71 @@ async function researchGraceDecisionMakerWithAi(p={}){
   return {...parsed,geminiGrounded:false};
 }
 
+async function enrichGraceShowcaseLeadPacket(packet={}){
+  const normalized=graceNormalizeShowcaseLeadPacket(packet);
+  if(!normalized) return null;
+  let next={...normalized};
+  const lead={
+    organizationName:next.companyName,
+    name:next.companyName,
+    website:next.website,
+    industry:next.industry,
+    location:next.location,
+    decisionMakerName:next.decisionMakerName,
+    decisionMakerTitle:next.decisionMakerTitle,
+    email:next.decisionMakerEmail,
+    phone:next.decisionMakerPhone,
+    linkedinPersonalUrl:next.decisionMakerLinkedIn
+  };
+  if(!next.decisionMakerName || !next.decisionMakerLinkedIn){
+    const apollo=await lookupApolloDecisionMaker(lead).catch(e=>({configured:!!APOLLO_API_KEY,error:e.message}));
+    const data=apollo?.data||{};
+    if(data.name||data.linkedinUrl){
+      next.decisionMakerName=next.decisionMakerName||data.name||'';
+      next.decisionMakerTitle=next.decisionMakerTitle||data.title||'';
+      next.decisionMakerLinkedIn=next.decisionMakerLinkedIn||data.linkedinUrl||'';
+      next.apolloStatus=apollo?.error||`Apollo matched ${data.name||'likely decision-maker'}${data.title?' - '+data.title:''}`;
+    }else if(apollo?.error){
+      next.apolloStatus=apollo.error;
+    }
+  }
+  if(!next.decisionMakerEmail || !next.decisionMakerPhone){
+    const rocket=await lookupRocketReachDecisionMaker(next.companyName,{...lead,decisionMakerName:next.decisionMakerName,decisionMakerTitle:next.decisionMakerTitle,email:next.decisionMakerEmail,phone:next.decisionMakerPhone,linkedinPersonalUrl:next.decisionMakerLinkedIn},{maxTitleLookups:1}).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
+    const data=rocket?.data||{};
+    next.decisionMakerName=next.decisionMakerName||data.name||'';
+    next.decisionMakerTitle=next.decisionMakerTitle||data.title||'';
+    next.decisionMakerEmail=normalizeEmailAddress(next.decisionMakerEmail||data.email||'');
+    next.decisionMakerPhone=normalizePhoneNumber(next.decisionMakerPhone||data.phone||'');
+    next.decisionMakerLinkedIn=next.decisionMakerLinkedIn||data.linkedinUrl||'';
+    next.rocketReachStatus=rocket?.error||data.rawPreview||'gifted lead packet enriched';
+  }
+  return graceNormalizeShowcaseLeadPacket(next);
+}
+
 async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(String(p.leadProfile||'').toLowerCase()!=='grace' && !/Grace Fit Engine/i.test(String(p.scraperType||''))) return p;
   if(opts.decisionMakerResearch===false) return p;
   let next=sanitizeDecisionMaker({...p});
-  if(next.decisionMakerName || !(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
+  const needsShowcaseLeadPacket=opts.showcaseLeadResearch!==false && !graceShowcaseLeadPacketReady(next.showcaseLeadPacket||next.giftedLeadPacket||next.showcase_lead_packet);
+  if(!(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
+  if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
   try{
-	    const decision=await researchGraceDecisionMakerWithAi(next);
-	    const person=graceAiDecisionPerson(decision);
-		    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
-		    const preferred=decision.decision_maker?.preferred_person||{};
-		    next.aiDecisionMakerResearch=decision;
-		    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
+		    const decision=await researchGraceDecisionMakerWithAi(next);
+		    const person=graceAiDecisionPerson(decision);
+			    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
+			    const preferred=decision.decision_maker?.preferred_person||{};
+			    next.aiDecisionMakerResearch=decision;
+			    const showcasePacket=graceNormalizeShowcaseLeadPacket(decision.showcase_lead_packet||decision.showcaseLeadPacket);
+			    if(showcasePacket){
+			      next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket(showcasePacket).catch(error=>({...showcasePacket,caveats:[showcasePacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
+			      next.showcaseOpportunities=[{
+			        company:next.showcaseLeadPacket.companyName,
+			        trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
+			        reason:next.showcaseLeadPacket.whyItFitsProspect,
+			        decisionMaker:[next.showcaseLeadPacket.decisionMakerName,next.showcaseLeadPacket.decisionMakerTitle].filter(Boolean).join(' - ')
+			      }];
+			    }
+			    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
 	    next.decisionMakerSourceUrls=[
 	      ...graceUsefulJsonArray(decision.sourceUrls),
 	      ...graceUsefulJsonArray(decision.source_urls),

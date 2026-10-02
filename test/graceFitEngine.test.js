@@ -137,7 +137,13 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const prospectTheory=graceAiResearchProspectTheory/);
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(server,/function graceHumanOutboundCopy/);
+  assert.match(server,/function graceNormalizeShowcaseLeadPacket/);
+  assert.match(server,/function graceShowcaseLeadPacketReady/);
+  assert.match(server,/function enrichGraceShowcaseLeadPacket/);
   assert.match(server,/function graceShowcaseOpportunities/);
+  assert.match(server,/A lead packet Grace built for \$\{displayCompany\}/);
+  assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market and had it build one complete lead packet/);
+  assert.match(server,/This is not a lead list\. It is the beginning of a sales conversation with context already attached/);
   assert.match(server,/function gracePossessiveName/);
   assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market to see what it would find/);
   assert.match(server,/If you want, I can walk you through the actual companies and why Grace selected them/);
@@ -156,6 +162,10 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const mirrorEmail=humanCopy\.mirrorEmail/);
   assert.match(server,/const businessRows=evidenceLedger\.filter/);
   assert.match(server,/showcaseOpportunities:p\.showcaseOpportunities/);
+  assert.match(server,/showcaseLeadPacket:body\.showcaseLeadPacket\|\|body\.giftedLeadPacket\|\|body\.showcase_lead_packet\|\|null/);
+  assert.match(server,/stage:'gifted_lead_packet_for_prospect'/);
+  assert.match(server,/showcase_lead_packet/);
+  assert.match(server,/showcaseLeadPacket:profile\.showcaseLeadPacket/);
   assert.match(server,/showcaseOpportunities:body\.showcaseOpportunities\|\|body\.opportunities\|\|body\.marketOpportunities\|\|\[\]/);
   assert.match(fitProfile,/graceDisplayCompanyName/);
   assert.match(fitProfile,/Evidence ledger:\\n/);
