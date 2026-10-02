@@ -35854,6 +35854,32 @@ async function researchGraceWithGeminiStages(p={}){
   };
 }
 
+async function researchGraceGiftedLeadPacketOnly(p={}){
+  const stage=await callGraceGeminiStage({
+    p,
+    stage:'gifted_lead_packet_for_prospect',
+    maxTokens:2400,
+    instructions:[
+      'Build ONE complete gifted lead packet for the prospect.',
+      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
+      'Use the company website, service language, market, and known facts to infer the kind of buyer this prospect serves.',
+      'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
+      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+      'Prefer a lead with a publicly supportable decision maker and at least one usable contact path. If no email or phone is found, still return the strongest packet but state the caveat clearly.',
+      'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
+      'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
+    ].join('\n'),
+    schema:'{"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
+  });
+  return {
+    ...stage.parsed,
+    source_urls:[...new Set([...(stage.sourceUrls||[]),...graceUsefulJsonArray(stage.parsed.source_urls)])],
+    geminiGrounded:true,
+    geminiModel:stage.model,
+    notes:[stage.parsed.notes,'Gemini gifted lead packet research completed.'].filter(Boolean).join(' ')
+  };
+}
+
 async function researchGraceDecisionMakerWithAi(p={}){
   const prompt=[
     'You are VAL’s Grace Intelligence Research Layer.',
@@ -35993,7 +36019,9 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(!(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
   if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
   try{
-		    const decision=await researchGraceDecisionMakerWithAi(next);
+		    const decision=(next.decisionMakerName && needsShowcaseLeadPacket)
+		      ? await researchGraceGiftedLeadPacketOnly(next)
+		      : await researchGraceDecisionMakerWithAi(next);
 		    const person=graceAiDecisionPerson(decision);
 			    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
 			    const preferred=decision.decision_maker?.preferred_person||{};

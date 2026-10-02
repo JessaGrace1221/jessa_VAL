@@ -140,6 +140,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/function graceNormalizeShowcaseLeadPacket/);
   assert.match(server,/function graceShowcaseLeadPacketReady/);
   assert.match(server,/function enrichGraceShowcaseLeadPacket/);
+  assert.match(server,/function researchGraceGiftedLeadPacketOnly/);
   assert.match(server,/function graceShowcaseOpportunities/);
   assert.match(server,/A lead packet Grace built for \$\{displayCompany\}/);
   assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market and had it build one complete lead packet/);
@@ -164,6 +165,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/showcaseOpportunities:p\.showcaseOpportunities/);
   assert.match(server,/showcaseLeadPacket:body\.showcaseLeadPacket\|\|body\.giftedLeadPacket\|\|body\.showcase_lead_packet\|\|null/);
   assert.match(server,/stage:'gifted_lead_packet_for_prospect'/);
+  assert.match(server,/next\.decisionMakerName && needsShowcaseLeadPacket/);
+  assert.match(server,/researchGraceGiftedLeadPacketOnly\(next\)/);
   assert.match(server,/showcase_lead_packet/);
   assert.match(server,/showcaseLeadPacket:profile\.showcaseLeadPacket/);
   assert.match(server,/showcaseOpportunities:body\.showcaseOpportunities\|\|body\.opportunities\|\|body\.marketOpportunities\|\|\[\]/);
