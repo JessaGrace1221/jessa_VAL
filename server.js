@@ -35780,7 +35780,7 @@ async function enrichProspect(p,opts={}){
     next = await enrichProspectWithApollo(next);
     next = await enrichProspectWithRocketReach(next);
   }
-  if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
+  if(next.email) next.emailQuality=isLikelyPersonEmail(next.email)?'person':(next.emailQuality||classifyEmail(next.email));
   return sanitizeDecisionMaker(next);
 }
 

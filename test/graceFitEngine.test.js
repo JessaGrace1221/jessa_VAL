@@ -57,6 +57,7 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/Only generic email found; missing decision-maker email/);
   assert.match(server,/hasDecisionMakerEmail/);
   assert.match(server,/contactReadiness/);
+  assert.match(server,/next\.emailQuality=isLikelyPersonEmail\(next\.email\)\?'person'/);
   assert.match(server,/Number\(!!b\.dualFit\)-Number\(!!a\.dualFit\)/);
   assert.match(server,/Number\(!!b\.hasDecisionMakerEmail\)-Number\(!!a\.hasDecisionMakerEmail\)/);
   assert.match(server,/surfaceGateSummary/);
