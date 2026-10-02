@@ -35763,7 +35763,8 @@ function graceGeminiBaseContext(p={}){
     graceLeadResearchFacts(p),
     '',
     'Grace Intelligence is a premium AI revenue operations, lead intelligence, communication, buyer-state analysis, and data-audit system.',
-    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`
+    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`,
+    p.giftedLeadStrategyContext?'\n'+p.giftedLeadStrategyContext:''
   ].join('\n');
 }
 
@@ -35885,35 +35886,53 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     `Rejected caveat: ${rejectedPacket.caveats||rejectedPacket.confidence||'none'}`,
     'Do not return the same company again unless you can provide a stronger directly usable email with evidence.'
   ].join('\n') : '';
-  const stage=await callGraceGeminiStage({
+  const strategyStage=await callGraceGeminiStage({
     p:researchInput,
+    stage:'gifted_lead_strategy',
+    maxTokens:1600,
+    instructions:[
+      'Do not find a lead yet.',
+      'Infer what businesses would be unusually well served by this company based on its actual website, service language, proof, geography, delivery model, and strongest vertical fit.',
+      'Identify pinpoint signals competitors would likely miss: specific events, wording, operational changes, hiring patterns, leadership changes, expansion signals, compliance pressure, project announcements, acquisition/integration moments, or buyer-state shifts that suggest need before the company explicitly asks for help.',
+      'The strategy must make the final lead feel discovered through intelligence, not pulled from a generic list.'
+    ].join('\n'),
+    schema:'{"best_served_businesses":[{"business_type":"","why_this_company_can_serve_them_well":"","evidence_from_prospect":""}],"pinpoint_signals":[{"signal":"","why_competitors_miss_it":"","why_it_matters_now":"","search_phrase_to_find_it":""}],"notes":"","source_urls":[]}'
+  });
+  const strategyContext=[
+    'Gifted lead strategy:',
+    JSON.stringify({
+      best_served_businesses:strategyStage.parsed.best_served_businesses||[],
+      pinpoint_signals:strategyStage.parsed.pinpoint_signals||[]
+    }).slice(0,5000)
+  ].join('\n');
+  const stage=await callGraceGeminiStage({
+    p:{...researchInput,giftedLeadStrategyContext:strategyContext},
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
     instructions:[
 	      'Build ONE complete gifted lead packet for the prospect.',
 	      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
-	      'Do this in three steps before choosing the final lead:',
-	      '1. Infer what businesses would be unusually well served by this company based on its actual website, service language, proof, geography, delivery model, and strongest vertical fit.',
-	      '2. Identify the pinpoint signals competitors would likely miss: specific events, wording, operational changes, hiring patterns, leadership changes, expansion signals, compliance pressure, project announcements, acquisition/integration moments, or buyer-state shifts that suggest need before the company explicitly asks for help.',
-	      '3. Find ONE real company showing the strongest pinpoint signal, then build the gifted packet around that company.',
-	      'The final lead should feel discovered through intelligence, not pulled from a generic list.',
+	      'Use this strategy context. Find ONE real company showing the strongest pinpoint signal and build the gifted packet around that company.',
+	      strategyContext,
 	      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
-      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
-      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
-      'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
+	      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
+	      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
+	      'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
       'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
       'The packet should make the prospect feel, "This system understood our business and found something we could act on."',
       retryInstructions
     ].join('\n'),
 	    schema:'{"best_served_businesses":[{"business_type":"","why_this_company_can_serve_them_well":"","evidence_from_prospect":""}],"pinpoint_signals":[{"signal":"","why_competitors_miss_it":"","why_it_matters_now":""}],"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
   });
-  return {
-    ...stage.parsed,
-    source_urls:[...new Set([...(stage.sourceUrls||[]),...graceUsefulJsonArray(stage.parsed.source_urls)])],
-    geminiGrounded:true,
-    geminiModel:stage.model,
-    notes:[stage.parsed.notes,'Gemini gifted lead packet research completed.'].filter(Boolean).join(' ')
-  };
+	  return {
+	    ...stage.parsed,
+	    best_served_businesses:stage.parsed.best_served_businesses||strategyStage.parsed.best_served_businesses||[],
+	    pinpoint_signals:stage.parsed.pinpoint_signals||strategyStage.parsed.pinpoint_signals||[],
+	    source_urls:[...new Set([...(strategyStage.sourceUrls||[]),...(stage.sourceUrls||[]),...graceUsefulJsonArray(strategyStage.parsed.source_urls),...graceUsefulJsonArray(stage.parsed.source_urls)])],
+	    geminiGrounded:true,
+	    geminiModel:[strategyStage.model,stage.model].filter(Boolean).join(' + '),
+	    notes:[stage.parsed.notes,'Gemini gifted lead packet research completed.'].filter(Boolean).join(' ')
+	  };
 }
 
 async function researchGraceDecisionMakerWithAi(p={}){
