@@ -192,6 +192,7 @@ function clientLooksLikeGreg(){
 }
 function clientFeatureLocks(){
   const greg = clientLooksLikeGreg();
+  const email=String(body.email||'').trim();
   return {
     projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
     linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
@@ -32278,7 +32279,8 @@ function convergenceAssessmentLeadFromBody(body={}){
     decisionMakerName:fullName,
     primaryContact:fullName,
     decisionMakerTitle:role,
-    email:String(body.email||'').trim(),
+    email,
+    emailQuality:classifyEmail(email),
     phone:String(body.phone||'').trim(),
     industry:String(body.industry||'').trim(),
     numberOfEmployees:employeeCount,
