@@ -148,6 +148,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/what businesses would be unusually well served by this company/);
   assert.match(server,/pinpoint signals competitors would likely miss/);
   assert.match(server,/stage:'gifted_lead_strategy'/);
+  assert.match(server,/return exactly 2 best-served business types and exactly 3 pinpoint signals/);
   assert.match(server,/search_phrase_to_find_it/);
   assert.match(server,/Use this strategy context/);
   assert.match(server,/giftedLeadStrategyContext/);

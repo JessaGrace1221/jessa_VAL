@@ -35889,9 +35889,10 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
   const strategyStage=await callGraceGeminiStage({
     p:researchInput,
     stage:'gifted_lead_strategy',
-    maxTokens:1600,
+    maxTokens:2600,
     instructions:[
       'Do not find a lead yet.',
+      'Keep this strategy compact: return exactly 2 best-served business types and exactly 3 pinpoint signals.',
       'Infer what businesses would be unusually well served by this company based on its actual website, service language, proof, geography, delivery model, and strongest vertical fit.',
       'Identify pinpoint signals competitors would likely miss: specific events, wording, operational changes, hiring patterns, leadership changes, expansion signals, compliance pressure, project announcements, acquisition/integration moments, or buyer-state shifts that suggest need before the company explicitly asks for help.',
       'The strategy must make the final lead feel discovered through intelligence, not pulled from a generic list.'
