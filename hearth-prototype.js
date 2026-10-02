@@ -2108,9 +2108,11 @@ const leadScraperDefinitions = {
     },
     criteriaFields: [
       {key:'scraper_name',label:'Scraper name',value:'Grace Fit Engine'},
+      {key:'companyName',label:'Specific company name',value:''},
+      {key:'website',label:'Specific company website',value:''},
       {key:'market',label:'Market',value:'United States'},
       {key:'category',label:'B2B categories or keywords',value:'B2B marketing agencies, commercial HVAC companies, managed IT service providers, staffing agencies'},
-      {key:'limit',label:'Preview count',type:'number',value:'12'},
+      {key:'limit',label:'Preview count',type:'number',value:'10'},
       {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find B2B companies with expensive lead flow, consultative sales, visible booking or quote motion, and enough complexity that slow response, generic follow-up, poor routing, or weak personalization could be costing real money.'}
     ],
     sourceReadiness: [

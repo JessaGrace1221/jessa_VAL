@@ -15,6 +15,7 @@ test('Grace Fit Engine exposes review-first preview and import routes',()=>{
   assert.match(server,/\/api\/grace\/fit-engine\/custom-fields\/status/);
   assert.match(server,/\/api\/grace\/revenue-audit/);
   assert.match(server,/function discoverGraceFitLeads/);
+  assert.match(server,/function graceSpecificBusinessLeadFromBody/);
   assert.match(server,/function importApprovedGraceLeads/);
   assert.match(server,/function upsertGhlGraceAuditIntake/);
 });
@@ -69,6 +70,10 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/mustHaveMisses\.length===0/);
   assert.match(server,/plan\.surfaceGate \? screened\.filter/);
   assert.match(server,/limit:Math\.min\(Math\.max\(Number\(body\.limit\)\|\|GRACE_FIT_MAX_LEADS_PER_RUN,1\),GRACE_FIT_MAX_LEADS_PER_RUN\)/);
+  assert.match(server,/const specificLead=graceSpecificBusinessLeadFromBody\(body\)/);
+  assert.match(server,/prospectingMode:'grace_fit_engine_specific_business'/);
+  assert.match(server,/specificBusinessMode:true/);
+  assert.match(server,/source:'Grace Intelligence Fit Engine - Specific Business'/);
   assert.match(server,/plan\.limit\*\(plan\.surfaceGate\?10:1\.5\)/);
   const upsertStart=server.indexOf('async function upsertGhlGraceLead');
   const upsertEnd=server.indexOf('async function importApprovedGraceLeads');
@@ -186,5 +191,8 @@ test('Hearth scraper UI includes Grace Fit Engine endpoints',()=>{
   assert.match(hearth,/scraperId: 'grace_fit_engine'/);
   assert.match(hearth,/\/api\/grace\/fit-engine\/discover-preview/);
   assert.match(hearth,/\/api\/grace\/fit-engine\/import-approved/);
+  assert.match(hearth,/key:'companyName',label:'Specific company name'/);
+  assert.match(hearth,/key:'website',label:'Specific company website'/);
+  assert.match(hearth,/key:'limit',label:'Preview count',type:'number',value:'10'/);
   assert.match(hearth,/Mirror email, 24-hour follow-up, 36-hour follow-up/);
 });

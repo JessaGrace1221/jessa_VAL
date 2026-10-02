@@ -33815,8 +33815,107 @@ function graceFitPlan(body={}){
   };
 }
 
+function graceSpecificBusinessLeadFromBody(body={}){
+  const company=String(body.companyName||body.company||body.organizationName||body.businessName||body.name||'').trim();
+  const website=String(body.website||body.url||body.domain||'').trim();
+  if(!company && !website) return null;
+  const domain=website ? leadDomain(website) : '';
+  const organizationName=company || domain || 'Specific business';
+  const market=String(body.market||body.location||[body.city,body.state].filter(Boolean).join(', ')||'United States').trim();
+  const industry=String(body.industry||body.category||body.organizationType||body.businessTerms||'specific business review').trim();
+  return {
+    organizationName,
+    companyName:organizationName,
+    name:organizationName,
+    website,
+    industry,
+    organizationType:industry,
+    category:industry,
+    market,
+    location:market,
+    address1:String(body.address1||body.address||'').trim(),
+    city:String(body.city||'').trim(),
+    state:String(body.state||'').trim(),
+    country:String(body.country||'').trim(),
+    postalCode:String(body.postalCode||body.zip||'').trim(),
+    email:String(body.email||'').trim(),
+    phone:String(body.phone||'').trim(),
+    linkedinCompanyUrl:String(body.linkedinCompanyUrl||body.linkedin||'').trim(),
+    googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
+    leadProfile:'grace',
+    scraperType:'Grace Fit Engine',
+    source:'Grace Intelligence Fit Engine - Specific Business',
+    specificBusinessMode:true
+  };
+}
+
 async function discoverGraceFitLeads(body={}){
   const plan=graceFitPlan(body);
+  const specificLead=graceSpecificBusinessLeadFromBody(body);
+  if(specificLead){
+    const surfaceFit=graceSurfaceFitGate(specificLead);
+    const screenedLead={
+      ...specificLead,
+      surfaceFitScore:surfaceFit.score,
+      surfaceFitPassed:surfaceFit.passed,
+      initialFitTier:surfaceFit.initialFitTier,
+      initialIndustryGate:surfaceFit.industryGate,
+      surfaceUnlockPlausibility:surfaceFit.annualUnlockPlausibility,
+      surfaceFitReasons:surfaceFit.reasons.join('; '),
+      surfaceFitConcerns:surfaceFit.concerns.join('; '),
+      surfaceGateMustHaveMisses:surfaceFit.mustHaveMisses.join('; '),
+      initialGateWhyPassed:surfaceFit.whyPassed,
+      initialGateWhyCouldBeWrong:surfaceFit.whyCouldBeWrong
+    };
+    const enrichedLead=plan.enrichContacts
+      ? await enrichProspect(screenedLead,{rocketReachMode:body.rocketReachMode||body.rocketreachMode||'auto',fastPreview:false}).catch(e=>({...screenedLead,enrichmentStatus:e.message}))
+      : {...screenedLead,rocketReachStatus:'deferred until review'};
+    const leads=[scoreGraceFitLead(enrichedLead)];
+    const result={
+      ok:!!leads.length,
+      leadProfile:'grace',
+      prospectingMode:'grace_fit_engine_specific_business',
+      scraperType:'Grace Fit Engine',
+      market:plan.market,
+      searchTerms:['Specific business'],
+      organizationType:specificLead.organizationType,
+      tag:'free-data-audit',
+      specificBusinessMode:true,
+      surfaceGate:plan.surfaceGate,
+      surfaceGateSummary:{
+        raw:1,
+        deduped:1,
+        passed:surfaceFit.passed?1:0,
+        enriched:1,
+        rejected:surfaceFit.passed?0:1,
+        minimumScore:GRACE_SURFACE_FIT_MIN_SCORE
+      },
+      leads,
+      errors:[],
+      crmDestination:{status:'approval_required',tags:['Grace Intelligence','free-data-audit','revenue-leak-review','val-lead-intelligence']},
+      report:{
+        requestedViableLeads:1,
+        viableLeadsFound:leads.length,
+        rawBusinessesSearched:1,
+        surfaceGatePassed:surfaceFit.passed?1:0,
+        surfaceGateRejected:surfaceFit.passed?0:1,
+        surfaceGateMinimumScore:GRACE_SURFACE_FIT_MIN_SCORE,
+        priorityCount:leads.filter(l=>Number(l.leadScore)===1).length,
+        strongCount:leads.filter(l=>Number(l.leadScore)===2).length,
+        reviewCount:leads.filter(l=>l.reviewNeeded).length,
+        dualFitCount:leads.filter(l=>l.dualFit).length,
+        decisionMakerEmailCount:leads.filter(l=>l.hasDecisionMakerEmail).length,
+        phoneCount:leads.filter(l=>l.hasPhone).length,
+        fullContactabilityCount:leads.filter(l=>l.hasDecisionMakerEmail&&l.hasPhone).length,
+        qualifiedForImportCount:leads.filter(l=>l.qualificationStatus==='Qualified for Import').length,
+        researchHoldCount:leads.filter(l=>l.qualificationStatus==='Research Hold').length,
+        minimumAnnualUnlockThreshold:GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK
+      },
+      outreachPolicy:{mode:'review_first',active:false}
+    };
+    result.content=graceFitPreviewText(result);
+    return result;
+  }
   const perSearch=Math.max(12,Math.ceil((plan.limit*(plan.surfaceGate?10:1.5))/Math.max(1,plan.searchTerms.length)));
   const raw=[];
   const errors=[];
