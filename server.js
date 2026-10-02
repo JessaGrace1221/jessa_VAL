@@ -35755,7 +35755,6 @@ function graceAiDecisionConfidence(value=''){
 }
 
 function graceGeminiBaseContext(p={}){
-  const candidatePool=safeArray(p.giftedLeadCandidatePool||p.showcaseLeadCandidatePool).slice(0,8);
   return [
     `Company: ${p.organizationName||p.name||''}`,
     `Website: ${p.website||''}`,
@@ -35764,82 +35763,8 @@ function graceGeminiBaseContext(p={}){
     graceLeadResearchFacts(p),
     '',
     'Grace Intelligence is a premium AI revenue operations, lead intelligence, communication, buyer-state analysis, and data-audit system.',
-    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`,
-    candidatePool.length?'':'',
-    candidatePool.length?'Candidate gifted-lead pool. Prefer one of these if it has enough evidence and usable email/contact data; go outside the pool only if none are strong enough.':'',
-    candidatePool.length?candidatePool.map((candidate,index)=>[
-      `${index+1}. ${candidate.organizationName||candidate.name||'Unnamed candidate'}`,
-      `Website: ${candidate.website||''}`,
-      `Location: ${candidate.location||[candidate.city,candidate.state].filter(Boolean).join(', ')||''}`,
-      `Category: ${candidate.organizationType||candidate.industry||candidate.category||''}`,
-      `Email: ${candidate.email||''}`,
-      `Email quality/source: ${[candidate.emailQuality,candidate.emailSource].filter(Boolean).join(' | ')}`,
-      `Phone: ${candidate.phone||''}`,
-      `Decision maker: ${[candidate.decisionMakerName,candidate.decisionMakerTitle].filter(Boolean).join(' - ')}`,
-      `Evidence: ${safeArray(candidate.evidenceSignals).join('; ')||candidate.operationalIndicators||candidate.googleReviewsSnippet||''}`,
-      `Source: ${candidate.googleMapsUrl||candidate.website||''}`
-    ].join('\n')).join('\n\n'):''
+    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`
   ].join('\n');
-}
-
-function graceGiftedLeadCandidateSearchTerms(p={}){
-  const text=graceText(p);
-  if(/managed it|msp|it support|cyber|security|cloud|backup|infrastructure|technology/.test(text)){
-    return [
-      'construction companies with contact email addresses',
-      'healthcare companies with contact email addresses',
-      'manufacturing companies with contact email addresses'
-    ];
-  }
-  if(/marketing|agency|growth|lead/.test(text)) return ['professional services companies with contact email addresses','home services companies with contact email addresses'];
-  if(/staffing|recruit|talent/.test(text)) return ['manufacturing companies hiring with contact email addresses','logistics companies hiring with contact email addresses'];
-  if(/insurance|benefits|risk/.test(text)) return ['commercial construction companies with contact email addresses','manufacturing companies with contact email addresses'];
-  if(/roof|hvac|plumb|contractor|construction|home service/.test(text)) return ['property management companies with contact email addresses','commercial facilities companies with contact email addresses'];
-  return ['B2B companies with contact email addresses'];
-}
-
-async function buildGraceGiftedLeadCandidatePool(p={},options={}){
-  if(options.enabled===false) return [];
-  const market=String(p.market||p.location||[p.city,p.state].filter(Boolean).join(', ')||'United States').trim();
-  const terms=graceGiftedLeadCandidateSearchTerms(p).slice(0,Math.max(1,Math.min(Number(options.termLimit)||1,2)));
-  const candidates=[];
-  for(const term of terms){
-    const found=await discoverOutscraperProspects({
-      organizationType:term,
-      employeeMinimum:1,
-      market,
-      limit:Math.max(3,Math.min(Number(options.limit)||6,8)),
-      leadProfile:'grace_gifted_packet'
-    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:error.message}));
-    candidates.push(...safeArray(found.leads).map(candidate=>({...candidate,giftedLeadCandidateSearchTerm:term})));
-    if(candidates.length>=6) break;
-  }
-  const seen=new Set();
-  const deduped=candidates.filter(candidate=>{
-    const key=goallLeadKey(candidate);
-    if(seen.has(key)) return false;
-    seen.add(key);
-    return !!(candidate.organizationName||candidate.name);
-  }).slice(0,6);
-  const enriched=await mapWithConcurrency(deduped,3,async candidate=>{
-    if(!candidate.website) return candidate;
-    const publicContact=await findPublicWebsiteContactData(candidate.website).catch(()=>null);
-    if(!publicContact) return candidate;
-    return {
-      ...candidate,
-      email:candidate.email||publicContact.email||'',
-      emailSource:candidate.emailSource||publicContact.source||'',
-      emailQuality:candidate.emailQuality||publicContact.quality||'',
-      decisionMakerName:candidate.decisionMakerName||publicContact.leader?.name||'',
-      decisionMakerTitle:candidate.decisionMakerTitle||publicContact.leader?.title||'',
-      decisionMakerSource:candidate.decisionMakerSource||publicContact.leader?.source||''
-    };
-  });
-  return enriched.sort((a,b)=>
-    Number(validEmail(b.email))-Number(validEmail(a.email))
-    || Number(!!b.decisionMakerName)-Number(!!a.decisionMakerName)
-    || Number(!!b.website)-Number(!!a.website)
-  ).slice(0,6);
 }
 
 async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){
@@ -35950,14 +35875,7 @@ async function researchGraceWithGeminiStages(p={}){
 }
 
 async function researchGraceGiftedLeadPacketOnly(p={},options={}){
-  let researchInput={...p};
-  if(!safeArray(researchInput.giftedLeadCandidatePool||researchInput.showcaseLeadCandidatePool).length){
-    const candidatePool=await buildGraceGiftedLeadCandidatePool(researchInput,{enabled:options.candidatePool!==false,termLimit:1,limit:6}).catch(error=>{
-      researchInput.giftedLeadCandidatePoolError=error.message;
-      return [];
-    });
-    if(candidatePool.length) researchInput={...researchInput,giftedLeadCandidatePool:candidatePool};
-  }
+  const researchInput={...p};
   const rejectedPacket=graceNormalizeShowcaseLeadPacket(options.rejectedPacket);
   const retryInstructions=rejectedPacket ? [
     '',
@@ -35972,11 +35890,14 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
     instructions:[
-      'Build ONE complete gifted lead packet for the prospect.',
-      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
-      'Use the company website, service language, market, and known facts to infer the kind of buyer this prospect serves.',
-      'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
-      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+	      'Build ONE complete gifted lead packet for the prospect.',
+	      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
+	      'Do this in three steps before choosing the final lead:',
+	      '1. Infer what businesses would be unusually well served by this company based on its actual website, service language, proof, geography, delivery model, and strongest vertical fit.',
+	      '2. Identify the pinpoint signals competitors would likely miss: specific events, wording, operational changes, hiring patterns, leadership changes, expansion signals, compliance pressure, project announcements, acquisition/integration moments, or buyer-state shifts that suggest need before the company explicitly asks for help.',
+	      '3. Find ONE real company showing the strongest pinpoint signal, then build the gifted packet around that company.',
+	      'The final lead should feel discovered through intelligence, not pulled from a generic list.',
+	      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
       'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
       'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
       'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
@@ -35984,7 +35905,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
       'The packet should make the prospect feel, "This system understood our business and found something we could act on."',
       retryInstructions
     ].join('\n'),
-    schema:'{"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
+	    schema:'{"best_served_businesses":[{"business_type":"","why_this_company_can_serve_them_well":"","evidence_from_prospect":""}],"pinpoint_signals":[{"signal":"","why_competitors_miss_it":"","why_it_matters_now":""}],"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
   });
   return {
     ...stage.parsed,
