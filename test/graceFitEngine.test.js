@@ -141,6 +141,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/No prospect-facing copy generated because no decision maker was verified/);
   assert.match(fitProfile,/const mirrorEmailSubject=hasPersonForOutbound\?/);
   assert.match(fitProfile,/const mirrorEmail=hasPersonForOutbound\?/);
+  assert.match(server,/const businessRows=evidenceLedger\.filter/);
   assert.match(fitProfile,/The consequence is rarely dramatic at first/);
   assert.match(fitProfile,/graceDisplayCompanyName/);
   assert.match(fitProfile,/The audit is useful because it can prove the theory wrong quickly/);
@@ -155,6 +156,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.doesNotMatch(fitProfile,/shaped by what the system can actually see about the person and the business/);
   assert.doesNotMatch(fitProfile,/fit needs review/);
   assert.doesNotMatch(fitProfile,/public surface/);
+  assert.ok(server.includes('a\\s+precise\\s+subject'));
+  assert.ok(server.includes('connect|reference|mention|use|lead with|open with|frame|focus on|write|say|explain|describe'));
   assert.doesNotMatch(fitProfile,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);
   assert.doesNotMatch(fitProfile,/const follow24=\[[\s\S]{0,120}`Subject:/);
   assert.doesNotMatch(fitProfile,/const follow36=\[[\s\S]{0,120}`Subject:/);

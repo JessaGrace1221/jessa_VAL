@@ -33416,6 +33416,9 @@ function graceDisplayCompanyName(value=''){
 
 function graceCleanOutboundSentence(value='',fallback=''){
   let text=String(value||fallback||'').replace(/\s+/g,' ').trim();
+  if(/^(connect|reference|mention|use|lead with|open with|frame|focus on|write|say|explain|describe)\b/i.test(text)){
+    text=String(fallback||'').replace(/\s+/g,' ').trim();
+  }
   text=text
     .replace(/^the safe claim is not that ([^,.;]+), but that /i,'I am not assuming $1. What looks worth testing is ')
     .replace(/^the safe claim is that /i,'What looks worth testing is ')
@@ -33490,7 +33493,7 @@ function graceShortOutbound(value='',fallback='',max=260){
 function graceCleanSubjectLine(value='',fallback=''){
   let text=String(value||'').replace(/\s+/g,' ').trim();
   if(!text) text=String(fallback||'').trim();
-  if(/^(reference|mention|use|speak to|focus on|lead with|write|subject line|angle|direction)\b/i.test(text)){
+  if(/^(a\s+precise\s+subject|precise\s+subject|reference|mention|use|speak to|focus on|lead with|write|subject line|angle|direction)\b/i.test(text)){
     text=String(fallback||'').trim();
   }
   text=text.replace(/^subject:\s*/i,'').replace(/[.?!]+$/,'').trim();
@@ -33505,8 +33508,9 @@ function graceCleanSubjectLine(value='',fallback=''){
 function graceEvidencePs({personName='',personTitle='',displayCompany='',prospectTheory={},evidenceLedger=[],aiOutreach={},kind='mirror'}={}){
   const cleanStrategy=graceCleanPsStrategy(aiOutreach.ps_strategy);
   const dmEvidence=evidenceLedger.find(row=>/decision maker|founder|ceo|owner|president|principal/i.test(`${row.claim||''} ${row.evidence||''}`));
-  const specificBusinessEvidence=evidenceLedger.find(row=>/lead|call|book|job|revenue|growth|portal|assessment|consult|quote|demo|inbound|offer/i.test(`${row.claim||''} ${row.evidence||''}`));
-  const serviceBusinessEvidence=evidenceLedger.find(row=>/service|b2b|commercial|professional|trust-heavy|high-value/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const businessRows=evidenceLedger.filter(row=>row!==dmEvidence && !/decision maker|founder|ceo|owner|president|principal/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const specificBusinessEvidence=businessRows.find(row=>/lead|call|book|job|revenue|growth|portal|assessment|consult|quote|demo|inbound|offer|conversion|service|industry|buyer|commercial/i.test(`${row.claim||''} ${row.evidence||''}`));
+  const serviceBusinessEvidence=businessRows.find(row=>/service|b2b|commercial|professional|trust-heavy|high-value/i.test(`${row.claim||''} ${row.evidence||''}`));
   const businessEvidence=specificBusinessEvidence||serviceBusinessEvidence;
   const personPiece=personName
     ? `${personName}${personTitle?` appears to sit in the ${personTitle} seat`:''}`
