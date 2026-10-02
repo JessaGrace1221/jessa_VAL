@@ -33625,10 +33625,11 @@ function graceNormalizeShowcaseLeadPacket(value={}){
   return packet;
 }
 
-function graceShowcaseLeadPacketReady(packet={}){
+function graceShowcaseLeadPacketReady(packet={},options={}){
   const p=graceNormalizeShowcaseLeadPacket(packet);
   if(!p) return false;
-  return !!(p.companyName && (p.trigger||p.whyNow) && p.whyItFitsProspect && (p.evidenceSummary||p.evidence.length));
+  const hasRequiredContact=options.requireEmail ? validEmail(p.decisionMakerEmail) : true;
+  return !!(p.companyName && (p.trigger||p.whyNow) && p.whyItFitsProspect && (p.evidenceSummary||p.evidence.length) && hasRequiredContact);
 }
 
 function graceShowcaseLeadPacketText(packet={}){
@@ -33688,7 +33689,7 @@ function gracePossessiveName(value=''){
 function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[],showcaseOpportunities=[],showcaseLeadPacket=null}={}){
   const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
   const giftedPacket=graceNormalizeShowcaseLeadPacket(showcaseLeadPacket);
-  const hasGiftedPacket=graceShowcaseLeadPacketReady(giftedPacket);
+  const hasGiftedPacket=graceShowcaseLeadPacketReady(giftedPacket,{requireEmail:true});
   const opportunities=graceShowcaseOpportunities(showcaseOpportunities);
   const hasShowcase=opportunities.length>0;
   const possessiveCompany=gracePossessiveName(displayCompany);
@@ -35834,7 +35835,8 @@ async function researchGraceWithGeminiStages(p={}){
       'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
-      'Prefer a lead with a publicly supportable decision maker and at least one usable contact path. If no email or phone is found, still return the strongest packet but state the caveat clearly.',
+      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
+      'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
       'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
       'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
     ].join('\n'),
@@ -35865,7 +35867,8 @@ async function researchGraceGiftedLeadPacketOnly(p={}){
       'Use the company website, service language, market, and known facts to infer the kind of buyer this prospect serves.',
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
-      'Prefer a lead with a publicly supportable decision maker and at least one usable contact path. If no email or phone is found, still return the strongest packet but state the caveat clearly.',
+      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
+      'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
       'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
       'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
     ].join('\n'),
