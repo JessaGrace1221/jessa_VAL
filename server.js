@@ -274,6 +274,7 @@ const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLL
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || '';
 const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3-flash-preview').split(',').map(v=>v.trim()).filter(Boolean);
+const GRACE_FIT_MAX_LEADS_PER_RUN = 10;
 const GRACE_AI_RESEARCH_TIMEOUT_MS = Math.max(Number(process.env.GRACE_AI_RESEARCH_TIMEOUT_MS)||90000,30000);
 const GRACE_AI_RESEARCH_MAX_TOKENS = Math.max(Number(process.env.GRACE_AI_RESEARCH_MAX_TOKENS)||7000,3200);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
@@ -32571,7 +32572,7 @@ function frissonDiscoveryPlan(mode='organizations',body={}){
     mode:currentMode,
     market:String(body.market||body.location||'United States'),
     searchTerms,
-    limit:Math.min(Math.max(Number(body.limit)||12,1),100),
+    limit:Math.min(Math.max(Number(body.limit)||GRACE_FIT_MAX_LEADS_PER_RUN,1),GRACE_FIT_MAX_LEADS_PER_RUN),
     enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
     rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
   };

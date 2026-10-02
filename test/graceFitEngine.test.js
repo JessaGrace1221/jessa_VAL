@@ -41,6 +41,7 @@ test('Grace Fit Engine reuses lead discovery enrichment providers and does not c
 
 test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100K unlock',()=>{
   assert.match(server,/const GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK=100000/);
+  assert.match(server,/const GRACE_FIT_MAX_LEADS_PER_RUN = 10/);
   assert.match(server,/const GRACE_SURFACE_FIT_MIN_SCORE=Number\(process\.env\.GRACE_SURFACE_FIT_MIN_SCORE\)\|\|68/);
   assert.match(server,/function graceSurfaceFitGate/);
   assert.match(server,/const GRACE_DECISION_MAKER_TITLE_RE=/);
@@ -67,6 +68,7 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/initialGateWhyCouldBeWrong/);
   assert.match(server,/mustHaveMisses\.length===0/);
   assert.match(server,/plan\.surfaceGate \? screened\.filter/);
+  assert.match(server,/limit:Math\.min\(Math\.max\(Number\(body\.limit\)\|\|GRACE_FIT_MAX_LEADS_PER_RUN,1\),GRACE_FIT_MAX_LEADS_PER_RUN\)/);
   assert.match(server,/plan\.limit\*\(plan\.surfaceGate\?10:1\.5\)/);
   const upsertStart=server.indexOf('async function upsertGhlGraceLead');
   const upsertEnd=server.indexOf('async function importApprovedGraceLeads');
