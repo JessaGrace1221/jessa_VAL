@@ -75,6 +75,8 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/prospectingMode:'grace_fit_engine_specific_business'/);
   assert.match(server,/specificBusinessMode:true/);
   assert.match(server,/source:'Grace Intelligence Fit Engine - Specific Business'/);
+  assert.match(server,/decisionMakerName:String\(body\.decisionMakerName\|\|body\.primaryContact\|\|body\.contactName\|\|body\.fullName\|\|''\)\.trim\(\)/);
+  assert.match(server,/decisionMakerTitle:String\(body\.decisionMakerTitle\|\|body\.title\|\|body\.contactTitle\|\|''\)\.trim\(\)/);
   assert.match(server,/plan\.limit\*\(plan\.surfaceGate\?10:1\.5\)/);
   const upsertStart=server.indexOf('async function upsertGhlGraceLead');
   const upsertEnd=server.indexOf('async function importApprovedGraceLeads');
