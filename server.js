@@ -33671,8 +33671,7 @@ function graceShowcaseLeadPacketEmailBlock(packet={}){
     contact?`Contact: ${contact}`:'',
     `Evidence: ${evidence}`,
     `Why it may matter: ${p.whyItFitsProspect}`,
-    p.firstMessageGraceWouldSend?`First move Grace would make: ${p.firstMessageGraceWouldSend}`:'',
-    p.confidence?`Confidence: ${p.confidence}`:''
+    p.firstMessageGraceWouldSend?`First move Grace would make: ${p.firstMessageGraceWouldSend}`:''
   ].filter(Boolean).join('\n');
 }
 
