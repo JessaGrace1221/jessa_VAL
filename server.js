@@ -33585,6 +33585,10 @@ function graceShowcaseOpportunityLine(item={},index=0){
   return `${lead} is ${graceLowerOpeningArticle(item.company)}: ${graceTrimSentenceEnd(trigger)}.${reason}`;
 }
 
+function graceShowcaseUsesNamedCompanies(opportunities=[]){
+  return safeArray(opportunities).length>0 && safeArray(opportunities).every(item=>!/^an?\s+/i.test(String(item?.company||'').trim()));
+}
+
 function gracePossessiveName(value=''){
   const text=String(value||'').trim();
   if(!text) return 'the company\'s';
@@ -33596,6 +33600,13 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
   const opportunities=graceShowcaseOpportunities(showcaseOpportunities);
   const hasShowcase=opportunities.length>0;
   const possessiveCompany=gracePossessiveName(displayCompany);
+  const showcaseUsesNamedCompanies=graceShowcaseUsesNamedCompanies(opportunities);
+  const showcaseCountPhrase=showcaseUsesNamedCompanies
+    ? (opportunities.length===1?'a company':`${opportunities.length} companies`)
+    : (opportunities.length===1?'an opportunity pattern':`${opportunities.length} opportunity patterns`);
+  const showcaseWalkthrough=showcaseUsesNamedCompanies
+    ? `If you want, I can walk you through the actual companies and why Grace selected them: ${GRACE_MEET_URL}`
+    : `If you want, I can walk you through this pass and run it against actual companies in ${possessiveCompany} market: ${GRACE_MEET_URL}`;
   const subject=graceCleanSubjectLine(hasShowcase?`What Grace found for ${displayCompany}`:`A live Grace Intelligence pass for ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
   // First-touch rule: sell Grace Intelligence, not VAL. Could Jessa plausibly have typed this herself?
   const mirrorEmail=hasShowcase
@@ -33604,14 +33615,14 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
       '',
       `I pointed Grace Intelligence at ${possessiveCompany} market to see what it would find.`,
       '',
-      `It came back with ${opportunities.length===1?'a company':`${opportunities.length} companies`} I would want to look at if I were responsible for growth at ${displayCompany}.`,
+      `It came back with ${showcaseCountPhrase} I would want to look at if I were responsible for growth at ${displayCompany}.`,
       '',
       ...opportunities.map((item,index)=>graceShowcaseOpportunityLine(item,index)).flatMap(line=>[line,'']),
       `Grace did not just match a list. It worked backward from what ${displayCompany} sells, looked for businesses entering situations where ${ctx.serviceMoment} may matter, and built the reason each conversation may be worth considering now.`,
       '',
       `That is the difference I wanted to show you.`,
       '',
-      `If you want, I can walk you through the actual companies and why Grace selected them: ${GRACE_MEET_URL}`,
+      showcaseWalkthrough,
       '',
       `You can also see the system here: ${GRACE_SITE_URL}`,
       '',
@@ -33635,7 +33646,9 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
       `Jessa`
     ].join('\n');
   const follow24=[
-    hasShowcase?`The reason I led with the companies Grace found: that is the product.`:`The reason I would start with a live market pass: that is the product.`,
+    hasShowcase
+      ? (showcaseUsesNamedCompanies?`The reason I led with the companies Grace found: that is the product.`:`The reason I led with the opportunity patterns Grace found: that is the product.`)
+      : `The reason I would start with a live market pass: that is the product.`,
     '',
     `A lead list says, "Here are companies that match a filter."`,
     '',
@@ -33681,10 +33694,10 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     follow5Subject:'Should I close the loop?',
     follow5,
     linkedinDm:hasShowcase
-    ? `I pointed Grace Intelligence at ${possessiveCompany} market and found ${opportunities.length} compan${opportunities.length===1?'y':'ies'} I think would be worth looking at. Happy to show you why Grace selected them.`
+    ? `I pointed Grace Intelligence at ${possessiveCompany} market and found ${showcaseCountPhrase} I think would be worth looking at. Happy to show you why Grace selected ${showcaseUsesNamedCompanies?'them':'those signals'}.`
     : `I think the best way to show Grace Intelligence is a live pass on ${possessiveCompany} market: actual companies, why now, who owns the decision, and what Grace would say first.`,
     callOpener:hasShowcase
-    ? `I reached out because I pointed Grace Intelligence at ${possessiveCompany} market and found a few companies I think would be worth your attention. I wanted to show you why Grace selected them.`
+    ? `I reached out because I pointed Grace Intelligence at ${possessiveCompany} market and found ${showcaseUsesNamedCompanies?'a few companies':'a few opportunity patterns'} I think would be worth your attention. I wanted to show you why Grace selected ${showcaseUsesNamedCompanies?'them':'those signals'}.`
     : `I reached out because I think a live Grace Intelligence pass on ${possessiveCompany} market would show the system better than any pitch deck.`
   };
 }
