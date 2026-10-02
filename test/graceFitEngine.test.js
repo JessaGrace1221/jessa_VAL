@@ -137,9 +137,12 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const prospectTheory=graceAiResearchProspectTheory/);
   assert.match(fitProfile,/Prospect theory:\\n/);
   assert.match(server,/function graceHumanOutboundCopy/);
-  assert.match(server,/I built a different kind of AI system called Grace Intelligence/);
-  assert.match(server,/Grace Intelligence can go looking/);
-  assert.match(server,/not another lead list/);
+  assert.match(server,/function graceShowcaseOpportunities/);
+  assert.match(server,/I pointed Grace Intelligence at \$\{displayCompany\}'s market to see what it would find/);
+  assert.match(server,/If you want, I can walk you through the actual companies and why Grace selected them/);
+  assert.match(server,/https:\/\/graceintelligence\.com\/meet/);
+  assert.match(server,/https:\/\/graceintelligence\.com/);
+  assert.match(server,/Not another lead list/);
   assert.match(server,/different from an AI agent or a campaign automation/);
   assert.match(server,/First-touch rule: sell Grace Intelligence, not VAL/);
   assert.match(fitProfile,/aiSafeClaim/);
@@ -151,6 +154,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(fitProfile,/const mirrorEmailSubject=humanCopy\.mirrorEmailSubject/);
   assert.match(fitProfile,/const mirrorEmail=humanCopy\.mirrorEmail/);
   assert.match(server,/const businessRows=evidenceLedger\.filter/);
+  assert.match(server,/showcaseOpportunities:p\.showcaseOpportunities/);
+  assert.match(server,/showcaseOpportunities:body\.showcaseOpportunities\|\|body\.opportunities\|\|body\.marketOpportunities\|\|\[\]/);
   assert.match(fitProfile,/graceDisplayCompanyName/);
   assert.match(fitProfile,/Evidence ledger:\\n/);
   assert.match(fitProfile,/Counterargument:/);
@@ -167,6 +172,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.doesNotMatch(fitProfile,/The consequence is rarely dramatic at first/);
   assert.doesNotMatch(fitProfile,/prospect handling is equally state-specific/);
   assert.doesNotMatch(server.slice(server.indexOf('function graceHumanOutboundCopy'),server.indexOf('function graceFitProfile')),/part of VAL|VAL is built|VAL might/);
+  assert.doesNotMatch(server.slice(server.indexOf('function graceHumanOutboundCopy'),server.indexOf('function graceFitProfile')),/I built a different kind of AI system called Grace Intelligence/);
   assert.ok(server.includes('a\\s+precise\\s+subject'));
   assert.ok(server.includes('connect|reference|mention|use|lead with|open with|frame|focus on|write|say|explain|describe'));
   assert.doesNotMatch(fitProfile,/const mirrorEmail=\[[\s\S]{0,120}`Subject:/);

@@ -276,6 +276,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_K
 const GEMINI_GROUNDED_MODEL = process.env.GEMINI_GROUNDED_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODELS = String(process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3-flash-preview').split(',').map(v=>v.trim()).filter(Boolean);
 const GRACE_FIT_MAX_LEADS_PER_RUN = 10;
+const GRACE_MEET_URL = 'https://graceintelligence.com/meet';
+const GRACE_SITE_URL = 'https://graceintelligence.com';
 const GRACE_AI_RESEARCH_TIMEOUT_MS = Math.max(Number(process.env.GRACE_AI_RESEARCH_TIMEOUT_MS)||90000,30000);
 const GRACE_AI_RESEARCH_MAX_TOKENS = Math.max(Number(process.env.GRACE_AI_RESEARCH_MAX_TOKENS)||7000,3200);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
@@ -33557,39 +33559,84 @@ function graceHumanOutboundContext({displayCompany='',industry='',painPoints=[],
   return {moments,buyerWord,serviceMoment};
 }
 
-function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[]}={}){
+function graceShowcaseOpportunities(value){
+  let raw=value;
+  if(typeof raw==='string'){
+    try{raw=JSON.parse(raw);}catch(_){
+      raw=raw.split(/\n+/).map(line=>line.trim()).filter(Boolean).map(line=>({company:line}));
+    }
+  }
+  return (Array.isArray(raw)?raw:[]).map(item=>{
+    if(typeof item==='string') return {company:item.trim()};
+    if(!item || typeof item!=='object') return null;
+    return {
+      company:String(item.company||item.organizationName||item.name||'').trim(),
+      trigger:String(item.trigger||item.whyNow||item.why_now||item.signal||'').trim(),
+      reason:String(item.reason||item.whyGraceNoticed||item.why||item.likelyNeed||'').trim(),
+      decisionMaker:String(item.decisionMaker||item.decision_maker||item.buyer||item.role||'').trim()
+    };
+  }).filter(item=>item&&item.company).slice(0,3);
+}
+
+function graceShowcaseOpportunityLine(item={},index=0){
+  const lead=index===0?'One':index===1?'Another':'The third';
+  const trigger=item.trigger||item.reason||'is showing a change that may make the timing relevant';
+  const reason=item.reason && item.reason!==trigger ? ` Grace flagged it because ${graceLowerOpeningArticle(item.reason)}.` : '';
+  return `${lead} is ${item.company}: ${graceTrimSentenceEnd(trigger)}.${reason}`;
+}
+
+function graceHumanOutboundCopy({firstName='there',displayCompany='your company',industry='',painPoints=[],prospectTheory={},evidenceLedger=[],showcaseOpportunities=[]}={}){
   const ctx=graceHumanOutboundContext({displayCompany,industry,painPoints,prospectTheory,evidenceLedger});
-  const subject=graceCleanSubjectLine(`Grace Intelligence and ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
+  const opportunities=graceShowcaseOpportunities(showcaseOpportunities);
+  const hasShowcase=opportunities.length>0;
+  const subject=graceCleanSubjectLine(hasShowcase?`What Grace found for ${displayCompany}`:`A live Grace Intelligence pass for ${displayCompany}`,`Grace Intelligence and ${displayCompany}`);
   // First-touch rule: sell Grace Intelligence, not VAL. Could Jessa plausibly have typed this herself?
-  const mirrorEmail=[
-    `Hi ${firstName},`,
-    '',
-    `I built a different kind of AI system called Grace Intelligence, and ${displayCompany} caught my attention as a company where I think it could do something meaningful.`,
-    '',
-    `Most AI systems still start after you tell them what to do.`,
-    '',
-    `Grace Intelligence can go looking.`,
-    '',
-    `For a company like ${displayCompany}, that means identifying ${ctx.buyerWord} entering the kinds of moments where ${ctx.serviceMoment} starts to matter: ${ctx.moments}.`,
-    '',
-    `It can study what is happening inside those companies, find the person who owns the decision, understand why there may be a reason to talk now, and help shape the first conversation.`,
-    '',
-    `Then once someone raises their hand, Grace Intelligence keeps learning from what happens next.`,
-    '',
-    `I would be happy to show you what that could look like using ${displayCompany} as the example.`,
-    '',
-    `Jessa`
-  ].join('\n');
+  const mirrorEmail=hasShowcase
+    ? [
+      `Hi ${firstName},`,
+      '',
+      `I pointed Grace Intelligence at ${displayCompany}'s market to see what it would find.`,
+      '',
+      `It came back with ${opportunities.length===1?'a company':`${opportunities.length} companies`} I would want to look at if I were responsible for growth at ${displayCompany}.`,
+      '',
+      ...opportunities.map((item,index)=>graceShowcaseOpportunityLine(item,index)).flatMap(line=>[line,'']),
+      `Grace did not just match a list. It worked backward from what ${displayCompany} sells, looked for businesses entering situations where ${ctx.serviceMoment} may matter, and built the reason each conversation may be worth considering now.`,
+      '',
+      `That is the difference I wanted to show you.`,
+      '',
+      `If you want, I can walk you through the actual companies and why Grace selected them: ${GRACE_MEET_URL}`,
+      '',
+      `You can also see the system here: ${GRACE_SITE_URL}`,
+      '',
+      `Jessa`
+    ].join('\n').replace(/\n{3,}/g,'\n\n')
+    : [
+      `Hi ${firstName},`,
+      '',
+      `I think the strongest way to understand Grace Intelligence is not a pitch deck. It is a live pass on ${displayCompany}'s market.`,
+      '',
+      `The first thing I would have Grace look for is companies entering the moments where ${ctx.serviceMoment} starts to matter: ${ctx.moments}.`,
+      '',
+      `Then Grace would work backward from what ${displayCompany} sells, identify who likely owns the decision, and build the reason each conversation may be worth having now.`,
+      '',
+      `That is the piece I would rather show you than describe.`,
+      '',
+      `If you want to see it, you can book here: ${GRACE_MEET_URL}`,
+      '',
+      `Or take a look first: ${GRACE_SITE_URL}`,
+      '',
+      `Jessa`
+    ].join('\n');
   const follow24=[
-    `The simplest way to think about Grace Intelligence is this: it is not another lead list.`,
+    hasShowcase?`The reason I led with the companies Grace found: that is the product.`:`The reason I would start with a live market pass: that is the product.`,
     '',
     `A lead list says, "Here are companies that match a filter."`,
     '',
-    `Grace Intelligence is built to ask a better question: which companies are entering a situation where this conversation may actually matter?`,
+    `Grace Intelligence asks a better question: which companies are entering a situation where this conversation may actually matter?`,
     '',
-    `That could be a company hiring, expanding, changing systems, adding risk, opening a location, or quietly outgrowing the way things have worked so far.`,
+    `Then it looks for the evidence, the person, the timing, and the first conversation that would make sense.`,
     '',
-    `That is what I would want to show you with ${displayCompany}.`,
+    `That is what I would want to show you with ${displayCompany}: ${GRACE_MEET_URL}`,
     '',
     `Jessa`
   ].join('\n');
@@ -33600,7 +33647,7 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     '',
     `That is where this becomes different from an AI agent or a campaign automation. The system is meant to keep building intelligence around the business, the market, the people, the conversations, and the outcomes.`,
     '',
-    `A small example using ${displayCompany} would make that much easier to see than a long explanation.`,
+    `A small example using ${displayCompany} would make that much easier to see than a long explanation: ${GRACE_MEET_URL}`,
     '',
     `Jessa`
   ].join('\n');
@@ -33610,6 +33657,10 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     `My hunch is simple: ${displayCompany} may have more opportunity around it than a normal lead list, CRM workflow, or AI agent would ever show.`,
     '',
     `If I am wrong, that will be obvious quickly. If I am right, the example should make the value pretty easy to see.`,
+    '',
+    `${GRACE_MEET_URL}`,
+    '',
+    `${GRACE_SITE_URL}`,
     '',
     `Jessa`
   ].join('\n');
@@ -33622,8 +33673,12 @@ function graceHumanOutboundCopy({firstName='there',displayCompany='your company'
     follow36,
     follow5Subject:'Should I close the loop?',
     follow5,
-    linkedinDm:`I built a system called Grace Intelligence and thought ${displayCompany} would be a useful example. It is designed to find companies entering the right buying conditions before they become obvious leads, then help shape the right conversation.`,
-    callOpener:`I reached out because I built Grace Intelligence and thought ${displayCompany} would be a strong example of how it can find the right companies before they become obvious leads, then keep learning from what happens next.`
+    linkedinDm:hasShowcase
+      ? `I pointed Grace Intelligence at ${displayCompany}'s market and found ${opportunities.length} compan${opportunities.length===1?'y':'ies'} I think would be worth looking at. Happy to show you why Grace selected them.`
+      : `I think the best way to show Grace Intelligence is a live pass on ${displayCompany}'s market: actual companies, why now, who owns the decision, and what Grace would say first.`,
+    callOpener:hasShowcase
+      ? `I reached out because I pointed Grace Intelligence at ${displayCompany}'s market and found a few companies I think would be worth your attention. I wanted to show you why Grace selected them.`
+      : `I reached out because I think a live Grace Intelligence pass on ${displayCompany}'s market would show the system better than any pitch deck.`
   };
 }
 
@@ -33709,7 +33764,7 @@ function graceFitProfile(p={}){
 	    ? `Test this first: ${aiAuditQuestion}${aiAuditData.length?` Review: ${aiAuditData.slice(0,8).join(', ')}.`:''}`
 	    : firstAudit;
 	  const humanCopy=hasPersonForOutbound
-	    ? graceHumanOutboundCopy({firstName,displayCompany,industry,painPoints,prospectTheory,evidenceLedger:mergedEvidenceLedger})
+	    ? graceHumanOutboundCopy({firstName,displayCompany,industry,painPoints,prospectTheory,evidenceLedger:mergedEvidenceLedger,showcaseOpportunities:p.showcaseOpportunities})
 	    : {};
 	  const mirrorEmailSubject=humanCopy.mirrorEmailSubject||'';
 	  const mirrorEmail=humanCopy.mirrorEmail||'';
@@ -33902,6 +33957,7 @@ function graceSpecificBusinessLeadFromBody(body={}){
     phone:String(body.phone||'').trim(),
     linkedinCompanyUrl:String(body.linkedinCompanyUrl||body.linkedin||'').trim(),
     googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
+    showcaseOpportunities:body.showcaseOpportunities||body.opportunities||body.marketOpportunities||[],
     leadProfile:'grace',
     scraperType:'Grace Fit Engine',
     source:'Grace Intelligence Fit Engine - Specific Business',
