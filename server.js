@@ -35755,6 +35755,7 @@ function graceAiDecisionConfidence(value=''){
 }
 
 function graceGeminiBaseContext(p={}){
+  const candidatePool=safeArray(p.giftedLeadCandidatePool||p.showcaseLeadCandidatePool).slice(0,8);
   return [
     `Company: ${p.organizationName||p.name||''}`,
     `Website: ${p.website||''}`,
@@ -35763,8 +35764,61 @@ function graceGeminiBaseContext(p={}){
     graceLeadResearchFacts(p),
     '',
     'Grace Intelligence is a premium AI revenue operations, lead intelligence, communication, buyer-state analysis, and data-audit system.',
-    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`
+    `The target standard is a company where at least $${GRACE_MINIMUM_PLAUSIBLE_ANNUAL_UNLOCK.toLocaleString()} annually may plausibly be recovered, protected, or expanded. Do not claim this is proven from public data.`,
+    candidatePool.length?'':'',
+    candidatePool.length?'Candidate gifted-lead pool. Prefer one of these if it has enough evidence and usable email/contact data; go outside the pool only if none are strong enough.':'',
+    candidatePool.length?candidatePool.map((candidate,index)=>[
+      `${index+1}. ${candidate.organizationName||candidate.name||'Unnamed candidate'}`,
+      `Website: ${candidate.website||''}`,
+      `Location: ${candidate.location||[candidate.city,candidate.state].filter(Boolean).join(', ')||''}`,
+      `Category: ${candidate.organizationType||candidate.industry||candidate.category||''}`,
+      `Email: ${candidate.email||''}`,
+      `Phone: ${candidate.phone||''}`,
+      `Evidence: ${safeArray(candidate.evidenceSignals).join('; ')||candidate.operationalIndicators||candidate.googleReviewsSnippet||''}`,
+      `Source: ${candidate.googleMapsUrl||candidate.website||''}`
+    ].join('\n')).join('\n\n'):''
   ].join('\n');
+}
+
+function graceGiftedLeadCandidateSearchTerms(p={}){
+  const text=graceText(p);
+  if(/managed it|msp|it support|cyber|security|cloud|backup|infrastructure|technology/.test(text)){
+    return [
+      'construction companies with contact email addresses',
+      'healthcare companies with contact email addresses',
+      'manufacturing companies with contact email addresses'
+    ];
+  }
+  if(/marketing|agency|growth|lead/.test(text)) return ['professional services companies with contact email addresses','home services companies with contact email addresses'];
+  if(/staffing|recruit|talent/.test(text)) return ['manufacturing companies hiring with contact email addresses','logistics companies hiring with contact email addresses'];
+  if(/insurance|benefits|risk/.test(text)) return ['commercial construction companies with contact email addresses','manufacturing companies with contact email addresses'];
+  if(/roof|hvac|plumb|contractor|construction|home service/.test(text)) return ['property management companies with contact email addresses','commercial facilities companies with contact email addresses'];
+  return ['B2B companies with contact email addresses'];
+}
+
+async function buildGraceGiftedLeadCandidatePool(p={},options={}){
+  if(options.enabled===false) return [];
+  const market=String(p.market||p.location||[p.city,p.state].filter(Boolean).join(', ')||'United States').trim();
+  const terms=graceGiftedLeadCandidateSearchTerms(p).slice(0,Math.max(1,Math.min(Number(options.termLimit)||1,2)));
+  const candidates=[];
+  for(const term of terms){
+    const found=await discoverOutscraperProspects({
+      organizationType:term,
+      employeeMinimum:1,
+      market,
+      limit:Math.max(3,Math.min(Number(options.limit)||6,8)),
+      leadProfile:'grace_gifted_packet'
+    }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:error.message}));
+    candidates.push(...safeArray(found.leads).map(candidate=>({...candidate,giftedLeadCandidateSearchTerm:term})));
+    if(candidates.length>=6) break;
+  }
+  const seen=new Set();
+  return candidates.filter(candidate=>{
+    const key=goallLeadKey(candidate);
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return !!(candidate.organizationName||candidate.name);
+  }).slice(0,6);
 }
 
 async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){
@@ -35875,6 +35929,14 @@ async function researchGraceWithGeminiStages(p={}){
 }
 
 async function researchGraceGiftedLeadPacketOnly(p={},options={}){
+  let researchInput={...p};
+  if(!safeArray(researchInput.giftedLeadCandidatePool||researchInput.showcaseLeadCandidatePool).length){
+    const candidatePool=await buildGraceGiftedLeadCandidatePool(researchInput,{enabled:options.candidatePool!==false,termLimit:1,limit:6}).catch(error=>{
+      researchInput.giftedLeadCandidatePoolError=error.message;
+      return [];
+    });
+    if(candidatePool.length) researchInput={...researchInput,giftedLeadCandidatePool:candidatePool};
+  }
   const rejectedPacket=graceNormalizeShowcaseLeadPacket(options.rejectedPacket);
   const retryInstructions=rejectedPacket ? [
     '',
@@ -35885,7 +35947,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     'Do not return the same company again unless you can provide a stronger directly usable email with evidence.'
   ].join('\n') : '';
   const stage=await callGraceGeminiStage({
-    p,
+    p:researchInput,
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
     instructions:[
