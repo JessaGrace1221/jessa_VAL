@@ -35853,6 +35853,7 @@ async function researchGraceWithGeminiStages(p={}){
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
       'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
+      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
       'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
       'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
       'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
@@ -35873,10 +35874,19 @@ async function researchGraceWithGeminiStages(p={}){
   };
 }
 
-async function researchGraceGiftedLeadPacketOnly(p={}){
+async function researchGraceGiftedLeadPacketOnly(p={},options={}){
+  const rejectedPacket=graceNormalizeShowcaseLeadPacket(options.rejectedPacket);
+  const retryInstructions=rejectedPacket ? [
+    '',
+    'Previous packet was rejected for customer-facing outreach because its email/contact evidence was not strong enough.',
+    `Rejected company: ${rejectedPacket.companyName}`,
+    `Rejected email: ${rejectedPacket.decisionMakerEmail||'none'}`,
+    `Rejected caveat: ${rejectedPacket.caveats||rejectedPacket.confidence||'none'}`,
+    'Do not return the same company again unless you can provide a stronger directly usable email with evidence.'
+  ].join('\n') : '';
   const stage=await callGraceGeminiStage({
     p,
-    stage:'gifted_lead_packet_for_prospect',
+    stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
     instructions:[
       'Build ONE complete gifted lead packet for the prospect.',
@@ -35885,9 +35895,11 @@ async function researchGraceGiftedLeadPacketOnly(p={}){
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
       'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
+      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
       'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
       'Every claim must have evidence. Do not fabricate trigger events, decision makers, email addresses, phone numbers, employee counts, or news.',
-      'The packet should make the prospect feel, "This system understood our business and found something we could act on."'
+      'The packet should make the prospect feel, "This system understood our business and found something we could act on."',
+      retryInstructions
     ].join('\n'),
     schema:'{"showcase_lead_packet":{"company_name":"","website":"","industry":"","location":"","trigger":"","why_now":"","why_it_fits_prospect":"","decision_maker":{"name":null,"title":null,"email":null,"phone":null,"linkedin_url":null,"why_this_person":"","confidence":""},"evidence":[{"summary":"","source_url":"","confidence":"","fact_or_inference":""}],"evidence_summary":"","first_message_grace_would_send":"","confidence":"","caveats":""},"source_urls":[],"notes":""}'
   });
@@ -36035,7 +36047,7 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(String(p.leadProfile||'').toLowerCase()!=='grace' && !/Grace Fit Engine/i.test(String(p.scraperType||''))) return p;
   if(opts.decisionMakerResearch===false) return p;
   let next=sanitizeDecisionMaker({...p});
-  const needsShowcaseLeadPacket=opts.showcaseLeadResearch!==false && !graceShowcaseLeadPacketReady(next.showcaseLeadPacket||next.giftedLeadPacket||next.showcase_lead_packet);
+  const needsShowcaseLeadPacket=opts.showcaseLeadResearch!==false && !graceShowcaseLeadPacketReady(next.showcaseLeadPacket||next.giftedLeadPacket||next.showcase_lead_packet,{requireEmail:true});
   if(!(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
   if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
   try{
@@ -36047,9 +36059,24 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 			    const preferred=decision.decision_maker?.preferred_person||{};
 			    next.aiDecisionMakerResearch=decision;
 			    const showcasePacket=graceNormalizeShowcaseLeadPacket(decision.showcase_lead_packet||decision.showcaseLeadPacket);
-			    if(showcasePacket){
-			      next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket(showcasePacket).catch(error=>({...showcasePacket,caveats:[showcasePacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
-			      next.showcaseOpportunities=[{
+				    if(showcasePacket){
+				      next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket(showcasePacket).catch(error=>({...showcasePacket,caveats:[showcasePacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
+				      if(!graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true}) && opts.showcaseLeadRetry!==false){
+				        next.heldShowcaseLeadPacket=next.showcaseLeadPacket;
+				        const retryDecision=await researchGraceGiftedLeadPacketOnly(next,{rejectedPacket:next.showcaseLeadPacket}).catch(error=>({notes:`Gifted lead packet retry failed: ${error.message}`}));
+				        const retryPacket=graceNormalizeShowcaseLeadPacket(retryDecision.showcase_lead_packet||retryDecision.showcaseLeadPacket);
+				        if(retryPacket){
+				          const enrichedRetry=await enrichGraceShowcaseLeadPacket(retryPacket).catch(error=>({...retryPacket,caveats:[retryPacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
+				          if(graceShowcaseLeadPacketReady(enrichedRetry,{requireEmail:true})){
+				            next.showcaseLeadPacket=enrichedRetry;
+				            next.aiDecisionMakerResearch={...decision,gifted_lead_packet_retry:retryDecision,showcase_lead_packet:enrichedRetry};
+				          }else{
+				            next.showcaseLeadPacket=enrichedRetry;
+				            next.aiDecisionMakerResearch={...decision,gifted_lead_packet_retry:retryDecision,showcase_lead_packet:enrichedRetry,held_showcase_lead_packet:next.heldShowcaseLeadPacket};
+				          }
+				        }
+				      }
+				      next.showcaseOpportunities=[{
 			        company:next.showcaseLeadPacket.companyName,
 			        trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
 			        reason:next.showcaseLeadPacket.whyItFitsProspect,
