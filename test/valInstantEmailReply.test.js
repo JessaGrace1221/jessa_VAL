@@ -59,6 +59,9 @@ test('VAL instant reply QA enforces scheduling link and observers mention',()=>{
 test('VAL instant email sender deploys disabled until explicitly enabled',()=>{
   const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
   assert.match(server,/VAL_INSTANT_EMAIL_REPLY_ENABLED = \/\^\(1\|true\|yes\|on\)\$\//);
+  assert.match(server,/VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE = process\.env\.VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE/);
+  assert.match(server,/function valInstantReplyIsAfterCutoff/);
+  assert.match(server,/\.filter\(email=>valInstantReplyIsAfterCutoff\(email,notBeforeMs\)\)/);
   assert.match(server,/processValInstantEmailReplies\(\{[\s\S]*?\}\)\.catch[\s\S]*: \{ok:true,disabled:true,candidates:0,sent:0,blocked:0,skipped:0,results:\[\]\}/);
   assert.match(server,/VAL instant email replies are disabled\. No emails were sent\./);
 });

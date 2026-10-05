@@ -262,6 +262,7 @@ const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VA
 const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
   && !/^(1|true|yes)$/i.test(String(process.env.VAL_BOARD_LAUNCH_READY||''));
 const VAL_INSTANT_EMAIL_REPLY_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.VAL_INSTANT_EMAIL_REPLY_ENABLED||'false'));
+const VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE = process.env.VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE || '';
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -13817,6 +13818,24 @@ async function valInstantReplyAlreadyHandled(userId,email={}){
       || (threadId&&details.triggerThreadId===threadId&&details.status==='sent');
   });
 }
+function valInstantReplyMessageTime(email={}){
+  const value=email.receivedAt||email.date||email.internalDate||email.createdAt||'';
+  if(!value)return 0;
+  if(/^\d+$/.test(String(value)))return Number(value);
+  const ms=Date.parse(value);
+  return Number.isFinite(ms)?ms:0;
+}
+function valInstantReplyNotBeforeMs(value=VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE){
+  const raw=String(value||'').trim();
+  if(!raw)return 0;
+  const ms=Date.parse(raw);
+  return Number.isFinite(ms)?ms:0;
+}
+function valInstantReplyIsAfterCutoff(email={},notBeforeMs=0){
+  if(!notBeforeMs)return true;
+  const messageMs=valInstantReplyMessageTime(email);
+  return messageMs>=notBeforeMs;
+}
 async function generateValInstantReply({email={},context={},transcripts=[]}={}){
   const fallback=fallbackValInstantReply({email,schedulingLink:VAL_INSTANT_REPLY_SCHEDULING_LINK});
   const prompt=buildValInstantReplyPrompt({
@@ -13889,15 +13908,17 @@ async function sendValInstantEmailReply({email={},userId=currentUserId()}={}){
     return {ok:false,status:'blocked',reason:error.message,qa:generated.qa};
   }
 }
-async function processValInstantEmailReplies({emails=[],userId=currentUserId(),maxReplies=8}={}){
+async function processValInstantEmailReplies({emails=[],userId=currentUserId(),maxReplies=8,notBefore=VAL_INSTANT_EMAIL_REPLY_NOT_BEFORE}={}){
+  const notBeforeMs=valInstantReplyNotBeforeMs(notBefore);
   const candidates=safeArray(emails)
+    .filter(email=>valInstantReplyIsAfterCutoff(email,notBeforeMs))
     .filter(email=>shouldAutoReplyToValInvocation(email,Array.from(OWNER_EMAILS)))
     .slice(0,Math.max(1,Math.min(Number(maxReplies)||8,20)));
   const results=[];
   for(const email of candidates){
     results.push(await sendValInstantEmailReply({email,userId}).catch(error=>({ok:false,status:'error',messageId:email.messageId||email.id||'',error:error.message})));
   }
-  return {ok:true,candidates:candidates.length,sent:results.filter(result=>result.status==='sent').length,blocked:results.filter(result=>result.ok===false).length,skipped:results.filter(result=>/^skipped/.test(result.status||'')).length,results};
+  return {ok:true,notBefore:notBefore||'',candidates:candidates.length,sent:results.filter(result=>result.status==='sent').length,blocked:results.filter(result=>result.ok===false).length,skipped:results.filter(result=>/^skipped/.test(result.status||'')).length,results};
 }
 async function fetchGmailMessagesForAccount({account,userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
   const googleProvider=account?.provider||'google';
