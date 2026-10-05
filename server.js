@@ -80,6 +80,15 @@ const {
   validEmail,
   validPhone
 } = require('./services/leadContactValidation');
+const {
+  DEFAULT_SCHEDULING_LINK: VAL_INSTANT_REPLY_SCHEDULING_LINK,
+  shouldAutoReplyToValInvocation,
+  buildValInstantReplyPrompt,
+  parseJsonObject: parseValInstantReplyJson,
+  fallbackValInstantReply,
+  normalizeValInstantReplyOutput,
+  validateValInstantReply
+} = require('./services/valInstantEmailReply');
 const app     = express();
 const execFileAsync = promisify(execFile);
 let valBoardPackets = null;
@@ -252,6 +261,7 @@ const VAL_BOARD_DAILY_OBSERVER_CALL_LIMIT = Math.max(14,Number(process.env.VAL_B
 const VAL_BOARD_PACKETS_PER_BRIEFING = Math.max(1,Math.min(Number(process.env.VAL_BOARD_PACKETS_PER_BRIEFING)||12,20));
 const VAL_BOARD_LAUNCH_HOLD = CLIENT_CONFIG.clientSlug==='jessa-val'
   && !/^(1|true|yes)$/i.test(String(process.env.VAL_BOARD_LAUNCH_READY||''));
+const VAL_INSTANT_EMAIL_REPLY_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.VAL_INSTANT_EMAIL_REPLY_ENABLED||'false'));
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
 const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
@@ -10368,6 +10378,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       : '';
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
+    const sendStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.send']);
     if(!gmailStatus.connected){
       gmailSyncStatus.lastError=gmailStatus.error||'Gmail is not connected or missing required scopes.';
       return {
@@ -10416,6 +10427,13 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const durableEmailResults=await mapWithConcurrency(Array.from(durableEmailMap.values()),12,email=>
       valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message}))
     ).catch(()=>[]);
+    const valInstantReplies=VAL_INSTANT_EMAIL_REPLY_ENABLED
+      ? await processValInstantEmailReplies({
+          emails:Array.from(gmailMap.values()),
+          userId:req.valUser?.id||currentUserId(),
+          maxReplies:8
+        }).catch(error=>({ok:false,error:error.message,candidates:0,sent:0,blocked:1,skipped:0,results:[]}))
+      : {ok:true,disabled:true,candidates:0,sent:0,blocked:0,skipped:0,results:[]};
     const evidenceResults=await saveEmailEvidenceBatch(emails);
     const relationshipIntake=evidenceResults.reduce((acc,result)=>{
       const intake=result?.relationshipIntake||{};
@@ -10467,8 +10485,9 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:durableSentGmail.length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
-      errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth||sentHistoryGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]).concat(sendStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,hasSendScope:sendStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:durableSentGmail.length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      valInstantReplies,
+      errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.',sendStatus.connected?'':'Gmail send scope missing. VAL instant replies will be blocked until Google is reconnected with send permission.'].filter(Boolean),
       emails,
       relationshipIntake,
       sourceProcessing:{projectManagers:projectManagerIntake},
@@ -10493,6 +10512,23 @@ app.post('/api/email/gmail/refresh',async(req,res)=>{
     await auditLog({req,action:'email_sync_refreshed',resourceType:'gmail',metadata:{count:data.summary?.total||0,days:data.summary?.activeDays||req.body?.days||14},success:data.ok!==false}).catch(()=>{});
     res.status(data.ok===false?400:200).json({...data,refreshed:true});
   }catch(e){res.status(500).json({ok:false,refreshed:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
+});
+app.post('/api/email/val-instant-replies/run',async(req,res)=>{
+  try{
+    if(!VAL_INSTANT_EMAIL_REPLY_ENABLED){
+      return res.json({ok:true,disabled:true,message:'VAL instant email replies are disabled. No emails were sent.',fetched:0,candidates:0,sent:0,blocked:0,skipped:0,results:[]});
+    }
+    const query=String(req.body?.query||'in:inbox newer_than:2d').trim();
+    const maxResults=Math.max(1,Math.min(Number(req.body?.maxResults)||25,100));
+    const gmail=await fetchGmailMessages({query,maxResults,includeBody:true});
+    const result=await processValInstantEmailReplies({
+      emails:gmail.emails||[],
+      userId:req.valUser?.id||currentUserId(),
+      maxReplies:Number(req.body?.maxReplies)||8
+    });
+    await auditLog({req,action:'val_instant_email_replies_run',resourceType:'gmail',metadata:{query,fetched:(gmail.emails||[]).length,candidates:result.candidates,sent:result.sent,blocked:result.blocked,skipped:result.skipped},success:result.ok!==false}).catch(()=>{});
+    res.status(result.ok===false?400:200).json({ok:result.ok!==false,query,fetched:(gmail.emails||[]).length,...result});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 function executiveInboxThreadKey(email={}){
   return [email.provider||'email',email.threadId||email.messageId||email.id||''].join(':');
@@ -11505,6 +11541,7 @@ const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/documents'
@@ -11514,12 +11551,14 @@ const GOOGLE_SCOPES = String(process.env.GOOGLE_SCOPES||'').trim()
       'https://www.googleapis.com/auth/drive.readonly',
       'https://www.googleapis.com/auth/drive.file',
       'https://www.googleapis.com/auth/documents',
-      'https://www.googleapis.com/auth/calendar.events'
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/gmail.send'
     ])))
   : DEFAULT_GOOGLE_SCOPES;
 const REQUIRED_GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.compose'
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.send'
 ];
 const REQUIRED_GOOGLE_DOC_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
@@ -13739,6 +13778,126 @@ async function recentEmailActions(userId,limit=200){
     return r.rows||[];
   }
   return (valStore().emailActionLog||[]).filter(a=>a.tenantId===tenantId()&&a.userId===userId).slice(-limit).reverse();
+}
+function valInstantReplySenderTokens(email={}){
+  const from=email.from||email.sender||{};
+  const emailAddress=String(from.email||'').toLowerCase();
+  const domain=emailAddress.split('@')[1]||'';
+  return [
+    from.name,
+    emailAddress,
+    domain.replace(/\.(com|org|net|co|io|us)$/,''),
+    email.subject
+  ].flatMap(value=>String(value||'').toLowerCase().split(/[^a-z0-9]+/)).filter(word=>word.length>=4&&!['gmail','email','mail','from','subject','reply'].includes(word));
+}
+function valInstantReplyTranscriptScore(transcript={},tokens=[]){
+  if(!tokens.length)return 0;
+  const text=[transcript.title,transcript.name,transcript.summary,transcript.executiveSummary,transcript.clientSummary,transcript.rawText,transcript.text,JSON.stringify(transcript.metadata||{})].join(' ').toLowerCase();
+  return tokens.reduce((score,token)=>score+(text.includes(token)?1:0),0);
+}
+async function valInstantReplyRelevantTranscripts(email={}){
+  const tokens=valInstantReplySenderTokens(email);
+  const rows=await recentTranscripts(3650,120).catch(()=>[]);
+  return safeArray(rows)
+    .map(row=>({...row,_score:valInstantReplyTranscriptScore(row,tokens)}))
+    .filter(row=>row._score>0||tokens.some(token=>String(row.title||'').toLowerCase().includes(token)))
+    .sort((a,b)=>b._score-a._score||String(b.createdAt||b.date||'').localeCompare(String(a.createdAt||a.date||'')))
+    .slice(0,8);
+}
+async function valInstantReplyAlreadyHandled(userId,email={}){
+  const messageId=String(email.messageId||email.id||'');
+  const threadId=String(email.threadId||'');
+  const actions=await recentEmailActions(userId,500).catch(()=>[]);
+  return actions.some(action=>{
+    const type=action.action_type||action.actionType;
+    if(!/^val_instant_reply_/i.test(String(type||'')))return false;
+    if(messageId&&String(action.message_id||action.messageId||'')===messageId)return true;
+    const details=jsonRecord(action.details_json||action.details);
+    return messageId&&String(details.triggerMessageId||'')===messageId
+      || (threadId&&details.triggerThreadId===threadId&&details.status==='sent');
+  });
+}
+async function generateValInstantReply({email={},context={},transcripts=[]}={}){
+  const fallback=fallbackValInstantReply({email,schedulingLink:VAL_INSTANT_REPLY_SCHEDULING_LINK});
+  const prompt=buildValInstantReplyPrompt({
+    email,
+    threadMessages:context.evidence_messages||[],
+    transcripts,
+    schedulingLink:VAL_INSTANT_REPLY_SCHEDULING_LINK,
+    relationshipContext:{
+      threadSummary:context.thread_summary||'',
+      relationshipTemperature:context.relationship_temperature||'unknown',
+      openQuestions:context.open_questions||[],
+      commitments:context.commitments||[]
+    }
+  });
+  let reply=fallback;
+  try{
+    const raw=await callValModel({system:prompt.system,user:prompt.user,maxTokens:1200,temperature:0.35,json:true,task:'conversation',lane:'interactive'});
+    reply=normalizeValInstantReplyOutput(parseValInstantReplyJson(raw),fallback);
+  }catch(error){
+    reply={...fallback,source_notes:[...(fallback.source_notes||[]),`Model unavailable: ${error.message}`]};
+  }
+  let qa=validateValInstantReply(reply,VAL_INSTANT_REPLY_SCHEDULING_LINK);
+  if(!qa.passes){
+    const repaired=normalizeValInstantReplyOutput({
+      ...reply,
+      body:[
+        reply.body,
+        reply.body.includes(VAL_INSTANT_REPLY_SCHEDULING_LINK)?'':`\nJessa's scheduling link is ${VAL_INSTANT_REPLY_SCHEDULING_LINK}.`,
+        /\bobservers?\b/i.test(reply.body)?'':'\nThe observers will keep the relationship context visible for Jessa before the next conversation.'
+      ].filter(Boolean).join('\n').trim()
+    },fallback);
+    qa=validateValInstantReply(repaired,VAL_INSTANT_REPLY_SCHEDULING_LINK);
+    reply=repaired;
+  }
+  return {reply,qa};
+}
+async function sendValInstantEmailReply({email={},userId=currentUserId()}={}){
+  const from=email.from||email.sender||{};
+  const to=normalizeEmailAddress(from.email||'');
+  const messageId=String(email.messageId||email.id||'');
+  const threadId=String(email.threadId||'');
+  const provider=String(email.provider||'gmail').toLowerCase();
+  if(!to)return {ok:false,status:'blocked',reason:'missing_recipient'};
+  if(await valInstantReplyAlreadyHandled(userId,email))return {ok:true,status:'skipped_duplicate',reason:'already_replied'};
+  await valConversationIdentity?.upsertEmailMessage?.(email).catch(()=>null);
+  const context=await (valConversationIdentity?.buildConversationContext
+    ? valConversationIdentity.buildConversationContext({provider,threadId,messageId})
+    : Promise.reject(new Error('Conversation identity service unavailable.'))
+  ).catch(error=>({ok:false,error:error.message,evidence_messages:[email],latest_inbound:email,thread_summary:'Thread context unavailable.',open_questions:[],commitments:[],relationship_temperature:'unknown'}));
+  const transcripts=await valInstantReplyRelevantTranscripts(email);
+  const generated=await generateValInstantReply({email,context,transcripts});
+  if(!generated.qa.passes){
+    await logEmailAction(userId,{provider,messageId,threadId,actionType:'val_instant_reply_blocked',actionStatus:'blocked',actedBy:'val',details:{status:'blocked',qa:generated.qa,triggerMessageId:messageId,triggerThreadId:threadId}});
+    return {ok:false,status:'blocked',reason:'qa_failed',qa:generated.qa};
+  }
+  const payload={
+    provider:'gmail',
+    googleProvider:email.googleProvider||'google',
+    to,
+    subject:generated.reply.subject,
+    body:generated.reply.body,
+    threadId
+  };
+  try{
+    const providerResult=await executeEmailSendPacket({packet:{id:uuid('valreply'),targetSystem:'gmail',targetId:threadId||to},payload});
+    await logEmailAction(userId,{provider,messageId,threadId,actionType:'val_instant_reply_sent',actionStatus:'sent',actedBy:'val',details:{status:'sent',triggerMessageId:messageId,triggerThreadId:threadId,to,subject:payload.subject,providerResponseId:providerResult.providerResponseId,transcriptIds:transcripts.map(t=>t.id).filter(Boolean),qa:generated.qa,sourceNotes:generated.reply.source_notes}});
+    return {ok:true,status:'sent',to,subject:payload.subject,providerResult,qa:generated.qa};
+  }catch(error){
+    await logEmailAction(userId,{provider,messageId,threadId,actionType:'val_instant_reply_blocked',actionStatus:'blocked',actedBy:'val',details:{status:'blocked',triggerMessageId:messageId,triggerThreadId:threadId,to,subject:payload.subject,error:error.message,qa:generated.qa}});
+    return {ok:false,status:'blocked',reason:error.message,qa:generated.qa};
+  }
+}
+async function processValInstantEmailReplies({emails=[],userId=currentUserId(),maxReplies=8}={}){
+  const candidates=safeArray(emails)
+    .filter(email=>shouldAutoReplyToValInvocation(email,Array.from(OWNER_EMAILS)))
+    .slice(0,Math.max(1,Math.min(Number(maxReplies)||8,20)));
+  const results=[];
+  for(const email of candidates){
+    results.push(await sendValInstantEmailReply({email,userId}).catch(error=>({ok:false,status:'error',messageId:email.messageId||email.id||'',error:error.message})));
+  }
+  return {ok:true,candidates:candidates.length,sent:results.filter(result=>result.status==='sent').length,blocked:results.filter(result=>result.ok===false).length,skipped:results.filter(result=>/^skipped/.test(result.status||'')).length,results};
 }
 async function fetchGmailMessagesForAccount({account,userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
   const googleProvider=account?.provider||'google';
@@ -41333,8 +41492,16 @@ async function runValIntelligenceMaintenance(){
   valIntelligenceMaintenanceRunning=true;
   try{
     await runScheduledBoardBriefingIfDue();
+    if(VAL_INSTANT_EMAIL_REPLY_ENABLED&&!DEMO_MODE){
+      const gmail=await fetchGmailMessages({query:'in:inbox newer_than:1d',maxResults:25,includeBody:true}).catch(error=>({emails:[],error:error.message}));
+      if(gmail.error)console.warn('[val-email] instant reply poll failed:',gmail.error);
+      else{
+        const result=await processValInstantEmailReplies({emails:gmail.emails||[],userId:currentUserId(),maxReplies:8});
+        if(result.sent||result.blocked)console.log(`[val-email] instant reply poll: sent=${result.sent} blocked=${result.blocked} skipped=${result.skipped}`);
+      }
+    }
   }catch(error){
-    console.warn('[val-board] scheduled briefing failed:',error.message);
+    console.warn('[val-maintenance] scheduled maintenance failed:',error.message);
   }finally{
     valIntelligenceMaintenanceRunning=false;
   }
