@@ -34287,6 +34287,7 @@ function graceSpecificBusinessLeadFromBody(body={}){
 	    googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
 	    showcaseLeadPacket:body.showcaseLeadPacket||body.giftedLeadPacket||body.showcase_lead_packet||null,
 	    showcaseOpportunities:body.showcaseOpportunities||body.opportunities||body.marketOpportunities||[],
+	    demoGiftedPacket:body.demoGiftedPacket===true || body.demo_gifted_packet===true,
     leadProfile:'grace',
     scraperType:'Grace Fit Engine',
     source:'Grace Intelligence Fit Engine - Specific Business',
@@ -36279,6 +36280,8 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(String(p.leadProfile||'').toLowerCase()!=='grace' && !/Grace Fit Engine/i.test(String(p.scraperType||''))) return p;
   if(opts.decisionMakerResearch===false) return p;
   let next=sanitizeDecisionMaker({...p});
+  const demoGiftedPacket=opts.demoGiftedPacket===true || next.demoGiftedPacket===true || next.demo_gifted_packet===true;
+  if(demoGiftedPacket) next.demoGiftedPacket=true;
   const needsShowcaseLeadPacket=opts.showcaseLeadResearch!==false && !graceShowcaseLeadPacketReady(next.showcaseLeadPacket||next.giftedLeadPacket||next.showcase_lead_packet,{requireEmail:true});
   if(!(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
   if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
@@ -36317,6 +36320,25 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				        }]
 				        : [];
 				    }
+		    if(demoGiftedPacket && !graceNormalizeShowcaseLeadPacket(next.showcaseLeadPacket)){
+		      const demoPacketDecision=await researchGraceGiftedLeadPacketOnly(next).catch(error=>({notes:`Demo gifted lead packet failed: ${error.message}`}));
+		      const demoPacket=graceNormalizeShowcaseLeadPacket(demoPacketDecision.showcase_lead_packet||demoPacketDecision.showcaseLeadPacket);
+		      if(demoPacket){
+		        next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket({
+		          ...demoPacket,
+		          confidence:[demoPacket.confidence,'Demo packet - review only'].filter(Boolean).join('; ')
+		        }).catch(error=>({...demoPacket,caveats:[demoPacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' '),confidence:[demoPacket.confidence,'Demo packet - review only'].filter(Boolean).join('; ')}));
+		        next.aiDecisionMakerResearch={...decision,demo_gifted_lead_packet:demoPacketDecision,showcase_lead_packet:next.showcaseLeadPacket};
+		        next.showcaseOpportunities=graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true})
+		          ? [{
+		            company:next.showcaseLeadPacket.companyName,
+		            trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
+		            reason:next.showcaseLeadPacket.whyItFitsProspect,
+		            decisionMaker:[next.showcaseLeadPacket.decisionMakerName,next.showcaseLeadPacket.decisionMakerTitle].filter(Boolean).join(' - ')
+		          }]
+		          : [];
+		      }
+		    }
 			    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
 	    next.decisionMakerSourceUrls=[
 	      ...graceUsefulJsonArray(decision.sourceUrls),
@@ -36407,7 +36429,7 @@ async function enrichProspect(p,opts={}){
     }
   }
   if(String(next.leadProfile||'').toLowerCase()==='grace' || /Grace Fit Engine/i.test(String(next.scraperType||''))){
-    next=await enrichProspectWithGraceAiResearch(next,{decisionMakerResearch:opts.decisionMakerResearch!==false});
+    next=await enrichProspectWithGraceAiResearch(next,{decisionMakerResearch:opts.decisionMakerResearch!==false,demoGiftedPacket:opts.demoGiftedPacket===true || next.demoGiftedPacket===true});
   }
   if(mode==='defer'){
     next = await enrichProspectWithApollo(next);

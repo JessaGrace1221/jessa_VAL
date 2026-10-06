@@ -155,6 +155,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/giftedLeadStrategyContext/);
   assert.match(server,/Find ONE real company showing the strongest pinpoint signal/);
   assert.match(server,/Do not leave showcase_lead_packet blank/);
+  assert.match(server,/demoGiftedPacket/);
+  assert.match(server,/Demo packet - review only/);
   assert.match(server,/best_served_businesses/);
   assert.match(server,/pinpoint_signals/);
   assert.doesNotMatch(server,/function buildGraceGiftedLeadCandidatePool/);
