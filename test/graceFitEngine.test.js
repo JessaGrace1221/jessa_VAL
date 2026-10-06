@@ -157,6 +157,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/Do not leave showcase_lead_packet blank/);
   assert.match(server,/demoGiftedPacket/);
   assert.match(server,/Demo packet - review only/);
+  assert.match(server,/preferOpenAi:demoGiftedPacket/);
   assert.match(server,/best_served_businesses/);
   assert.match(server,/pinpoint_signals/);
   assert.doesNotMatch(server,/function buildGraceGiftedLeadCandidatePool/);
@@ -164,6 +165,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/Model output to repair:/);
   assert.match(server,/json-repair/);
   assert.match(server,/fallbackToOpenAi=false/);
+  assert.match(server,/preferOpenAi=false/);
+  assert.match(server,/using OpenAI preferred path/);
   assert.match(server,/openai-web-fallback/);
   assert.match(server,/callOpenAIWebResearch/);
   assert.match(server,/function graceShowcaseOpportunities/);
@@ -195,8 +198,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/Previous packet was rejected for customer-facing outreach/);
   assert.match(server,/Do not invent or infer an email pattern/);
   assert.match(server,/next\.decisionMakerName && needsShowcaseLeadPacket/);
-  assert.match(server,/researchGraceGiftedLeadPacketOnly\(next\)/);
-  assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{rejectedPacket:next\.showcaseLeadPacket\}\)/);
+  assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{preferOpenAi:demoGiftedPacket\}\)/);
+  assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{rejectedPacket:next\.showcaseLeadPacket,preferOpenAi:demoGiftedPacket\}\)/);
   assert.match(server,/next\.showcaseOpportunities=graceShowcaseLeadPacketReady\(next\.showcaseLeadPacket,\{requireEmail:true\}\)/);
   assert.match(server,/showcase_lead_packet/);
   assert.match(server,/showcaseLeadPacket:profile\.showcaseLeadPacket/);

@@ -35949,7 +35949,7 @@ function graceGeminiBaseContext(p={}){
   ].join('\n');
 }
 
-async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800,fallbackToOpenAi=false}={}){
+async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800,fallbackToOpenAi=false,preferOpenAi=false}={}){
   const input=[
     'You are VAL’s Grace Intelligence Research Layer.',
     'Return only valid compact JSON. No markdown. No prose outside JSON.',
@@ -35986,6 +35986,7 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
     }
     throw new Error(`${stage} OpenAI fallback returned no parseable JSON after Gemini failure: ${geminiError.message}. Raw preview: ${String(text||'').slice(0,500)}`);
   };
+  if(preferOpenAi) return openAiFallback(new Error(`${stage} using OpenAI preferred path`));
   try{
     const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
     const parsed=extractJsonObject(result.text);
@@ -36097,6 +36098,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     stage:'gifted_lead_strategy',
     maxTokens:2600,
     fallbackToOpenAi:true,
+    preferOpenAi:options.preferOpenAi===true,
     instructions:[
       'Do not find a lead yet.',
       'Keep this strategy compact: return exactly 2 best-served business types and exactly 3 pinpoint signals.',
@@ -36118,6 +36120,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
     fallbackToOpenAi:true,
+    preferOpenAi:options.preferOpenAi===true,
     instructions:[
 	      'Build ONE complete gifted lead packet for the prospect.',
 	      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
@@ -36287,7 +36290,7 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
   try{
 		    const decision=(next.decisionMakerName && needsShowcaseLeadPacket)
-		      ? await researchGraceGiftedLeadPacketOnly(next)
+		      ? await researchGraceGiftedLeadPacketOnly(next,{preferOpenAi:demoGiftedPacket})
 		      : await researchGraceDecisionMakerWithAi(next);
 		    const person=graceAiDecisionPerson(decision);
 			    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
@@ -36298,7 +36301,7 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				      next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket(showcasePacket).catch(error=>({...showcasePacket,caveats:[showcasePacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
 				      if(!graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true}) && opts.showcaseLeadRetry!==false){
 				        next.heldShowcaseLeadPacket=next.showcaseLeadPacket;
-				        const retryDecision=await researchGraceGiftedLeadPacketOnly(next,{rejectedPacket:next.showcaseLeadPacket}).catch(error=>({notes:`Gifted lead packet retry failed: ${error.message}`}));
+				        const retryDecision=await researchGraceGiftedLeadPacketOnly(next,{rejectedPacket:next.showcaseLeadPacket,preferOpenAi:demoGiftedPacket}).catch(error=>({notes:`Gifted lead packet retry failed: ${error.message}`}));
 				        const retryPacket=graceNormalizeShowcaseLeadPacket(retryDecision.showcase_lead_packet||retryDecision.showcaseLeadPacket);
 				        if(retryPacket){
 				          const enrichedRetry=await enrichGraceShowcaseLeadPacket(retryPacket).catch(error=>({...retryPacket,caveats:[retryPacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
@@ -36321,7 +36324,7 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				        : [];
 				    }
 		    if(demoGiftedPacket && !graceNormalizeShowcaseLeadPacket(next.showcaseLeadPacket)){
-		      const demoPacketDecision=await researchGraceGiftedLeadPacketOnly(next).catch(error=>({notes:`Demo gifted lead packet failed: ${error.message}`}));
+		      const demoPacketDecision=await researchGraceGiftedLeadPacketOnly(next,{preferOpenAi:true}).catch(error=>({notes:`Demo gifted lead packet failed: ${error.message}`}));
 		      const demoPacket=graceNormalizeShowcaseLeadPacket(demoPacketDecision.showcase_lead_packet||demoPacketDecision.showcaseLeadPacket);
 		      if(demoPacket){
 		        next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket({
