@@ -35948,7 +35948,7 @@ function graceGeminiBaseContext(p={}){
   ].join('\n');
 }
 
-async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){
+async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800,fallbackToOpenAi=false}={}){
   const input=[
     'You are VAL’s Grace Intelligence Research Layer.',
     'Return only valid compact JSON. No markdown. No prose outside JSON.',
@@ -35964,25 +35964,50 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
     'Return JSON shape:',
     schema
   ].join('\n');
-  const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
-  const parsed=extractJsonObject(result.text);
-  if(!Object.keys(parsed||{}).length){
-    const repairInput=[
-      'Return only strict valid compact JSON. No markdown. No commentary.',
-      'Repair the following model output so it matches this JSON shape:',
-      schema,
-      '',
-      'Model output to repair:',
-      String(result.text||'').slice(0,12000)
+  const openAiFallback=async(geminiError)=>{
+    if(!fallbackToOpenAi) throw geminiError;
+    const system=[
+      'You are VAL’s Grace Intelligence Research Layer.',
+      'Use web research where available.',
+      'Return only valid compact JSON. No markdown. No prose outside JSON.',
+      'Match the exact company/domain/location. Do not guess.'
     ].join('\n');
-    const repaired=await callGeminiGroundedSearch({input:repairInput,maxTokens,temperature:0,timeoutMs:25000,responseMimeType:'application/json'}).catch(error=>({text:'',sourceUrls:[],model:`repair failed: ${error.message}`}));
-    const repairedParsed=extractJsonObject(repaired.text);
-    if(Object.keys(repairedParsed||{}).length){
-      return {parsed:repairedParsed,sourceUrls:[...(result.sourceUrls||[]),...(repaired.sourceUrls||[])],model:[result.model,repaired.model,'json-repair'].filter(Boolean).join(' + ')};
+    const text=await callOpenAIWebResearch({
+      system,
+      user:input,
+      maxTokens,
+      temperature:0.1,
+      timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,60000)
+    });
+    const parsed=extractJsonObject(text);
+    if(Object.keys(parsed||{}).length){
+      return {parsed,sourceUrls:[],model:'openai-web-fallback',openAiFallback:true,geminiError:geminiError.message};
     }
-    throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
+    throw new Error(`${stage} OpenAI fallback returned no parseable JSON after Gemini failure: ${geminiError.message}. Raw preview: ${String(text||'').slice(0,500)}`);
+  };
+  try{
+    const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
+    const parsed=extractJsonObject(result.text);
+    if(!Object.keys(parsed||{}).length){
+      const repairInput=[
+        'Return only strict valid compact JSON. No markdown. No commentary.',
+        'Repair the following model output so it matches this JSON shape:',
+        schema,
+        '',
+        'Model output to repair:',
+        String(result.text||'').slice(0,12000)
+      ].join('\n');
+      const repaired=await callGeminiGroundedSearch({input:repairInput,maxTokens,temperature:0,timeoutMs:25000,responseMimeType:'application/json'}).catch(error=>({text:'',sourceUrls:[],model:`repair failed: ${error.message}`}));
+      const repairedParsed=extractJsonObject(repaired.text);
+      if(Object.keys(repairedParsed||{}).length){
+        return {parsed:repairedParsed,sourceUrls:[...(result.sourceUrls||[]),...(repaired.sourceUrls||[])],model:[result.model,repaired.model,'json-repair'].filter(Boolean).join(' + ')};
+      }
+      throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
+    }
+    return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
+  }catch(error){
+    return openAiFallback(error);
   }
-  return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
 }
 
 async function researchGraceWithGeminiStages(p={}){
@@ -36070,6 +36095,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     p:researchInput,
     stage:'gifted_lead_strategy',
     maxTokens:2600,
+    fallbackToOpenAi:true,
     instructions:[
       'Do not find a lead yet.',
       'Keep this strategy compact: return exactly 2 best-served business types and exactly 3 pinpoint signals.',
@@ -36090,6 +36116,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     p:{...researchInput,giftedLeadStrategyContext:strategyContext},
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
+    fallbackToOpenAi:true,
     instructions:[
 	      'Build ONE complete gifted lead packet for the prospect.',
 	      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',

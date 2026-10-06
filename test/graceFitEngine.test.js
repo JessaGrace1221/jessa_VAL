@@ -148,6 +148,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/what businesses would be unusually well served by this company/);
   assert.match(server,/pinpoint signals competitors would likely miss/);
   assert.match(server,/stage:'gifted_lead_strategy'/);
+  assert.match(server,/stage:'gifted_lead_strategy'[\s\S]{0,100}fallbackToOpenAi:true/);
   assert.match(server,/return exactly 2 best-served business types and exactly 3 pinpoint signals/);
   assert.match(server,/search_phrase_to_find_it/);
   assert.match(server,/Use this strategy context/);
@@ -160,6 +161,9 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.doesNotMatch(server,/leadProfile:'grace_gifted_packet'/);
   assert.match(server,/Model output to repair:/);
   assert.match(server,/json-repair/);
+  assert.match(server,/fallbackToOpenAi=false/);
+  assert.match(server,/openai-web-fallback/);
+  assert.match(server,/callOpenAIWebResearch/);
   assert.match(server,/function graceShowcaseOpportunities/);
   assert.match(server,/A lead packet Grace built for \$\{displayCompany\}/);
   assert.match(server,/I pointed Grace Intelligence at \$\{possessiveCompany\} market and had it build one complete lead packet/);
@@ -184,6 +188,7 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/showcaseOpportunities:p\.showcaseOpportunities/);
   assert.match(server,/showcaseLeadPacket:body\.showcaseLeadPacket\|\|body\.giftedLeadPacket\|\|body\.showcase_lead_packet\|\|null/);
   assert.match(server,/stage:'gifted_lead_packet_for_prospect'/);
+  assert.match(server,/stage:rejectedPacket\?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect'[\s\S]{0,140}fallbackToOpenAi:true/);
   assert.match(server,/gifted_lead_packet_for_prospect_email_retry/);
   assert.match(server,/Previous packet was rejected for customer-facing outreach/);
   assert.match(server,/Do not invent or infer an email pattern/);
