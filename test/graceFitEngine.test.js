@@ -197,6 +197,8 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/gifted_lead_packet_for_prospect_email_retry/);
   assert.match(server,/Previous packet was rejected for customer-facing outreach/);
   assert.match(server,/Do not invent or infer an email pattern/);
+  assert.match(server,/function graceStripSubjectFromEmailBody/);
+  assert.match(server,/Never include a "Subject:" line inside it/);
   assert.match(server,/next\.decisionMakerName && needsShowcaseLeadPacket/);
   assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{preferOpenAi:demoGiftedPacket\}\)/);
   assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{rejectedPacket:next\.showcaseLeadPacket,preferOpenAi:demoGiftedPacket\}\)/);

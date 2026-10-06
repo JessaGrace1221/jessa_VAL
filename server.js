@@ -33797,12 +33797,18 @@ function graceNormalizeShowcaseLeadPacket(value={}){
     decisionMakerLinkedIn:String(decision.linkedin_url||decision.linkedinUrl||raw.decisionMakerLinkedIn||raw.linkedinPersonalUrl||'').trim(),
     evidence,
     evidenceSummary:String(raw.evidenceSummary||raw.evidence_summary||raw.evidence_note||'').trim(),
-    firstMessageGraceWouldSend:String(raw.firstMessageGraceWouldSend||raw.first_message_grace_would_send||raw.first_message||raw.opening_message||'').trim(),
+    firstMessageGraceWouldSend:graceStripSubjectFromEmailBody(raw.firstMessageGraceWouldSend||raw.first_message_grace_would_send||raw.first_message||raw.opening_message||''),
     confidence:String(raw.confidence||raw.fit_confidence||'').trim(),
     caveats:String(raw.caveats||raw.risk||raw.uncertainty||'').trim()
   };
   if(!packet.evidenceSummary && packet.evidence.length) packet.evidenceSummary=packet.evidence.map(item=>item.summary||item.url).filter(Boolean).slice(0,2).join('; ');
   return packet;
+}
+
+function graceStripSubjectFromEmailBody(value=''){
+  return String(value||'')
+    .replace(/^\s*subject\s*[:\-]\s*[^\n\r]+(?:\r?\n){1,2}/i,'')
+    .trim();
 }
 
 function graceShowcaseLeadPacketReady(packet={},options={}){
@@ -36060,6 +36066,7 @@ async function researchGraceWithGeminiStages(p={}){
       'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+      'The first_message_grace_would_send value must contain the email body only. Never include a "Subject:" line inside it.',
       'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
       'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
       'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
@@ -36127,6 +36134,7 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
 	      'Use this strategy context. Find ONE real company showing the strongest pinpoint signal and build the gifted packet around that company.',
 	      strategyContext,
 	      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
+	      'The first_message_grace_would_send value must contain the email body only. Never include a "Subject:" line inside it.',
 	      'Do not leave showcase_lead_packet blank. If usable email is missing, still return the named company, website, trigger, evidence, likely buyer if known, first message, confidence, and a clear missing-email caveat.',
 	      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
 	      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
