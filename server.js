@@ -36014,6 +36014,7 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
     instructions,
     stage==='identity_and_decision_maker'?'This stage confirms identity, person and brand only. Leave financial fields null/empty for the later commercial stage.':'',
     'For any financial estimate, include a defensible lower-bound amount, reasoning, assumptions, and annual_unlock_evidence entries with source_url and observation. Never manufacture an amount to reach the threshold. Include revenue_fit_evidence and convergence_fit_evidence separately; use null and empty arrays where unsupported.',
+    'Convergence is the cost-recovery and data-revenue arm. Each convergence_fit_evidence item must identify lever as cloud_cost, telecom_cost, software_licensing, vendor_contracts, infrastructure_cost, or data_revenue, with a sourced observation about that company. Marketing pages, lead forms, conversion paths, and testimonials alone are not Convergence evidence. Use an empty array if no supported lever is found. annual_unlock_assessment must be one of Strongly plausible, Plausible, Possible but unproven, Unsupported, Unlikely.',
     'For any gifted packet, supply email_source_url where the exact email is publicly listed. Never guess a pattern. Include first_message_subject separately; first_message_grace_would_send is body only, without Subject:. Prefer a current trigger; label historical context with its date.',
     '',
     'Return JSON shape:',

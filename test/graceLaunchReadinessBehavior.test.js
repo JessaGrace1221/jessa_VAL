@@ -8,7 +8,7 @@ const crypto=require('node:crypto');
 const policy=require('../services/graceLaunchReadiness');
 const validation=require('../services/leadContactValidation');
 const source=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
-const evidence=[{source_url:'https://company.example.com/about',observation:'Documented commercial scale and explicit lower-bound assumptions.'}];
+const evidence=[{source_url:'https://company.example.com/about',observation:'Documented cloud contract costs and explicit lower-bound assumptions.',lever:'cloud_cost'}];
 function prospect(){return {organizationName:'Example Systems',website:'https://company.example.com',decisionMakerName:'Taylor Smith',decisionMakerTitle:'Chief Executive Officer',email:'taylor@company.example.com',rocketReach:{data:{found:true,name:'Taylor Smith',title:'CEO',email:'taylor@company.example.com',company:'Example Systems'}},aiDecisionMakerResearch:{company_identity:{exact_company_matched:true},decision_maker:{preferred_person:{name:'Taylor Smith',title:'CEO',confidence:'High',source_urls:['https://company.example.com/team']}},qualification:{status:'Qualified',outbound_ready:true,annual_unlock_assessment:'Plausible',annual_unlock_estimate:120000,annual_unlock_reasoning:'The documented baseline and explicit assumptions support a conservative annual lower bound.',annual_unlock_evidence:evidence,revenue_fit_evidence:evidence,convergence_fit_evidence:evidence}}};}
 function gift(){return {companyName:'Gift Company',website:'https://gift.example.com',decisionMakerName:'Morgan Smith',decisionMakerTitle:'Chief Operating Officer',decisionMakerEmail:'morgan@gift.example.com',contactVerification:{status:'provider_matched',sourceUrl:'https://gift.example.com/team'},trigger:'Current expansion announcement',whyItFitsProspect:'A sourced operational need matching the prospect service.',evidence:[{url:'https://gift.example.com/news',summary:'Published expansion announcement'}],firstMessageGraceWouldSend:'Morgan, your team announced its expansion. Here is a concrete way to handle the additional service demand, grounded in the scope you published.'};}
 test('authority excludes sales reps, assistants and unsupported person assertions',()=>{
@@ -22,6 +22,7 @@ test('financial gate never raises weak or rejected evidence to the threshold',()
   const p=prospect();assert.equal(policy.commercialAdmission(p).supported,true);
   p.aiDecisionMakerResearch.qualification.annual_unlock_estimate=null;assert.equal(policy.commercialAdmission(p).supported,false);
   p.aiDecisionMakerResearch.qualification.outbound_ready=false;assert.equal(policy.commercialAdmission(p).rejected,true);
+  p.aiDecisionMakerResearch.qualification.convergence_fit_evidence=[{source_url:'https://company.example.com/',observation:'Website has lead forms and testimonials'}];assert.equal(policy.commercialAdmission(p).dualFit,false);
 });
 test('email admission binds named provider match to employer domain',()=>{
   const p=prospect();assert.equal(policy.emailMatchesPerson(p),true);

@@ -1,7 +1,7 @@
 'use strict';
 
 const {normalizeEmailAddress,isReliablePersonName}=require('./leadContactValidation');
-const VERSION='grace-lrt-2026-11-06-v4';
+const VERSION='grace-lrt-2026-11-06-v5';
 const AUTHORITY=/\b(owner|(?:co[- ]?)?founder|ceo|coo|cfo|cro|cio|cto|chief\s+[\w ]+officer|president|principal|managing partner|executive director|vice president|vp|head of (?:sales|growth|revenue|operations|technology|it)|director of (?:sales|growth|revenue|operations|technology|it))\b/i;
 const JUNIOR=/\b(assistant|intern|representative|associate|coordinator|specialist|account executive|account manager)\b/i;
 const ARRAY=value=>Array.isArray(value)?value:[];
@@ -35,7 +35,7 @@ function commercialAdmission(p){
   const estimate=Number(q.annual_unlock_estimate);
   const annualEvidence=linkedEvidence(q.annual_unlock_evidence);
   const revenueEvidence=linkedEvidence(q.revenue_fit_evidence);
-  const convergenceEvidence=linkedEvidence(q.convergence_fit_evidence);
+  const convergenceEvidence=linkedEvidence(q.convergence_fit_evidence).filter(row=>['cloud_cost','telecom_cost','software_licensing','vendor_contracts','infrastructure_cost','data_revenue'].includes(row.lever));
   const dualFit=revenueEvidence.length>0&&convergenceEvidence.length>0;
   const supported=Number.isFinite(estimate)&&estimate>=100000&&annualEvidence.length>0&&String(q.annual_unlock_reasoning||'').trim().length>=30&&/^(strongly plausible|plausible|supported|confirmed)$/i.test(q.annual_unlock_assessment||'');
   return {dualFit,estimatedAnnualUnlock:supported?estimate:0,rejected,supported,annualEvidence,revenueEvidence,convergenceEvidence};
