@@ -21217,10 +21217,22 @@ async function runScraperPreview(type){
     recommendation: 'Let VAL finish the preview, then approve only the records that deserve to enter the pipeline.'
   });
   try{
-    const result = await postJson(config.previewUrl, payload, {
+    let result = await postJson(config.previewUrl, type==='grace'?{...payload,async:true}:payload, {
       timeoutMs: 20000,
       timeoutMessage: 'The preview source did not answer within 20 seconds.'
     });
+    if(type==='grace'&&result.jobId){
+      const jobId=result.jobId;
+      const deadline=Date.now()+20*60*1000;
+      while(result.pending&&Date.now()<deadline){
+        await new Promise(resolve=>setTimeout(resolve,3000));
+        const response=await fetch('/api/grace/fit-engine/preview-jobs/'+encodeURIComponent(jobId),{credentials:'same-origin'});
+        result=await response.json();
+        if(!response.ok||result.ok===false||result.status==='failed')throw new Error(result.error||'The Grace preview could not complete.');
+      }
+      if(result.pending)throw new Error('Grace is still researching this batch. Run ID: '+jobId);
+      result=result.result;
+    }
     const leads = Array.isArray(result.leads) ? result.leads : [];
     session.result = result;
     session.previewLeads = leads.map((lead) => normalizePreviewLead(lead, type));

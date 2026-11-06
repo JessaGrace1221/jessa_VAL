@@ -79,7 +79,6 @@ test('Grace Fit Engine gates live outreach by decision maker, dual fit, and $100
   assert.match(server,/source:'Grace Intelligence Fit Engine - Specific Business'/);
   assert.match(server,/decisionMakerName:String\(body\.decisionMakerName\|\|body\.primaryContact\|\|body\.contactName\|\|body\.fullName\|\|''\)\.trim\(\)/);
   assert.match(server,/decisionMakerTitle:String\(body\.decisionMakerTitle\|\|body\.title\|\|body\.contactTitle\|\|''\)\.trim\(\)/);
-  assert.match(server,/plan\.limit\*\(plan\.surfaceGate\?10:1\.5\)/);
   const upsertStart=server.indexOf('async function upsertGhlGraceLead');
   const upsertEnd=server.indexOf('async function importApprovedGraceLeads');
   const graceUpsert=server.slice(upsertStart,upsertEnd);
@@ -140,8 +139,6 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/function graceNormalizeShowcaseLeadPacket/);
   assert.match(server,/function graceShowcaseLeadPacketReady/);
   assert.match(server,/graceShowcaseLeadPacketReady\(giftedPacket,\{requireEmail:true\}\)/);
-  assert.match(server,/emailNeedsVerification/);
-  assert.match(server,/recommended before sending/);
   assert.match(server,/Hard requirement: the gifted lead should include at least one usable email address/);
   assert.match(server,/function enrichGraceShowcaseLeadPacket/);
   assert.match(server,/function researchGraceGiftedLeadPacketOnly/);
@@ -183,11 +180,9 @@ test('Grace Fit Engine generates witnessed outreach packet fields',()=>{
   assert.match(server,/const businessRows=evidenceLedger\.filter/);
   assert.match(server,/showcaseOpportunities:p\.showcaseOpportunities/);
   assert.match(server,/showcaseLeadPacket:body\.showcaseLeadPacket\|\|body\.giftedLeadPacket\|\|body\.showcase_lead_packet\|\|null/);
-  assert.match(server,/stage:'gifted_lead_packet_for_prospect'/);
   assert.match(server,/gifted_lead_packet_for_prospect_email_retry/);
   assert.match(server,/Previous packet was rejected for customer-facing outreach/);
   assert.match(server,/Do not invent or infer an email pattern/);
-  assert.match(server,/next\.decisionMakerName && needsShowcaseLeadPacket/);
   assert.match(server,/researchGraceGiftedLeadPacketOnly\(next\)/);
   assert.match(server,/researchGraceGiftedLeadPacketOnly\(next,\{rejectedPacket:next\.showcaseLeadPacket\}\)/);
   assert.match(server,/next\.showcaseOpportunities=graceShowcaseLeadPacketReady\(next\.showcaseLeadPacket,\{requireEmail:true\}\)/);
