@@ -1,7 +1,7 @@
 'use strict';
 
 const {normalizeEmailAddress,isReliablePersonName}=require('./leadContactValidation');
-const VERSION='grace-lrt-2026-11-06-v2';
+const VERSION='grace-lrt-2026-11-06-v4';
 const AUTHORITY=/\b(owner|(?:co[- ]?)?founder|ceo|coo|cfo|cro|cio|cto|chief\s+[\w ]+officer|president|principal|managing partner|executive director|vice president|vp|head of (?:sales|growth|revenue|operations|technology|it)|director of (?:sales|growth|revenue|operations|technology|it))\b/i;
 const JUNIOR=/\b(assistant|intern|representative|associate|coordinator|specialist|account executive|account manager)\b/i;
 const ARRAY=value=>Array.isArray(value)?value:[];

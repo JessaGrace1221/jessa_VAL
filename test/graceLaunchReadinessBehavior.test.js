@@ -115,3 +115,15 @@ test('preview job failure is visible and completed results expire',async()=>{
   assert.equal(jobs.get('owner',job.jobId).status,'failed');assert.match(jobs.get('owner',job.jobId).error,/Provider unavailable/);
   clock=20;assert.equal(jobs.get('owner',job.jobId),null);
 });
+test('public configuration feature flags do not reference a request body or crash the runtime',()=>{
+  const ctx={clientLooksLikeGreg:()=>false,envFlag:()=>false};vm.createContext(ctx);
+  vm.runInContext(source.slice(source.indexOf('function clientFeatureLocks('),source.indexOf('function systemUpdateStatus(')),ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.clientFeatureLocks())),{projectManagersComingSoon:false,linkedinHomeComingSoon:false});
+});
+test('an import with failed evidence storage reports failure rather than success',async()=>{
+  const ctx={GRACE_FIT_MAX_LEADS_PER_RUN:10,GOALL_LEAD_IMPORT_CONCURRENCY:2,scoreGraceFitLead:value=>value,mapWithConcurrency:(rows,limit,fn)=>Promise.all(rows.map(fn)),upsertGhlGraceLead:async()=>{throw Error('Evidence note save not confirmed');},saveMemoryItem:async()=>{}};
+  vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('async function importApprovedGraceLeads('),source.indexOf('async function graceCustomFieldStatus(')),ctx);
+  const result=await ctx.importApprovedGraceLeads({leads:[{organizationName:'Example'}]});
+  assert.equal(result.ok,false);assert.equal(result.created.length,0);assert.equal(result.failed.length,1);
+  await assert.rejects(ctx.importApprovedGraceLeads({doNotImport:true,leads:[{}]}),/forbids CRM import/);
+});

@@ -203,7 +203,6 @@ function clientLooksLikeGreg(){
 }
 function clientFeatureLocks(){
   const greg = clientLooksLikeGreg();
-  const email=String(body.email||'').trim();
   return {
     projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
     linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
@@ -35055,7 +35054,7 @@ async function importApprovedGraceLeads(body={}){
     importance:3,
     metadata:{created,failed}
   }).catch(()=>{});
-  return {ok:true,created,failed,content};
+  return {ok:created.length>0&&failed.length===0,partial:created.length>0&&failed.length>0,created,failed,content};
 }
 
 async function graceCustomFieldStatus(){
