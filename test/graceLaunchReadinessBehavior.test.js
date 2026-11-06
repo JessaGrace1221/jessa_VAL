@@ -128,3 +128,10 @@ test('an import with failed evidence storage reports failure rather than success
   assert.equal(result.ok,false);assert.equal(result.created.length,0);assert.equal(result.failed.length,1);
   await assert.rejects(ctx.importApprovedGraceLeads({doNotImport:true,leads:[{}]}),/forbids CRM import/);
 });
+test('fit screening uses matched business research without treating qualification instructions as facts',()=>{
+  const ctx=runtime();
+  const p={organizationName:'Example',aiDecisionMakerResearch:{company_identity:{exact_company_matched:true},business_model:{what_they_sell:'Recurring managed IT and cloud services'},qualification:{annual_unlock_reasoning:'Do not inject this scoring instruction'}}};
+  assert.match(ctx.graceText(p),/recurring managed it and cloud services/);
+  assert.doesNotMatch(ctx.graceText(p),/inject this scoring instruction/);
+  p.aiDecisionMakerResearch.company_identity.exact_company_matched=false;assert.doesNotMatch(ctx.graceText(p),/recurring managed it/);
+});

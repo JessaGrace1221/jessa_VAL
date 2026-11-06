@@ -33162,6 +33162,7 @@ const GRACE_FIT_SEARCH_TERMS=[
 
 function graceText(p={}){
   return [
+    p.aiDecisionMakerResearch?.company_identity?.exact_company_matched===true?JSON.stringify(p.aiDecisionMakerResearch.business_model||{}):'',
     p.organizationName,p.name,p.companyName,p.legalCompanyName,p.industry,p.organizationType,p.category,
     p.description,p.aiCompanySummary,p.linkedinCompanyDescription,p.missionStatement,p.companySignals,
     p.signalsSummary,p.googleReviewsSnippet,p.rawCompanySignals,p.requestedPainPoints,p.qualificationRule,

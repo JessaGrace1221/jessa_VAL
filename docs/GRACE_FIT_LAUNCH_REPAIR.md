@@ -22,4 +22,4 @@ The CRM contract integration case uses saved LRT definitions when `GRACE_LRT_EVI
 
 Release verification must include a live gifted packet and workflow graph review. The GHL definition API is currently unavailable for the destination account. An app health check or passing local tests cannot establish outbound delivery readiness.
 
-The complete audit, provider responses, email drafts, test outputs and release archives are in `/Users/jessagrace/Documents/Codex/2026-09-29/my/outputs/grace-lrt-2026-11-06/`. Merge this repair before a future deployment from the old main branch; otherwise it can overwrite the repaired runtime.
+The complete audit, provider responses, email drafts, test outputs and release archives are in `/Users/jessagrace/Documents/Codex/2026-09-29/my/outputs/grace-lrt-2026-11-06/`. Railway now tracks `grace-lrt-repair-20261106` to preserve the audited fixes. Merge the repair before switching production back to the old main branch. The original main worktree retains the owner's unfinished work.
