@@ -33797,18 +33797,12 @@ function graceNormalizeShowcaseLeadPacket(value={}){
     decisionMakerLinkedIn:String(decision.linkedin_url||decision.linkedinUrl||raw.decisionMakerLinkedIn||raw.linkedinPersonalUrl||'').trim(),
     evidence,
     evidenceSummary:String(raw.evidenceSummary||raw.evidence_summary||raw.evidence_note||'').trim(),
-    firstMessageGraceWouldSend:graceStripSubjectFromEmailBody(raw.firstMessageGraceWouldSend||raw.first_message_grace_would_send||raw.first_message||raw.opening_message||''),
+    firstMessageGraceWouldSend:String(raw.firstMessageGraceWouldSend||raw.first_message_grace_would_send||raw.first_message||raw.opening_message||'').trim(),
     confidence:String(raw.confidence||raw.fit_confidence||'').trim(),
     caveats:String(raw.caveats||raw.risk||raw.uncertainty||'').trim()
   };
   if(!packet.evidenceSummary && packet.evidence.length) packet.evidenceSummary=packet.evidence.map(item=>item.summary||item.url).filter(Boolean).slice(0,2).join('; ');
   return packet;
-}
-
-function graceStripSubjectFromEmailBody(value=''){
-  return String(value||'')
-    .replace(/^\s*subject\s*[:\-]\s*[^\n\r]+(?:\r?\n){1,2}/i,'')
-    .trim();
 }
 
 function graceShowcaseLeadPacketReady(packet={},options={}){
@@ -34293,7 +34287,6 @@ function graceSpecificBusinessLeadFromBody(body={}){
 	    googleMapsUrl:String(body.googleMapsUrl||body.mapsUrl||'').trim(),
 	    showcaseLeadPacket:body.showcaseLeadPacket||body.giftedLeadPacket||body.showcase_lead_packet||null,
 	    showcaseOpportunities:body.showcaseOpportunities||body.opportunities||body.marketOpportunities||[],
-	    demoGiftedPacket:body.demoGiftedPacket===true || body.demo_gifted_packet===true,
     leadProfile:'grace',
     scraperType:'Grace Fit Engine',
     source:'Grace Intelligence Fit Engine - Specific Business',
@@ -35955,7 +35948,7 @@ function graceGeminiBaseContext(p={}){
   ].join('\n');
 }
 
-async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800,fallbackToOpenAi=false,preferOpenAi=false}={}){
+async function callGraceGeminiStage({p={},stage='',instructions='',schema='',maxTokens=1800}={}){
   const input=[
     'You are VAL’s Grace Intelligence Research Layer.',
     'Return only valid compact JSON. No markdown. No prose outside JSON.',
@@ -35971,51 +35964,25 @@ async function callGraceGeminiStage({p={},stage='',instructions='',schema='',max
     'Return JSON shape:',
     schema
   ].join('\n');
-  const openAiFallback=async(geminiError)=>{
-    if(!fallbackToOpenAi) throw geminiError;
-    const system=[
-      'You are VAL’s Grace Intelligence Research Layer.',
-      'Use web research where available.',
-      'Return only valid compact JSON. No markdown. No prose outside JSON.',
-      'Match the exact company/domain/location. Do not guess.'
+  const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
+  const parsed=extractJsonObject(result.text);
+  if(!Object.keys(parsed||{}).length){
+    const repairInput=[
+      'Return only strict valid compact JSON. No markdown. No commentary.',
+      'Repair the following model output so it matches this JSON shape:',
+      schema,
+      '',
+      'Model output to repair:',
+      String(result.text||'').slice(0,12000)
     ].join('\n');
-    const text=await callOpenAIWebResearch({
-      system,
-      user:input,
-      maxTokens,
-      temperature:0.1,
-      timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,60000)
-    });
-    const parsed=extractJsonObject(text);
-    if(Object.keys(parsed||{}).length){
-      return {parsed,sourceUrls:[],model:'openai-web-fallback',openAiFallback:true,geminiError:geminiError.message};
+    const repaired=await callGeminiGroundedSearch({input:repairInput,maxTokens,temperature:0,timeoutMs:25000,responseMimeType:'application/json'}).catch(error=>({text:'',sourceUrls:[],model:`repair failed: ${error.message}`}));
+    const repairedParsed=extractJsonObject(repaired.text);
+    if(Object.keys(repairedParsed||{}).length){
+      return {parsed:repairedParsed,sourceUrls:[...(result.sourceUrls||[]),...(repaired.sourceUrls||[])],model:[result.model,repaired.model,'json-repair'].filter(Boolean).join(' + ')};
     }
-    throw new Error(`${stage} OpenAI fallback returned no parseable JSON after Gemini failure: ${geminiError.message}. Raw preview: ${String(text||'').slice(0,500)}`);
-  };
-  if(preferOpenAi) return openAiFallback(new Error(`${stage} using OpenAI preferred path`));
-  try{
-    const result=await callGeminiGroundedSearch({input,maxTokens,temperature:0.1,timeoutMs:Math.min(GRACE_AI_RESEARCH_TIMEOUT_MS,45000),responseMimeType:'application/json'});
-    const parsed=extractJsonObject(result.text);
-    if(!Object.keys(parsed||{}).length){
-      const repairInput=[
-        'Return only strict valid compact JSON. No markdown. No commentary.',
-        'Repair the following model output so it matches this JSON shape:',
-        schema,
-        '',
-        'Model output to repair:',
-        String(result.text||'').slice(0,12000)
-      ].join('\n');
-      const repaired=await callGeminiGroundedSearch({input:repairInput,maxTokens,temperature:0,timeoutMs:25000,responseMimeType:'application/json'}).catch(error=>({text:'',sourceUrls:[],model:`repair failed: ${error.message}`}));
-      const repairedParsed=extractJsonObject(repaired.text);
-      if(Object.keys(repairedParsed||{}).length){
-        return {parsed:repairedParsed,sourceUrls:[...(result.sourceUrls||[]),...(repaired.sourceUrls||[])],model:[result.model,repaired.model,'json-repair'].filter(Boolean).join(' + ')};
-      }
-      throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
-    }
-    return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
-  }catch(error){
-    return openAiFallback(error);
+    throw new Error(`${stage} returned no parseable JSON. Raw preview: ${String(result.text||'').slice(0,500)}`);
   }
+  return {parsed,sourceUrls:result.sourceUrls||[],model:result.model};
 }
 
 async function researchGraceWithGeminiStages(p={}){
@@ -36066,7 +36033,6 @@ async function researchGraceWithGeminiStages(p={}){
       'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
       'Find one actual company in or near the prospect market that could plausibly need what the prospect sells.',
       'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
-      'The first_message_grace_would_send value must contain the email body only. Never include a "Subject:" line inside it.',
       'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
       'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
       'If you cannot find any usable email address for the lead, keep the best researched packet but set confidence to "Research Hold - missing email" and state that caveat clearly.',
@@ -36104,8 +36070,6 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     p:researchInput,
     stage:'gifted_lead_strategy',
     maxTokens:2600,
-    fallbackToOpenAi:true,
-    preferOpenAi:options.preferOpenAi===true,
     instructions:[
       'Do not find a lead yet.',
       'Keep this strategy compact: return exactly 2 best-served business types and exactly 3 pinpoint signals.',
@@ -36126,15 +36090,12 @@ async function researchGraceGiftedLeadPacketOnly(p={},options={}){
     p:{...researchInput,giftedLeadStrategyContext:strategyContext},
     stage:rejectedPacket?'gifted_lead_packet_for_prospect_email_retry':'gifted_lead_packet_for_prospect',
     maxTokens:2400,
-    fallbackToOpenAi:true,
-    preferOpenAi:options.preferOpenAi===true,
     instructions:[
 	      'Build ONE complete gifted lead packet for the prospect.',
 	      'The packet is not a lead for Grace Intelligence. It is a real potential customer FOR the company being researched.',
 	      'Use this strategy context. Find ONE real company showing the strongest pinpoint signal and build the gifted packet around that company.',
 	      strategyContext,
 	      'Do not return generic opportunity patterns. Return a named company, website, why now, evidence, likely buyer, and the first message Grace would send.',
-	      'The first_message_grace_would_send value must contain the email body only. Never include a "Subject:" line inside it.',
 	      'Do not leave showcase_lead_packet blank. If usable email is missing, still return the named company, website, trigger, evidence, likely buyer if known, first message, confidence, and a clear missing-email caveat.',
 	      'Hard requirement: the gifted lead should include at least one usable email address. A verified person email is best. A role email is acceptable only if no person email can be found. Phone is valuable but not enough by itself.',
 	      'Do not invent or infer an email pattern. If the email is only guessed from a company pattern, do not use it as the contact email.',
@@ -36291,14 +36252,12 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
   if(String(p.leadProfile||'').toLowerCase()!=='grace' && !/Grace Fit Engine/i.test(String(p.scraperType||''))) return p;
   if(opts.decisionMakerResearch===false) return p;
   let next=sanitizeDecisionMaker({...p});
-  const demoGiftedPacket=opts.demoGiftedPacket===true || next.demoGiftedPacket===true || next.demo_gifted_packet===true;
-  if(demoGiftedPacket) next.demoGiftedPacket=true;
   const needsShowcaseLeadPacket=opts.showcaseLeadResearch!==false && !graceShowcaseLeadPacketReady(next.showcaseLeadPacket||next.giftedLeadPacket||next.showcase_lead_packet,{requireEmail:true});
   if(!(next.organizationName||next.name) || !(next.address1||next.city||next.website)) return next;
   if(next.decisionMakerName && !needsShowcaseLeadPacket) return next;
   try{
 		    const decision=(next.decisionMakerName && needsShowcaseLeadPacket)
-		      ? await researchGraceGiftedLeadPacketOnly(next,{preferOpenAi:demoGiftedPacket})
+		      ? await researchGraceGiftedLeadPacketOnly(next)
 		      : await researchGraceDecisionMakerWithAi(next);
 		    const person=graceAiDecisionPerson(decision);
 			    const confidence=graceAiDecisionConfidence(person.confidence||decision.decisionMakerConfidence||'');
@@ -36309,7 +36268,7 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				      next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket(showcasePacket).catch(error=>({...showcasePacket,caveats:[showcasePacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
 				      if(!graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true}) && opts.showcaseLeadRetry!==false){
 				        next.heldShowcaseLeadPacket=next.showcaseLeadPacket;
-				        const retryDecision=await researchGraceGiftedLeadPacketOnly(next,{rejectedPacket:next.showcaseLeadPacket,preferOpenAi:demoGiftedPacket}).catch(error=>({notes:`Gifted lead packet retry failed: ${error.message}`}));
+				        const retryDecision=await researchGraceGiftedLeadPacketOnly(next,{rejectedPacket:next.showcaseLeadPacket}).catch(error=>({notes:`Gifted lead packet retry failed: ${error.message}`}));
 				        const retryPacket=graceNormalizeShowcaseLeadPacket(retryDecision.showcase_lead_packet||retryDecision.showcaseLeadPacket);
 				        if(retryPacket){
 				          const enrichedRetry=await enrichGraceShowcaseLeadPacket(retryPacket).catch(error=>({...retryPacket,caveats:[retryPacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' ')}));
@@ -36331,25 +36290,6 @@ async function enrichProspectWithGraceAiResearch(p={},opts={}){
 				        }]
 				        : [];
 				    }
-		    if(demoGiftedPacket && !graceNormalizeShowcaseLeadPacket(next.showcaseLeadPacket)){
-		      const demoPacketDecision=await researchGraceGiftedLeadPacketOnly(next,{preferOpenAi:true}).catch(error=>({notes:`Demo gifted lead packet failed: ${error.message}`}));
-		      const demoPacket=graceNormalizeShowcaseLeadPacket(demoPacketDecision.showcase_lead_packet||demoPacketDecision.showcaseLeadPacket);
-		      if(demoPacket){
-		        next.showcaseLeadPacket=await enrichGraceShowcaseLeadPacket({
-		          ...demoPacket,
-		          confidence:[demoPacket.confidence,'Demo packet - review only'].filter(Boolean).join('; ')
-		        }).catch(error=>({...demoPacket,caveats:[demoPacket.caveats,`Contact enrichment incomplete: ${error.message}`].filter(Boolean).join(' '),confidence:[demoPacket.confidence,'Demo packet - review only'].filter(Boolean).join('; ')}));
-		        next.aiDecisionMakerResearch={...decision,demo_gifted_lead_packet:demoPacketDecision,showcase_lead_packet:next.showcaseLeadPacket};
-		        next.showcaseOpportunities=graceShowcaseLeadPacketReady(next.showcaseLeadPacket,{requireEmail:true})
-		          ? [{
-		            company:next.showcaseLeadPacket.companyName,
-		            trigger:next.showcaseLeadPacket.trigger||next.showcaseLeadPacket.whyNow,
-		            reason:next.showcaseLeadPacket.whyItFitsProspect,
-		            decisionMaker:[next.showcaseLeadPacket.decisionMakerName,next.showcaseLeadPacket.decisionMakerTitle].filter(Boolean).join(' - ')
-		          }]
-		          : [];
-		      }
-		    }
 			    next.decisionMakerEvidence=person.evidence||decision.decisionMakerEvidence||decision.notes||next.decisionMakerEvidence||'';
 	    next.decisionMakerSourceUrls=[
 	      ...graceUsefulJsonArray(decision.sourceUrls),
@@ -36440,7 +36380,7 @@ async function enrichProspect(p,opts={}){
     }
   }
   if(String(next.leadProfile||'').toLowerCase()==='grace' || /Grace Fit Engine/i.test(String(next.scraperType||''))){
-    next=await enrichProspectWithGraceAiResearch(next,{decisionMakerResearch:opts.decisionMakerResearch!==false,demoGiftedPacket:opts.demoGiftedPacket===true || next.demoGiftedPacket===true});
+    next=await enrichProspectWithGraceAiResearch(next,{decisionMakerResearch:opts.decisionMakerResearch!==false});
   }
   if(mode==='defer'){
     next = await enrichProspectWithApollo(next);
